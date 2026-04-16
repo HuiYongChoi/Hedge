@@ -1,6 +1,7 @@
 import { Card, CardHeader } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { Handle, Position } from '@xyflow/react';
+import { Handle, Position, useReactFlow } from '@xyflow/react';
+import { X } from 'lucide-react';
 import { ReactNode } from 'react';
 
 export interface NodeShellProps {
@@ -33,6 +34,13 @@ export function NodeShell({
   width = 'w-64',
 }: NodeShellProps) {
   const isInProgress = status === 'IN_PROGRESS';
+  const { deleteElements } = useReactFlow();
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    deleteElements({ nodes: [{ id }] });
+  };
+
   return (
     <div
       className={cn(
@@ -58,16 +66,25 @@ export function NodeShell({
       )}
       <div className="overflow-hidden rounded-lg">
         <Card className="bg-node rounded-none overflow-hidden border-none">
-          <CardHeader className="p-3 bg-node flex flex-row items-center space-x-2 rounded-t-sm">
+          <CardHeader className="p-3 bg-node flex flex-row items-center space-x-2 rounded-t-sm relative">
             <div className={cn(
               "flex items-center justify-center h-8 w-8 rounded-lg text-primary",
               isInProgress ? "gradient-animation" : iconColor
             )}>
               {icon}
             </div>
-            <div className="text-title font-semibold text-primary">
+            <div className="text-title font-semibold text-primary flex-1">
               {name || "Custom Component"}
             </div>
+            {selected && (
+              <button
+                onClick={handleDelete}
+                className="absolute top-2 right-2 h-5 w-5 flex items-center justify-center rounded-sm text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                title="Delete node (Del)"
+              >
+                <X size={12} />
+              </button>
+            )}
           </CardHeader>
           {description && (
             <div className="px-3 py-2 text-subtitle text-primary text-left">

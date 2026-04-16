@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { useTabsContext } from '@/contexts/tabs-context';
 import { cn } from '@/lib/utils';
-import { FileText, Layout, Settings, X } from 'lucide-react';
+import { FileText, Layout, Search, Settings, X } from 'lucide-react';
 import { ReactNode, useState } from 'react';
 
 interface TabBarProps {
@@ -15,6 +15,8 @@ const getTabIcon = (type: string): ReactNode => {
       return <FileText size={13} />;
     case 'settings':
       return <Settings size={13} />;
+    case 'stock-search':
+      return <Search size={13} />;
     default:
       return <Layout size={13} />;
   }
