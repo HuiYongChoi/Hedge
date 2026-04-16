@@ -6,10 +6,12 @@ import { Button } from '@/components/ui/button';
 import { CardContent } from '@/components/ui/card';
 import { ModelSelector } from '@/components/ui/llm-selector';
 import { useFlowContext } from '@/contexts/flow-context';
+import { useLanguage } from '@/contexts/language-context';
 import { useNodeContext } from '@/contexts/node-context';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
 import { useNodeState } from '@/hooks/use-node-state';
 import { useOutputNodeConnection } from '@/hooks/use-output-node-connection';
+import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
 import { type PortfolioManagerNode } from '../types';
 import { getStatusColor } from '../utils';
@@ -85,7 +87,8 @@ export function PortfolioManagerNode({
   const handleModelChange = (model: LanguageModel | null) => {
     setSelectedModel(model);
   };
-  
+
+  const { language } = useLanguage();
   const outputNodeData = getOutputNodeDataForFlow(currentFlowId?.toString() || null);
 
   // Get connected agent IDs
@@ -109,7 +112,7 @@ export function PortfolioManagerNode({
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <div className="text-subtitle text-primary flex items-center gap-1">
-                  Status
+                  {t('nodeStatus', language)}
                 </div>
 
                 <div
@@ -135,7 +138,7 @@ export function PortfolioManagerNode({
               </div>
               <div className="flex flex-col gap-2">
                 <div className="text-subtitle text-primary flex items-center gap-1">
-                  Model
+                  {t('nodeModel', language)}
                 </div>
                 <ModelSelector
                   models={availableModels}

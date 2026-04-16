@@ -1,7 +1,9 @@
 import { FlowItemGroup } from '@/components/panels/left/flow-item-group';
 import { SearchBox } from '@/components/panels/search-box';
 import { Accordion } from '@/components/ui/accordion';
+import { useLanguage } from '@/contexts/language-context';
 import { useTabsContext } from '@/contexts/tabs-context';
+import { t } from '@/lib/language-preferences';
 import { Flow } from '@/types/flow';
 import { FolderOpen } from 'lucide-react';
 
@@ -35,6 +37,7 @@ export function FlowList({
   onRefresh,
 }: FlowListProps) {
   const { tabs, activeTabId } = useTabsContext();
+  const { language } = useLanguage();
 
   // Only consider a flow active if the current active tab is a flow tab with that flow's ID
   const getActiveFlowId = (): number | null => {
@@ -53,27 +56,27 @@ export function FlowList({
 
   return (
     <div className="flex-grow overflow-auto text-primary scrollbar-thin scrollbar-thumb-ramp-grey-700">
-      <SearchBox 
-        value={searchQuery} 
+      <SearchBox
+        value={searchQuery}
         onChange={onSearchChange}
-        placeholder="Search flows..."
+        placeholder={t('searchFlows', language)}
       />
-      
+
       {isLoading ? (
         <div className="flex items-center justify-center py-8">
-          <div className="text-muted-foreground text-sm">Loading flows...</div>
+          <div className="text-muted-foreground text-sm">{t('loadingFlows', language)}</div>
         </div>
       ) : (
-        <Accordion 
-          type="multiple" 
-          className="w-full" 
-          value={openGroups} 
+        <Accordion
+          type="multiple"
+          className="w-full"
+          value={openGroups}
           onValueChange={onAccordionChange}
         >
           {recentFlows.length > 0 && (
             <FlowItemGroup
               key="recent-flows"
-              title="Recent Flows"
+              title={t('recentFlows', language)}
               flows={recentFlows}
               onLoadFlow={onLoadFlow}
               onDeleteFlow={onDeleteFlow}
@@ -81,11 +84,11 @@ export function FlowList({
               currentFlowId={activeFlowId}
             />
           )}
-          
+
           {templateFlows.length > 0 && (
             <FlowItemGroup
               key="templates"
-              title="Templates"
+              title={t('templates', language)}
               flows={templateFlows}
               onLoadFlow={onLoadFlow}
               onDeleteFlow={onDeleteFlow}
@@ -101,11 +104,11 @@ export function FlowList({
           {flows.length === 0 ? (
             <div className="space-y-2">
               <FolderOpen size={32} className="mx-auto text-muted-foreground" />
-              <div>No flows saved yet</div>
-              <div className="text-xs">Create your first flow to get started</div>
+              <div>{t('noFlowsSaved', language)}</div>
+              <div className="text-xs">{t('createFirstFlow', language)}</div>
             </div>
           ) : (
-            'No flows match your search'
+            t('noFlowsFound', language)
           )}
         </div>
       )}

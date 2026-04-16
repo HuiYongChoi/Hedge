@@ -19,11 +19,13 @@ import {
 } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useFlowContext } from '@/contexts/flow-context';
+import { useLanguage } from '@/contexts/language-context';
 import { useLayoutContext } from '@/contexts/layout-context';
 import { useNodeContext } from '@/contexts/node-context';
 import { useFlowConnection } from '@/hooks/use-flow-connection';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { useNodeState } from '@/hooks/use-node-state';
+import { t } from '@/lib/language-preferences';
 import { cn, formatKeyboardShortcut } from '@/lib/utils';
 import { type PortfolioStartNode } from '../types';
 import { NodeShell } from './node-shell';
@@ -35,8 +37,8 @@ interface PortfolioPosition {
 }
 
 const runModes = [
-  { value: 'single', label: 'Single Run' },
-  { value: 'backtest', label: 'Backtest' },
+  { value: 'single', labelKey: 'singleRun' as const },
+  { value: 'backtest', labelKey: 'backtestRun' as const },
 ];
 
 export function PortfolioStartNode({
@@ -59,7 +61,8 @@ export function PortfolioStartNode({
   const [startDate, setStartDate] = useNodeState(id, 'startDate', threeMonthsAgo.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useNodeState(id, 'endDate', today.toISOString().split('T')[0]);
   const [open, setOpen] = useState(false);
-  
+  const { language } = useLanguage();
+
   const { currentFlowId } = useFlowContext();
   const nodeContext = useNodeContext();
   const { getAllAgentModels } = nodeContext;
@@ -275,7 +278,7 @@ export function PortfolioStartNode({
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <div className="text-subtitle text-primary flex items-center gap-1">
-                  Available Cash
+                  {t('availableCash', language)}
                 </div>
                 <div className="relative flex-1">
                   <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground pointer-events-none">
@@ -296,10 +299,10 @@ export function PortfolioStartNode({
                 <div className="text-subtitle text-primary flex items-center gap-1">
                   <Tooltip delayDuration={200}>
                     <TooltipTrigger asChild>
-                      <span>Positions</span>
+                      <span>{t('positions', language)}</span>
                     </TooltipTrigger>
                     <TooltipContent side="right">
-                      Add your portfolio positions with ticker, quantity, and trade price
+                      {t('positionsTooltip', language)}
                     </TooltipContent>
                   </Tooltip>
                 </div>
@@ -308,14 +311,14 @@ export function PortfolioStartNode({
                     return (
                     <div key={index} className="flex gap-2 items-center">
                       <Input
-                        placeholder="Ticker"
+                        placeholder={t('ticker', language)}
                         value={position.ticker}
                         onChange={(e) => handlePositionChange(index, 'ticker', e.target.value)}
                         className="flex-1"
                       />
                       <Input
                         type="number"
-                        placeholder="Quantity"
+                        placeholder={t('quantity', language)}
                         value={position.quantity}
                         onChange={(e) => handlePositionChange(index, 'quantity', e.target.value)}
                         className="w-20"
@@ -327,7 +330,7 @@ export function PortfolioStartNode({
                         </div>
                         <Input
                           type="number"
-                          placeholder="Price"
+                          placeholder={t('price', language)}
                           value={position.tradePrice}
                           onChange={(e) => handlePositionChange(index, 'tradePrice', e.target.value)}
                           className="pl-8"
@@ -355,13 +358,13 @@ export function PortfolioStartNode({
                     variant="secondary"
                   >
                     <Plus className="h-4 w-4 mr-2" />
-                    Add Position
+                    {t('addPosition', language)}
                   </Button>
                 </div>
               </div>
               <div className="flex flex-col gap-2">
                 <div className="text-subtitle text-primary flex items-center gap-1">
-                  Run
+                  {t('run', language)}
                 </div>
                 <div className="flex gap-2">
                   <Popover open={open} onOpenChange={setOpen}>
@@ -373,7 +376,7 @@ export function PortfolioStartNode({
                         className="flex-1 justify-between h-10 px-3 py-2 bg-node border border-border hover:bg-accent"
                       >
                         <span className="text-subtitle">
-                          {runModes.find((mode) => mode.value === runMode)?.label || 'Single Analysis'}
+                          {t(runModes.find((mode) => mode.value === runMode)?.labelKey || 'singleRun', language)}
                         </span>
                         <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
@@ -381,7 +384,7 @@ export function PortfolioStartNode({
                     <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-node border border-border shadow-lg">
                       <Command className="bg-node">
                         <CommandList className="bg-node">
-                          <CommandEmpty>No run mode found.</CommandEmpty>
+                          <CommandEmpty>{t('noRunModeFound', language)}</CommandEmpty>
                           <CommandGroup>
                             {runModes.map((mode) => (
                               <CommandItem
@@ -396,7 +399,7 @@ export function PortfolioStartNode({
                                   setOpen(false);
                                 }}
                               >
-                                {mode.label}
+                                {t(mode.labelKey, language)}
                               </CommandItem>
                             ))}
                           </CommandGroup>
@@ -404,8 +407,8 @@ export function PortfolioStartNode({
                       </Command>
                     </PopoverContent>
                   </Popover>
-                  <Button 
-                    size="icon" 
+                  <Button
+                    size="icon"
                     variant="secondary"
                     className="flex-shrink-0 transition-all duration-200 hover:bg-primary hover:text-primary-foreground active:scale-95"
                     title={showAsProcessing ? "Stop" : `Run (${formatKeyboardShortcut('↵')})`}
@@ -424,7 +427,7 @@ export function PortfolioStartNode({
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-2">
                     <div className="text-subtitle text-primary flex items-center gap-1">
-                      Start Date
+                      {t('startDate', language)}
                     </div>
                     <Input
                       type="date"
@@ -434,7 +437,7 @@ export function PortfolioStartNode({
                   </div>
                   <div className="flex flex-col gap-2">
                     <div className="text-subtitle text-primary flex items-center gap-1">
-                      End Date
+                      {t('endDate', language)}
                     </div>
                     <Input
                       type="date"

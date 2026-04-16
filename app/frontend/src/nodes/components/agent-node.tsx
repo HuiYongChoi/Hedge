@@ -6,9 +6,11 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { CardContent } from '@/components/ui/card';
 import { ModelSelector } from '@/components/ui/llm-selector';
 import { useFlowContext } from '@/contexts/flow-context';
+import { useLanguage } from '@/contexts/language-context';
 import { useNodeContext } from '@/contexts/node-context';
 import { getModels, LanguageModel } from '@/data/models';
 import { useNodeState } from '@/hooks/use-node-state';
+import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
 import { type AgentNode } from '../types';
 import { getStatusColor } from '../utils';
@@ -73,6 +75,8 @@ export function AgentNode({
     setSelectedModel(null);
   };
 
+  const { language } = useLanguage();
+
   return (
     <NodeShell
       id={id}
@@ -88,7 +92,7 @@ export function AgentNode({
         <div className="border-t border-border p-3">
           <div className="flex flex-col gap-2">
             <div className="text-subtitle text-primary flex items-center gap-1">
-              Status
+              {t('nodeStatus', language)}
             </div>
 
             <div className={cn(
@@ -97,7 +101,7 @@ export function AgentNode({
             )}>
               <span className="capitalize">{status.toLowerCase().replace(/_/g, ' ')}</span>
             </div>
-            
+
             {nodeData.message && (
               <div className="text-foreground text-subtitle">
                 {nodeData.message !== "Done" && nodeData.message}
@@ -107,12 +111,12 @@ export function AgentNode({
             <Accordion type="single" collapsible>
               <AccordionItem value="advanced" className="border-none">
                 <AccordionTrigger className="!text-subtitle text-primary">
-                  Advanced
+                  {t('advanced', language)}
                 </AccordionTrigger>
                 <AccordionContent className="pt-2">
                   <div className="flex flex-col gap-2">
                     <div className="text-subtitle text-primary flex items-center gap-1">
-                      Model
+                      {t('nodeModel', language)}
                     </div>
                     <ModelSelector
                       models={availableModels}

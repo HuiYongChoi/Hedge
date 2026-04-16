@@ -20,18 +20,20 @@ import {
 } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useFlowContext } from '@/contexts/flow-context';
+import { useLanguage } from '@/contexts/language-context';
 import { useLayoutContext } from '@/contexts/layout-context';
 import { useNodeContext } from '@/contexts/node-context';
 import { useFlowConnection } from '@/hooks/use-flow-connection';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { useNodeState } from '@/hooks/use-node-state';
+import { t } from '@/lib/language-preferences';
 import { cn, formatKeyboardShortcut } from '@/lib/utils';
 import { type StockAnalyzerNode } from '../types';
 import { NodeShell } from './node-shell';
 
 const runModes = [
-  { value: 'single', label: 'Single Run' },
-  { value: 'backtest', label: 'Backtest' },
+  { value: 'single', labelKey: 'singleRun' as const },
+  { value: 'backtest', labelKey: 'backtestRun' as const },
 ];
 
 export function StockAnalyzerNode({
@@ -45,6 +47,8 @@ export function StockAnalyzerNode({
   const threeMonthsAgo = new Date(today);
   threeMonthsAgo.setMonth(today.getMonth() - 3);
   
+  const { language } = useLanguage();
+
   // Use persistent state hooks
   const [tickers, setTickers] = useNodeState(id, 'tickers', 'AAPL,NVDA,TSLA');
   const [runMode, setRunMode] = useNodeState(id, 'runMode', 'single');
@@ -254,22 +258,22 @@ export function StockAnalyzerNode({
                 <div className="text-subtitle text-primary flex items-center gap-1">
                   <Tooltip delayDuration={200}>
                     <TooltipTrigger asChild>
-                      <span>Tickers</span>
+                      <span>{t('tickers', language)}</span>
                     </TooltipTrigger>
                     <TooltipContent side="right">
-                      You can add multiple tickers using commas (AAPL,NVDA,TSLA)
+                      {t('tickersTooltip', language)}
                     </TooltipContent>
                   </Tooltip>
                 </div>
                 <Input
-                  placeholder="Enter tickers"
+                  placeholder={t('enterTickers', language)}
                   value={tickers}
                   onChange={handleTickersChange}
                 />
               </div>
               <div className="flex flex-col gap-2">
                 <div className="text-subtitle text-primary flex items-center gap-1">
-                  Run
+                  {t('run', language)}
                 </div>
                 <div className="flex gap-2">
                   <Popover open={open} onOpenChange={setOpen}>
@@ -281,7 +285,7 @@ export function StockAnalyzerNode({
                         className="flex-1 justify-between h-10 px-3 py-2 bg-node border border-border hover:bg-accent"
                       >
                         <span className="text-subtitle">
-                          {runModes.find((mode) => mode.value === runMode)?.label || 'Single Run'}
+                          {t(runModes.find((mode) => mode.value === runMode)?.labelKey || 'singleRun', language)}
                         </span>
                         <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
@@ -289,7 +293,7 @@ export function StockAnalyzerNode({
                     <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-node border border-border shadow-lg">
                       <Command className="bg-node">
                         <CommandList className="bg-node">
-                          <CommandEmpty>No run mode found.</CommandEmpty>
+                          <CommandEmpty>{t('noRunModeFound', language)}</CommandEmpty>
                           <CommandGroup>
                             {runModes.map((mode) => (
                               <CommandItem
@@ -304,7 +308,7 @@ export function StockAnalyzerNode({
                                   setOpen(false);
                                 }}
                               >
-                                {mode.label}
+                                {t(mode.labelKey, language)}
                               </CommandItem>
                             ))}
                           </CommandGroup>
@@ -332,13 +336,13 @@ export function StockAnalyzerNode({
                 <Accordion type="single" collapsible>
                   <AccordionItem value="advanced" className="border-none">
                     <AccordionTrigger className="!text-subtitle text-primary">
-                      Advanced
+                      {t('advanced', language)}
                     </AccordionTrigger>
                     <AccordionContent className="pt-2">
                       <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-2">
                           <div className="text-subtitle text-primary flex items-center gap-1">
-                            Available Cash
+                            {t('availableCash', language)}
                           </div>
                           <div className="relative flex-1">
                             <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground pointer-events-none">
@@ -355,7 +359,7 @@ export function StockAnalyzerNode({
                         </div>
                         <div className="flex flex-col gap-2">
                           <div className="text-subtitle text-primary flex items-center gap-1">
-                            Start Date
+                            {t('startDate', language)}
                           </div>
                           <Input
                             type="date"
@@ -365,7 +369,7 @@ export function StockAnalyzerNode({
                         </div>
                         <div className="flex flex-col gap-2">
                           <div className="text-subtitle text-primary flex items-center gap-1">
-                            End Date
+                            {t('endDate', language)}
                           </div>
                           <Input
                             type="date"
@@ -382,13 +386,13 @@ export function StockAnalyzerNode({
                 <Accordion type="single" collapsible>
                   <AccordionItem value="advanced" className="border-none">
                     <AccordionTrigger className="!text-subtitle text-primary">
-                      Advanced
+                      {t('advanced', language)}
                     </AccordionTrigger>
                     <AccordionContent className="pt-2">
                       <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-2">
                           <div className="text-subtitle text-primary flex items-center gap-1">
-                            End Date
+                            {t('endDate', language)}
                           </div>
                           <Input
                             type="date"
@@ -398,7 +402,7 @@ export function StockAnalyzerNode({
                         </div>
                         <div className="flex flex-col gap-2">
                           <div className="text-subtitle text-primary flex items-center gap-1">
-                            Start Date
+                            {t('startDate', language)}
                           </div>
                           <Input
                             type="date"
