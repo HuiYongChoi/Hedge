@@ -27,10 +27,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { extractBaseAgentKey } from '@/data/node-mappings';
+import { useLanguage } from '@/contexts/language-context';
 import { createAgentDisplayNames } from '@/utils/text-utils';
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 interface InvestmentReportDialogProps {
   isOpen: boolean;
@@ -41,19 +40,78 @@ interface InvestmentReportDialogProps {
 
 type ActionType = 'long' | 'short' | 'hold';
 
+/** Convert snake_case key to readable label */
+function toLabel(key: string): string {
+  return key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
+
+/** Render reasoning that may be a string or an object, always as human-readable text */
+function ReasoningView({ reasoning }: { reasoning: any }) {
+  if (!reasoning) return null;
+
+  let parsedReasoning = reasoning;
+  if (typeof reasoning === 'string') {
+    const trimmed = reasoning.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        parsedReasoning = JSON.parse(trimmed);
+      } catch (e) {
+        // Not valid JSON, keep as string
+      }
+    }
+  }
+
+  if (typeof parsedReasoning === 'string') {
+    return <p className="text-sm whitespace-pre-line leading-relaxed">{parsedReasoning}</p>;
+  }
+
+  if (typeof parsedReasoning === 'object' && !Array.isArray(parsedReasoning)) {
+    return (
+      <div className="space-y-2 text-sm">
+        {Object.entries(parsedReasoning).map(([key, value]) => (
+          <div key={key} className="rounded border border-border bg-muted/20 px-3 py-2">
+            <div className="text-xs font-semibold text-primary uppercase tracking-wide mb-1">
+              {toLabel(key)}
+            </div>
+            {typeof value === 'string' ? (
+              <p className="leading-relaxed">{value}</p>
+            ) : (
+              <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
+                {JSON.stringify(value, null, 2)}
+              </pre>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (Array.isArray(parsedReasoning)) {
+    return (
+      <ul className="list-disc list-inside text-sm space-y-1">
+        {parsedReasoning.map((item: any, i: number) => (
+          <li key={i}>{typeof item === 'string' ? item : JSON.stringify(item)}</li>
+        ))}
+      </ul>
+    );
+  }
+
+  return <p className="text-sm">{String(parsedReasoning)}</p>;
+}
+
 export function InvestmentReportDialog({
   isOpen,
   onOpenChange,
   outputNodeData,
   connectedAgentIds,
 }: InvestmentReportDialogProps) {
-  // Check if this is a backtest result and return early if it is
-  // Backtest results should be displayed in the backtest output tab, not in the investment report dialog
+  const { t } = useLanguage();
+
+  // Check if this is a backtest result
   if (outputNodeData?.decisions?.backtest?.type === 'backtest_complete') {
     return null;
   }
 
-  // Return early if no output data
   if (!outputNodeData || !outputNodeData.decisions) {
     return null;
   }
@@ -71,14 +129,20 @@ export function InvestmentReportDialog({
     }
   };
 
+  const getActionLabel = (action: string) => {
+    if (action === 'long') return t('longAction');
+    if (action === 'short') return t('shortAction');
+    if (action === 'hold') return t('holdAction');
+    return action;
+  };
+
   const getSignalBadge = (signal: string) => {
     const variant = signal === 'bullish' ? 'success' :
                    signal === 'bearish' ? 'destructive' : 'outline';
-
+    const label = signal === 'bullish' ? t('bullish') :
+                  signal === 'bearish' ? t('bearish') : t('neutral');
     return (
-      <Badge variant={variant as any}>
-        {signal}
-      </Badge>
+      <Badge variant={variant as any}>{label}</Badge>
     );
   };
 
@@ -86,19 +150,13 @@ export function InvestmentReportDialog({
     let variant = 'outline';
     if (confidence >= 50) variant = 'success';
     else if (confidence >= 0) variant = 'warning';
-    else variant = 'outline';
     const rounded = Number(confidence.toFixed(1));
     return (
-      <Badge variant={variant as any}>
-        {rounded}%
-      </Badge>
+      <Badge variant={variant as any}>{rounded}%</Badge>
     );
   };
 
-  // Extract unique tickers from the data
   const tickers = Object.keys(outputNodeData.decisions || {});
-
-  // Use the unique node IDs directly since they're now stored as keys in analyst_signals
   const connectedUniqueAgentIds = Array.from(connectedAgentIds);
   const agents = Object.keys(outputNodeData.analyst_signals || {})
     .filter(agent =>
@@ -111,28 +169,28 @@ export function InvestmentReportDialog({
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold">Investment Report</DialogTitle>
+          <DialogTitle className="text-xl font-bold">{t('investmentReport')}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-8 my-4">
           {/* Summary Section */}
           <section>
-            <h2 className="text-lg font-semibold mb-4">Summary</h2>
+            <h2 className="text-lg font-semibold mb-4">{t('summary')}</h2>
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>
-                  Recommended trading actions based on analyst signals
+                  {t('recommendedActions')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Ticker</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead>Action</TableHead>
-                      <TableHead>Quantity</TableHead>
-                      <TableHead>Confidence</TableHead>
+                      <TableHead>{t('tickerCol')}</TableHead>
+                      <TableHead>{t('priceCol')}</TableHead>
+                      <TableHead>{t('actionCol')}</TableHead>
+                      <TableHead>{t('quantityCol')}</TableHead>
+                      <TableHead>{t('confidenceCol')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -146,7 +204,7 @@ export function InvestmentReportDialog({
                           <TableCell>
                             <div className="flex items-center gap-2">
                               {getActionIcon(decision.action as ActionType)}
-                              <span className="capitalize">{decision.action}</span>
+                              <span className="capitalize">{getActionLabel(decision.action)}</span>
                             </div>
                           </TableCell>
                           <TableCell>{decision.quantity}</TableCell>
@@ -156,12 +214,27 @@ export function InvestmentReportDialog({
                     })}
                   </TableBody>
                 </Table>
+                
+                {/* Overall Reasoning from Portfolio Manager */}
+                <div className="mt-6 space-y-4">
+                  {tickers.map(ticker => {
+                    const decision = outputNodeData.decisions[ticker];
+                    if (!decision?.reasoning) return null;
+                    return (
+                      <div key={`reasoning-${ticker}`} className="bg-muted/30 p-4 rounded-md">
+                        <h3 className="text-sm font-semibold mb-2">{ticker} {t('summary')}</h3>
+                        <ReasoningView reasoning={decision.reasoning} />
+                      </div>
+                    );
+                  })}
+                </div>
               </CardContent>
             </Card>
           </section>
+
           {/* Analyst Signals Section */}
           <section>
-            <h2 className="text-lg font-semibold mb-4">Analyst Signals</h2>
+            <h2 className="text-lg font-semibold mb-4">{t('analystSignals')}</h2>
             <Accordion type="multiple" className="w-full">
               {tickers.map(ticker => (
                 <AccordionItem key={ticker} value={ticker}>
@@ -171,14 +244,13 @@ export function InvestmentReportDialog({
                       <div className="flex items-center gap-1">
                         {getActionIcon(outputNodeData.decisions[ticker].action as ActionType)}
                         <span className="text-sm font-normal text-muted-foreground">
-                          {outputNodeData.decisions[ticker].action} {outputNodeData.decisions[ticker].quantity} shares
+                          {getActionLabel(outputNodeData.decisions[ticker].action)} {outputNodeData.decisions[ticker].quantity} {t('shares')}
                         </span>
                       </div>
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="pt-4 px-1">
                     <div className="space-y-4">
-                      {/* Agent Signals */}
                       <div className="grid grid-cols-1 gap-4">
                         {agents.map(agent => {
                           const signal = outputNodeData.analyst_signals[agent]?.[ticker];
@@ -198,27 +270,7 @@ export function InvestmentReportDialog({
                                 </div>
                               </CardHeader>
                               <CardContent className="pt-3">
-                                {typeof signal.reasoning === 'string' ? (
-                                  <p className="text-sm whitespace-pre-line">
-                                    {signal.reasoning}
-                                  </p>
-                                ) : (
-                                  <div className="max-h-48 overflow-y-auto bg-muted/30">
-                                    <SyntaxHighlighter
-                                      language="json"
-                                      style={vscDarkPlus}
-                                      className="text-sm rounded-md"
-                                      customStyle={{
-                                        fontSize: '0.875rem',
-                                        margin: 0,
-                                        padding: '12px',
-                                        backgroundColor: 'hsl(var(--muted))',
-                                      }}
-                                    >
-                                      {JSON.stringify(signal.reasoning, null, 2)}
-                                    </SyntaxHighlighter>
-                                  </div>
-                                )}
+                                <ReasoningView reasoning={signal.reasoning} />
                               </CardContent>
                             </Card>
                           );

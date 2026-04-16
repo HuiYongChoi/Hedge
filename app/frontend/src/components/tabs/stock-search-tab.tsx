@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { ModelSelector } from '@/components/ui/llm-selector';
+import { TickerInput } from '@/components/ui/ticker-input';
 import { useLanguage } from '@/contexts/language-context';
 import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
@@ -12,7 +12,11 @@ import { t } from '@/lib/language-preferences';
 import { Bot, ChevronDown, ChevronUp, Loader2, Play, Search, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 
+  (typeof window !== 'undefined' && 
+   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') 
+    ? 'http://localhost:8000' 
+    : '/hedge-api');
 
 interface AgentResult {
   agentKey: string;
@@ -119,8 +123,8 @@ export function StockSearchTab() {
     // Build graph nodes and edges
     const tickerList = tickers.split(',').map(s => s.trim()).filter(Boolean);
     const suffix = Math.random().toString(36).slice(2, 8);
-    const startNodeId = `stock-analyzer-node_${suffix}`;
     const pmId = `portfolio_manager_${suffix}`;
+    const startNodeId = `start_${suffix}`;
 
     const agentNodes = agents
       .filter(a => selectedAgents.has(a.key))
@@ -132,29 +136,21 @@ export function StockSearchTab() {
       }));
 
     const graphNodes = [
-      {
-        id: startNodeId,
-        type: 'stock-analyzer-node',
-        data: { name: 'Stock Input', status: 'Idle' },
-        position: { x: 0, y: 0 },
-      },
       ...agentNodes,
       {
         id: pmId,
         type: 'portfolio-manager-node',
-        data: { name: 'Portfolio Manager', status: 'Idle' },
+        data: { name: 'Portfolio Manager', status: 'IDLE' },
         position: { x: 0, y: 0 },
       },
     ];
 
     const graphEdges = [
-      // start -> agents
       ...agentNodes.map((n, i) => ({
-        id: `e-start-${i}`,
+        id: `e-start-agent-${i}`,
         source: startNodeId,
         target: n.id,
       })),
-      // agents -> pm
       ...agentNodes.map((n, i) => ({
         id: `e-agent-pm-${i}`,
         source: n.id,
@@ -182,11 +178,6 @@ export function StockSearchTab() {
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
-
-    // Build reverse map: nodeId suffix -> agentKey
-    const nodeIdToAgentKey = new Map(
-      agentNodes.map(n => [n.id, n.id.replace(`_${suffix}`, '')])
-    );
 
     try {
       const response = await fetch(`${API_BASE_URL}/hedge-fund/run`, {
@@ -292,10 +283,10 @@ export function StockSearchTab() {
 
   const statusLabel = (status: AgentResult['status']) => {
     switch (status) {
-      case 'complete': return language === 'ko' ? '완료' : 'Complete';
-      case 'running': return language === 'ko' ? '분석 중' : 'Running';
-      case 'error': return language === 'ko' ? '오류' : 'Error';
-      default: return language === 'ko' ? '대기' : 'Waiting';
+      case 'complete': return t('completeStatus', language);
+      case 'running': return t('runningStatus', language);
+      case 'error': return t('errorStatus', language);
+      default: return t('waitingStatus', language);
     }
   };
 
@@ -323,11 +314,11 @@ export function StockSearchTab() {
         <div className="w-72 flex-shrink-0 border-r overflow-y-auto p-4 space-y-4">
           {/* Tickers */}
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">{t('tickers', language)}</Label>
-            <Input
+            <label className="text-sm font-medium">{t('tickers', language)}</label>
+            <TickerInput
               placeholder={t('enterTickers', language)}
               value={tickers}
-              onChange={e => setTickers(e.target.value)}
+              onChange={val => setTickers(val)}
               onKeyDown={e => { if (e.key === 'Enter' && canRun) handleRun(); }}
             />
             <p className="text-xs text-muted-foreground">{t('tickersTooltip', language)}</p>
@@ -336,18 +327,18 @@ export function StockSearchTab() {
           {/* Dates */}
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label className="text-xs">{t('startDate', language)}</Label>
+              <label className="text-xs">{t('startDate', language)}</label>
               <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="text-xs" />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">{t('endDate', language)}</Label>
+              <label className="text-xs">{t('endDate', language)}</label>
               <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="text-xs" />
             </div>
           </div>
 
           {/* Model */}
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">{t('nodeModel', language)}</Label>
+            <label className="text-sm font-medium">{t('nodeModel', language)}</label>
             <ModelSelector
               models={models}
               value={selectedModel?.model_name || ''}
@@ -358,7 +349,7 @@ export function StockSearchTab() {
 
           {/* Agent selection */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium">{t('analystNodes', language)}</Label>
+            <label className="text-sm font-medium">{t('analystNodes', language)}</label>
 
             {/* Select All */}
             <div className="flex items-center gap-2 pb-1 border-b">
@@ -370,9 +361,9 @@ export function StockSearchTab() {
                 }}
                 onCheckedChange={handleSelectAll}
               />
-              <Label htmlFor="select-all" className="text-sm font-medium cursor-pointer">
+              <label htmlFor="select-all" className="text-sm font-medium cursor-pointer">
                 {language === 'ko' ? '모두 선택' : 'Select All'}
-              </Label>
+              </label>
               <span className="ml-auto text-xs text-muted-foreground">{selectedAgents.size}/{agents.length}</span>
             </div>
 
@@ -385,9 +376,9 @@ export function StockSearchTab() {
                   className="mt-0.5"
                 />
                 <div className="flex-1 min-w-0">
-                  <Label htmlFor={`agent-${agent.key}`} className="text-sm cursor-pointer leading-tight">
+                  <label htmlFor={`agent-${agent.key}`} className="text-sm cursor-pointer leading-tight">
                     {agent.display_name}
-                  </Label>
+                  </label>
                 </div>
               </div>
             ))}
@@ -487,12 +478,14 @@ export function StockSearchTab() {
                           decision.action === 'sell' ? 'text-red-500 font-medium' :
                           'text-yellow-500 font-medium'
                         }>
-                          {decision.action?.toUpperCase()}
+                          {decision.action === 'buy' ? t('longAction', language).toUpperCase() : 
+                           decision.action === 'sell' ? t('shortAction', language).toUpperCase() : 
+                           t('holdAction', language).toUpperCase()}
                         </span>
-                        {decision.quantity && <span className="text-muted-foreground">{decision.quantity} shares</span>}
+                        {decision.quantity && <span className="text-muted-foreground">{decision.quantity} {t('shares', language)}</span>}
                         {decision.confidence && (
                           <span className="text-muted-foreground text-xs">
-                            {Math.round(decision.confidence * 100)}% confidence
+                            {Math.round(decision.confidence * 100)}% {language === 'ko' ? '신뢰도' : 'confidence'}
                           </span>
                         )}
                       </div>
@@ -513,7 +506,7 @@ export function StockSearchTab() {
   );
 }
 
-function AnalysisDisplay({ analysis, agentKey }: { analysis: any; agentKey: string }) {
+function AnalysisDisplay({ analysis }: { analysis: any; agentKey?: string }) {
   if (!analysis) return null;
 
   // Try to render structured analysis data
@@ -526,8 +519,10 @@ function AnalysisDisplay({ analysis, agentKey }: { analysis: any; agentKey: stri
       <div className="space-y-2 text-sm">
         {Object.entries(analysis).map(([key, value]) => (
           <div key={key}>
-            <span className="font-medium text-primary capitalize">{key.replace(/_/g, ' ')}: </span>
-            {renderValue(value)}
+            <span className="font-medium text-primary capitalize">
+              {t(key as any, language) !== key ? t(key as any, language) : key.replace(/_/g, ' ')}: 
+            </span>
+            {renderValue(value, language)}
           </div>
         ))}
       </div>
@@ -537,17 +532,19 @@ function AnalysisDisplay({ analysis, agentKey }: { analysis: any; agentKey: stri
   return <pre className="text-xs overflow-auto">{JSON.stringify(analysis, null, 2)}</pre>;
 }
 
-function renderValue(value: any): React.ReactNode {
+function renderValue(value: any, language: any): React.ReactNode {
   if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>;
   if (typeof value === 'boolean') {
-    return <span className={value ? 'text-green-500' : 'text-red-500'}>{value ? 'Yes' : 'No'}</span>;
+    return <span className={value ? 'text-green-500' : 'text-red-500'}>
+      {value ? (language === 'ko' ? '예' : 'Yes') : (language === 'ko' ? '아니오' : 'No')}
+    </span>;
   }
   if (typeof value === 'number') return <span className="text-blue-500 font-mono">{value}</span>;
   if (typeof value === 'string') {
     const lower = value.toLowerCase();
-    if (lower === 'bullish' || lower === 'buy') return <span className="text-green-500 font-medium">{value}</span>;
-    if (lower === 'bearish' || lower === 'sell') return <span className="text-red-500 font-medium">{value}</span>;
-    if (lower === 'neutral' || lower === 'hold') return <span className="text-yellow-500 font-medium">{value}</span>;
+    if (lower === 'bullish' || lower === 'buy') return <span className="text-green-500 font-medium">{language === 'ko' ? '강세' : value}</span>;
+    if (lower === 'bearish' || lower === 'sell') return <span className="text-red-500 font-medium">{language === 'ko' ? '약세' : value}</span>;
+    if (lower === 'neutral' || lower === 'hold') return <span className="text-yellow-500 font-medium">{language === 'ko' ? '중립' : value}</span>;
     return <span className="text-foreground">{value}</span>;
   }
   if (typeof value === 'object') {
@@ -555,8 +552,10 @@ function renderValue(value: any): React.ReactNode {
       <div className="ml-3 space-y-1 mt-1">
         {Object.entries(value).map(([k, v]) => (
           <div key={k}>
-            <span className="text-muted-foreground capitalize">{k.replace(/_/g, ' ')}: </span>
-            {renderValue(v)}
+            <span className="text-muted-foreground capitalize">
+              {t(k as any, language) !== k ? t(k as any, language) : k.replace(/_/g, ' ')}: 
+            </span>
+            {renderValue(v, language)}
           </div>
         ))}
       </div>

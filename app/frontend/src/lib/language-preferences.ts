@@ -1,4 +1,16 @@
 export type Language = 'ko' | 'en';
+// Alias for backward compatibility with server-deployed code
+export type AppLanguage = Language;
+
+export const LANGUAGE_OPTIONS: { value: Language; label: string }[] = [
+  { value: 'ko', label: '한국어' },
+  { value: 'en', label: 'English' },
+];
+
+export function normalizeLanguage(value: string | null | undefined): Language {
+  if (value === 'ko' || value === 'en') return value;
+  return 'en';
+}
 
 const LANGUAGE_KEY = 'preferred-language';
 
@@ -147,6 +159,87 @@ export const translations = {
     nodeIdle: '대기',
     nodeModel: '모델',
     output: '출력',
+
+    // Agent Output Dialog
+    logTitle: '활동 로그',
+    analysisTitle: '분석 결과',
+    tickerLabel: '종목',
+    noActivity: '활동 기록이 없습니다',
+    analysisInProgress: '분석 진행 중...',
+    analysisComplete: '분석 결과가 없습니다',
+    analysisFailed: '분석 실패',
+    noAnalysisAvailable: '분석 결과 없음',
+    noAnalysisForTicker: '해당 종목의 분석 결과가 없습니다',
+    copyClipboard: '클립보드에 복사',
+    copy: '복사',
+    summaryFor: '종목 요약:',
+    
+    // Agent Output Dialog Dynamic Keys
+    log: '로그',
+    analysis: '분석',
+    signal: '신호',
+    confidence: '신뢰도',
+    reasoning: '추론/상세내용',
+    metrics: '측정 지표',
+    
+    // Analyst specific keys
+    PRICE_RATIOS_SIGNAL: '가격 비율 신호',
+    INSIDER_TRADING: '내부자 거래',
+    NEWS_SENTIMENT: '뉴스 센티멘트',
+    PROFITABILITY_SIGNAL: '수익성 신호',
+    GROWTH_SIGNAL: '성장성 신호',
+    FINANCIAL_HEALTH_SIGNAL: '재무 건전성 신호',
+    Trend_Following: '추세 추종',
+    Mean_Reversion: '평균 회귀',
+    Momentum: '모멘텀',
+    Volatility: '변동성',
+
+    // Investment Report Dialog
+    investmentReport: '투자 보고서',
+    summary: '요약',
+    analystSignals: '애널리스트 신호',
+    recommendedActions: '애널리스트 신호를 기반으로 한 권장 거래 행동',
+    tickerCol: '종목',
+    priceCol: '가격',
+    actionCol: '행동',
+    quantityCol: '수량',
+    confidenceCol: '신뢰도',
+    reasoningCol: '근거',
+    agentCol: '에이전트',
+    signalCol: '신호',
+    shares: '주',
+    longAction: '매수',
+    shortAction: '매도',
+    holdAction: '보유',
+    bullish: '강세',
+    bearish: '약세',
+    neutral: '중립',
+
+    // Status Labels
+    statusIdle: '대기',
+    statusRunning: '실행 중',
+    statusComplete: '완료',
+    statusError: '오류',
+    statusWaiting: '대기 중',
+
+    // Bottom Panel
+    progressTitle: '진행 상황',
+    outputTitle: '출력',
+    backtestTitle: '백테스트',
+
+    // Stock Analysis Tab
+    stockAnalysis: '종목 분석',
+    stockAnalysisDesc: '종목을 검색하고 원하는 에이전트를 선택해 상세 분석 보고서를 받으세요.',
+    selectAll: '모두 선택',
+    stop: '중지',
+    runAnalysis: '분석 실행',
+    enterAndRun: '종목 입력 후 실행',
+    waitingStatus: '대기',
+    runningStatus: '분석 중',
+    completeStatus: '완료',
+    errorStatus: '오류',
+    finalDecision: '최종 투자 결정',
+    noResultsYet: '종목과 에이전트를 선택한 후 분석을 실행하세요.',
   },
   en: {
     // Settings Navigation
@@ -272,6 +365,87 @@ export const translations = {
     nodeIdle: 'Idle',
     nodeModel: 'Model',
     output: 'Output',
+
+    // Agent Output Dialog
+    logTitle: 'Log',
+    analysisTitle: 'Analysis',
+    tickerLabel: 'Ticker',
+    noActivity: 'No activity available',
+    analysisInProgress: 'Analysis in progress...',
+    analysisComplete: 'Analysis completed with no results',
+    analysisFailed: 'Analysis failed',
+    noAnalysisAvailable: 'No analysis available',
+    noAnalysisForTicker: 'No analysis available for this ticker',
+    copyClipboard: 'Copy to clipboard',
+    copy: 'Copy',
+    summaryFor: 'Summary for',
+    
+    // Agent Output Dialog Dynamic Keys
+    log: 'Log',
+    analysis: 'Analysis',
+    signal: 'Signal',
+    confidence: 'Confidence',
+    reasoning: 'Reasoning',
+    metrics: 'Metrics',
+    
+    // Analyst specific keys
+    PRICE_RATIOS_SIGNAL: 'Price Ratios Signal',
+    INSIDER_TRADING: 'Insider Trading',
+    NEWS_SENTIMENT: 'News Sentiment',
+    PROFITABILITY_SIGNAL: 'Profitability Signal',
+    GROWTH_SIGNAL: 'Growth Signal',
+    FINANCIAL_HEALTH_SIGNAL: 'Financial Health Signal',
+    Trend_Following: 'Trend Following',
+    Mean_Reversion: 'Mean Reversion',
+    Momentum: 'Momentum',
+    Volatility: 'Volatility',
+
+    // Investment Report Dialog
+    investmentReport: 'Investment Report',
+    summary: 'Summary',
+    analystSignals: 'Analyst Signals',
+    recommendedActions: 'Recommended trading actions based on analyst signals',
+    tickerCol: 'Ticker',
+    priceCol: 'Price',
+    actionCol: 'Action',
+    quantityCol: 'Quantity',
+    confidenceCol: 'Confidence',
+    reasoningCol: 'Reasoning',
+    agentCol: 'Agent',
+    signalCol: 'Signal',
+    shares: 'shares',
+    longAction: 'Long',
+    shortAction: 'Short',
+    holdAction: 'Hold',
+    bullish: 'Bullish',
+    bearish: 'Bearish',
+    neutral: 'Neutral',
+
+    // Status Labels
+    statusIdle: 'Idle',
+    statusRunning: 'Running',
+    statusComplete: 'Complete',
+    statusError: 'Error',
+    statusWaiting: 'Waiting',
+
+    // Bottom Panel
+    progressTitle: 'Progress',
+    outputTitle: 'Output',
+    backtestTitle: 'Backtest',
+
+    // Stock Analysis Tab
+    stockAnalysis: 'Stock Analysis',
+    stockAnalysisDesc: 'Search for stocks and select agents to receive detailed analysis reports.',
+    selectAll: 'Select All',
+    stop: 'Stop',
+    runAnalysis: 'Run Analysis',
+    enterAndRun: 'Enter ticker and run',
+    waitingStatus: 'Waiting',
+    runningStatus: 'Running',
+    completeStatus: 'Complete',
+    errorStatus: 'Error',
+    finalDecision: 'Final Investment Decisions',
+    noResultsYet: 'Enter a ticker and select agents to run analysis.',
   }
 };
 

@@ -1,157 +1,52 @@
-# AI Hedge Fund
+# AI Hedge Fund Visual Simulator
 
-This is a proof of concept for an AI-powered hedge fund.  The goal of this project is to explore the use of AI to make trading decisions.  This project is for **educational** purposes only and is not intended for real trading or investment.
+LangGraph 기반의 멀티 에이전트 투자 시나리오를 시각적인 노드 에디터와 대시보드로 구동할 수 있는 지능형 투자 시뮬레이션 앱입니다.
 
-This system employs several agents working together:
+## 주요 기능 (Features)
 
-1. Aswath Damodaran Agent - The Dean of Valuation, focuses on story, numbers, and disciplined valuation
-2. Ben Graham Agent - The godfather of value investing, only buys hidden gems with a margin of safety
-3. Bill Ackman Agent - An activist investor, takes bold positions and pushes for change
-4. Cathie Wood Agent - The queen of growth investing, believes in the power of innovation and disruption
-5. Charlie Munger Agent - Warren Buffett's partner, only buys wonderful businesses at fair prices
-6. Michael Burry Agent - The Big Short contrarian who hunts for deep value
-7. Mohnish Pabrai Agent - The Dhandho investor, who looks for doubles at low risk
-8. Nassim Taleb Agent - The Black Swan risk analyst, focuses on tail risk, antifragility, and asymmetric payoffs
-9. Peter Lynch Agent - Practical investor who seeks "ten-baggers" in everyday businesses
-10. Phil Fisher Agent - Meticulous growth investor who uses deep "scuttlebutt" research 
-11. Rakesh Jhunjhunwala Agent - The Big Bull of India
-12. Stanley Druckenmiller Agent - Macro legend who hunts for asymmetric opportunities with growth potential
-13. Warren Buffett Agent - The oracle of Omaha, seeks wonderful companies at a fair price
-14. Valuation Agent - Calculates the intrinsic value of a stock and generates trading signals
-15. Sentiment Agent - Analyzes market sentiment and generates trading signals
-16. Fundamentals Agent - Analyzes fundamental data and generates trading signals
-17. Technicals Agent - Analyzes technical indicators and generates trading signals
-18. Risk Manager - Calculates risk metrics and sets position limits
-19. Portfolio Manager - Makes final trading decisions and generates orders
+- **시각적 포트폴리오 빌더 (ReactFlow)** 
+  - 시작 노드(Stock Analyzer)에서 여러 다양한 에이전트(워런 버핏, 마이클 버리, 기술적 분석기 등)를 캔버스에 추가한 뒤, 최종 포트폴리오 매니저 노드로 연결하여 나만의 투자 분석 파이프라인을 구축할 수 있습니다.
+- **빠른 투자 검색 (Quick Stock Analysis Tab)**
+  - 복잡한 연결 없이 우측 상단의 돋보기(🔍) 탭을 열어 원하는 티커를 즉시 검색(`TickerInput` 자동완성 지원)하고, 각 애널리스트들의 종합 보고서 및 최종 매수/매도 판단을 실시간 스트리밍(SSE)으로 받아볼 수 있습니다.
+- **실시간 백테스팅 및 분석**
+  - 단일 런(Single Run)과 과거 날짜를 설정하여 수익의 타당성을 검증하는 백테스트(Backtest) 모드를 완벽 지원합니다.
+- **언어 설정 (i18n)**
+  - 한국어와 영어 모드를 설정(⚙) 메뉴에서 즉각 전환할 수 있으며 브라우저 로컬 저장소에 반영됩니다.
+- **멀티 LLM 모델 지원**
+  - Gemini Flash 기반 모델이 기본값으로 설정되어 있으며, 필요시 각 에이전트별로 다른 모델을 지정하거나 설정 화면에서 API KEY를 통해 다양한 대규모 언어 모델을 연결할 수 있습니다.
 
-<img width="1042" alt="Screenshot 2025-03-22 at 6 19 07 PM" src="https://github.com/user-attachments/assets/cbae3dcf-b571-490d-b0ad-3f0f035ac0d4" />
+## 기술 스택 (Tech Stack)
 
-Note: the system does not actually make any trades.
+- **Frontend**: React, TypeScript, Vite, TailwindCSS, ReactFlow
+- **Backend**: Python 3, FastAPI, LangGraph (AI 에이전트 오케스트레이션)
+- **Deployment**: AWS (Apache HTTP Server)
 
-[![Twitter Follow](https://img.shields.io/twitter/follow/virattt?style=social)](https://twitter.com/virattt)
+## 실행 방법 (Quick Start)
 
-## Disclaimer
-
-This project is for **educational and research purposes only**.
-
-- Not intended for real trading or investment
-- No investment advice or guarantees provided
-- Creator assumes no liability for financial losses
-- Consult a financial advisor for investment decisions
-- Past performance does not indicate future results
-
-By using this software, you agree to use it solely for learning purposes.
-
-## Table of Contents
-- [How to Install](#how-to-install)
-- [How to Run](#how-to-run)
-  - [⌨️ Command Line Interface](#️-command-line-interface)
-  - [🖥️ Web Application](#️-web-application)
-- [How to Contribute](#how-to-contribute)
-- [Feature Requests](#feature-requests)
-- [License](#license)
-
-## How to Install
-
-Before you can run the AI Hedge Fund, you'll need to install it and set up your API keys. These steps are common to both the full-stack web application and command line interface.
-
-### 1. Clone the Repository
-
+**1. 환경 변수 설정**
 ```bash
-git clone https://github.com/virattt/ai-hedge-fund.git
-cd ai-hedge-fund
-```
-
-### 2. Set up API keys
-
-Create a `.env` file for your API keys:
-```bash
-# Create .env file for your API keys (in the root directory)
 cp .env.example .env
+# .env 파일에 FINANCIAL_DATASETS_API_KEY와 기타 LLM API 키 작성
 ```
 
-Open and edit the `.env` file to add your API keys:
-```bash
-# For running LLMs hosted by openai (gpt-4o, gpt-4o-mini, etc.)
-OPENAI_API_KEY=your-openai-api-key
-
-# For getting financial data to power the hedge fund
-FINANCIAL_DATASETS_API_KEY=your-financial-datasets-api-key
-```
-
-**Important**: You must set at least one LLM API key (e.g. `OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`, or `DEEPSEEK_API_KEY`) for the hedge fund to work. 
-
-## How to Run
-
-### ⌨️ Command Line Interface
-
-You can run the AI Hedge Fund directly via terminal. This approach offers more granular control and is useful for automation, scripting, and integration purposes.
-
-<img width="992" alt="Screenshot 2025-01-06 at 5 50 17 PM" src="https://github.com/user-attachments/assets/e8ca04bf-9989-4a7d-a8b4-34e04666663b" />
-
-#### Quick Start
-
-1. Install Poetry (if not already installed):
-```bash
-curl -sSL https://install.python-poetry.org | python3 -
-```
-
-2. Install dependencies:
+**2. 백엔드 및 의존성 셋업**
 ```bash
 poetry install
+# 필요한 경우 Poetry 가상 환경을 활성화합니다.
 ```
 
-#### Run the AI Hedge Fund
+**3. 프론트엔드 및 실행**
 ```bash
-poetry run python src/main.py --ticker AAPL,MSFT,NVDA
+cd app/frontend
+npm install
+npm run dev # 로컬 환경 구동 시
 ```
 
-You can also specify a `--ollama` flag to run the AI hedge fund using local LLMs.
+서버 구동 후, http://localhost:5173 에 접속하여 앱을 이용할 수 있습니다.
 
-```bash
-poetry run python src/main.py --ticker AAPL,MSFT,NVDA --ollama
-```
+![Hedge Fund Interface Screenshot](./app/frontend/public/favicon.svg) *(UI 참조용)*
 
-You can optionally specify the start and end dates to make decisions over a specific time period.
-
-```bash
-poetry run python src/main.py --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01
-```
-
-#### Run the Backtester
-```bash
-poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA
-```
-
-**Example Output:**
-<img width="941" alt="Screenshot 2025-01-06 at 5 47 52 PM" src="https://github.com/user-attachments/assets/00e794ea-8628-44e6-9a84-8f8a31ad3b47" />
-
-
-Note: The `--ollama`, `--start-date`, and `--end-date` flags work for the backtester, as well!
-
-### 🖥️ Web Application
-
-The new way to run the AI Hedge Fund is through our web application that provides a user-friendly interface. This is recommended for users who prefer visual interfaces over command line tools.
-
-Please see detailed instructions on how to install and run the web application [here](https://github.com/virattt/ai-hedge-fund/tree/main/app).
-
-<img width="1721" alt="Screenshot 2025-06-28 at 6 41 03 PM" src="https://github.com/user-attachments/assets/b95ab696-c9f4-416c-9ad1-51feb1f5374b" />
-
-
-## How to Contribute
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-**Important**: Please keep your pull requests small and focused.  This will make it easier to review and merge.
-
-## Feature Requests
-
-If you have a feature request, please open an [issue](https://github.com/virattt/ai-hedge-fund/issues) and make sure it is tagged with `enhancement`.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+## 상세 아키텍처 및 시스템 컨텍스트
+본 저장소의 핵심 에이전트 구성과 LLM을 위한 코드 구조 가이드는 각각 아래의 문서를 참고해 주십시오.
+- [agents.md](./agents.md): 시스템에 포함된 투자 전문가 에이전트 종류와 역할에 관한 문서
+- [claude.md](./claude.md): AI 코드 파트너를 위한 프론트엔드/백엔드 브릿지 및 UI 주의사항 설명서

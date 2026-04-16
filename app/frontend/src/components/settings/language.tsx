@@ -1,6 +1,4 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useLanguage } from '@/contexts/language-context';
 import { t } from '@/lib/language-preferences';
 
@@ -19,20 +17,30 @@ export function LanguageSettings() {
           <CardTitle className="text-lg">{t('language', language)}</CardTitle>
         </CardHeader>
         <CardContent>
-          <RadioGroup value={language} onValueChange={(value) => setLanguage(value as 'ko' | 'en')}>
-            <div className="flex items-center space-x-3 mb-4">
-              <RadioGroupItem value="ko" id="korean" />
-              <Label htmlFor="korean" className="font-normal cursor-pointer flex-1">
-                {t('korean', language)}
-              </Label>
-            </div>
-            <div className="flex items-center space-x-3">
-              <RadioGroupItem value="en" id="english" />
-              <Label htmlFor="english" className="font-normal cursor-pointer flex-1">
-                {t('english', language)}
-              </Label>
-            </div>
-          </RadioGroup>
+          <div className="space-y-3">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="radio"
+                name="language"
+                value="ko"
+                checked={language === 'ko'}
+                onChange={() => setLanguage('ko')}
+                className="w-4 h-4 accent-blue-500"
+              />
+              <span className="text-sm">{t('korean', language)}</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="radio"
+                name="language"
+                value="en"
+                checked={language === 'en'}
+                onChange={() => setLanguage('en')}
+                className="w-4 h-4 accent-blue-500"
+              />
+              <span className="text-sm">{t('english', language)}</span>
+            </label>
+          </div>
         </CardContent>
       </Card>
 

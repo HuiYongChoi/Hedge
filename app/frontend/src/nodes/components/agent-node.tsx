@@ -99,7 +99,13 @@ export function AgentNode({
               "text-foreground text-xs rounded p-2 border border-status",
               isInProgress ? "gradient-animation" : getStatusColor(status)
             )}>
-              <span className="capitalize">{status.toLowerCase().replace(/_/g, ' ')}</span>
+              <span className="capitalize">
+                {status === 'IDLE' ? t('statusIdle', language) :
+                 status === 'IN_PROGRESS' ? t('statusRunning', language) :
+                 status === 'COMPLETE' ? t('statusComplete', language) :
+                 status === 'ERROR' ? t('statusError', language) :
+                 (status as string).toLowerCase().replace(/_/g, ' ')}
+              </span>
             </div>
 
             {nodeData.message && (
@@ -129,7 +135,7 @@ export function AgentNode({
                         onClick={handleUseGlobalModel}
                         className="text-subtitle text-primary hover:text-foreground transition-colors text-left"
                       >
-                        Reset to Auto
+                        {language === 'ko' ? '자동 설정으로 초기화' : 'Reset to Auto'}
                       </button>
                     )}
                   </div>

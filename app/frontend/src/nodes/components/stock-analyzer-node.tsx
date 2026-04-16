@@ -1,6 +1,7 @@
 import { useReactFlow, type NodeProps } from '@xyflow/react';
 import { ChartLine, ChevronDown, Play, Square } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { TickerInput } from '@/components/ui/ticker-input';
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
@@ -103,10 +104,6 @@ export function StockAnalyzerNode({
     }
   }, [flowId, recoverFlowState]);
   
-  const handleTickersChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setTickers(e.target.value);
-  };
-
   const handleInitialCashChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     // Remove non-numeric characters except decimal point
     const numericValue = e.target.value.replace(/[^0-9.]/g, '');
@@ -265,10 +262,10 @@ export function StockAnalyzerNode({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <TickerInput
                   placeholder={t('enterTickers', language)}
                   value={tickers}
-                  onChange={handleTickersChange}
+                  onChange={setTickers}
                 />
               </div>
               <div className="flex flex-col gap-2">

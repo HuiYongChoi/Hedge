@@ -122,7 +122,11 @@ export function PortfolioManagerNode({
                   )}
                 >
                   <span className="capitalize">
-                    {status.toLowerCase().replace(/_/g, ' ')}
+                    {status === 'IDLE' ? t('statusIdle', language) :
+                     status === 'IN_PROGRESS' ? t('statusRunning', language) :
+                     status === 'COMPLETE' ? t('statusComplete', language) :
+                     status === 'ERROR' ? t('statusError', language) :
+                     (status as string).toLowerCase().replace(/_/g, ' ')}
                   </span>
                 </div>
               </div>
