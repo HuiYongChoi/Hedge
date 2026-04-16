@@ -1,9 +1,12 @@
 import { cn } from '@/lib/utils';
 import { CubeIcon } from '@radix-ui/react-icons';
-import { Key, Palette } from 'lucide-react';
+import { Key, Palette, Globe } from 'lucide-react';
 import { useState } from 'react';
 import { ApiKeysSettings, Models } from './';
 import { ThemeSettings } from './appearance';
+import { LanguageSettings } from './language';
+import { useLanguage } from '@/contexts/language-context';
+import { t } from '@/lib/language-preferences';
 
 interface SettingsProps {
   className?: string;
@@ -18,25 +21,32 @@ interface SettingsNavItem {
 
 export function Settings({ className }: SettingsProps) {
   const [selectedSection, setSelectedSection] = useState('api');
+  const { language } = useLanguage();
 
   const navigationItems: SettingsNavItem[] = [
     {
       id: 'api',
-      label: 'API Keys',
+      label: t('apiKeys', language),
       icon: Key,
-      description: 'API endpoints and authentication',
+      description: t('apiKeysDescription', language),
     },
     {
       id: 'models',
-      label: 'Models',
+      label: t('models', language),
       icon: CubeIcon,
-      description: 'Local and cloud AI models',
+      description: t('modelsDescription', language),
     },
     {
       id: 'theme',
-      label: 'Theme',
+      label: t('theme', language),
       icon: Palette,
-      description: 'Theme and display preferences',
+      description: t('themeDescription', language),
+    },
+    {
+      id: 'language',
+      label: t('language', language),
+      icon: Globe,
+      description: t('languageDescription', language),
     },
   ];
 
@@ -46,10 +56,12 @@ export function Settings({ className }: SettingsProps) {
         return <Models />;
       case 'theme':
         return <ThemeSettings />;
+      case 'language':
+        return <LanguageSettings />;
       case 'api':
         return <ApiKeysSettings />;
       default:
-        return <Models />;
+        return <ApiKeysSettings />;
     }
   };
 
@@ -59,7 +71,7 @@ export function Settings({ className }: SettingsProps) {
         {/* Left Navigation Pane */}
         <div className="w-60 bg-panel flex-shrink-0">
           <div className="p-4 border-b">
-            <h1 className="text-lg font-semibold text-primary">Settings</h1>
+            <h1 className="text-lg font-semibold text-primary">{t('settings', language)}</h1>
           </div>
           <nav className="p-2">
             {navigationItems.map((item) => {
