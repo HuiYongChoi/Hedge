@@ -8,7 +8,7 @@ import { ModelSelector } from '@/components/ui/llm-selector';
 import { useFlowContext } from '@/contexts/flow-context';
 import { useLanguage } from '@/contexts/language-context';
 import { useNodeContext } from '@/contexts/node-context';
-import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
+import { DEFAULT_MODEL_DISPLAY_NAME, getDefaultModel, getModels, LanguageModel, shouldUseDefaultModel } from '@/data/models';
 import { useNodeState } from '@/hooks/use-node-state';
 import { useOutputNodeConnection } from '@/hooks/use-output-node-connection';
 import { t } from '@/lib/language-preferences';
@@ -63,7 +63,7 @@ export function PortfolioManagerNode({
         setAvailableModels(models);
         
         // Set default model if no model is currently selected
-        if (!selectedModel && defaultModel) {
+        if (shouldUseDefaultModel(selectedModel) && defaultModel) {
           setSelectedModel(defaultModel);
         }
       } catch (error) {
@@ -148,7 +148,7 @@ export function PortfolioManagerNode({
                   models={availableModels}
                   value={selectedModel?.model_name || ''}
                   onChange={handleModelChange}
-                  placeholder="Auto"
+                  placeholder={DEFAULT_MODEL_DISPLAY_NAME}
                 />
               </div>
             </div>

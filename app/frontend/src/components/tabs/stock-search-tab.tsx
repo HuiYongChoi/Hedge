@@ -25,6 +25,7 @@ interface AgentResult {
   ticker?: string;
   message?: string;
   analysis?: any;
+  report?: Record<string, any>;
   timestamp?: string;
 }
 
@@ -32,6 +33,63 @@ interface CompleteResult {
   decisions?: Record<string, any>;
   analyst_signals?: Record<string, any>;
   reasoning?: string;
+}
+
+function extractBaseAgentKey(agentId: string) {
+  const withoutAgentSuffix = agentId.replace(/_agent/g, '');
+  const parts = withoutAgentSuffix.split('_');
+  const suffix = parts[parts.length - 1];
+
+  if (/^[a-z0-9]{6}$/.test(suffix)) {
+    return parts.slice(0, -1).join('_');
+  }
+
+  return withoutAgentSuffix;
+}
+
+function getAgentDisplayName(agent: Agent, language: 'ko' | 'en') {
+  return language === 'ko' && agent.display_name_ko ? agent.display_name_ko : agent.display_name;
+}
+
+function getAgentDescription(agent: Agent, language: 'ko' | 'en') {
+  return language === 'ko' && agent.investing_style_ko ? agent.investing_style_ko : agent.investing_style;
+}
+
+function normalizeConfidence(value: unknown) {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric)) return null;
+
+  const percentage = numeric <= 1 ? numeric * 100 : numeric;
+  return Math.max(0, Math.min(100, Math.round(percentage)));
+}
+
+function getSignalLabel(signal: unknown, language: 'ko' | 'en') {
+  const raw = String(signal || 'neutral').toLowerCase();
+
+  if (raw === 'bullish' || raw === 'buy' || raw === 'long') {
+    return language === 'ko' ? '매수/강세' : 'Buy / Bullish';
+  }
+  if (raw === 'bearish' || raw === 'sell' || raw === 'short') {
+    return language === 'ko' ? '매도/약세' : 'Sell / Bearish';
+  }
+  return language === 'ko' ? '보유/중립' : 'Hold / Neutral';
+}
+
+function getSignalClass(signal: unknown) {
+  const raw = String(signal || 'neutral').toLowerCase();
+
+  if (raw === 'bullish' || raw === 'buy' || raw === 'long') {
+    return 'border-green-500/30 bg-green-500/10 text-green-500';
+  }
+  if (raw === 'bearish' || raw === 'sell' || raw === 'short') {
+    return 'border-red-500/30 bg-red-500/10 text-red-500';
+  }
+  return 'border-yellow-500/30 bg-yellow-500/10 text-yellow-500';
+}
+
+function formatConfidence(value: unknown) {
+  const confidence = normalizeConfidence(value);
+  return confidence === null ? null : `${confidence}%`;
 }
 
 export function StockSearchTab() {
@@ -114,7 +172,7 @@ export function StockSearchTab() {
     agents.filter(a => selectedAgents.has(a.key)).forEach(agent => {
       initialResults.set(agent.key, {
         agentKey: agent.key,
-        agentName: agent.display_name,
+        agentName: getAgentDisplayName(agent, language),
         status: 'waiting',
       });
     });
@@ -124,7 +182,6 @@ export function StockSearchTab() {
     const tickerList = tickers.split(',').map(s => s.trim()).filter(Boolean);
     const suffix = Math.random().toString(36).slice(2, 8);
     const pmId = `portfolio_manager_${suffix}`;
-    const startNodeId = `start_${suffix}`;
 
     const agentNodes = agents
       .filter(a => selectedAgents.has(a.key))
@@ -145,18 +202,13 @@ export function StockSearchTab() {
       },
     ];
 
-    const graphEdges = [
-      ...agentNodes.map((n, i) => ({
-        id: `e-start-agent-${i}`,
-        source: startNodeId,
-        target: n.id,
-      })),
-      ...agentNodes.map((n, i) => ({
-        id: `e-agent-pm-${i}`,
-        source: n.id,
-        target: pmId,
-      })),
-    ];
+    // Backend auto-connects start_node to agents with no incoming edges.
+    // Only send agent → pm edges.
+    const graphEdges = agentNodes.map((n, i) => ({
+      id: `e-agent-pm-${i}`,
+      source: n.id,
+      target: pmId,
+    }));
 
     const agentModels = selectedModel
       ? [...agentNodes.map(n => ({
@@ -213,8 +265,8 @@ export function StockSearchTab() {
             const eventData = JSON.parse(dataMatch[1]);
 
             if (eventType === 'progress' && eventData.agent) {
-              // Map backend agent key (e.g. "warren_buffett_agent" -> "warren_buffett")
-              const baseKey = eventData.agent.replace('_agent', '');
+              // Map backend unique node ids (e.g. "warren_buffett_a1b2c3") to agent keys.
+              const baseKey = extractBaseAgentKey(eventData.agent);
               setAgentResults(prev => {
                 const next = new Map(prev);
                 const existing = next.get(baseKey);
@@ -231,9 +283,27 @@ export function StockSearchTab() {
                 return next;
               });
             } else if (eventType === 'complete') {
-              setCompleteResult(eventData.data || eventData);
+              const completeData = eventData.data || eventData;
+              setCompleteResult(completeData);
               setAgentResults(prev => {
                 const next = new Map(prev);
+                const analystSignals = completeData.analyst_signals || {};
+
+                Object.entries(analystSignals).forEach(([agentId, report]) => {
+                  const baseKey = extractBaseAgentKey(agentId);
+                  if (!selectedAgents.has(baseKey)) return;
+
+                  const existing = next.get(baseKey);
+                  if (existing) {
+                    next.set(baseKey, {
+                      ...existing,
+                      status: 'complete',
+                      analysis: report,
+                      report: report as Record<string, any>,
+                    });
+                  }
+                });
+
                 next.forEach((val, key) => {
                   next.set(key, { ...val, status: 'complete' });
                 });
@@ -377,8 +447,11 @@ export function StockSearchTab() {
                 />
                 <div className="flex-1 min-w-0">
                   <label htmlFor={`agent-${agent.key}`} className="text-sm cursor-pointer leading-tight">
-                    {agent.display_name}
+                    {getAgentDisplayName(agent, language)}
                   </label>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    {getAgentDescription(agent, language)}
+                  </p>
                 </div>
               </div>
             ))}
@@ -451,6 +524,7 @@ export function StockSearchTab() {
                 {isExpanded && result.analysis && (
                   <CardContent className="px-4 pb-4 pt-0">
                     <div className="border-t pt-3 space-y-2">
+                      <AgentReportSummary analysis={result.analysis} language={language} />
                       <AnalysisDisplay analysis={result.analysis} agentKey={result.agentKey} language={language} />
                     </div>
                   </CardContent>
@@ -483,9 +557,9 @@ export function StockSearchTab() {
                            t('holdAction', language).toUpperCase()}
                         </span>
                         {decision.quantity && <span className="text-muted-foreground">{decision.quantity} {t('shares', language)}</span>}
-                        {decision.confidence && (
+                        {formatConfidence(decision.confidence) && (
                           <span className="text-muted-foreground text-xs">
-                            {Math.round(decision.confidence * 100)}% {language === 'ko' ? '신뢰도' : 'confidence'}
+                            {formatConfidence(decision.confidence)} {language === 'ko' ? '신뢰도' : 'confidence'}
                           </span>
                         )}
                       </div>
@@ -530,6 +604,58 @@ function AnalysisDisplay({ analysis, language }: { analysis: any; agentKey?: str
   }
 
   return <pre className="text-xs overflow-auto">{JSON.stringify(analysis, null, 2)}</pre>;
+}
+
+function AgentReportSummary({ analysis, language }: { analysis: any; language: 'ko' | 'en' }) {
+  if (!analysis || typeof analysis !== 'object' || Array.isArray(analysis)) {
+    return null;
+  }
+
+  const entries = Object.entries(analysis)
+    .filter(([, value]) => value && typeof value === 'object')
+    .map(([ticker, value]) => {
+      const report = value as Record<string, any>;
+      return {
+        ticker,
+        signal: report.signal,
+        confidence: formatConfidence(report.confidence),
+        reasoning: report.reasoning || report.details || report.explanation,
+      };
+    });
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs font-medium text-muted-foreground">
+        {language === 'ko' ? '에이전트 점수 요약' : 'Agent Score Summary'}
+      </div>
+      <div className="grid gap-2">
+        {entries.map((entry) => (
+          <div key={entry.ticker} className="rounded-md border border-border bg-background/40 p-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-xs font-semibold text-primary">{entry.ticker}</span>
+              <Badge variant="outline" className={getSignalClass(entry.signal)}>
+                {getSignalLabel(entry.signal, language)}
+              </Badge>
+              {entry.confidence && (
+                <Badge variant="outline" className="border-blue-500/30 bg-blue-500/10 text-blue-500">
+                  {language === 'ko' ? '점수' : 'Score'} {entry.confidence}
+                </Badge>
+              )}
+            </div>
+            {entry.reasoning && (
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                {String(entry.reasoning)}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function renderValue(value: any, language: any): React.ReactNode {

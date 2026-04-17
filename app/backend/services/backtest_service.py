@@ -29,7 +29,7 @@ class BacktestService:
         start_date: str,
         end_date: str,
         initial_capital: float,
-        model_name: str = "gpt-4.1",
+        model_name: str = "gpt-5.4-nano",
         model_provider: str = "OpenAI",
         request: dict = {},
     ):
@@ -535,5 +535,5 @@ class BacktestService:
 
         # Calculate additional metrics
         performance_df["Daily Return"] = performance_df["Portfolio Value"].pct_change().fillna(0)
-        
-        return performance_df 
+
+        return performance_df

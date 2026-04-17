@@ -35,8 +35,8 @@ def call_llm(
         model_name, model_provider = get_agent_model_config(state, agent_name)
     else:
         # Use system defaults when no state or agent_name is provided
-        model_name = "gpt-4.1"
-        model_provider = "OPENAI"
+        model_name = "gpt-5.4-nano"
+        model_provider = "OpenAI"
 
     # Extract API keys from state if available
     api_keys = None
@@ -45,15 +45,23 @@ def call_llm(
         if request and hasattr(request, 'api_keys'):
             api_keys = request.api_keys
 
-    model_info = get_model_info(model_name, model_provider)
-    llm = get_model(model_name, model_provider, api_keys)
+    try:
+        model_info = get_model_info(model_name, model_provider)
+        llm = get_model(model_name, model_provider, api_keys)
 
-    # For non-JSON support models, we can use structured output
-    if not (model_info and not model_info.has_json_mode()):
-        llm = llm.with_structured_output(
-            pydantic_model,
-            method="json_mode",
-        )
+        # For non-JSON support models, we can use structured output
+        if not (model_info and not model_info.has_json_mode()):
+            llm = llm.with_structured_output(
+                pydantic_model,
+                method="json_mode",
+            )
+    except Exception as e:
+        if agent_name:
+            progress.update_status(agent_name, None, "Error - using default response")
+        print(f"Error initializing LLM {model_provider}/{model_name}: {e}")
+        if default_factory:
+            return default_factory()
+        return create_default_response(pydantic_model)
 
     # Call the LLM with retries
     for attempt in range(max_retries):
@@ -109,6 +117,10 @@ def create_default_response(model_class: type[BaseModel]) -> BaseModel:
 def extract_json_from_response(content: str) -> dict | None:
     """Extracts JSON from markdown-formatted response."""
     try:
+        stripped = content.strip()
+        if stripped.startswith("{") and stripped.endswith("}"):
+            return json.loads(stripped)
+
         json_start = content.find("```json")
         if json_start != -1:
             json_text = content[json_start + 7 :]  # Skip past ```json
@@ -137,8 +149,8 @@ def get_agent_model_config(state, agent_name):
             return model_name, model_provider.value if hasattr(model_provider, 'value') else str(model_provider)
     
     # Fall back to global configuration (system defaults)
-    model_name = state.get("metadata", {}).get("model_name") or "gpt-4.1"
-    model_provider = state.get("metadata", {}).get("model_provider") or "OPENAI"
+    model_name = state.get("metadata", {}).get("model_name") or "gpt-5.4-nano"
+    model_provider = state.get("metadata", {}).get("model_provider") or "OpenAI"
     
     # Convert enum to string if necessary
     if hasattr(model_provider, 'value'):

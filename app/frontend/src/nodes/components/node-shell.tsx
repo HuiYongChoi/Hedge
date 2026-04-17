@@ -1,7 +1,7 @@
 import { Card, CardHeader } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Handle, Position, useReactFlow } from '@xyflow/react';
-import { X } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { ReactNode } from 'react';
 
 export interface NodeShellProps {
@@ -38,13 +38,16 @@ export function NodeShell({
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!window.confirm('Delete this node?')) {
+      return;
+    }
     deleteElements({ nodes: [{ id }] });
   };
 
   return (
     <div
       className={cn(
-        "react-flow__node-default relative select-none cursor-pointer p-0 rounded-lg border border-node transition-all duration-200",
+        "react-flow__node-default group relative select-none cursor-pointer p-0 rounded-lg border border-node transition-all duration-200",
         width,
         !selected && "hover:border-node-hover hover:shadow-lg",
         selected && "border-node-selected shadow-xl",
@@ -76,15 +79,17 @@ export function NodeShell({
             <div className="text-title font-semibold text-primary flex-1">
               {name || "Custom Component"}
             </div>
-            {selected && (
-              <button
-                onClick={handleDelete}
-                className="absolute top-2 right-2 h-5 w-5 flex items-center justify-center rounded-sm text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors"
-                title="Delete node (Del)"
-              >
-                <X size={12} />
-              </button>
-            )}
+            <button
+              onClick={handleDelete}
+              className={cn(
+                "absolute top-2 right-2 h-6 w-6 flex items-center justify-center rounded-sm text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-all",
+                selected ? "opacity-100" : "opacity-70 group-hover:opacity-100"
+              )}
+              title="Delete node"
+              aria-label="Delete node"
+            >
+              <Trash2 size={13} />
+            </button>
           </CardHeader>
           {description && (
             <div className="px-3 py-2 text-subtitle text-primary text-left">
@@ -104,4 +109,4 @@ export function NodeShell({
       )}
     </div>
   );
-} 
+}

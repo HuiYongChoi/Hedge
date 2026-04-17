@@ -3,8 +3,17 @@ import { api } from '@/services/api';
 export interface LanguageModel {
   display_name: string;
   model_name: string;
-  provider: "Anthropic" | "DeepSeek" | "Google" | "Groq" | "OpenAI";
+  provider: "Anthropic" | "DeepSeek" | "Google" | "Groq" | "OpenAI" | "OpenRouter" | "xAI" | "GigaChat" | "Azure OpenAI";
 }
+
+export const DEFAULT_MODEL_NAME = "gpt-5.4-nano";
+export const DEFAULT_MODEL_DISPLAY_NAME = "GPT-5.4 Nano";
+
+const DEPRECATED_DEFAULT_MODEL_NAMES = new Set([
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+]);
 
 // Cache for models to avoid repeated API calls
 let languageModels: LanguageModel[] | null = null;
@@ -28,16 +37,16 @@ export const getModels = async (): Promise<LanguageModel[]> => {
 };
 
 /**
- * Get the default model (gemini-2.5-flash) from the models list
+ * Get the default model (gpt-5.4-nano) from the models list
  */
 export const getDefaultModel = async (): Promise<LanguageModel | null> => {
   try {
     const models = await getModels();
     return (
-      models.find(model => model.model_name === "gemini-2.5-flash") ||
-      models.find(model => model.model_name === "gemini-2.0-flash") ||
-      models.find(model => model.model_name === "gemini-1.5-flash") ||
-      models.find(model => model.provider === "Google") ||
+      models.find(model => model.model_name === DEFAULT_MODEL_NAME) ||
+      models.find(model => model.model_name === "gpt-5-nano") ||
+      models.find(model => model.model_name === "gpt-4.1-nano") ||
+      models.find(model => model.provider === "OpenAI") ||
       models[0] ||
       null
     );
@@ -45,4 +54,8 @@ export const getDefaultModel = async (): Promise<LanguageModel | null> => {
     console.error('Failed to get default model:', error);
     return null;
   }
+};
+
+export const shouldUseDefaultModel = (model: LanguageModel | null): boolean => {
+  return !model || DEPRECATED_DEFAULT_MODEL_NAMES.has(model.model_name);
 };

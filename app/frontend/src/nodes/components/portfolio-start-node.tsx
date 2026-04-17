@@ -121,7 +121,7 @@ export function PortfolioStartNode({
 
   const removePosition = (index: number) => {
     const newPositions = positions.filter((_, i) => i !== index);
-    setPositions(newPositions);
+    setPositions(newPositions.length > 0 ? newPositions : [{ ticker: '', quantity: '', tradePrice: '' }]);
   };
 
   const handleInitialCashChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -338,16 +338,16 @@ export function PortfolioStartNode({
                           min="0"
                         />
                       </div>
-                      {positions.length > 1 && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => removePosition(index)}
-                          className="flex-shrink-0 h-8 w-4 text-muted-foreground hover:text-destructive"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      )}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => removePosition(index)}
+                        className="flex-shrink-0 h-8 w-8 text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
+                        title={language === 'ko' ? '포지션 삭제' : 'Delete position'}
+                        aria-label={language === 'ko' ? '포지션 삭제' : 'Delete position'}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
                     </div>
                     );
                   })}

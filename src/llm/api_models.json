@@ -5,6 +5,16 @@
     "provider": "xAI"
   },
   {
+    "display_name": "GPT-5.4 Nano",
+    "model_name": "gpt-5.4-nano",
+    "provider": "OpenAI"
+  },
+  {
+    "display_name": "GPT-5.4 Mini",
+    "model_name": "gpt-5.4-mini",
+    "provider": "OpenAI"
+  },
+  {
     "display_name": "GPT-5.4",
     "model_name": "gpt-5.4",
     "provider": "OpenAI"
@@ -40,8 +50,8 @@
     "provider": "DeepSeek"
   },
   {
-    "display_name": "Gemini 3 Pro",
-    "model_name": "gemini-3-pro-preview",
+    "display_name": "Gemini 2.5 Flash",
+    "model_name": "gemini-2.5-flash",
     "provider": "Google"
   },
   {

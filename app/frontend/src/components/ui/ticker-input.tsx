@@ -1,4 +1,5 @@
 import { Input } from '@/components/ui/input';
+import { X } from 'lucide-react';
 import { useRef, useState } from 'react';
 
 export const POPULAR_TICKERS = [
@@ -194,11 +195,28 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
         }}
         onBlur={handleBlur}
         placeholder={placeholder}
-        className={className}
+        className={`${className || ''} ${value ? 'pr-8' : ''}`}
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}
       />
+      {value && (
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            onChange('');
+            setOpen(false);
+            setActiveIdx(-1);
+            inputRef.current?.focus();
+          }}
+          className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
+          title="Clear tickers"
+          aria-label="Clear tickers"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
       {showDropdown && (
         <div
           className="absolute z-50 top-full left-0 mt-1 w-64 rounded-md border border-border bg-popover shadow-md overflow-hidden"

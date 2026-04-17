@@ -9,6 +9,7 @@ import {
   FileText,
   Layout,
   MoreHorizontal,
+  Trash2,
   Zap
 } from 'lucide-react';
 import { useState } from 'react';
@@ -168,12 +169,25 @@ export default function FlowItem({ flow, onLoadFlow, onDeleteFlow, onRefresh, is
           )}
         </div>
         
-        <div className="flex items-center">
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDeleteFlow();
+            }}
+            className="h-6 w-6 text-muted-foreground hover:bg-red-500/10 hover:text-red-500 opacity-70 group-hover:opacity-100 transition-opacity rounded"
+            title="Delete flow"
+            aria-label="Delete flow"
+          >
+            <Trash2 size={14} />
+          </Button>
           <Button
             variant="ghost"
             size="icon"
             onClick={handleMenuClick}
-            className="h-6 w-6 text-muted-foreground hover-item opacity-0 group-hover:opacity-100 transition-opacity rounded"
+            className="h-6 w-6 text-muted-foreground hover-item opacity-70 group-hover:opacity-100 transition-opacity rounded"
             title="More options"
           >
             <MoreHorizontal size={14} />
@@ -198,4 +212,4 @@ export default function FlowItem({ flow, onLoadFlow, onDeleteFlow, onRefresh, is
       />
     </>
   );
-} 
+}

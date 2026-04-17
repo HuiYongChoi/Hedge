@@ -8,7 +8,8 @@ import { ModelSelector } from '@/components/ui/llm-selector';
 import { useFlowContext } from '@/contexts/flow-context';
 import { useLanguage } from '@/contexts/language-context';
 import { useNodeContext } from '@/contexts/node-context';
-import { getModels, LanguageModel } from '@/data/models';
+import { getAgents } from '@/data/agents';
+import { DEFAULT_MODEL_DISPLAY_NAME, getDefaultModel, getModels, LanguageModel, shouldUseDefaultModel } from '@/data/models';
 import { useNodeState } from '@/hooks/use-node-state';
 import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
@@ -42,21 +43,34 @@ export function AgentNode({
   // Use persistent state hooks
   const [availableModels, setAvailableModels] = useNodeState<LanguageModel[]>(id, 'availableModels', []);
   const [selectedModel, setSelectedModel] = useNodeState<LanguageModel | null>(id, 'selectedModel', null);
+  const [localizedName, setLocalizedName] = useState<string | null>(null);
+  const [localizedDesc, setLocalizedDesc] = useState<string | null>(null);
 
-  // Load models on mount
+  // Load models and localized agent metadata on mount
   useEffect(() => {
-    const loadModels = async () => {
+    const loadData = async () => {
       try {
-        const models = await getModels();
+        const [models, defaultModel, agentList] = await Promise.all([getModels(), getDefaultModel(), getAgents()]);
         setAvailableModels(models);
+        if (shouldUseDefaultModel(selectedModel) && defaultModel) {
+          setSelectedModel(defaultModel);
+        }
+        // Extract base key from node id (e.g. "warren_buffett_abc123" → "warren_buffett")
+        const parts = id.split('_');
+        const suffix = parts[parts.length - 1];
+        const isHexSuffix = /^[a-z0-9]{6}$/.test(suffix);
+        const baseKey = isHexSuffix ? parts.slice(0, -1).join('_') : id;
+        const agent = agentList.find(a => a.key === baseKey);
+        if (agent) {
+          setLocalizedName(agent.display_name_ko || null);
+          setLocalizedDesc(agent.investing_style_ko || null);
+        }
       } catch (error) {
         console.error('Failed to load models:', error);
-        // Keep empty array as fallback
       }
     };
-    
-    loadModels();
-  }, [setAvailableModels]);
+    loadData();
+  }, [id, selectedModel, setAvailableModels, setSelectedModel]);
 
   // Update the node context when the model changes
   useEffect(() => {
@@ -77,6 +91,9 @@ export function AgentNode({
 
   const { language } = useLanguage();
 
+  const displayName = language === 'ko' && localizedName ? localizedName : (data.name || "Agent");
+  const displayDesc = language === 'ko' && localizedDesc ? localizedDesc : data.description;
+
   return (
     <NodeShell
       id={id}
@@ -84,8 +101,8 @@ export function AgentNode({
       isConnectable={isConnectable}
       icon={<Bot className="h-5 w-5" />}
       iconColor={getStatusColor(status)}
-      name={data.name || "Agent"}
-      description={data.description}
+      name={displayName}
+      description={displayDesc}
       status={status}
     >
       <CardContent className="p-0">
@@ -128,14 +145,14 @@ export function AgentNode({
                       models={availableModels}
                       value={selectedModel?.model_name || ""}
                       onChange={handleModelChange}
-                      placeholder="Auto"
+                      placeholder={DEFAULT_MODEL_DISPLAY_NAME}
                     />
                     {selectedModel && (
                       <button
                         onClick={handleUseGlobalModel}
                         className="text-subtitle text-primary hover:text-foreground transition-colors text-left"
                       >
-                        {language === 'ko' ? '자동 설정으로 초기화' : 'Reset to Auto'}
+                        {language === 'ko' ? '기본 GPT-5.4 Nano로 초기화' : 'Reset to GPT-5.4 Nano'}
                       </button>
                     )}
                   </div>

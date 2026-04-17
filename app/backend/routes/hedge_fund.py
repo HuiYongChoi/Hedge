@@ -121,6 +121,14 @@ async def run(request_data: HedgeFundRequest, request: Request, db: Session = De
                 except asyncio.CancelledError:
                     print("Task was cancelled")
                     return
+                except Exception as e:
+                    err_msg = str(e)
+                    # 429 quota errors → graceful error event (not a crash)
+                    if "429" in err_msg or "quota" in err_msg.lower() or "rate" in err_msg.lower():
+                        yield ErrorEvent(message=f"API quota exceeded: {err_msg}. Try again later or switch to a different model.").to_sse()
+                    else:
+                        yield ErrorEvent(message=f"Analysis failed: {err_msg}").to_sse()
+                    return
 
                 if not result or not result.get("messages"):
                     yield ErrorEvent(message="Failed to generate hedge fund decisions").to_sse()
