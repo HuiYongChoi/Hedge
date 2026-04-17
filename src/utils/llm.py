@@ -15,6 +15,19 @@ DATA_GAP_HANDLING_REQUIREMENT = (
     "'데이터가 부족', or '평가할 수 없다'. State the unavailable metric as N/A, use available proxy metrics and qualitative context, "
     "and explain the resulting uncertainty. Never invent numbers."
 )
+CROSS_CHECK_GUIDE_REQUIREMENT = """[추가 지시사항: 원문 대조 가이드 작성]
+당신은 자신의 투자 철학에 따라 기업을 분석한 후, 최종 의사결정권자(사용자)가 원본 사업보고서(SEC 10-K 또는 DART)를 직접 읽으며 당신의 분석을 검증할 수 있도록 돕는 '크로스체크 가이드'를 함께 제출해야 합니다.
+
+당신의 페르소나에 맞춰, 아래 폼을 엄격히 준수하여 가독성 좋은 마크다운 리스트 형식으로 작성하십시오.
+
+### 🔍 [당신의 이름]의 원문 대조 체크리스트
+1. **핵심 타겟 데이터:** 이 분석을 위해 당신이 전처리 데이터에서 가장 중요하게 들여다본 정량적 수치 2~3개 (예: 잉여현금흐름 X원, 영업이익률 Y%).
+2. **원문 추적 섹션:** 사용자가 사업보고서를 열었을 때, 당신이 제기한 긍정/부정적 논거의 진짜 증거를 찾기 위해 **정확히 어느 섹션**(예: MD&A, 재무제표 주석 5번, 핵심 위험 요소 등)을 읽어야 하는지 구체적인 위치 지목.
+3. **경영진 멘트 검증:** 원문에서 사용자가 두 눈으로 직접 확인해야 할 경영진의 워딩이나 뉘앙스(예: "경영진이 R&D 축소를 언급하는지 확인하십시오", "자사주 매입 계획의 연기 사유를 읽어보십시오").
+"""
+SCHEMA_COMPATIBILITY_REQUIREMENT = (
+    "스키마 호환 지시사항: 응답 JSON 스키마에 별도의 cross_check_guide 필드가 없다면, 투자 의견 및 추론을 작성한 뒤 reasoning 문자열의 마지막에 원문 대조 체크리스트 마크다운을 이어서 작성하십시오. 이 지시사항은 reasoning 길이 제한보다 우선합니다."
+)
 KOREAN_DEFAULT_REASONING = "분석 중 오류가 발생하여 중립 의견으로 기본 처리했습니다."
 KOREAN_NO_TRADE_REASONING = "현재 실행 가능한 거래가 없어 관망합니다."
 KOREAN_DEFAULT_HOLD_REASONING = "모델 응답 실패로 관망 결정을 적용했습니다."
@@ -56,11 +69,15 @@ def sanitize_data_gap_language(text: str) -> str:
 
 
 def _append_korean_requirement_to_text(text: str) -> str:
-    """Append prompt-wide data-gap and Korean-only instructions once."""
+    """Append prompt-wide data-gap, cross-check guide, and Korean-only instructions once."""
     text = sanitize_data_gap_language(text).rstrip()
     requirements = []
     if DATA_GAP_HANDLING_REQUIREMENT not in text:
         requirements.append(DATA_GAP_HANDLING_REQUIREMENT)
+    if CROSS_CHECK_GUIDE_REQUIREMENT not in text:
+        requirements.append(CROSS_CHECK_GUIDE_REQUIREMENT)
+    if SCHEMA_COMPATIBILITY_REQUIREMENT not in text:
+        requirements.append(SCHEMA_COMPATIBILITY_REQUIREMENT)
     if KOREAN_OUTPUT_REQUIREMENT not in text:
         requirements.append(KOREAN_OUTPUT_REQUIREMENT)
     if not requirements:
@@ -88,12 +105,20 @@ def _clone_message_with_content(message: any, content: str):
 
 
 def _make_system_message():
+    content = "\n\n".join(
+        [
+            DATA_GAP_HANDLING_REQUIREMENT,
+            CROSS_CHECK_GUIDE_REQUIREMENT,
+            SCHEMA_COMPATIBILITY_REQUIREMENT,
+            KOREAN_OUTPUT_REQUIREMENT,
+        ]
+    )
     try:
         from langchain_core.messages import SystemMessage
 
-        return SystemMessage(content=f"{DATA_GAP_HANDLING_REQUIREMENT}\n\n{KOREAN_OUTPUT_REQUIREMENT}")
+        return SystemMessage(content=content)
     except Exception:
-        return {"role": "system", "content": f"{DATA_GAP_HANDLING_REQUIREMENT}\n\n{KOREAN_OUTPUT_REQUIREMENT}"}
+        return {"role": "system", "content": content}
 
 
 def _clone_prompt_with_messages(prompt: any, messages: list):

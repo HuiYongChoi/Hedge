@@ -11,7 +11,7 @@ import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
 import { t } from '@/lib/language-preferences';
 import { Bot, ChevronDown, ChevronUp, Info, Loader2, Play, Search, Square } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 
@@ -35,6 +35,11 @@ interface CompleteResult {
   decisions?: Record<string, any>;
   analyst_signals?: Record<string, any>;
   reasoning?: string;
+}
+
+interface DetailReportState {
+  agentName: string;
+  markdown: string;
 }
 
 function extractBaseAgentKey(agentId: string) {
@@ -334,6 +339,240 @@ function ResearchQuickLinks({ tickers, language }: { tickers: string[]; language
   );
 }
 
+function extractCrossCheckGuide(value: unknown): string | null {
+  if (!value) return null;
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    const headingIndex = trimmed.search(/###\s*🔍/u);
+    if (headingIndex >= 0) {
+      return trimmed.slice(headingIndex).trim();
+    }
+
+    const checklistIndex = trimmed.search(/원문 대조 체크리스트|핵심 타겟 데이터|원문 추적 섹션|경영진 멘트 검증/u);
+    if (checklistIndex >= 0) {
+      const body = trimmed.slice(checklistIndex).trim();
+      return body.startsWith('###') ? body : `### 🔍 원문 대조 체크리스트\n${body}`;
+    }
+
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const guide = extractCrossCheckGuide(item);
+      if (guide) return guide;
+    }
+    return null;
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, any>;
+    const directFields = [
+      'cross_check_guide',
+      'crossCheckGuide',
+      'source_check_guide',
+      'sourceCheckGuide',
+      'detail_report',
+      'verification_guide',
+    ];
+
+    for (const field of directFields) {
+      const guide = extractCrossCheckGuide(record[field]);
+      if (guide) return guide;
+    }
+
+    const narrativeFields = ['reasoning', 'details', 'explanation', 'summary', 'analysis'];
+    for (const field of narrativeFields) {
+      const guide = extractCrossCheckGuide(record[field]);
+      if (guide) return guide;
+    }
+
+    for (const nestedValue of Object.values(record)) {
+      const guide = extractCrossCheckGuide(nestedValue);
+      if (guide) return guide;
+    }
+  }
+
+  return null;
+}
+
+function getAnalysisReportEntries(analysis: any) {
+  if (!analysis || typeof analysis !== 'object' || Array.isArray(analysis)) {
+    return [] as Array<{ ticker: string; report: Record<string, any> }>;
+  }
+
+  return Object.entries(analysis)
+    .filter(([, value]) => value && typeof value === 'object' && !Array.isArray(value))
+    .map(([ticker, value]) => ({
+      ticker,
+      report: value as Record<string, any>,
+    }));
+}
+
+function formatGuideMetricValue(value: unknown) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value.toLocaleString() : null;
+  }
+  if (typeof value === 'string') {
+    return value.trim() || null;
+  }
+  return null;
+}
+
+function getGuideMetricSnippets(report: Record<string, any>) {
+  const candidates = [
+    ['signal', '에이전트 의견'],
+    ['confidence', '신뢰도'],
+    ['score', '점수'],
+    ['intrinsic_value', '내재가치'],
+    ['market_cap', '시가총액'],
+    ['revenue_growth', '매출 성장률'],
+    ['operating_margin', '영업이익률'],
+    ['free_cash_flow', '잉여현금흐름'],
+    ['fcf_yield', 'FCF 수익률'],
+    ['wacc', 'WACC'],
+    ['rd_expense', 'R&D 지출'],
+  ];
+
+  return candidates
+    .map(([key, label]) => {
+      const value = formatGuideMetricValue(report[key]);
+      if (!value) return null;
+      return `${label} ${value}`;
+    })
+    .filter((snippet): snippet is string => Boolean(snippet))
+    .slice(0, 3);
+}
+
+function buildFallbackCrossCheckGuide(result: AgentResult) {
+  const entries = getAnalysisReportEntries(result.analysis);
+  const primary = entries[0];
+  const ticker = primary?.ticker || result.ticker || normalizeTicker('');
+  const report = primary?.report || {};
+  const metrics = getGuideMetricSnippets(report);
+  const targetData = metrics.length > 0
+    ? metrics.join(', ')
+    : '전처리 데이터에서 제공된 신호, 신뢰도, 핵심 재무/시장 지표(N/A 포함)';
+  const sourceSections = ticker && isKoreanStock(ticker)
+    ? 'DART 사업보고서의 「사업의 내용」, 「재무에 관한 사항」, 「이사의 경영진단 및 분석의견」, 주요 주석을 우선 확인하십시오.'
+    : 'SEC 10-K의 MD&A, Risk Factors, Financial Statements, Notes to Financial Statements를 우선 확인하십시오.';
+
+  return `### 🔍 ${result.agentName}의 원문 대조 체크리스트
+
+1. **핵심 타겟 데이터:** ${targetData}.
+2. **원문 추적 섹션:** ${sourceSections}
+3. **경영진 멘트 검증:** 에이전트의 긍정/부정 논거가 경영진의 실제 설명, 리스크 요인, 투자 계획, 자본 배분 발언과 일치하는지 원문 문장 단위로 확인하십시오.`;
+}
+
+function getDetailReportMarkdown(result: AgentResult) {
+  return extractCrossCheckGuide(result.analysis)
+    || extractCrossCheckGuide(result.report)
+    || buildFallbackCrossCheckGuide(result);
+}
+
+function renderInlineMarkdown(text: string) {
+  return text.split(/(\*\*[^*]+?\*\*)/g).map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={index} className="font-semibold text-foreground">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return part;
+  });
+}
+
+function renderMarkdownBlocks(markdown: string): ReactNode {
+  const elements: ReactNode[] = [];
+  let orderedItems: string[] = [];
+  let unorderedItems: string[] = [];
+
+  const flushLists = () => {
+    if (orderedItems.length > 0) {
+      const items = orderedItems;
+      orderedItems = [];
+      elements.push(
+        <ol key={`ol-${elements.length}`} className="my-5 list-decimal space-y-3 pl-6">
+          {items.map((item, index) => (
+            <li key={index} className="pl-1 leading-relaxed text-zinc-300">
+              {renderInlineMarkdown(item)}
+            </li>
+          ))}
+        </ol>,
+      );
+    }
+
+    if (unorderedItems.length > 0) {
+      const items = unorderedItems;
+      unorderedItems = [];
+      elements.push(
+        <ul key={`ul-${elements.length}`} className="my-5 list-disc space-y-2 pl-6">
+          {items.map((item, index) => (
+            <li key={index} className="pl-1 leading-relaxed text-zinc-300">
+              {renderInlineMarkdown(item)}
+            </li>
+          ))}
+        </ul>,
+      );
+    }
+  };
+
+  markdown.split('\n').forEach((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushLists();
+      return;
+    }
+
+    if (trimmed.startsWith('### ')) {
+      flushLists();
+      elements.push(
+        <h3 key={`h3-${index}`} className="mb-5 mt-1 text-xl font-semibold leading-relaxed text-foreground">
+          {trimmed.replace(/^###\s+/, '')}
+        </h3>,
+      );
+      return;
+    }
+
+    if (trimmed.startsWith('## ')) {
+      flushLists();
+      elements.push(
+        <h2 key={`h2-${index}`} className="mb-5 mt-2 text-2xl font-semibold leading-relaxed text-foreground">
+          {trimmed.replace(/^##\s+/, '')}
+        </h2>,
+      );
+      return;
+    }
+
+    const orderedMatch = trimmed.match(/^\d+\.\s+(.*)$/);
+    if (orderedMatch) {
+      orderedItems.push(orderedMatch[1]);
+      return;
+    }
+
+    const unorderedMatch = trimmed.match(/^[-*]\s+(.*)$/);
+    if (unorderedMatch) {
+      unorderedItems.push(unorderedMatch[1]);
+      return;
+    }
+
+    flushLists();
+    elements.push(
+      <p key={`p-${index}`} className="my-4 whitespace-pre-wrap leading-relaxed text-zinc-300">
+        {renderInlineMarkdown(trimmed)}
+      </p>,
+    );
+  });
+
+  flushLists();
+  return <>{elements}</>;
+}
+
 export function StockSearchTab() {
   const { language } = useLanguage();
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -351,6 +590,7 @@ export function StockSearchTab() {
   const [agentResults, setAgentResults] = useState<Map<string, AgentResult>>(new Map());
   const [completeResult, setCompleteResult] = useState<CompleteResult | null>(null);
   const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
+  const [selectedDetailReport, setSelectedDetailReport] = useState<DetailReportState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -414,6 +654,7 @@ export function StockSearchTab() {
     setIsRunning(true);
     setErrorMessage(null);
     setCompleteResult(null);
+    setSelectedDetailReport(null);
 
     // Build initial agent results map
     const initialResults = new Map<string, AgentResult>();
@@ -590,6 +831,18 @@ export function StockSearchTab() {
     });
   };
 
+  const openDetailReport = (event: MouseEvent<HTMLButtonElement>, result: AgentResult) => {
+    event.stopPropagation();
+    setSelectedDetailReport({
+      agentName: result.agentName,
+      markdown: getDetailReportMarkdown(result),
+    });
+  };
+
+  const closeDetailReport = () => {
+    setSelectedDetailReport(null);
+  };
+
   const statusColor = (status: AgentResult['status']) => {
     switch (status) {
       case 'complete': return 'text-green-500';
@@ -611,7 +864,12 @@ export function StockSearchTab() {
   const canRun = tickers.trim() !== '' && selectedAgents.size > 0 && !isRunning;
 
   return (
-    <div className="h-full w-full flex flex-col bg-background overflow-hidden">
+    <>
+    <div
+      id="main-summary-view"
+      style={{ display: selectedDetailReport ? 'none' : 'flex' }}
+      className="h-full w-full flex-col bg-background overflow-hidden"
+    >
       {/* Header */}
       <div className="border-b p-4 flex-shrink-0">
         <div className="flex items-center gap-2 mb-1">
@@ -770,9 +1028,20 @@ export function StockSearchTab() {
                   className="py-3 px-4 cursor-pointer hover:bg-muted/30 transition-colors"
                   onClick={() => result.analysis && toggleExpand(result.agentKey)}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <Bot size={16} className={statusColor(result.status)} />
-                    <CardTitle className="text-sm font-medium flex-1">{result.agentName}</CardTitle>
+                    <CardTitle className="min-w-[140px] flex-1 text-sm font-medium">{result.agentName}</CardTitle>
+                    {result.analysis && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 text-xs font-medium text-emerald-600 transition-colors hover:bg-emerald-500/20 hover:text-emerald-700 dark:text-emerald-300 dark:hover:text-emerald-100"
+                        onClick={(event) => openDetailReport(event, result)}
+                      >
+                        🔍 원문 대조 리포트 보기
+                      </Button>
+                    )}
                     {result.ticker && (
                       <Badge variant="outline" className="text-xs">{result.ticker}</Badge>
                     )}
@@ -891,6 +1160,39 @@ export function StockSearchTab() {
         </div>
       </div>
     </div>
+    <div
+      id="detail-report-view"
+      style={{ display: selectedDetailReport ? 'block' : 'none' }}
+      className="h-full w-full overflow-y-auto bg-background text-foreground"
+    >
+      {selectedDetailReport && (
+        <div className="min-h-full">
+          <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
+            <div className="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-4 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:px-6">
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-auto min-h-9 w-fit max-w-full justify-start whitespace-normal rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-primary sm:justify-self-start"
+                onClick={closeDetailReport}
+              >
+                ⬅️ 요약으로 돌아가기 <span className="ml-1 text-xs">(Back)</span>
+              </Button>
+              <h2 className="max-w-full text-center text-base font-semibold leading-relaxed text-primary sm:col-start-2">
+                {selectedDetailReport.agentName}의 사업보고서 원문 대조 가이드
+              </h2>
+              <div aria-hidden="true" className="hidden sm:block" />
+            </div>
+          </header>
+
+          <main className="mx-auto max-w-4xl px-6 py-8">
+            <article className="rounded-md border border-border/70 bg-muted/10 p-7 text-sm leading-relaxed text-zinc-300 shadow-sm sm:p-9">
+              {renderMarkdownBlocks(selectedDetailReport.markdown)}
+            </article>
+          </main>
+        </div>
+      )}
+    </div>
+    </>
   );
 }
 
@@ -972,7 +1274,7 @@ function AgentReportSummary({ analysis, language }: { analysis: any; language: '
   );
 }
 
-function renderValue(value: any, language: any): React.ReactNode {
+function renderValue(value: any, language: any): ReactNode {
   if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>;
   if (typeof value === 'boolean') {
     return <span className={value ? 'text-green-500' : 'text-red-500'}>
