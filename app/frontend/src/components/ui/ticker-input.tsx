@@ -1,105 +1,74 @@
 import { Input } from '@/components/ui/input';
 import { X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-export const POPULAR_TICKERS = [
-  { ticker: 'AAPL', name: 'Apple Inc.' },
-  { ticker: 'MSFT', name: 'Microsoft Corporation' },
-  { ticker: 'NVDA', name: 'NVIDIA Corporation' },
-  { ticker: 'GOOGL', name: 'Alphabet Inc.' },
-  { ticker: 'GOOG', name: 'Alphabet Inc. (C)' },
-  { ticker: 'AMZN', name: 'Amazon.com Inc.' },
-  { ticker: 'META', name: 'Meta Platforms Inc.' },
-  { ticker: 'TSLA', name: 'Tesla Inc.' },
-  { ticker: 'AVGO', name: 'Broadcom Inc.' },
-  { ticker: 'BRK.B', name: 'Berkshire Hathaway Inc.' },
-  { ticker: 'JPM', name: 'JPMorgan Chase & Co.' },
-  { ticker: 'LLY', name: 'Eli Lilly and Company' },
-  { ticker: 'V', name: 'Visa Inc.' },
-  { ticker: 'UNH', name: 'UnitedHealth Group Inc.' },
-  { ticker: 'XOM', name: 'Exxon Mobil Corporation' },
-  { ticker: 'MA', name: 'Mastercard Inc.' },
-  { ticker: 'COST', name: 'Costco Wholesale Corporation' },
-  { ticker: 'HD', name: 'The Home Depot Inc.' },
-  { ticker: 'PG', name: 'Procter & Gamble Co.' },
-  { ticker: 'WMT', name: 'Walmart Inc.' },
-  { ticker: 'NFLX', name: 'Netflix Inc.' },
-  { ticker: 'JNJ', name: 'Johnson & Johnson' },
-  { ticker: 'ABBV', name: 'AbbVie Inc.' },
-  { ticker: 'BAC', name: 'Bank of America Corporation' },
-  { ticker: 'CRM', name: 'Salesforce Inc.' },
-  { ticker: 'ORCL', name: 'Oracle Corporation' },
-  { ticker: 'AMD', name: 'Advanced Micro Devices Inc.' },
-  { ticker: 'INTC', name: 'Intel Corporation' },
-  { ticker: 'QCOM', name: 'Qualcomm Inc.' },
-  { ticker: 'WFC', name: 'Wells Fargo & Company' },
-  { ticker: 'GS', name: 'Goldman Sachs Group Inc.' },
-  { ticker: 'MS', name: 'Morgan Stanley' },
-  { ticker: 'DIS', name: 'The Walt Disney Company' },
-  { ticker: 'ADBE', name: 'Adobe Inc.' },
-  { ticker: 'NOW', name: 'ServiceNow Inc.' },
-  { ticker: 'INTU', name: 'Intuit Inc.' },
-  { ticker: 'TXN', name: 'Texas Instruments Inc.' },
-  { ticker: 'ISRG', name: 'Intuitive Surgical Inc.' },
-  { ticker: 'BKNG', name: 'Booking Holdings Inc.' },
-  { ticker: 'UBER', name: 'Uber Technologies Inc.' },
-  { ticker: 'AMAT', name: 'Applied Materials Inc.' },
-  { ticker: 'MU', name: 'Micron Technology Inc.' },
-  { ticker: 'LRCX', name: 'Lam Research Corporation' },
-  { ticker: 'KLAC', name: 'KLA Corporation' },
-  { ticker: 'PFE', name: 'Pfizer Inc.' },
-  { ticker: 'MRK', name: 'Merck & Co. Inc.' },
-  { ticker: 'TMO', name: 'Thermo Fisher Scientific Inc.' },
-  { ticker: 'DHR', name: 'Danaher Corporation' },
-  { ticker: 'ABT', name: 'Abbott Laboratories' },
-  { ticker: 'CVX', name: 'Chevron Corporation' },
-  { ticker: 'T', name: 'AT&T Inc.' },
-  { ticker: 'VZ', name: 'Verizon Communications Inc.' },
-  { ticker: 'CMCSA', name: 'Comcast Corporation' },
-  { ticker: 'PYPL', name: 'PayPal Holdings Inc.' },
-  { ticker: 'SQ', name: 'Block Inc.' },
-  { ticker: 'SHOP', name: 'Shopify Inc.' },
-  { ticker: 'SNAP', name: 'Snap Inc.' },
-  { ticker: 'SPOT', name: 'Spotify Technology S.A.' },
-  { ticker: 'COIN', name: 'Coinbase Global Inc.' },
-  { ticker: 'PLTR', name: 'Palantir Technologies Inc.' },
-  { ticker: 'ARM', name: 'Arm Holdings plc' },
-  { ticker: 'SMCI', name: 'Super Micro Computer Inc.' },
-  { ticker: 'APP', name: 'Applovin Corporation' },
-  { ticker: 'CRWD', name: 'CrowdStrike Holdings Inc.' },
-  { ticker: 'PANW', name: 'Palo Alto Networks Inc.' },
-  { ticker: 'FTNT', name: 'Fortinet Inc.' },
-  { ticker: 'ZS', name: 'Zscaler Inc.' },
-  { ticker: 'SNOW', name: 'Snowflake Inc.' },
-  { ticker: 'DDOG', name: 'Datadog Inc.' },
-  { ticker: 'MDB', name: 'MongoDB Inc.' },
-  { ticker: 'NET', name: 'Cloudflare Inc.' },
-  { ticker: 'PATH', name: 'UiPath Inc.' },
-  { ticker: 'U', name: 'Unity Software Inc.' },
-  { ticker: 'RBLX', name: 'Roblox Corporation' },
-  { ticker: 'F', name: 'Ford Motor Company' },
-  { ticker: 'GM', name: 'General Motors Company' },
-  { ticker: 'RIVN', name: 'Rivian Automotive Inc.' },
-  { ticker: 'LCID', name: 'Lucid Group Inc.' },
-  { ticker: 'NIO', name: 'NIO Inc.' },
-  { ticker: 'BIDU', name: 'Baidu Inc.' },
-  { ticker: 'BABA', name: 'Alibaba Group Holding' },
-  { ticker: 'JD', name: 'JD.com Inc.' },
-  { ticker: 'PDD', name: 'PDD Holdings Inc.' },
-  { ticker: 'TSM', name: 'Taiwan Semiconductor Mfg.' },
-  { ticker: 'ASML', name: 'ASML Holding N.V.' },
-  { ticker: 'SAP', name: 'SAP SE' },
-  { ticker: 'SONY', name: 'Sony Group Corporation' },
-  { ticker: 'TM', name: 'Toyota Motor Corporation' },
-  { ticker: 'HSBC', name: 'HSBC Holdings plc' },
-  { ticker: 'SPY', name: 'SPDR S&P 500 ETF' },
-  { ticker: 'QQQ', name: 'Invesco QQQ Trust' },
-  { ticker: 'IWM', name: 'iShares Russell 2000 ETF' },
-  { ticker: 'GLD', name: 'SPDR Gold Shares' },
-  { ticker: 'SLV', name: 'iShares Silver Trust' },
-  { ticker: 'BTC', name: 'Bitcoin' },
-  { ticker: 'ETH', name: 'Ethereum' },
+const API_BASE_URL = import.meta.env.VITE_API_URL ||
+  (typeof window !== 'undefined' &&
+   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:8000'
+    : '/hedge-api');
+
+interface TickerSuggestion {
+  ticker: string;
+  name: string;
+  market?: string; // 'US' | 'KR' | 'GLOBAL'
+}
+
+// 즉시 표시할 인기 종목 (API 호출 전 fallback)
+export const POPULAR_TICKERS: TickerSuggestion[] = [
+  { ticker: 'AAPL', name: 'Apple Inc.', market: 'US' },
+  { ticker: 'MSFT', name: 'Microsoft Corporation', market: 'US' },
+  { ticker: 'NVDA', name: 'NVIDIA Corporation', market: 'US' },
+  { ticker: 'GOOGL', name: 'Alphabet Inc.', market: 'US' },
+  { ticker: 'AMZN', name: 'Amazon.com Inc.', market: 'US' },
+  { ticker: 'META', name: 'Meta Platforms Inc.', market: 'US' },
+  { ticker: 'TSLA', name: 'Tesla Inc.', market: 'US' },
+  { ticker: 'AVGO', name: 'Broadcom Inc.', market: 'US' },
+  { ticker: 'JPM', name: 'JPMorgan Chase & Co.', market: 'US' },
+  { ticker: 'LLY', name: 'Eli Lilly and Company', market: 'US' },
+  { ticker: 'V', name: 'Visa Inc.', market: 'US' },
+  { ticker: 'UNH', name: 'UnitedHealth Group Inc.', market: 'US' },
+  { ticker: 'XOM', name: 'Exxon Mobil Corporation', market: 'US' },
+  { ticker: 'MA', name: 'Mastercard Inc.', market: 'US' },
+  { ticker: 'COST', name: 'Costco Wholesale Corporation', market: 'US' },
+  { ticker: 'HD', name: 'The Home Depot Inc.', market: 'US' },
+  { ticker: 'PG', name: 'Procter & Gamble Co.', market: 'US' },
+  { ticker: 'WMT', name: 'Walmart Inc.', market: 'US' },
+  { ticker: 'NFLX', name: 'Netflix Inc.', market: 'US' },
+  { ticker: 'AMD', name: 'Advanced Micro Devices Inc.', market: 'US' },
+  { ticker: 'INTC', name: 'Intel Corporation', market: 'US' },
+  { ticker: 'QCOM', name: 'Qualcomm Inc.', market: 'US' },
+  { ticker: 'PLTR', name: 'Palantir Technologies Inc.', market: 'US' },
+  { ticker: 'CRWD', name: 'CrowdStrike Holdings Inc.', market: 'US' },
+  { ticker: 'SNOW', name: 'Snowflake Inc.', market: 'US' },
+  { ticker: 'TSM', name: 'Taiwan Semiconductor Mfg.', market: 'US' },
+  { ticker: 'ASML', name: 'ASML Holding N.V.', market: 'GLOBAL' },
+  { ticker: 'SPY', name: 'SPDR S&P 500 ETF', market: 'US' },
+  { ticker: 'QQQ', name: 'Invesco QQQ Trust', market: 'US' },
+  // 인기 한국 주요 종목
+  { ticker: '005930.KS', name: '삼성전자', market: 'KR' },
+  { ticker: '000660.KS', name: 'SK하이닉스', market: 'KR' },
+  { ticker: '035420.KS', name: 'NAVER', market: 'KR' },
+  { ticker: '035720.KS', name: '카카오', market: 'KR' },
+  { ticker: '005380.KS', name: '현대자동차', market: 'KR' },
+  { ticker: '000270.KS', name: '기아', market: 'KR' },
+  { ticker: '373220.KS', name: 'LG에너지솔루션', market: 'KR' },
+  { ticker: '247540.KQ', name: '에코프로비엠', market: 'KR' },
 ];
+
+function MarketBadge({ market }: { market?: string }) {
+  if (!market || market === 'GLOBAL') return null;
+  const isKR = market === 'KR';
+  return (
+    <span className={`text-[10px] font-bold px-1 py-0.5 rounded shrink-0 ${
+      isKR
+        ? 'bg-blue-500/15 text-blue-400'
+        : 'bg-green-500/15 text-green-400'
+    }`}>
+      {isKR ? 'KR' : 'US'}
+    </span>
+  );
+}
 
 interface TickerInputProps {
   value: string;
@@ -112,22 +81,82 @@ interface TickerInputProps {
 export function TickerInput({ value, onChange, placeholder, className, onKeyDown }: TickerInputProps) {
   const [open, setOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
+  const [suggestions, setSuggestions] = useState<TickerSuggestion[]>([]);
+  const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const skipBlurRef = useRef(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const getCurrentTerm = () => {
     const parts = value.split(',');
-    return parts[parts.length - 1].trim().toUpperCase();
+    return parts[parts.length - 1].trim();
   };
 
   const currentTerm = getCurrentTerm();
 
-  const suggestions = currentTerm.length >= 1
-    ? POPULAR_TICKERS.filter(t =>
-        t.ticker.startsWith(currentTerm) ||
-        t.name.toUpperCase().includes(currentTerm)
-      ).slice(0, 8)
-    : [];
+  // 정적 fallback 필터 (API 응답 전 즉시 표시)
+  const getStaticSuggestions = (term: string): TickerSuggestion[] => {
+    const upper = term.toUpperCase();
+    return POPULAR_TICKERS.filter(t =>
+      t.ticker.toUpperCase().startsWith(upper) ||
+      t.name.toUpperCase().includes(upper)
+    ).slice(0, 5);
+  };
+
+  const fetchSuggestions = (term: string) => {
+    if (term.length < 1) {
+      setSuggestions([]);
+      setOpen(false);
+      return;
+    }
+
+    // 즉시 정적 결과 표시
+    const staticResults = getStaticSuggestions(term);
+    setSuggestions(staticResults);
+    if (staticResults.length > 0) setOpen(true);
+
+    // 기존 요청 취소
+    if (abortRef.current) abortRef.current.abort();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(async () => {
+      abortRef.current = new AbortController();
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/ticker-search?q=${encodeURIComponent(term)}`,
+          { signal: abortRef.current.signal }
+        );
+        if (!res.ok) throw new Error('Search failed');
+        const data: TickerSuggestion[] = await res.json();
+        if (data.length > 0) {
+          setSuggestions(data);
+          setOpen(true);
+        } else if (staticResults.length === 0) {
+          setOpen(false);
+        }
+      } catch (e: any) {
+        if (e.name === 'AbortError') return;
+        // API 실패 시 정적 결과 유지
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+  };
+
+  // currentTerm 변경 시 검색 실행
+  useEffect(() => {
+    if (currentTerm.length >= 1) {
+      fetchSuggestions(currentTerm);
+    } else {
+      setSuggestions([]);
+      setOpen(false);
+    }
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [currentTerm]);
 
   const showDropdown = open && suggestions.length > 0;
 
@@ -138,6 +167,7 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
     onChange(parts.map(p => p.trim()).join(','));
     setOpen(false);
     setActiveIdx(-1);
+    setSuggestions([]);
     setTimeout(() => {
       skipBlurRef.current = false;
       inputRef.current?.focus();
@@ -147,8 +177,6 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onChange(e.target.value);
     setActiveIdx(-1);
-    const term = e.target.value.split(',').pop()?.trim() || '';
-    setOpen(term.length >= 1);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -191,7 +219,7 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
         onKeyDown={handleKeyDown}
         onFocus={() => {
           const term = value.split(',').pop()?.trim() || '';
-          if (term.length >= 1) setOpen(true);
+          if (term.length >= 1 && suggestions.length > 0) setOpen(true);
         }}
         onBlur={handleBlur}
         placeholder={placeholder}
@@ -208,6 +236,7 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
             onChange('');
             setOpen(false);
             setActiveIdx(-1);
+            setSuggestions([]);
             inputRef.current?.focus();
           }}
           className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
@@ -219,9 +248,14 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
       )}
       {showDropdown && (
         <div
-          className="absolute z-50 top-full left-0 mt-1 w-64 rounded-md border border-border bg-popover shadow-md overflow-hidden"
+          className="absolute z-50 top-full left-0 mt-1 w-72 rounded-md border border-border bg-popover shadow-md overflow-hidden"
           onMouseDown={e => { e.preventDefault(); }}
         >
+          {loading && (
+            <div className="px-3 py-1.5 text-xs text-muted-foreground border-b border-border">
+              검색 중...
+            </div>
+          )}
           {suggestions.map((s, idx) => (
             <div
               key={s.ticker}
@@ -233,8 +267,9 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
               onMouseEnter={() => setActiveIdx(idx)}
               onMouseDown={() => handleSelect(s.ticker)}
             >
-              <span className="font-mono font-semibold w-14 shrink-0 text-primary">{s.ticker}</span>
-              <span className="text-muted-foreground text-xs truncate">{s.name}</span>
+              <span className="font-mono font-semibold w-20 shrink-0 text-primary text-xs truncate">{s.ticker}</span>
+              <span className="text-muted-foreground text-xs truncate flex-1">{s.name}</span>
+              <MarketBadge market={s.market} />
             </div>
           ))}
         </div>

@@ -77,16 +77,25 @@ def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None)
 
     url = f"https://api.financialdatasets.ai/prices/?ticker={ticker}&interval=day&interval_multiplier=1&start_date={start_date}&end_date={end_date}"
     response = _make_api_request(url, headers)
-    if response.status_code != 200:
-        return []
+    prices = []
+    if response.status_code == 200:
+        try:
+            price_response = PriceResponse(**response.json())
+            prices = price_response.prices
+        except Exception as e:
+            logger.warning("Failed to parse price response for %s: %s", ticker, e)
 
-    # Parse response with Pydantic model
-    try:
-        price_response = PriceResponse(**response.json())
-        prices = price_response.prices
-    except Exception as e:
-        logger.warning("Failed to parse price response for %s: %s", ticker, e)
-        return []
+    if not prices and _is_korean_ticker(ticker):
+        # Fallback 1 for Korean: pykrx (KRX official - most accurate)
+        prices = _fetch_pykrx_prices(ticker, start_date, end_date)
+
+    if not prices and _is_korean_ticker(ticker):
+        # Fallback 2 for Korean: FinanceDataReader (KRX + NAVER)
+        prices = _fetch_fdr_prices(ticker, start_date, end_date)
+
+    if not prices:
+        # Fallback 3: yfinance (works for Korean + US stocks)
+        prices = _fetch_yfinance_prices(ticker, start_date, end_date)
 
     if not prices:
         return []
@@ -96,56 +105,537 @@ def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None)
     return prices
 
 
+FMP_API_KEY = "WnoeVdSBlKezrKNExH7jtXfEWXg8YrtE"
+AV_API_KEY = "QCE8EC5Q5OP74PYD"
+FMP_STABLE_BASE = "https://financialmodelingprep.com/stable"
+
+
 def parse_float_safe(val):
     try:
         return float(val) if val and val != "None" else None
     except:
         return None
 
-def _fetch_fmp_metrics(ticker: str) -> dict | None:
-    fmp_key = "WnoeVdSBlKezrKNExH7jtXfEWXg8YrtE"
-    fmp_ticker = ticker.replace('.', '-')
+
+def _is_korean_ticker(ticker: str) -> bool:
+    return ticker.endswith(".KS") or ticker.endswith(".KQ")
+
+
+def _fmp_get(endpoint: str, params: dict) -> list | dict | None:
+    """FMP stable endpoint GET helper. Returns parsed JSON or None on failure."""
     try:
-        url = f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{fmp_ticker}?apikey={fmp_key}"
-        r = requests.get(url)
+        params["apikey"] = FMP_API_KEY
+        r = requests.get(f"{FMP_STABLE_BASE}/{endpoint}", params=params, timeout=8)
         if r.status_code == 200:
             data = r.json()
-            if isinstance(data, list) and len(data) > 0:
-                url2 = f"https://financialmodelingprep.com/api/v3/ratios-ttm/{fmp_ticker}?apikey={fmp_key}"
-                r2 = requests.get(url2)
-                ratios = r2.json() if r2.status_code == 200 else []
-                url3 = f"https://financialmodelingprep.com/api/v3/profile/{fmp_ticker}?apikey={fmp_key}"
-                r3 = requests.get(url3)
-                profile = r3.json() if r3.status_code == 200 else []
-
-                metrics = data[0]
-                rt = ratios[0] if isinstance(ratios, list) and len(ratios) > 0 else {}
-                prof = profile[0] if isinstance(profile, list) and len(profile) > 0 else {}
-                
-                return {
-                    "ticker": ticker,
-                    "report_period": "TTM",
-                    "period": "ttm",
-                    "currency": prof.get("currency", "USD"),
-                    "market_cap": parse_float_safe(prof.get("mktCap")),
-                    "enterprise_value": parse_float_safe(metrics.get("enterpriseValueTTM")),
-                    "price_to_earnings_ratio": parse_float_safe(metrics.get("peRatioTTM")),
-                    "price_to_book_ratio": parse_float_safe(metrics.get("pbRatioTTM")),
-                    "price_to_sales_ratio": parse_float_safe(metrics.get("pfcfRatioTTM")), 
-                    "operating_margin": parse_float_safe(rt.get("operatingProfitMarginTTM")),
-                    "net_margin": parse_float_safe(rt.get("netProfitMarginTTM")),
-                    "return_on_equity": parse_float_safe(rt.get("returnOnEquityTTM")),
-                    "return_on_assets": parse_float_safe(rt.get("returnOnAssetsTTM")),
-                    "return_on_invested_capital": parse_float_safe(rt.get("returnOnCapitalEmployedTTM")),
-                    "revenue_growth": parse_float_safe(metrics.get("revenuePerShareTTM")),
-                    "current_ratio": parse_float_safe(rt.get("currentRatioTTM")),
-                    "quick_ratio": parse_float_safe(rt.get("quickRatioTTM")),
-                    "debt_to_equity": parse_float_safe(rt.get("debtEquityRatioTTM")),
-                    "debt_to_assets": parse_float_safe(rt.get("debtRatioTTM")),
-                }
-    except Exception as e:
+            # FMP returns empty dict {} when no data available
+            if isinstance(data, dict) and not data:
+                return None
+            return data
+    except Exception:
         pass
     return None
+
+
+def _fetch_fmp_metrics(ticker: str) -> dict | None:
+    """Fetch FinancialMetrics from FMP stable endpoints (US stocks only)."""
+    if _is_korean_ticker(ticker):
+        return None
+    try:
+        km = _fmp_get("key-metrics", {"symbol": ticker, "limit": 1})
+        rt = _fmp_get("ratios", {"symbol": ticker, "limit": 1})
+        if not km or not isinstance(km, list) or not km[0]:
+            return None
+        m = km[0]
+        r = rt[0] if (rt and isinstance(rt, list) and rt) else {}
+        report_date = m.get("date", "TTM")
+        return {
+            "ticker": ticker,
+            "report_period": report_date,
+            "period": "ttm",
+            "currency": m.get("reportedCurrency", "USD"),
+            "market_cap": parse_float_safe(m.get("marketCap")),
+            "enterprise_value": parse_float_safe(m.get("enterpriseValue")),
+            "price_to_earnings_ratio": parse_float_safe(r.get("priceToEarningsRatio")),
+            "price_to_book_ratio": parse_float_safe(r.get("priceToBookRatio")),
+            "price_to_sales_ratio": parse_float_safe(r.get("priceToSalesRatio")),
+            "enterprise_value_to_ebitda_ratio": parse_float_safe(m.get("evToEBITDA")),
+            "enterprise_value_to_revenue_ratio": parse_float_safe(m.get("evToSales")),
+            "free_cash_flow_yield": parse_float_safe(m.get("freeCashFlowYield")),
+            "peg_ratio": parse_float_safe(r.get("priceToEarningsGrowthRatio")),
+            "gross_margin": parse_float_safe(r.get("grossProfitMargin")),
+            "operating_margin": parse_float_safe(r.get("operatingProfitMargin")),
+            "net_margin": parse_float_safe(r.get("netProfitMargin")),
+            "return_on_equity": parse_float_safe(m.get("returnOnEquity")),
+            "return_on_assets": parse_float_safe(m.get("returnOnAssets")),
+            "return_on_invested_capital": parse_float_safe(m.get("returnOnInvestedCapital")),
+            "asset_turnover": parse_float_safe(r.get("assetTurnover")),
+            "inventory_turnover": parse_float_safe(r.get("inventoryTurnover")),
+            "receivables_turnover": parse_float_safe(r.get("receivablesTurnover")),
+            "current_ratio": parse_float_safe(r.get("currentRatio")),
+            "quick_ratio": parse_float_safe(r.get("quickRatio")),
+            "cash_ratio": parse_float_safe(r.get("cashRatio")),
+            "operating_cash_flow_ratio": parse_float_safe(r.get("operatingCashFlowRatio")),
+            "debt_to_equity": parse_float_safe(r.get("debtToEquityRatio")),
+            "debt_to_assets": parse_float_safe(r.get("debtToAssetsRatio")),
+            "interest_coverage": parse_float_safe(r.get("interestCoverageRatio")),
+            "payout_ratio": parse_float_safe(r.get("dividendPayoutRatio")),
+            "earnings_per_share": parse_float_safe(r.get("netIncomePerShare")),
+            "book_value_per_share": parse_float_safe(r.get("bookValuePerShare")),
+            "free_cash_flow_per_share": parse_float_safe(r.get("freeCashFlowPerShare")),
+        }
+    except Exception as e:
+        logger.debug("FMP metrics fetch failed for %s: %s", ticker, e)
+    return None
+
+
+def _fetch_yfinance_metrics(ticker: str) -> dict | None:
+    """Fetch FinancialMetrics from yfinance (works for Korean + US stocks)."""
+    try:
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+        info = t.info
+        if not info or info.get("regularMarketPrice") is None and info.get("marketCap") is None:
+            return None
+        market_cap = parse_float_safe(info.get("marketCap"))
+        rev = parse_float_safe(info.get("totalRevenue"))
+        gp = parse_float_safe(info.get("grossProfits"))
+        ni = parse_float_safe(info.get("netIncomeToCommon"))
+        op_inc = parse_float_safe(info.get("operatingIncome") or info.get("ebit"))
+        ebitda = parse_float_safe(info.get("ebitda"))
+        total_debt = parse_float_safe(info.get("totalDebt"))
+        total_equity = parse_float_safe(info.get("bookValue"))
+        shares = parse_float_safe(info.get("sharesOutstanding"))
+        currency = info.get("currency", "USD")
+        report_date = info.get("mostRecentQuarter") or "TTM"
+        if isinstance(report_date, (int, float)):
+            import datetime
+            report_date = datetime.datetime.fromtimestamp(report_date).strftime("%Y-%m-%d")
+
+        bvps = parse_float_safe(info.get("bookValue"))
+        fcf = parse_float_safe(info.get("freeCashflow"))
+        price = parse_float_safe(info.get("regularMarketPrice") or info.get("currentPrice"))
+
+        return {
+            "ticker": ticker,
+            "report_period": str(report_date),
+            "period": "ttm",
+            "currency": currency,
+            "market_cap": market_cap,
+            "enterprise_value": parse_float_safe(info.get("enterpriseValue")),
+            "price_to_earnings_ratio": parse_float_safe(info.get("trailingPE")),
+            "price_to_book_ratio": parse_float_safe(info.get("priceToBook")),
+            "price_to_sales_ratio": parse_float_safe(info.get("priceToSalesTrailing12Months")),
+            "enterprise_value_to_ebitda_ratio": parse_float_safe(info.get("enterpriseToEbitda")),
+            "enterprise_value_to_revenue_ratio": parse_float_safe(info.get("enterpriseToRevenue")),
+            "peg_ratio": parse_float_safe(info.get("pegRatio")),
+            "gross_margin": parse_float_safe(info.get("grossMargins")),
+            "operating_margin": parse_float_safe(info.get("operatingMargins")),
+            "net_margin": parse_float_safe(info.get("profitMargins")),
+            "return_on_equity": parse_float_safe(info.get("returnOnEquity")),
+            "return_on_assets": parse_float_safe(info.get("returnOnAssets")),
+            "return_on_invested_capital": None,
+            "current_ratio": parse_float_safe(info.get("currentRatio")),
+            "quick_ratio": parse_float_safe(info.get("quickRatio")),
+            "debt_to_equity": (total_debt / (total_equity * shares)) if (total_debt and total_equity and shares) else None,
+            "revenue_growth": parse_float_safe(info.get("revenueGrowth")),
+            "earnings_growth": parse_float_safe(info.get("earningsGrowth")),
+            "earnings_per_share": parse_float_safe(info.get("trailingEps")),
+            "book_value_per_share": bvps,
+            "free_cash_flow_per_share": (fcf / shares) if (fcf and shares) else None,
+            "payout_ratio": parse_float_safe(info.get("payoutRatio")),
+        }
+    except Exception as e:
+        logger.debug("yfinance metrics fetch failed for %s: %s", ticker, e)
+    return None
+
+
+# ─── Line Item field mapping ──────────────────────────────────────────────────
+# Maps our internal LineItem field name → FMP income-statement field name
+_INCOME_MAP = {
+    "revenue": "revenue",
+    "gross_profit": "grossProfit",
+    "net_income": "netIncome",
+    "operating_income": "operatingIncome",
+    "ebitda": "ebitda",
+    "ebit": "ebit",
+    "interest_expense": "interestExpense",
+    "depreciation_and_amortization": "depreciationAndAmortization",
+    "earnings_per_share": "epsDiluted",
+    "outstanding_shares": "weightedAverageShsOutDil",
+    "research_and_development": "researchAndDevelopmentExpenses",
+}
+_BALANCE_MAP = {
+    "total_assets": "totalAssets",
+    "total_liabilities": "totalLiabilities",
+    "shareholders_equity": "totalStockholdersEquity",
+    "total_debt": "totalDebt",
+    "cash_and_equivalents": "cashAndCashEquivalents",
+    "current_assets": "totalCurrentAssets",
+    "current_liabilities": "totalCurrentLiabilities",
+    "inventory": "inventory",
+    "goodwill": "goodwill",
+    "intangible_assets": "intangibleAssets",
+    "retained_earnings": "retainedEarnings",
+    "book_value_per_share": None,  # computed below
+    "working_capital": None,       # computed below
+}
+_CASHFLOW_MAP = {
+    "capital_expenditure": "capitalExpenditure",
+    "free_cash_flow": "freeCashFlow",
+    "operating_cash_flow": "operatingCashFlow",
+    "dividends_and_other_cash_distributions": "netDividendsPaid",
+    "issuance_or_purchase_of_equity_shares": "netStockIssuance",
+    "stock_based_compensation": "stockBasedCompensation",
+}
+
+# yfinance income_stmt / balance_sheet / cashflow row label mapping
+_YF_INCOME_MAP = {
+    "revenue": ["Total Revenue"],
+    "gross_profit": ["Gross Profit"],
+    "net_income": ["Net Income", "Net Income From Continuing And Discontinued Operation"],
+    "operating_income": ["Operating Income", "Total Operating Income As Reported"],
+    "ebitda": ["EBITDA", "Normalized EBITDA"],
+    "ebit": ["EBIT"],
+    "interest_expense": ["Interest Expense"],
+    "depreciation_and_amortization": ["Reconciled Depreciation"],
+    "earnings_per_share": ["Diluted EPS", "Basic EPS"],
+    "outstanding_shares": ["Diluted Average Shares", "Basic Average Shares"],
+}
+_YF_BALANCE_MAP = {
+    "total_assets": ["Total Assets"],
+    "total_liabilities": ["Total Liabilities Net Minority Interest", "Total Liabilities"],
+    "shareholders_equity": ["Stockholders Equity", "Total Equity Gross Minority Interest"],
+    "total_debt": ["Total Debt"],
+    "cash_and_equivalents": ["Cash And Cash Equivalents"],
+    "current_assets": ["Current Assets"],
+    "current_liabilities": ["Current Liabilities"],
+    "inventory": ["Inventory"],
+    "goodwill": ["Goodwill"],
+    "intangible_assets": ["Intangible Assets"],
+    "retained_earnings": ["Retained Earnings"],
+}
+_YF_CASHFLOW_MAP = {
+    "capital_expenditure": ["Capital Expenditure"],
+    "free_cash_flow": ["Free Cash Flow"],
+    "operating_cash_flow": ["Operating Cash Flow"],
+    "dividends_and_other_cash_distributions": ["Common Dividends Paid", "Dividends Paid"],
+    "issuance_or_purchase_of_equity_shares": ["Net Common Stock Issuance", "Repurchase Of Capital Stock"],
+    "stock_based_compensation": ["Stock Based Compensation"],
+}
+
+
+def _df_get(df, keys: list):
+    """Extract first matching row value from a DataFrame indexed by row labels."""
+    if df is None or df.empty:
+        return None
+    for key in keys:
+        for idx in df.index:
+            if str(idx).strip() == key:
+                vals = df.loc[idx].dropna()
+                return float(vals.iloc[0]) if not vals.empty else None
+    return None
+
+
+def _fetch_fmp_line_items(ticker: str, line_items: list[str], end_date: str, period: str, limit: int) -> list[LineItem]:
+    """Fetch line items from FMP stable financial statements (US stocks only)."""
+    if _is_korean_ticker(ticker):
+        return []
+    try:
+        fmp_period = "quarter" if period == "ttm" else "annual"
+        fetch_limit = max(limit * 4, 8) if period == "ttm" else limit
+
+        inc_data = _fmp_get("income-statement", {"symbol": ticker, "limit": fetch_limit, "period": fmp_period}) or []
+        bal_data = _fmp_get("balance-sheet-statement", {"symbol": ticker, "limit": fetch_limit, "period": fmp_period}) or []
+        cf_data = _fmp_get("cash-flow-statement", {"symbol": ticker, "limit": fetch_limit, "period": fmp_period}) or []
+
+        if not inc_data and not bal_data and not cf_data:
+            return []
+
+        # For TTM: group by annual batches (sum flow items for 4Q, take latest balance)
+        # For annual: one record per year
+        if period == "ttm":
+            # Aggregate last 4 quarters into one TTM record
+            results = []
+            quarters_to_use = min(4, len(inc_data))
+            if quarters_to_use == 0:
+                return []
+            latest_inc = inc_data[0] if inc_data else {}
+            latest_bal = bal_data[0] if bal_data else {}
+            latest_cf = cf_data[0] if cf_data else {}
+            report_date = latest_inc.get("date") or latest_bal.get("date") or end_date
+            currency = latest_inc.get("reportedCurrency") or latest_bal.get("reportedCurrency") or "USD"
+
+            # Sum flow items across quarters
+            inc_ttm = {}
+            for q in inc_data[:quarters_to_use]:
+                for fld in _INCOME_MAP.values():
+                    if fld and fld in q and q[fld] is not None:
+                        inc_ttm[fld] = inc_ttm.get(fld, 0) + (q[fld] or 0)
+            cf_ttm = {}
+            for q in cf_data[:quarters_to_use]:
+                for fld in _CASHFLOW_MAP.values():
+                    if fld and fld in q and q[fld] is not None:
+                        cf_ttm[fld] = cf_ttm.get(fld, 0) + (q[fld] or 0)
+
+            row = {"ticker": ticker, "report_period": report_date, "period": "ttm", "currency": currency}
+            for our_field, fmp_field in _INCOME_MAP.items():
+                if our_field in line_items and fmp_field:
+                    row[our_field] = inc_ttm.get(fmp_field)
+            for our_field, fmp_field in _BALANCE_MAP.items():
+                if our_field in line_items and fmp_field and fmp_field in latest_bal:
+                    row[our_field] = parse_float_safe(latest_bal[fmp_field])
+            for our_field, fmp_field in _CASHFLOW_MAP.items():
+                if our_field in line_items and fmp_field:
+                    row[our_field] = cf_ttm.get(fmp_field)
+            # Computed fields
+            if "working_capital" in line_items:
+                ca = parse_float_safe(latest_bal.get("totalCurrentAssets"))
+                cl = parse_float_safe(latest_bal.get("totalCurrentLiabilities"))
+                row["working_capital"] = (ca - cl) if (ca is not None and cl is not None) else None
+            if "book_value_per_share" in line_items:
+                eq = parse_float_safe(latest_bal.get("totalStockholdersEquity"))
+                sh = inc_ttm.get("weightedAverageShsOutDil")
+                row["book_value_per_share"] = (eq / sh) if (eq and sh) else None
+            results.append(LineItem(**row))
+            return results
+        else:
+            # Annual: one LineItem per annual period
+            results = []
+            max_periods = min(limit, len(inc_data), max(len(bal_data), 1), max(len(cf_data), 1))
+            max_periods = min(limit, max(len(inc_data), len(bal_data), len(cf_data)))
+            for i in range(min(limit, max(len(inc_data), len(bal_data)))):
+                inc_row = inc_data[i] if i < len(inc_data) else {}
+                bal_row = bal_data[i] if i < len(bal_data) else {}
+                cf_row = cf_data[i] if i < len(cf_data) else {}
+                report_date = inc_row.get("date") or bal_row.get("date") or end_date
+                if report_date > end_date:
+                    continue
+                currency = inc_row.get("reportedCurrency") or bal_row.get("reportedCurrency") or "USD"
+                row = {"ticker": ticker, "report_period": report_date, "period": "annual", "currency": currency}
+                for our_field, fmp_field in _INCOME_MAP.items():
+                    if our_field in line_items and fmp_field and fmp_field in inc_row:
+                        row[our_field] = parse_float_safe(inc_row[fmp_field])
+                for our_field, fmp_field in _BALANCE_MAP.items():
+                    if our_field in line_items and fmp_field and fmp_field in bal_row:
+                        row[our_field] = parse_float_safe(bal_row[fmp_field])
+                for our_field, fmp_field in _CASHFLOW_MAP.items():
+                    if our_field in line_items and fmp_field and fmp_field in cf_row:
+                        row[our_field] = parse_float_safe(cf_row[fmp_field])
+                if "working_capital" in line_items:
+                    ca = parse_float_safe(bal_row.get("totalCurrentAssets"))
+                    cl = parse_float_safe(bal_row.get("totalCurrentLiabilities"))
+                    row["working_capital"] = (ca - cl) if (ca is not None and cl is not None) else None
+                if "book_value_per_share" in line_items:
+                    eq = parse_float_safe(bal_row.get("totalStockholdersEquity"))
+                    sh = parse_float_safe(inc_row.get("weightedAverageShsOutDil"))
+                    row["book_value_per_share"] = (eq / sh) if (eq and sh) else None
+                results.append(LineItem(**row))
+            return results
+    except Exception as e:
+        logger.warning("FMP line items fetch failed for %s: %s", ticker, e)
+    return []
+
+
+def _fetch_yfinance_line_items(ticker: str, line_items: list[str], end_date: str, period: str, limit: int) -> list[LineItem]:
+    """Fetch line items from yfinance (works for Korean + US stocks)."""
+    try:
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+        # Use annual or quarterly statements
+        if period in ("ttm", "quarter"):
+            inc_df = t.quarterly_income_stmt
+            bal_df = t.quarterly_balance_sheet
+            cf_df = t.quarterly_cashflow
+            target_period = "ttm"
+        else:
+            inc_df = t.income_stmt
+            bal_df = t.balance_sheet
+            cf_df = t.cashflow
+            target_period = "annual"
+
+        if inc_df is None and bal_df is None and cf_df is None:
+            return []
+
+        # For TTM: sum last 4 quarters of flow statements, take latest balance
+        if period == "ttm":
+            results = []
+            # Sum last 4 quarters for flow items
+            def _sum_quarters(df, row_keys, n=4):
+                if df is None or df.empty:
+                    return None
+                for key in row_keys:
+                    for idx in df.index:
+                        if str(idx).strip() == key:
+                            vals = df.loc[idx].dropna().head(n)
+                            if not vals.empty:
+                                return float(vals.sum())
+                return None
+
+            currency = t.info.get("currency", "USD") if t.info else "USD"
+            # Get date of latest period
+            latest_date = end_date
+            if inc_df is not None and not inc_df.empty:
+                col0 = inc_df.columns[0]
+                latest_date = str(col0)[:10] if hasattr(col0, '__str__') else end_date
+
+            row = {"ticker": ticker, "report_period": latest_date, "period": "ttm", "currency": currency}
+            for our_field, yf_keys in _YF_INCOME_MAP.items():
+                if our_field in line_items:
+                    row[our_field] = _sum_quarters(inc_df, yf_keys, 4)
+            for our_field, yf_keys in _YF_BALANCE_MAP.items():
+                if our_field in line_items:
+                    row[our_field] = _df_get(bal_df, yf_keys) if bal_df is not None else None
+            for our_field, yf_keys in _YF_CASHFLOW_MAP.items():
+                if our_field in line_items:
+                    row[our_field] = _sum_quarters(cf_df, yf_keys, 4)
+            if "working_capital" in line_items:
+                ca = _df_get(bal_df, ["Current Assets"]) if bal_df is not None else None
+                cl = _df_get(bal_df, ["Current Liabilities"]) if bal_df is not None else None
+                row["working_capital"] = (ca - cl) if (ca is not None and cl is not None) else None
+            if "book_value_per_share" in line_items:
+                eq = _df_get(bal_df, ["Stockholders Equity", "Total Equity Gross Minority Interest"]) if bal_df is not None else None
+                sh = _sum_quarters(inc_df, ["Diluted Average Shares", "Basic Average Shares"], 1)
+                row["book_value_per_share"] = (eq / sh) if (eq and sh) else None
+            results.append(LineItem(**row))
+            return results
+        else:
+            # Annual: one LineItem per fiscal year column
+            results = []
+            cols = []
+            if inc_df is not None and not inc_df.empty:
+                cols = [c for c in inc_df.columns if str(c)[:10] <= end_date]
+            elif bal_df is not None and not bal_df.empty:
+                cols = [c for c in bal_df.columns if str(c)[:10] <= end_date]
+            cols = cols[:limit]
+            if not cols:
+                return []
+            currency = t.info.get("currency", "USD") if t.info else "USD"
+            for col in cols:
+                col_str = str(col)[:10]
+                row = {"ticker": ticker, "report_period": col_str, "period": "annual", "currency": currency}
+                for our_field, yf_keys in _YF_INCOME_MAP.items():
+                    if our_field in line_items and inc_df is not None and not inc_df.empty:
+                        for key in yf_keys:
+                            for idx in inc_df.index:
+                                if str(idx).strip() == key and col in inc_df.columns:
+                                    val = inc_df.loc[idx, col]
+                                    if val is not None and str(val) != "nan":
+                                        row[our_field] = float(val)
+                                    break
+                for our_field, yf_keys in _YF_BALANCE_MAP.items():
+                    if our_field in line_items and bal_df is not None and not bal_df.empty:
+                        for key in yf_keys:
+                            for idx in bal_df.index:
+                                if str(idx).strip() == key and col in bal_df.columns:
+                                    val = bal_df.loc[idx, col]
+                                    if val is not None and str(val) != "nan":
+                                        row[our_field] = float(val)
+                                    break
+                for our_field, yf_keys in _YF_CASHFLOW_MAP.items():
+                    if our_field in line_items and cf_df is not None and not cf_df.empty:
+                        for key in yf_keys:
+                            for idx in cf_df.index:
+                                if str(idx).strip() == key and col in cf_df.columns:
+                                    val = cf_df.loc[idx, col]
+                                    if val is not None and str(val) != "nan":
+                                        row[our_field] = float(val)
+                                    break
+                if "working_capital" in line_items:
+                    ca = row.get("current_assets")
+                    cl = row.get("current_liabilities")
+                    row["working_capital"] = (ca - cl) if (ca is not None and cl is not None) else None
+                if "book_value_per_share" in line_items:
+                    eq = row.get("shareholders_equity")
+                    sh = row.get("outstanding_shares")
+                    row["book_value_per_share"] = (eq / sh) if (eq and sh) else None
+                results.append(LineItem(**row))
+            return results
+    except Exception as e:
+        logger.warning("yfinance line items fetch failed for %s: %s", ticker, e)
+    return []
+
+
+def _fetch_yfinance_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
+    """Fetch price data from yfinance."""
+    try:
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+        df = t.history(start=start_date, end=end_date, auto_adjust=True)
+        if df is None or df.empty:
+            return []
+        prices = []
+        for ts, row in df.iterrows():
+            time_str = ts.strftime("%Y-%m-%dT00:00:00") if hasattr(ts, "strftime") else str(ts)[:10] + "T00:00:00"
+            prices.append(Price(
+                open=float(row["Open"]),
+                high=float(row["High"]),
+                low=float(row["Low"]),
+                close=float(row["Close"]),
+                volume=int(row["Volume"]),
+                time=time_str,
+            ))
+        return prices
+    except Exception as e:
+        logger.warning("yfinance prices fetch failed for %s: %s", ticker, e)
+    return []
+
+def _fetch_pykrx_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
+    """Fetch Korean stock price data from pykrx (KRX official). Most accurate for KR."""
+    if not _is_korean_ticker(ticker):
+        return []
+    try:
+        from pykrx import stock
+        code = ticker.split(".")[0]
+        # pykrx date format: YYYYMMDD
+        start = start_date.replace("-", "")
+        end = end_date.replace("-", "")
+        df = stock.get_market_ohlcv(start, end, code)
+        if df is None or df.empty:
+            return []
+        prices = []
+        for ts, row in df.iterrows():
+            time_str = ts.strftime("%Y-%m-%dT00:00:00") if hasattr(ts, "strftime") else str(ts)[:10] + "T00:00:00"
+            prices.append(Price(
+                open=float(row.get("시가", row.get("Open", 0))),
+                high=float(row.get("고가", row.get("High", 0))),
+                low=float(row.get("저가", row.get("Low", 0))),
+                close=float(row.get("종가", row.get("Close", 0))),
+                volume=int(row.get("거래량", row.get("Volume", 0))),
+                time=time_str,
+            ))
+        return prices
+    except Exception as e:
+        logger.debug("pykrx prices fetch failed for %s: %s", ticker, e)
+    return []
+
+
+def _fetch_fdr_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
+    """Fetch Korean stock price data from FinanceDataReader (KRX+NAVER)."""
+    if not _is_korean_ticker(ticker):
+        return []
+    try:
+        import FinanceDataReader as fdr
+        code = ticker.split(".")[0]
+        df = fdr.DataReader(code, start_date, end_date)
+        if df is None or df.empty:
+            return []
+        prices = []
+        for ts, row in df.iterrows():
+            time_str = ts.strftime("%Y-%m-%dT00:00:00") if hasattr(ts, "strftime") else str(ts)[:10] + "T00:00:00"
+            prices.append(Price(
+                open=float(row.get("Open", row.get("open", 0))),
+                high=float(row.get("High", row.get("high", 0))),
+                low=float(row.get("Low", row.get("low", 0))),
+                close=float(row.get("Close", row.get("close", 0))),
+                volume=int(row.get("Volume", row.get("volume", 0))),
+                time=time_str,
+            ))
+        return prices
+    except Exception as e:
+        logger.debug("FinanceDataReader prices fetch failed for %s: %s", ticker, e)
+    return []
+
 
 def _fetch_alphavantage_metrics(ticker: str) -> dict | None:
     av_key = "QCE8EC5Q5OP74PYD"
@@ -224,14 +714,30 @@ def get_financial_metrics(
     except Exception as e:
         logger.warning("Failed to parse financial metrics response for %s: %s", ticker, e)
 
+    if not financial_metrics and _is_korean_ticker(ticker):
+        # Korean stocks: try DART first (official 재무제표)
+        try:
+            from src.tools.dart_api import fetch_dart_metrics
+            dart_data = fetch_dart_metrics(ticker, end_date)
+            if dart_data:
+                financial_metrics = [FinancialMetrics(**dart_data)]
+        except Exception as e:
+            logger.debug("DART metrics fetch failed for %s: %s", ticker, e)
+
     if not financial_metrics:
         fmp_data = _fetch_fmp_metrics(ticker)
         if fmp_data:
             financial_metrics = [FinancialMetrics(**fmp_data)]
-        else:
-            av_data = _fetch_alphavantage_metrics(ticker)
-            if av_data:
-                financial_metrics = [FinancialMetrics(**av_data)]
+
+    if not financial_metrics:
+        av_data = _fetch_alphavantage_metrics(ticker)
+        if av_data:
+            financial_metrics = [FinancialMetrics(**av_data)]
+
+    if not financial_metrics:
+        yf_data = _fetch_yfinance_metrics(ticker)
+        if yf_data:
+            financial_metrics = [FinancialMetrics(**yf_data)]
 
     if not financial_metrics:
         return []
@@ -266,20 +772,34 @@ def search_line_items(
         "limit": limit,
     }
     response = _make_api_request(url, headers, method="POST", json_data=body)
-    if response.status_code != 200:
-        return []
-    
-    try:
-        data = response.json()
-        response_model = LineItemResponse(**data)
-        search_results = response_model.search_results
-    except Exception as e:
-        logger.warning("Failed to parse line items response for %s: %s", ticker, e)
-        return []
+    search_results = []
+    if response.status_code == 200:
+        try:
+            data = response.json()
+            response_model = LineItemResponse(**data)
+            search_results = response_model.search_results
+        except Exception as e:
+            logger.warning("Failed to parse line items response for %s: %s", ticker, e)
+
+    if not search_results and _is_korean_ticker(ticker):
+        # Fallback 1 for Korean: DART (official 재무제표 - most accurate for KR)
+        try:
+            from src.tools.dart_api import fetch_dart_line_items
+            search_results = fetch_dart_line_items(ticker, line_items, end_date, period, limit)
+        except Exception as e:
+            logger.debug("DART line items fetch failed for %s: %s", ticker, e)
+
+    if not search_results:
+        # Fallback 2: FMP stable financial statements (US stocks)
+        search_results = _fetch_fmp_line_items(ticker, line_items, end_date, period, limit)
+
+    if not search_results:
+        # Fallback 3: yfinance (works for Korean + US stocks)
+        search_results = _fetch_yfinance_line_items(ticker, line_items, end_date, period, limit)
+
     if not search_results:
         return []
 
-    # Cache the results
     return search_results[:limit]
 
 
@@ -406,6 +926,38 @@ def get_company_news(
         # If we've reached or passed the start_date, we can stop
         if current_end_date <= start_date:
             break
+
+    if not all_news:
+        # Fallback: yfinance news
+        try:
+            import yfinance as yf
+            yf_news = yf.Ticker(ticker).news or []
+            for item in yf_news[:limit]:
+                content = item.get("content", {})
+                pub_date = ""
+                pt = content.get("pubDate") or item.get("providerPublishTime")
+                if pt:
+                    import datetime
+                    if isinstance(pt, (int, float)):
+                        pub_date = datetime.datetime.fromtimestamp(pt).strftime("%Y-%m-%dT%H:%M:%S")
+                    else:
+                        pub_date = str(pt)[:10]
+                if pub_date and start_date and pub_date[:10] < start_date:
+                    continue
+                title = content.get("title") or item.get("title", "")
+                summary = content.get("summary") or content.get("body") or item.get("summary", "")
+                url = content.get("canonicalUrl", {}).get("url") or item.get("link", "")
+                all_news.append(CompanyNews(
+                    ticker=ticker,
+                    title=title,
+                    author=content.get("byline", {}).get("byline", "") if isinstance(content.get("byline"), dict) else "",
+                    source=content.get("provider", {}).get("displayName", "Yahoo Finance") if isinstance(content.get("provider"), dict) else "Yahoo Finance",
+                    date=pub_date or end_date,
+                    url=url,
+                    sentiment=None,
+                ))
+        except Exception as e:
+            logger.debug("yfinance news fallback failed for %s: %s", ticker, e)
 
     if not all_news:
         return []
