@@ -50,14 +50,18 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         line_items = search_line_items(
             ticker,
             [
+                "revenue",
                 "free_cash_flow",
                 "ebit",
                 "interest_expense",
+                "operating_income",
                 "capital_expenditure",
                 "depreciation_and_amortization",
                 "outstanding_shares",
                 "net_income",
                 "total_debt",
+                "shareholders_equity",
+                "cash_and_equivalents",
             ],
             end_date,
             api_key=api_key,
@@ -149,11 +153,13 @@ def analyze_growth_and_reinvestment(metrics: list, line_items: list) -> dict[str
     Reinvestment efficiency (ROIC > WACC) adds +1
     """
     max_score = 4
-    if len(metrics) < 2:
-        return {"score": 0, "max_score": max_score, "details": "Insufficient history"}
+    if len(metrics) < 2 and len(line_items) < 2:
+        return {"score": 0, "max_score": max_score, "details": "N/A: 기간별 성장 이력은 제한적이어서 현금흐름과 수익성 대체 지표를 우선 해석"}
 
     # Revenue CAGR (oldest to latest)
-    revs = [m.revenue for m in reversed(metrics) if hasattr(m, "revenue") and m.revenue]
+    revs = [li.revenue for li in reversed(line_items) if getattr(li, "revenue", None)]
+    if len(revs) < 2:
+        revs = [m.revenue for m in reversed(metrics) if hasattr(m, "revenue") and m.revenue]
     if len(revs) >= 2 and revs[0] > 0:
         cagr = (revs[-1] / revs[0]) ** (1 / (len(revs) - 1)) - 1
     else:
@@ -171,7 +177,7 @@ def analyze_growth_and_reinvestment(metrics: list, line_items: list) -> dict[str
         else:
             details.append(f"Sluggish revenue CAGR {cagr:.1%}")
     else:
-        details.append("Revenue data incomplete")
+        details.append("매출 CAGR은 N/A라서 FCFF와 ROIC 대체 지표를 더 중시")
 
     # FCFF growth (proxy: free_cash_flow trend)
     fcfs = [li.free_cash_flow for li in reversed(line_items) if li.free_cash_flow]
@@ -179,15 +185,24 @@ def analyze_growth_and_reinvestment(metrics: list, line_items: list) -> dict[str
         score += 1
         details.append("Positive FCFF growth")
     else:
-        details.append("Flat or declining FCFF")
+        details.append("FCFF 성장성은 정체 또는 N/A")
 
     # Reinvestment efficiency (ROIC vs. 10 % hurdle)
-    latest = metrics[0]
-    if latest.return_on_invested_capital and latest.return_on_invested_capital > 0.10:
+    latest = metrics[0] if metrics else None
+    latest_li = line_items[0] if line_items else None
+    roic = getattr(latest, "return_on_invested_capital", None) if latest else None
+    if roic is None and latest_li:
+        roic = getattr(latest_li, "return_on_invested_capital", None)
+    if roic and roic > 0.10:
         score += 1
-        details.append(f"ROIC {latest.return_on_invested_capital:.1%} (> 10 %)")
+        details.append(f"ROIC {roic:.1%} (> 10 %)")
 
-    return {"score": score, "max_score": max_score, "details": "; ".join(details), "metrics": latest.model_dump()}
+    return {
+        "score": score,
+        "max_score": max_score,
+        "details": "; ".join(details),
+        "metrics": latest.model_dump() if latest else {},
+    }
 
 
 def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
@@ -198,14 +213,15 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
       +1  Interest Coverage > 3×
     """
     max_score = 3
-    if not metrics:
-        return {"score": 0, "max_score": max_score, "details": "No metrics"}
+    if not metrics and not line_items:
+        return {"score": 0, "max_score": max_score, "details": "N/A: 위험 지표 원천이 제한되어 보수적 할인율을 적용"}
 
-    latest = metrics[0]
+    latest = metrics[0] if metrics else None
+    latest_li = line_items[0] if line_items else None
     score, details = 0, []
 
     # Beta
-    beta = getattr(latest, "beta", None)
+    beta = getattr(latest, "beta", None) if latest else None
     if beta is not None:
         if beta < 1.3:
             score += 1
@@ -213,10 +229,14 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
         else:
             details.append(f"High beta {beta:.2f}")
     else:
-        details.append("Beta NA")
+        details.append("Beta N/A")
 
     # Debt / Equity
-    dte = getattr(latest, "debt_to_equity", None)
+    dte = getattr(latest, "debt_to_equity", None) if latest else None
+    if dte is None and latest_li:
+        total_debt = getattr(latest_li, "total_debt", None)
+        equity = getattr(latest_li, "shareholders_equity", None)
+        dte = total_debt / equity if total_debt is not None and equity else None
     if dte is not None:
         if dte < 1:
             score += 1
@@ -224,11 +244,15 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
         else:
             details.append(f"High D/E {dte:.1f}")
     else:
-        details.append("D/E NA")
+        details.append("D/E N/A")
 
     # Interest coverage
-    ebit = getattr(latest, "ebit", None)
-    interest = getattr(latest, "interest_expense", None)
+    ebit = getattr(latest_li, "ebit", None) if latest_li else None
+    if ebit is None and latest:
+        ebit = getattr(latest, "ebit", None) or getattr(latest, "operating_income", None)
+    interest = getattr(latest_li, "interest_expense", None) if latest_li else None
+    if interest is None and latest:
+        interest = getattr(latest, "interest_expense", None)
     if ebit and interest and interest != 0:
         coverage = ebit / abs(interest)
         if coverage > 3:
@@ -237,7 +261,7 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
         else:
             details.append(f"Weak coverage × {coverage:.1f}")
     else:
-        details.append("Interest coverage NA")
+        details.append("Interest coverage N/A")
 
     # Compute cost of equity for later use
     cost_of_equity = estimate_cost_of_equity(beta)
@@ -290,17 +314,21 @@ def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis
       • Fade linearly to terminal growth 2.5 % by year 10
       • Discount @ cost of equity (no debt split given data limitations)
     """
-    if not metrics or len(metrics) < 2 or not line_items:
-        return {"intrinsic_value": None, "details": ["Insufficient data"]}
+    if len(line_items) < 1:
+        return {"intrinsic_value": None, "details": ["N/A: FCFF DCF에 필요한 현금흐름 원천이 없어 상대가치와 질적 리스크를 우선 해석"]}
 
-    latest_m = metrics[0]
-    fcff0 = getattr(latest_m, "free_cash_flow", None)
-    shares = getattr(line_items[0], "outstanding_shares", None)
+    latest_li = line_items[0]
+    fcff0 = getattr(latest_li, "free_cash_flow", None)
+    if fcff0 is None and metrics:
+        fcff0 = getattr(metrics[0], "free_cash_flow", None)
+    shares = getattr(latest_li, "outstanding_shares", None)
     if not fcff0 or not shares:
-        return {"intrinsic_value": None, "details": ["Missing FCFF or share count"]}
+        return {"intrinsic_value": None, "details": ["N/A: FCFF 또는 주식 수가 없어 DCF는 보조 지표로만 취급"]}
 
     # Growth assumptions
-    revs = [m.revenue for m in reversed(metrics) if m.revenue]
+    revs = [li.revenue for li in reversed(line_items) if getattr(li, "revenue", None)]
+    if len(revs) < 2:
+        revs = [m.revenue for m in reversed(metrics) if hasattr(m, "revenue") and m.revenue]
     if len(revs) >= 2 and revs[0] > 0:
         base_growth = min((revs[-1] / revs[0]) ** (1 / (len(revs) - 1)) - 1, 0.12)
     else:

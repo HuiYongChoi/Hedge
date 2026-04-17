@@ -15,6 +15,8 @@ import datetime
 from functools import lru_cache
 from typing import Optional
 
+from src.utils.data_standardizer import derive_financial_fields
+
 logger = logging.getLogger(__name__)
 
 DART_API_KEY = os.environ.get("DART_API_KEY", "514cd3e14517d866beb2f548754bb57863abc166")
@@ -33,6 +35,9 @@ IS_ACCOUNT_MAP: dict[str, list[str]] = {
     "operating_income": [
         "영업이익", "영업이익(손실)", "영업손익",
     ],
+    "operating_expense": [
+        "판매비와관리비", "판매비및관리비", "판매비", "일반관리비", "영업비용",
+    ],
     "ebit": [
         "법인세비용차감전순이익(손실)", "법인세비용차감전순이익",
         "법인세차감전순이익", "세전이익",
@@ -45,6 +50,12 @@ IS_ACCOUNT_MAP: dict[str, list[str]] = {
     ],
     "interest_expense": [
         "이자비용", "금융비용",
+    ],
+    "research_and_development": [
+        "연구개발비", "경상연구개발비", "연구비", "개발비",
+    ],
+    "depreciation_and_amortization": [
+        "감가상각비", "감가상각 및 무형자산상각", "감가상각및상각비", "무형자산상각비",
     ],
     "earnings_per_share": [
         "기본주당이익(손실)", "기본주당순이익(손실)",
@@ -68,6 +79,7 @@ BS_ACCOUNT_MAP: dict[str, list[str]] = {
     "retained_earnings": ["이익잉여금"],
     "goodwill": ["영업권"],
     "intangible_assets": ["무형자산"],
+    "goodwill_and_intangible_assets": ["영업권 및 무형자산", "영업권및무형자산"],
 }
 
 CF_ACCOUNT_MAP: dict[str, list[str]] = {
@@ -87,6 +99,9 @@ CF_ACCOUNT_MAP: dict[str, list[str]] = {
     ],
     "stock_based_compensation": [
         "주식보상비용",
+    ],
+    "depreciation_and_amortization": [
+        "감가상각비", "감가상각및상각비", "유무형자산상각비",
     ],
 }
 
@@ -299,7 +314,7 @@ def _extract_financials(df) -> dict:
             result["ebitda"] = oi + abs(dep)
             result["depreciation_and_amortization"] = abs(dep)
 
-    return result
+    return derive_financial_fields(result)
 
 
 # ─── 공개 인터페이스 ──────────────────────────────────────────────────────────
@@ -511,4 +526,22 @@ def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
         "earnings_per_share": eps,
         "book_value_per_share": bvps,
         "free_cash_flow_per_share": fcf_per_share,
+        "revenue": revenue,
+        "gross_profit": gross_profit,
+        "operating_income": operating_income,
+        "net_income": net_income,
+        "free_cash_flow": free_cash_flow,
+        "operating_cash_flow": fin.get("operating_cash_flow"),
+        "capital_expenditure": fin.get("capital_expenditure"),
+        "depreciation_and_amortization": fin.get("depreciation_and_amortization"),
+        "interest_expense": fin.get("interest_expense"),
+        "total_debt": fin.get("total_debt"),
+        "cash_and_equivalents": fin.get("cash_and_equivalents"),
+        "outstanding_shares": outstanding_shares,
+        "total_assets": total_assets,
+        "total_liabilities": total_liabilities,
+        "shareholders_equity": shareholders_equity,
+        "current_assets": current_assets,
+        "current_liabilities": current_liabilities,
+        "research_and_development": fin.get("research_and_development"),
     }

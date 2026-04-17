@@ -21,9 +21,63 @@ from src.data.models import (
     InsiderTradeResponse,
     CompanyFactsResponse,
 )
+from src.utils.data_standardizer import standardize_financial_metric_payload, standardize_line_items
 
 # Global cache instance
 _cache = get_cache()
+
+DEFAULT_FINANCIAL_METRIC_FIELDS = tuple(FinancialMetrics.model_fields.keys())
+LINE_ITEM_DERIVED_FIELDS = (
+    "gross_margin",
+    "operating_margin",
+    "debt_to_equity",
+    "return_on_invested_capital",
+    "goodwill_and_intangible_assets",
+    "operating_expense",
+    "owner_earnings",
+)
+LINE_ITEM_DERIVATION_DEPENDENCIES = {
+    "gross_margin": ("gross_profit", "revenue"),
+    "operating_margin": ("operating_income", "revenue"),
+    "net_margin": ("net_income", "revenue"),
+    "debt_to_equity": ("total_debt", "total_liabilities", "shareholders_equity"),
+    "debt_to_assets": ("total_liabilities", "total_assets"),
+    "current_ratio": ("current_assets", "current_liabilities"),
+    "return_on_invested_capital": ("operating_income", "total_debt", "shareholders_equity", "cash_and_equivalents"),
+    "goodwill_and_intangible_assets": ("goodwill", "intangible_assets"),
+    "operating_expense": ("revenue", "operating_income"),
+    "owner_earnings": ("net_income", "depreciation_and_amortization", "capital_expenditure"),
+    "free_cash_flow": ("operating_cash_flow", "capital_expenditure"),
+    "free_cash_flow_per_share": ("free_cash_flow", "operating_cash_flow", "capital_expenditure", "outstanding_shares"),
+    "book_value_per_share": ("shareholders_equity", "outstanding_shares"),
+    "interest_coverage": ("ebit", "operating_income", "interest_expense"),
+}
+
+
+def _build_financial_metric(raw_payload: dict) -> dict:
+    payload = standardize_financial_metric_payload(raw_payload)
+    for field_name in DEFAULT_FINANCIAL_METRIC_FIELDS:
+        payload.setdefault(field_name, None)
+    return payload
+
+
+def _expand_line_items(line_items: list[str]) -> list[str]:
+    expanded = list(dict.fromkeys(line_items))
+    for field in line_items:
+        for dependency in LINE_ITEM_DERIVATION_DEPENDENCIES.get(field, ()):
+            if dependency not in expanded:
+                expanded.append(dependency)
+    return expanded
+
+
+def _has_usable_line_item_fields(items: list[LineItem], requested_fields: list[str]) -> bool:
+    if not items:
+        return False
+    for item in items:
+        for field in requested_fields:
+            if getattr(item, field, None) is not None:
+                return True
+    return False
 
 
 def _make_api_request(url: str, headers: dict, method: str = "GET", json_data: dict = None, max_retries: int = 3) -> requests.Response:
@@ -112,8 +166,15 @@ FMP_STABLE_BASE = "https://financialmodelingprep.com/stable"
 
 def parse_float_safe(val):
     try:
-        return float(val) if val and val != "None" else None
-    except:
+        if val is None:
+            return None
+        if isinstance(val, str):
+            stripped = val.replace(",", "").strip()
+            if stripped in ("", "-", "None", "nan", "NaN"):
+                return None
+            return float(stripped)
+        return float(val)
+    except Exception:
         return None
 
 
@@ -144,16 +205,24 @@ def _fetch_fmp_metrics(ticker: str) -> dict | None:
     try:
         km = _fmp_get("key-metrics", {"symbol": ticker, "limit": 1})
         rt = _fmp_get("ratios", {"symbol": ticker, "limit": 1})
-        if not km or not isinstance(km, list) or not km[0]:
+        inc = _fmp_get("income-statement", {"symbol": ticker, "limit": 1}) or []
+        bal = _fmp_get("balance-sheet-statement", {"symbol": ticker, "limit": 1}) or []
+        cf = _fmp_get("cash-flow-statement", {"symbol": ticker, "limit": 1}) or []
+        profile = _fmp_get("profile", {"symbol": ticker}) or []
+        if not km and not inc and not bal and not cf:
             return None
-        m = km[0]
+        m = km[0] if (km and isinstance(km, list) and km) else {}
         r = rt[0] if (rt and isinstance(rt, list) and rt) else {}
-        report_date = m.get("date", "TTM")
+        inc_row = inc[0] if isinstance(inc, list) and inc else {}
+        bal_row = bal[0] if isinstance(bal, list) and bal else {}
+        cf_row = cf[0] if isinstance(cf, list) and cf else {}
+        profile_row = profile[0] if isinstance(profile, list) and profile else {}
+        report_date = m.get("date") or inc_row.get("date") or bal_row.get("date") or "TTM"
         return {
             "ticker": ticker,
             "report_period": report_date,
             "period": "ttm",
-            "currency": m.get("reportedCurrency", "USD"),
+            "currency": m.get("reportedCurrency") or inc_row.get("reportedCurrency") or "USD",
             "market_cap": parse_float_safe(m.get("marketCap")),
             "enterprise_value": parse_float_safe(m.get("enterpriseValue")),
             "price_to_earnings_ratio": parse_float_safe(r.get("priceToEarningsRatio")),
@@ -183,6 +252,26 @@ def _fetch_fmp_metrics(ticker: str) -> dict | None:
             "earnings_per_share": parse_float_safe(r.get("netIncomePerShare")),
             "book_value_per_share": parse_float_safe(r.get("bookValuePerShare")),
             "free_cash_flow_per_share": parse_float_safe(r.get("freeCashFlowPerShare")),
+            "revenue": parse_float_safe(inc_row.get("revenue")),
+            "gross_profit": parse_float_safe(inc_row.get("grossProfit")),
+            "operating_income": parse_float_safe(inc_row.get("operatingIncome")),
+            "net_income": parse_float_safe(inc_row.get("netIncome")),
+            "ebit": parse_float_safe(inc_row.get("ebit")),
+            "ebitda": parse_float_safe(inc_row.get("ebitda")),
+            "interest_expense": parse_float_safe(inc_row.get("interestExpense")),
+            "total_debt": parse_float_safe(bal_row.get("totalDebt")),
+            "cash_and_equivalents": parse_float_safe(bal_row.get("cashAndCashEquivalents")),
+            "outstanding_shares": parse_float_safe(inc_row.get("weightedAverageShsOutDil")),
+            "operating_cash_flow": parse_float_safe(cf_row.get("operatingCashFlow")),
+            "capital_expenditure": parse_float_safe(cf_row.get("capitalExpenditure")),
+            "free_cash_flow": parse_float_safe(cf_row.get("freeCashFlow")),
+            "depreciation_and_amortization": parse_float_safe(inc_row.get("depreciationAndAmortization") or cf_row.get("depreciationAndAmortization")),
+            "total_assets": parse_float_safe(bal_row.get("totalAssets")),
+            "total_liabilities": parse_float_safe(bal_row.get("totalLiabilities")),
+            "shareholders_equity": parse_float_safe(bal_row.get("totalStockholdersEquity")),
+            "current_assets": parse_float_safe(bal_row.get("totalCurrentAssets")),
+            "current_liabilities": parse_float_safe(bal_row.get("totalCurrentLiabilities")),
+            "beta": parse_float_safe(profile_row.get("beta")),
         }
     except Exception as e:
         logger.debug("FMP metrics fetch failed for %s: %s", ticker, e)
@@ -204,15 +293,15 @@ def _fetch_yfinance_metrics(ticker: str) -> dict | None:
         op_inc = parse_float_safe(info.get("operatingIncome") or info.get("ebit"))
         ebitda = parse_float_safe(info.get("ebitda"))
         total_debt = parse_float_safe(info.get("totalDebt"))
-        total_equity = parse_float_safe(info.get("bookValue"))
+        bvps = parse_float_safe(info.get("bookValue"))
         shares = parse_float_safe(info.get("sharesOutstanding"))
+        total_equity = bvps * shares if bvps is not None and shares is not None else None
         currency = info.get("currency", "USD")
         report_date = info.get("mostRecentQuarter") or "TTM"
         if isinstance(report_date, (int, float)):
             import datetime
             report_date = datetime.datetime.fromtimestamp(report_date).strftime("%Y-%m-%d")
 
-        bvps = parse_float_safe(info.get("bookValue"))
         fcf = parse_float_safe(info.get("freeCashflow"))
         price = parse_float_safe(info.get("regularMarketPrice") or info.get("currentPrice"))
 
@@ -237,13 +326,29 @@ def _fetch_yfinance_metrics(ticker: str) -> dict | None:
             "return_on_invested_capital": None,
             "current_ratio": parse_float_safe(info.get("currentRatio")),
             "quick_ratio": parse_float_safe(info.get("quickRatio")),
-            "debt_to_equity": (total_debt / (total_equity * shares)) if (total_debt and total_equity and shares) else None,
+            "debt_to_equity": (total_debt / total_equity) if (total_debt and total_equity) else None,
             "revenue_growth": parse_float_safe(info.get("revenueGrowth")),
             "earnings_growth": parse_float_safe(info.get("earningsGrowth")),
             "earnings_per_share": parse_float_safe(info.get("trailingEps")),
             "book_value_per_share": bvps,
             "free_cash_flow_per_share": (fcf / shares) if (fcf and shares) else None,
             "payout_ratio": parse_float_safe(info.get("payoutRatio")),
+            "revenue": rev,
+            "gross_profit": gp,
+            "operating_income": op_inc,
+            "net_income": ni,
+            "free_cash_flow": fcf,
+            "operating_cash_flow": parse_float_safe(info.get("operatingCashflow")),
+            "capital_expenditure": None,
+            "depreciation_and_amortization": None,
+            "ebit": parse_float_safe(info.get("ebit")),
+            "ebitda": ebitda,
+            "interest_expense": None,
+            "total_debt": total_debt,
+            "cash_and_equivalents": parse_float_safe(info.get("totalCash")),
+            "outstanding_shares": shares,
+            "shareholders_equity": total_equity,
+            "beta": parse_float_safe(info.get("beta")),
         }
     except Exception as e:
         logger.debug("yfinance metrics fetch failed for %s: %s", ticker, e)
@@ -257,6 +362,7 @@ _INCOME_MAP = {
     "gross_profit": "grossProfit",
     "net_income": "netIncome",
     "operating_income": "operatingIncome",
+    "operating_expense": "operatingExpenses",
     "ebitda": "ebitda",
     "ebit": "ebit",
     "interest_expense": "interestExpense",
@@ -276,6 +382,7 @@ _BALANCE_MAP = {
     "inventory": "inventory",
     "goodwill": "goodwill",
     "intangible_assets": "intangibleAssets",
+    "goodwill_and_intangible_assets": None,  # computed from goodwill + intangible_assets
     "retained_earnings": "retainedEarnings",
     "book_value_per_share": None,  # computed below
     "working_capital": None,       # computed below
@@ -295,6 +402,7 @@ _YF_INCOME_MAP = {
     "gross_profit": ["Gross Profit"],
     "net_income": ["Net Income", "Net Income From Continuing And Discontinued Operation"],
     "operating_income": ["Operating Income", "Total Operating Income As Reported"],
+    "operating_expense": ["Operating Expense", "Total Expenses", "Selling General And Administration"],
     "ebitda": ["EBITDA", "Normalized EBITDA"],
     "ebit": ["EBIT"],
     "interest_expense": ["Interest Expense"],
@@ -313,6 +421,7 @@ _YF_BALANCE_MAP = {
     "inventory": ["Inventory"],
     "goodwill": ["Goodwill"],
     "intangible_assets": ["Intangible Assets"],
+    "goodwill_and_intangible_assets": ["Goodwill And Other Intangible Assets", "Goodwill And Intangible Assets"],
     "retained_earnings": ["Retained Earnings"],
 }
 _YF_CASHFLOW_MAP = {
@@ -673,6 +782,11 @@ def _fetch_alphavantage_metrics(ticker: str) -> dict | None:
                     "earnings_growth": parse_float_safe(data.get("QuarterlyEarningsGrowthYOY")),
                     "earnings_per_share": parse_float_safe(data.get("EPS")),
                     "book_value_per_share": parse_float_safe(data.get("BookValue")),
+                    "revenue": rev,
+                    "gross_profit": gp,
+                    "net_income": parse_float_safe(data.get("NetIncomeTTM")),
+                    "ebitda": ebitda,
+                    "beta": parse_float_safe(data.get("Beta")),
                 }
     except Exception as e:
         pass
@@ -692,7 +806,7 @@ def get_financial_metrics(
     
     # Check cache first - simple exact match
     if cached_data := _cache.get_financial_metrics(cache_key):
-        return [FinancialMetrics(**metric) for metric in cached_data]
+        return [FinancialMetrics(**_build_financial_metric(metric)) for metric in cached_data]
 
     # If not in cache, fetch from API
     headers = {}
@@ -702,15 +816,18 @@ def get_financial_metrics(
 
     url = f"https://api.financialdatasets.ai/financial-metrics/?ticker={ticker}&report_period_lte={end_date}&limit={limit}&period={period}"
     response = _make_api_request(url, headers)
-    if response.status_code != 200:
-        return []
 
     financial_metrics = []
     # Parse response with Pydantic model
     try:
         if response.status_code == 200:
-            metrics_response = FinancialMetricsResponse(**response.json())
-            financial_metrics = metrics_response.financial_metrics
+            raw_response = response.json()
+            raw_metrics = raw_response.get("financial_metrics", []) if isinstance(raw_response, dict) else []
+            financial_metrics = [
+                FinancialMetrics(**_build_financial_metric(metric))
+                for metric in raw_metrics
+                if isinstance(metric, dict)
+            ]
     except Exception as e:
         logger.warning("Failed to parse financial metrics response for %s: %s", ticker, e)
 
@@ -720,24 +837,24 @@ def get_financial_metrics(
             from src.tools.dart_api import fetch_dart_metrics
             dart_data = fetch_dart_metrics(ticker, end_date)
             if dart_data:
-                financial_metrics = [FinancialMetrics(**dart_data)]
+                financial_metrics = [FinancialMetrics(**_build_financial_metric(dart_data))]
         except Exception as e:
             logger.debug("DART metrics fetch failed for %s: %s", ticker, e)
 
     if not financial_metrics:
         fmp_data = _fetch_fmp_metrics(ticker)
         if fmp_data:
-            financial_metrics = [FinancialMetrics(**fmp_data)]
+            financial_metrics = [FinancialMetrics(**_build_financial_metric(fmp_data))]
 
     if not financial_metrics:
         av_data = _fetch_alphavantage_metrics(ticker)
         if av_data:
-            financial_metrics = [FinancialMetrics(**av_data)]
+            financial_metrics = [FinancialMetrics(**_build_financial_metric(av_data))]
 
     if not financial_metrics:
         yf_data = _fetch_yfinance_metrics(ticker)
         if yf_data:
-            financial_metrics = [FinancialMetrics(**yf_data)]
+            financial_metrics = [FinancialMetrics(**_build_financial_metric(yf_data))]
 
     if not financial_metrics:
         return []
@@ -756,6 +873,7 @@ def search_line_items(
     api_key: str = None,
 ) -> list[LineItem]:
     """Fetch line items from API."""
+    fetch_line_items = _expand_line_items(line_items)
     # If not in cache or insufficient data, fetch from API
     headers = {}
     financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
@@ -766,7 +884,7 @@ def search_line_items(
 
     body = {
         "tickers": [ticker],
-        "line_items": line_items,
+        "line_items": fetch_line_items,
         "end_date": end_date,
         "period": period,
         "limit": limit,
@@ -781,26 +899,33 @@ def search_line_items(
         except Exception as e:
             logger.warning("Failed to parse line items response for %s: %s", ticker, e)
 
+    if search_results and not _has_usable_line_item_fields(standardize_line_items(search_results[:limit], line_items), line_items):
+        search_results = []
+
     if not search_results and _is_korean_ticker(ticker):
         # Fallback 1 for Korean: DART (official 재무제표 - most accurate for KR)
         try:
             from src.tools.dart_api import fetch_dart_line_items
-            search_results = fetch_dart_line_items(ticker, line_items, end_date, period, limit)
+            search_results = fetch_dart_line_items(ticker, fetch_line_items, end_date, period, limit)
         except Exception as e:
             logger.debug("DART line items fetch failed for %s: %s", ticker, e)
+        if search_results and not _has_usable_line_item_fields(standardize_line_items(search_results[:limit], line_items), line_items):
+            search_results = []
 
     if not search_results:
         # Fallback 2: FMP stable financial statements (US stocks)
-        search_results = _fetch_fmp_line_items(ticker, line_items, end_date, period, limit)
+        search_results = _fetch_fmp_line_items(ticker, fetch_line_items, end_date, period, limit)
+        if search_results and not _has_usable_line_item_fields(standardize_line_items(search_results[:limit], line_items), line_items):
+            search_results = []
 
     if not search_results:
         # Fallback 3: yfinance (works for Korean + US stocks)
-        search_results = _fetch_yfinance_line_items(ticker, line_items, end_date, period, limit)
+        search_results = _fetch_yfinance_line_items(ticker, fetch_line_items, end_date, period, limit)
 
     if not search_results:
         return []
 
-    return search_results[:limit]
+    return standardize_line_items(search_results[:limit], line_items)
 
 
 def get_insider_trades(
@@ -983,13 +1108,14 @@ def get_market_cap(
 
         url = f"https://api.financialdatasets.ai/company/facts/?ticker={ticker}"
         response = _make_api_request(url, headers)
-        if response.status_code != 200:
-            print(f"Error fetching company facts: {ticker} - {response.status_code}")
-            return None
-
-        data = response.json()
-        response_model = CompanyFactsResponse(**data)
-        return response_model.company_facts.market_cap
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                response_model = CompanyFactsResponse(**data)
+                if response_model.company_facts.market_cap:
+                    return response_model.company_facts.market_cap
+            except Exception as e:
+                logger.debug("Failed to parse company facts for %s: %s", ticker, e)
 
     financial_metrics = get_financial_metrics(ticker, end_date, api_key=api_key)
     if not financial_metrics:

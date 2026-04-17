@@ -1,6 +1,7 @@
 """Helper functions for LLM"""
 
 import json
+import re
 from pydantic import BaseModel
 from src.llm.models import get_model, get_model_info
 from src.utils.progress import progress
@@ -8,16 +9,63 @@ from src.graph.state import AgentState
 
 
 KOREAN_OUTPUT_REQUIREMENT = "CRITICAL REQUIREMENT: You MUST write your entire analysis, reasoning, and summary exclusively in Korean (한국어). Do NOT output any English sentences."
+DATA_GAP_HANDLING_REQUIREMENT = (
+    "DATA GAP HANDLING REQUIREMENT: Continue the investment analysis even when exact metrics are N/A. "
+    "Do NOT write phrases like 'insufficient data', 'data not available', 'cannot analyze', 'unable to evaluate', "
+    "'데이터가 부족', or '평가할 수 없다'. State the unavailable metric as N/A, use available proxy metrics and qualitative context, "
+    "and explain the resulting uncertainty. Never invent numbers."
+)
 KOREAN_DEFAULT_REASONING = "분석 중 오류가 발생하여 중립 의견으로 기본 처리했습니다."
 KOREAN_NO_TRADE_REASONING = "현재 실행 가능한 거래가 없어 관망합니다."
 KOREAN_DEFAULT_HOLD_REASONING = "모델 응답 실패로 관망 결정을 적용했습니다."
+KOREAN_DATA_GAP_REASONING = "일부 핵심 지표는 N/A라서, 확인 가능한 대체 지표 기준으로 보수적으로 관망합니다."
+
+
+DATA_GAP_LANGUAGE_PATTERNS = (
+    r"insufficient\s+(?:fundamental\s+|historical\s+|financial\s+|free\s+cash\s+flow\s+|earnings\s+|revenue\s+|margin\s+|price\s+|daily\s+returns\s+|data\s+)?data[^.;,\n]*",
+    r"no\s+[\w\s/-]*data\s+(?:available|found)[^.;,\n]*",
+    r"data\s+not\s+available[^.;,\n]*",
+    r"not\s+enough\s+[\w\s/-]*data[^.;,\n]*",
+    r"missing\s+[\w\s/-]*(?:data|components?)[^.;,\n]*",
+    r"missing\s+[^.;,\n]*",
+    r"no\s+(?:financial\s+)?metrics[^.;,\n]*",
+    r"cannot\s+(?:compute|calculate|analyze|value|evaluate)[^.;,\n]*",
+    r"unable\s+to\s+(?:compute|calculate|analyze|value|evaluate)[^.;,\n]*",
+    r"데이터가\s*부족[^.;,\n]*",
+    r"자료가\s*부족[^.;,\n]*",
+    r"정보가\s*부족[^.;,\n]*",
+    r"입력값이\s*없[^.;,\n]*",
+    r"평가할\s*수\s*없[^.;,\n]*",
+    r"분석할\s*수\s*없[^.;,\n]*",
+)
+
+
+def sanitize_data_gap_language(text: str) -> str:
+    """Replace analysis-stopping data complaints with N/A/proxy-analysis wording."""
+    if not isinstance(text, str):
+        return text
+    sanitized = text
+    for pattern in DATA_GAP_LANGUAGE_PATTERNS:
+        sanitized = re.sub(
+            pattern,
+            "N/A로 표시된 정확한 지표는 대체 가능한 공개 지표와 정성 맥락으로 보수적으로 해석",
+            sanitized,
+            flags=re.IGNORECASE,
+        )
+    return sanitized
 
 
 def _append_korean_requirement_to_text(text: str) -> str:
-    """Append the Korean-only instruction once, preserving existing prompt text."""
-    if KOREAN_OUTPUT_REQUIREMENT in text:
+    """Append prompt-wide data-gap and Korean-only instructions once."""
+    text = sanitize_data_gap_language(text).rstrip()
+    requirements = []
+    if DATA_GAP_HANDLING_REQUIREMENT not in text:
+        requirements.append(DATA_GAP_HANDLING_REQUIREMENT)
+    if KOREAN_OUTPUT_REQUIREMENT not in text:
+        requirements.append(KOREAN_OUTPUT_REQUIREMENT)
+    if not requirements:
         return text
-    return f"{text.rstrip()}\n\n{KOREAN_OUTPUT_REQUIREMENT}"
+    return f"{text}\n\n" + "\n\n".join(requirements)
 
 
 def _clone_message_with_content(message: any, content: str):
@@ -43,9 +91,9 @@ def _make_system_message():
     try:
         from langchain_core.messages import SystemMessage
 
-        return SystemMessage(content=KOREAN_OUTPUT_REQUIREMENT)
+        return SystemMessage(content=f"{DATA_GAP_HANDLING_REQUIREMENT}\n\n{KOREAN_OUTPUT_REQUIREMENT}")
     except Exception:
-        return {"role": "system", "content": KOREAN_OUTPUT_REQUIREMENT}
+        return {"role": "system", "content": f"{DATA_GAP_HANDLING_REQUIREMENT}\n\n{KOREAN_OUTPUT_REQUIREMENT}"}
 
 
 def _clone_prompt_with_messages(prompt: any, messages: list):
@@ -83,7 +131,13 @@ def enforce_korean_output_requirement(prompt: any) -> any:
 
     messages = getattr(prompt, "messages", None)
     if isinstance(messages, list):
-        updated_messages = list(messages)
+        updated_messages = []
+        for message in messages:
+            content = getattr(message, "content", None)
+            if isinstance(content, str):
+                updated_messages.append(_clone_message_with_content(message, sanitize_data_gap_language(content)))
+            else:
+                updated_messages.append(message)
         system_index = None
 
         for idx in range(len(updated_messages) - 1, -1, -1):
@@ -116,8 +170,21 @@ def _koreanize_default_string(value: str) -> str:
         return KOREAN_NO_TRADE_REASONING
     if "default decision" in lower and "hold" in lower:
         return KOREAN_DEFAULT_HOLD_REASONING
-    if "insufficient data" in lower:
-        return "데이터가 부족하여 중립 의견입니다."
+    if (
+        "insufficient data" in lower
+        or "data not available" in lower
+        or "not enough" in lower
+        or "missing" in lower
+        or "cannot calculate" in lower
+        or "unable to calculate" in lower
+        or "데이터가 부족" in value
+        or "자료가 부족" in value
+        or "정보가 부족" in value
+        or "입력값이 없" in value
+        or "평가할 수 없다" in value
+        or "분석할 수 없" in value
+    ):
+        return KOREAN_DATA_GAP_REASONING
     if "error in analysis" in lower or "parsing error" in lower or "defaulting to neutral" in lower:
         return KOREAN_DEFAULT_REASONING
     return value
@@ -127,7 +194,7 @@ def ensure_korean_default_texts(value: any, field_name: str | None = None):
     """Replace known fallback reasoning strings with Korean text."""
     if isinstance(value, str):
         if field_name in {"reasoning", "summary", "details", "explanation", "analysis"}:
-            return _koreanize_default_string(value)
+            return _koreanize_default_string(sanitize_data_gap_language(value))
         return value
 
     if isinstance(value, BaseModel):
@@ -223,9 +290,9 @@ def call_llm(
             if model_info and not model_info.has_json_mode():
                 parsed_result = extract_json_from_response(result.content)
                 if parsed_result:
-                    return pydantic_model(**parsed_result)
+                    return ensure_korean_default_texts(pydantic_model(**parsed_result))
             else:
-                return result
+                return ensure_korean_default_texts(result)
 
         except Exception as e:
             if agent_name:
