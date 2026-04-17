@@ -96,7 +96,100 @@ def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None)
     return prices
 
 
+def parse_float_safe(val):
+    try:
+        return float(val) if val and val != "None" else None
+    except:
+        return None
+
+def _fetch_fmp_metrics(ticker: str) -> dict | None:
+    fmp_key = "WnoeVdSBlKezrKNExH7jtXfEWXg8YrtE"
+    fmp_ticker = ticker.replace('.', '-')
+    try:
+        url = f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{fmp_ticker}?apikey={fmp_key}"
+        r = requests.get(url)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, list) and len(data) > 0:
+                url2 = f"https://financialmodelingprep.com/api/v3/ratios-ttm/{fmp_ticker}?apikey={fmp_key}"
+                r2 = requests.get(url2)
+                ratios = r2.json() if r2.status_code == 200 else []
+                url3 = f"https://financialmodelingprep.com/api/v3/profile/{fmp_ticker}?apikey={fmp_key}"
+                r3 = requests.get(url3)
+                profile = r3.json() if r3.status_code == 200 else []
+
+                metrics = data[0]
+                rt = ratios[0] if isinstance(ratios, list) and len(ratios) > 0 else {}
+                prof = profile[0] if isinstance(profile, list) and len(profile) > 0 else {}
+                
+                return {
+                    "ticker": ticker,
+                    "report_period": "TTM",
+                    "period": "ttm",
+                    "currency": prof.get("currency", "USD"),
+                    "market_cap": parse_float_safe(prof.get("mktCap")),
+                    "enterprise_value": parse_float_safe(metrics.get("enterpriseValueTTM")),
+                    "price_to_earnings_ratio": parse_float_safe(metrics.get("peRatioTTM")),
+                    "price_to_book_ratio": parse_float_safe(metrics.get("pbRatioTTM")),
+                    "price_to_sales_ratio": parse_float_safe(metrics.get("pfcfRatioTTM")), 
+                    "operating_margin": parse_float_safe(rt.get("operatingProfitMarginTTM")),
+                    "net_margin": parse_float_safe(rt.get("netProfitMarginTTM")),
+                    "return_on_equity": parse_float_safe(rt.get("returnOnEquityTTM")),
+                    "return_on_assets": parse_float_safe(rt.get("returnOnAssetsTTM")),
+                    "return_on_invested_capital": parse_float_safe(rt.get("returnOnCapitalEmployedTTM")),
+                    "revenue_growth": parse_float_safe(metrics.get("revenuePerShareTTM")),
+                    "current_ratio": parse_float_safe(rt.get("currentRatioTTM")),
+                    "quick_ratio": parse_float_safe(rt.get("quickRatioTTM")),
+                    "debt_to_equity": parse_float_safe(rt.get("debtEquityRatioTTM")),
+                    "debt_to_assets": parse_float_safe(rt.get("debtRatioTTM")),
+                }
+    except Exception as e:
+        pass
+    return None
+
+def _fetch_alphavantage_metrics(ticker: str) -> dict | None:
+    av_key = "QCE8EC5Q5OP74PYD"
+    try:
+        url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={ticker}&apikey={av_key}"
+        r = requests.get(url)
+        if r.status_code == 200:
+            data = r.json()
+            if data and "MarketCapitalization" in data and "Information" not in data:
+                rev = parse_float_safe(data.get("RevenueTTM"))
+                gp = parse_float_safe(data.get("GrossProfitTTM"))
+                market_cap = parse_float_safe(data.get("MarketCapitalization"))
+                ebitda = parse_float_safe(data.get("EBITDA"))
+                
+                return {
+                    "ticker": ticker,
+                    "report_period": data.get("LatestQuarter", "TTM"),
+                    "period": "ttm",
+                    "currency": data.get("Currency", "USD"),
+                    "market_cap": market_cap,
+                    "enterprise_value": None,
+                    "price_to_earnings_ratio": parse_float_safe(data.get("PERatio")),
+                    "price_to_book_ratio": parse_float_safe(data.get("PriceToBookRatio")),
+                    "price_to_sales_ratio": parse_float_safe(data.get("PriceToSalesRatioTTM")),
+                    "enterprise_value_to_ebitda_ratio": parse_float_safe(data.get("EVToEBITDA")),
+                    "enterprise_value_to_revenue_ratio": parse_float_safe(data.get("EVToRevenue")),
+                    "peg_ratio": parse_float_safe(data.get("PEGRatio")),
+                    "gross_margin": (gp / rev) if (gp is not None and rev) else None,
+                    "operating_margin": parse_float_safe(data.get("OperatingMarginTTM")),
+                    "net_margin": parse_float_safe(data.get("ProfitMargin")),
+                    "return_on_equity": parse_float_safe(data.get("ReturnOnEquityTTM")),
+                    "return_on_assets": parse_float_safe(data.get("ReturnOnAssetsTTM")),
+                    "return_on_invested_capital": parse_float_safe(data.get("ReturnOnEquityTTM")),
+                    "revenue_growth": parse_float_safe(data.get("QuarterlyRevenueGrowthYOY")),
+                    "earnings_growth": parse_float_safe(data.get("QuarterlyEarningsGrowthYOY")),
+                    "earnings_per_share": parse_float_safe(data.get("EPS")),
+                    "book_value_per_share": parse_float_safe(data.get("BookValue")),
+                }
+    except Exception as e:
+        pass
+    return None
+
 def get_financial_metrics(
+
     ticker: str,
     end_date: str,
     period: str = "ttm",
@@ -122,13 +215,23 @@ def get_financial_metrics(
     if response.status_code != 200:
         return []
 
+    financial_metrics = []
     # Parse response with Pydantic model
     try:
-        metrics_response = FinancialMetricsResponse(**response.json())
-        financial_metrics = metrics_response.financial_metrics
+        if response.status_code == 200:
+            metrics_response = FinancialMetricsResponse(**response.json())
+            financial_metrics = metrics_response.financial_metrics
     except Exception as e:
         logger.warning("Failed to parse financial metrics response for %s: %s", ticker, e)
-        return []
+
+    if not financial_metrics:
+        fmp_data = _fetch_fmp_metrics(ticker)
+        if fmp_data:
+            financial_metrics = [FinancialMetrics(**fmp_data)]
+        else:
+            av_data = _fetch_alphavantage_metrics(ticker)
+            if av_data:
+                financial_metrics = [FinancialMetrics(**av_data)]
 
     if not financial_metrics:
         return []
