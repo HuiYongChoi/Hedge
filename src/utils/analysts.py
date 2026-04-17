@@ -31,7 +31,7 @@ ANALYST_CONFIG = {
         "investing_style": "Focuses on intrinsic value and financial metrics to assess investment opportunities through rigorous valuation analysis.",
         "investing_style_ko": "엄밀한 기업가치 분석을 통해 내재가치와 재무지표에 집중하여 투자 기회를 평가합니다.",
         "agent_func": aswath_damodaran_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Value Investing", "category_ko": "가치 투자",
         "order": 0,
     },
     "ben_graham": {
@@ -42,7 +42,7 @@ ANALYST_CONFIG = {
         "investing_style": "Emphasizes a margin of safety and invests in undervalued companies with strong fundamentals through systematic value analysis.",
         "investing_style_ko": "안전마진을 중시하며 체계적인 가치 분석을 통해 탄탄한 기초체력을 가진 저평가 기업에 투자합니다.",
         "agent_func": ben_graham_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Value Investing", "category_ko": "가치 투자",
         "order": 1,
     },
     "bill_ackman": {
@@ -53,7 +53,7 @@ ANALYST_CONFIG = {
         "investing_style": "Seeks to influence management and unlock value through strategic activism and contrarian investment positions.",
         "investing_style_ko": "전략적 행동주의와 역발상 투자 포지션으로 경영에 영향을 미쳐 가치를 창출합니다.",
         "agent_func": bill_ackman_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Macro & Activist", "category_ko": "거시 및 행동주의",
         "order": 2,
     },
     "cathie_wood": {
@@ -64,7 +64,7 @@ ANALYST_CONFIG = {
         "investing_style": "Focuses on disruptive innovation and growth, investing in companies that are leading technological advancements and market disruption.",
         "investing_style_ko": "기술 혁신과 시장 파괴를 이끄는 기업에 투자하며 파괴적 혁신과 성장에 집중합니다.",
         "agent_func": cathie_wood_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Growth Investing", "category_ko": "성장 투자",
         "order": 3,
     },
     "charlie_munger": {
@@ -75,7 +75,7 @@ ANALYST_CONFIG = {
         "investing_style": "Advocates for value investing with a focus on quality businesses and long-term growth through rational decision-making.",
         "investing_style_ko": "합리적 의사결정을 통해 우량 기업의 장기 성장에 집중하는 가치투자를 지지합니다.",
         "agent_func": charlie_munger_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Value Investing", "category_ko": "가치 투자",
         "order": 4,
     },
     "michael_burry": {
@@ -86,7 +86,7 @@ ANALYST_CONFIG = {
         "investing_style": "Makes contrarian bets, often shorting overvalued markets and investing in undervalued assets through deep fundamental analysis.",
         "investing_style_ko": "깊이 있는 기초분석으로 고평가 시장을 공매도하고 저평가 자산에 투자하는 역발상 베팅을 합니다.",
         "agent_func": michael_burry_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Macro & Activist", "category_ko": "거시 및 행동주의",
         "order": 5,
     },
     "mohnish_pabrai": {
@@ -97,7 +97,7 @@ ANALYST_CONFIG = {
         "investing_style": "Focuses on value investing and long-term growth through fundamental analysis and a margin of safety.",
         "investing_style_ko": "기초분석과 안전마진을 기반으로 가치투자와 장기 성장에 집중합니다.",
         "agent_func": mohnish_pabrai_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Value Investing", "category_ko": "가치 투자",
         "order": 6,
     },
     "nassim_taleb": {
@@ -108,7 +108,7 @@ ANALYST_CONFIG = {
         "investing_style": "Focuses on tail risk, antifragility, and asymmetric payoffs. Uses barbell strategy, avoids fragile companies via negativa, and seeks convex positions with limited downside and unlimited upside.",
         "investing_style_ko": "꼬리 위험·반취약성·비대칭 수익에 집중합니다. 바벨 전략을 사용하고, 취약 기업을 배제하며, 손실 제한 및 무한 이익의 볼록 포지션을 추구합니다.",
         "agent_func": nassim_taleb_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Macro & Activist", "category_ko": "거시 및 행동주의",
         "order": 7,
     },
     "peter_lynch": {
@@ -119,7 +119,7 @@ ANALYST_CONFIG = {
         "investing_style": "Invests in companies with understandable business models and strong growth potential using the 'buy what you know' strategy.",
         "investing_style_ko": "'아는 것에 투자하라' 전략으로 이해하기 쉬운 비즈니스 모델과 강한 성장 잠재력을 가진 기업에 투자합니다.",
         "agent_func": peter_lynch_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Value Investing", "category_ko": "가치 투자",
         "order": 8,
     },
     "phil_fisher": {
@@ -130,7 +130,7 @@ ANALYST_CONFIG = {
         "investing_style": "Emphasizes investing in companies with strong management and innovative products, focusing on long-term growth through scuttlebutt research.",
         "investing_style_ko": "스커틀버트 조사로 우수한 경영진과 혁신적 제품을 보유한 기업에 투자하며 장기 성장에 집중합니다.",
         "agent_func": phil_fisher_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Value Investing", "category_ko": "가치 투자",
         "order": 9,
     },
     "rakesh_jhunjhunwala": {
@@ -141,7 +141,7 @@ ANALYST_CONFIG = {
         "investing_style": "Leverages macroeconomic insights to invest in high-growth sectors, particularly within emerging markets and domestic opportunities.",
         "investing_style_ko": "거시경제 통찰력을 활용해 신흥시장과 국내 고성장 섹터에 투자합니다.",
         "agent_func": rakesh_jhunjhunwala_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Growth Investing", "category_ko": "성장 투자",
         "order": 10,
     },
     "stanley_druckenmiller": {
@@ -152,7 +152,7 @@ ANALYST_CONFIG = {
         "investing_style": "Focuses on macroeconomic trends, making large bets on currencies, commodities, and interest rates through top-down analysis.",
         "investing_style_ko": "하향식 분석으로 통화·원자재·금리에 대한 대규모 거시경제 베팅에 집중합니다.",
         "agent_func": stanley_druckenmiller_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Macro & Activist", "category_ko": "거시 및 행동주의",
         "order": 11,
     },
     "warren_buffett": {
@@ -163,7 +163,7 @@ ANALYST_CONFIG = {
         "investing_style": "Seeks companies with strong fundamentals and competitive advantages through value investing and long-term ownership.",
         "investing_style_ko": "가치투자와 장기 보유를 통해 탄탄한 기초체력과 경쟁우위를 가진 기업을 발굴합니다.",
         "agent_func": warren_buffett_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Value Investing", "category_ko": "가치 투자",
         "order": 12,
     },
     "technical_analyst": {
@@ -174,7 +174,7 @@ ANALYST_CONFIG = {
         "investing_style": "Focuses on chart patterns and market trends to make investment decisions, often using technical indicators and price action analysis.",
         "investing_style_ko": "차트 패턴과 시장 추세를 분석하여 기술적 지표와 가격 움직임을 기반으로 투자 결정을 내립니다.",
         "agent_func": technical_analyst_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Technical & Analysis", "category_ko": "기술 및 분석",
         "order": 13,
     },
     "fundamentals_analyst": {
@@ -185,7 +185,7 @@ ANALYST_CONFIG = {
         "investing_style": "Delves into financial statements and economic indicators to assess the intrinsic value of companies through fundamental analysis.",
         "investing_style_ko": "재무제표와 경제지표를 심층 분석하여 기본적 분석으로 기업의 내재가치를 평가합니다.",
         "agent_func": fundamentals_analyst_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Technical & Analysis", "category_ko": "기술 및 분석",
         "order": 14,
     },
     "growth_analyst": {
@@ -196,7 +196,7 @@ ANALYST_CONFIG = {
         "investing_style": "Analyzes growth trends and valuation to identify growth opportunities through growth analysis.",
         "investing_style_ko": "성장 추세와 밸류에이션을 분석하여 성장 기회를 발굴합니다.",
         "agent_func": growth_analyst_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Technical & Analysis", "category_ko": "기술 및 분석",
         "order": 15,
     },
     "news_sentiment_analyst": {
@@ -207,7 +207,7 @@ ANALYST_CONFIG = {
         "investing_style": "Analyzes news sentiment to predict market movements and identify opportunities through news analysis.",
         "investing_style_ko": "뉴스 감성을 분석하여 시장 움직임을 예측하고 투자 기회를 발굴합니다.",
         "agent_func": news_sentiment_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Technical & Analysis", "category_ko": "기술 및 분석",
         "order": 16,
     },
     "sentiment_analyst": {
@@ -218,7 +218,7 @@ ANALYST_CONFIG = {
         "investing_style": "Gauges market sentiment and investor behavior to predict market movements and identify opportunities through behavioral analysis.",
         "investing_style_ko": "행동 분석을 통해 시장 심리와 투자자 행동을 파악하여 시장 움직임을 예측하고 기회를 발굴합니다.",
         "agent_func": sentiment_analyst_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Technical & Analysis", "category_ko": "기술 및 분석",
         "order": 17,
     },
     "valuation_analyst": {
@@ -229,7 +229,7 @@ ANALYST_CONFIG = {
         "investing_style": "Specializes in determining the fair value of companies, using various valuation models and financial metrics for investment decisions.",
         "investing_style_ko": "다양한 가치평가 모델과 재무지표를 활용하여 기업의 적정가치를 산출하는 데 특화되어 있습니다.",
         "agent_func": valuation_analyst_agent,
-        "type": "analyst",
+        "type": "analyst", "category": "Technical & Analysis", "category_ko": "기술 및 분석",
         "order": 18,
     },
 }
@@ -255,6 +255,8 @@ def get_agents_list():
             "investing_style": config["investing_style"],
             "investing_style_ko": config.get("investing_style_ko", config["investing_style"]),
             "order": config["order"],
+            "category": config.get("category", "Other"),
+            "category_ko": config.get("category_ko", "기타"),
         }
         for key, config in sorted(ANALYST_CONFIG.items(), key=lambda x: x[1]["order"])
     ]

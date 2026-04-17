@@ -11,6 +11,7 @@ import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
 import { t } from '@/lib/language-preferences';
 import { Bot, ChevronDown, ChevronUp, Loader2, Play, Search, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 
   (typeof window !== 'undefined' && 
@@ -123,8 +124,8 @@ export function StockSearchTab() {
         setAgents(agentList);
         setModels(modelList);
         setSelectedModel(defaultModel);
-        // Select all agents by default
-        setSelectedAgents(new Set(agentList.map(a => a.key)));
+        // Select nothing by default
+        setSelectedAgents(new Set());
       } catch (err) {
         console.error('Failed to load agents/models', err);
       }
@@ -163,6 +164,12 @@ export function StockSearchTab() {
   const handleRun = async () => {
     if (!tickers.trim() || selectedAgents.size === 0) return;
 
+    // Use only the first ticker for single ticker analysis
+    const singleTicker = tickers.split(',')[0].trim().toUpperCase();
+    if (!singleTicker) return;
+
+    setTickers(singleTicker);
+
     setIsRunning(true);
     setErrorMessage(null);
     setCompleteResult(null);
@@ -179,7 +186,7 @@ export function StockSearchTab() {
     setAgentResults(initialResults);
 
     // Build graph nodes and edges
-    const tickerList = tickers.split(',').map(s => s.trim()).filter(Boolean);
+    const tickerList = [singleTicker];
     const suffix = Math.random().toString(36).slice(2, 8);
     const pmId = `portfolio_manager_${suffix}`;
 
@@ -386,12 +393,16 @@ export function StockSearchTab() {
           <div className="space-y-1.5">
             <label className="text-sm font-medium">{t('tickers', language)}</label>
             <TickerInput
-              placeholder={t('enterTickers', language)}
+              placeholder={language === 'ko' ? '단일 종목 입력 (예: AAPL)' : 'Enter single ticker (e.g. AAPL)'}
               value={tickers}
-              onChange={val => setTickers(val)}
+              onChange={val => {
+                 setTickers(val);
+              }}
               onKeyDown={e => { if (e.key === 'Enter' && canRun) handleRun(); }}
             />
-            <p className="text-xs text-muted-foreground">{t('tickersTooltip', language)}</p>
+            <p className="text-xs text-muted-foreground">
+              {language === 'ko' ? '단일 종목만 검색 및 분석이 가능합니다.' : 'Only a single ticker can be analyzed at a time.'}
+            </p>
           </div>
 
           {/* Dates */}
@@ -437,24 +448,40 @@ export function StockSearchTab() {
               <span className="ml-auto text-xs text-muted-foreground">{selectedAgents.size}/{agents.length}</span>
             </div>
 
-            {agents.map(agent => (
-              <div key={agent.key} className="flex items-start gap-2">
-                <Checkbox
-                  id={`agent-${agent.key}`}
-                  checked={selectedAgents.has(agent.key)}
-                  onCheckedChange={() => handleToggleAgent(agent.key)}
-                  className="mt-0.5"
-                />
-                <div className="flex-1 min-w-0">
-                  <label htmlFor={`agent-${agent.key}`} className="text-sm cursor-pointer leading-tight">
-                    {getAgentDisplayName(agent, language)}
-                  </label>
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    {getAgentDescription(agent, language)}
-                  </p>
-                </div>
-              </div>
-            ))}
+            {/* Categories Accordion */}
+            <Accordion type="multiple" defaultValue={Array.from(new Set(agents.map(a => a.category || 'Other')))}>
+              {Array.from(new Set(agents.map(a => a.category || 'Other'))).map(category => {
+                const categoryAgents = agents.filter(a => (a.category || 'Other') === category);
+                const categoryKo = categoryAgents[0]?.category_ko || '기타';
+                return (
+                  <AccordionItem key={category} value={category} className="border-b-0">
+                    <AccordionTrigger className="py-2 text-sm font-semibold hover:no-underline">
+                      {language === 'ko' ? categoryKo : category}
+                    </AccordionTrigger>
+                    <AccordionContent className="space-y-2 pb-2">
+                      {categoryAgents.map(agent => (
+                        <div key={agent.key} className="flex items-start gap-2">
+                          <Checkbox
+                            id={`agent-${agent.key}`}
+                            checked={selectedAgents.has(agent.key)}
+                            onCheckedChange={() => handleToggleAgent(agent.key)}
+                            className="mt-0.5"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <label htmlFor={`agent-${agent.key}`} className="text-sm cursor-pointer leading-tight">
+                              {getAgentDisplayName(agent, language)}
+                            </label>
+                            <p className="text-[11px] leading-relaxed text-muted-foreground">
+                              {getAgentDescription(agent, language)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </AccordionContent>
+                  </AccordionItem>
+                );
+              })}
+            </Accordion>
           </div>
 
           {/* Run Button */}
@@ -524,8 +551,11 @@ export function StockSearchTab() {
                 {isExpanded && result.analysis && (
                   <CardContent className="px-4 pb-4 pt-0">
                     <div className="border-t pt-3 space-y-2">
-                      <AgentReportSummary analysis={result.analysis} language={language} />
-                      <AnalysisDisplay analysis={result.analysis} agentKey={result.agentKey} language={language} />
+                      {typeof result.analysis === 'object' && Object.keys(result.analysis).some(k => typeof result.analysis[k] === 'object' && ('signal' in result.analysis[k] || 'confidence' in result.analysis[k])) ? (
+                        <AgentReportSummary analysis={result.analysis} language={language} />
+                      ) : (
+                        <AnalysisDisplay analysis={result.analysis} agentKey={result.agentKey} language={language} />
+                      )}
                     </div>
                   </CardContent>
                 )}
@@ -567,9 +597,12 @@ export function StockSearchTab() {
                   ))}
                 </div>
                 {completeResult.reasoning && (
-                  <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
-                    {completeResult.reasoning}
-                  </p>
+                  <div className="mt-4 p-4 bg-muted/20 border border-muted rounded-lg shadow-sm">
+                    <h3 className="text-sm font-semibold mb-2 text-primary">{language === 'ko' ? '종합 분석 보고서' : 'Synthesized Analysis Report'}</h3>
+                    <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+                      {completeResult.reasoning}
+                    </p>
+                  </div>
                 )}
               </CardContent>
             </Card>

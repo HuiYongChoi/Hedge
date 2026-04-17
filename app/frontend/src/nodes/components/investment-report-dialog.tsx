@@ -62,7 +62,46 @@ function ReasoningView({ reasoning }: { reasoning: any }) {
   }
 
   if (typeof parsedReasoning === 'string') {
-    return <p className="text-sm whitespace-pre-line leading-relaxed">{parsedReasoning}</p>;
+    const lines = parsedReasoning.split('\n');
+    return (
+      <div className="space-y-1.5 text-sm leading-relaxed">
+        {lines.map((line, idx) => {
+          if ((line.includes('Details:') || line.includes('details:')) && line.includes(',')) {
+            const prefixMatch = line.match(/^(.*?Details:\s*)(.*)/i);
+            const prefix = prefixMatch ? prefixMatch[1] : 'Details: ';
+            const content = prefixMatch ? prefixMatch[2] : line;
+            
+            // Split by comma if the next token looks like a key (Word:)
+            const parts = content.split(/,\s*(?=[A-Za-z0-9\s]+:)/).filter(Boolean);
+            
+            if (parts.length > 2) {
+              return (
+                <div key={idx} className="bg-muted/30 p-3 rounded-md border border-border mt-2 mb-2">
+                  <span className="font-semibold text-primary block mb-2">{prefix.trim()}</span>
+                  <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+                    {parts.map((p, i) => {
+                      const splitIdx = p.indexOf(':');
+                      if (splitIdx !== -1) {
+                        const k = p.substring(0, splitIdx).trim();
+                        const v = p.substring(splitIdx + 1).trim();
+                        return (
+                          <li key={i} className="flex">
+                            <span className="font-semibold text-muted-foreground mr-2 min-w-[90px]">{k}:</span>
+                            <span className="break-all">{v}</span>
+                          </li>
+                        );
+                      }
+                      return <li key={i}>{p.trim()}</li>;
+                    })}
+                  </ul>
+                </div>
+              );
+            }
+          }
+          return <p key={idx} className="whitespace-pre-wrap">{line}</p>;
+        })}
+      </div>
+    );
   }
 
   if (typeof parsedReasoning === 'object' && !Array.isArray(parsedReasoning)) {

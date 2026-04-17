@@ -9,6 +9,8 @@ export interface Agent {
   investing_style: string;
   investing_style_ko?: string;
   order: number;
+  category?: string;
+  category_ko?: string;
 }
 
 // In-memory cache for agents to avoid repeated API calls
