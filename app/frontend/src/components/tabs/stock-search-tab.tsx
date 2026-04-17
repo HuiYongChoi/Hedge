@@ -94,6 +94,49 @@ function formatConfidence(value: unknown) {
   return confidence === null ? null : `${confidence}%`;
 }
 
+function normalizeTicker(ticker: string) {
+  return ticker.trim().toUpperCase();
+}
+
+function isKoreanStock(ticker: string) {
+  const normalized = normalizeTicker(ticker);
+  return /^[0-9][0-9A-Z._-]*$/.test(normalized);
+}
+
+function getKoreanStockCode(ticker: string) {
+  const normalized = normalizeTicker(ticker);
+  return normalized.match(/\d+/)?.[0] || normalized;
+}
+
+function getResearchLinks(ticker: string) {
+  const normalized = normalizeTicker(ticker);
+
+  if (isKoreanStock(normalized)) {
+    const code = getKoreanStockCode(normalized);
+    return [
+      {
+        label: 'DART 정기보고서',
+        href: `https://dart.fss.or.kr/dsab001/main.do?textCrpNm=${encodeURIComponent(code)}`,
+      },
+      {
+        label: '네이버 증권',
+        href: `https://finance.naver.com/item/main.naver?code=${encodeURIComponent(code)}`,
+      },
+    ];
+  }
+
+  return [
+    {
+      label: 'SEC 10-K',
+      href: `https://www.sec.gov/cgi-bin/browse-edgar?CIK=${encodeURIComponent(normalized)}&action=getcompany`,
+    },
+    {
+      label: 'Finviz',
+      href: `https://finviz.com/quote.ashx?t=${encodeURIComponent(normalized)}`,
+    },
+  ];
+}
+
 function getTickerAnalystReports(analystSignals: Record<string, any> | undefined, ticker: string) {
   if (!analystSignals) return [];
 
@@ -249,6 +292,45 @@ function ScoreTooltip({ language }: { language: 'ko' | 'en' }) {
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
+  );
+}
+
+function ResearchQuickLinks({ tickers, language }: { tickers: string[]; language: 'ko' | 'en' }) {
+  const normalizedTickers = Array.from(new Set(tickers.map(normalizeTicker).filter(Boolean)));
+
+  if (normalizedTickers.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="rounded-md border border-border/70 bg-muted/10 px-4 py-3">
+      <div className="mb-2 text-xs font-medium text-muted-foreground">
+        {language === 'ko' ? '참고 자료 및 원본 공시' : 'Reference filings and market data'}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {normalizedTickers.map((ticker) => (
+          <div key={ticker} className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs font-semibold text-muted-foreground">{ticker}</span>
+            {getResearchLinks(ticker).map((link, index) => (
+              <a
+                key={`${ticker}-${link.label}`}
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={
+                  index === 0
+                    ? 'inline-flex items-center rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 transition-colors hover:bg-emerald-500/15 dark:text-emerald-300'
+                    : 'inline-flex items-center rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-primary'
+                }
+              >
+                {link.label}
+                <span className="ml-1 text-[10px]" aria-hidden="true">↗</span>
+              </a>
+            ))}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -721,6 +803,13 @@ export function StockSearchTab() {
               </Card>
             );
           })}
+
+          {completeResult && completeResult.decisions && (
+            <ResearchQuickLinks
+              tickers={Object.keys(completeResult.decisions)}
+              language={language}
+            />
+          )}
 
           {/* Final Decision */}
           {completeResult && completeResult.decisions && (
