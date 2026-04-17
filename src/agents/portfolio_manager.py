@@ -77,7 +77,7 @@ def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_man
         state=state,
     )
     message = HumanMessage(
-        content=json.dumps({ticker: decision.model_dump() for ticker, decision in result.decisions.items()}),
+        content=json.dumps({ticker: decision.model_dump() for ticker, decision in result.decisions.items()}, ensure_ascii=False),
         name=agent_id,
     )
 
@@ -196,7 +196,7 @@ def generate_trading_decision(
         # If only 'hold' key exists, there is no trade possible
         if set(aa.keys()) == {"hold"}:
             prefilled_decisions[t] = PortfolioDecision(
-                action="hold", quantity=0, confidence=100.0, reasoning="No valid trade available"
+                action="hold", quantity=0, confidence=100, reasoning="현재 실행 가능한 거래가 없어 관망합니다."
             )
         else:
             tickers_for_llm.append(t)
@@ -244,7 +244,7 @@ def generate_trading_decision(
         decisions = dict(prefilled_decisions)
         for t in tickers_for_llm:
             decisions[t] = PortfolioDecision(
-                action="hold", quantity=0, confidence=0.0, reasoning="Default decision: hold"
+                action="hold", quantity=0, confidence=0, reasoning="모델 응답 실패로 관망 결정을 적용했습니다."
             )
         return PortfolioManagerOutput(decisions=decisions)
 

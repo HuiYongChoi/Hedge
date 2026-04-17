@@ -7,6 +7,156 @@ from src.utils.progress import progress
 from src.graph.state import AgentState
 
 
+KOREAN_OUTPUT_REQUIREMENT = "CRITICAL REQUIREMENT: You MUST write your entire analysis, reasoning, and summary exclusively in Korean (한국어). Do NOT output any English sentences."
+KOREAN_DEFAULT_REASONING = "분석 중 오류가 발생하여 중립 의견으로 기본 처리했습니다."
+KOREAN_NO_TRADE_REASONING = "현재 실행 가능한 거래가 없어 관망합니다."
+KOREAN_DEFAULT_HOLD_REASONING = "모델 응답 실패로 관망 결정을 적용했습니다."
+
+
+def _append_korean_requirement_to_text(text: str) -> str:
+    """Append the Korean-only instruction once, preserving existing prompt text."""
+    if KOREAN_OUTPUT_REQUIREMENT in text:
+        return text
+    return f"{text.rstrip()}\n\n{KOREAN_OUTPUT_REQUIREMENT}"
+
+
+def _clone_message_with_content(message: any, content: str):
+    if getattr(message, "content", None) == content:
+        return message
+
+    if hasattr(message, "model_copy"):
+        return message.model_copy(update={"content": content})
+    if hasattr(message, "copy"):
+        return message.copy(update={"content": content})
+
+    try:
+        cloned = message.__class__(content=content)
+        if hasattr(message, "name"):
+            cloned.name = message.name
+        return cloned
+    except Exception:
+        message.content = content
+        return message
+
+
+def _make_system_message():
+    try:
+        from langchain_core.messages import SystemMessage
+
+        return SystemMessage(content=KOREAN_OUTPUT_REQUIREMENT)
+    except Exception:
+        return {"role": "system", "content": KOREAN_OUTPUT_REQUIREMENT}
+
+
+def _clone_prompt_with_messages(prompt: any, messages: list):
+    if hasattr(prompt, "model_copy"):
+        return prompt.model_copy(update={"messages": messages})
+
+    try:
+        return prompt.__class__(messages=messages)
+    except Exception:
+        prompt.messages = messages
+        return prompt
+
+
+def enforce_korean_output_requirement(prompt: any) -> any:
+    """
+    Ensure every LLM prompt includes the Korean-only output requirement.
+
+    ChatPromptTemplate.invoke returns a prompt value with messages; for those,
+    append the requirement to the final system message. For plain string prompts,
+    append it to the bottom of the prompt body.
+    """
+    if isinstance(prompt, str):
+        return _append_korean_requirement_to_text(prompt)
+
+    text = getattr(prompt, "text", None)
+    if isinstance(text, str):
+        updated_text = _append_korean_requirement_to_text(text)
+        if hasattr(prompt, "model_copy"):
+            return prompt.model_copy(update={"text": updated_text})
+        try:
+            return prompt.__class__(text=updated_text)
+        except Exception:
+            prompt.text = updated_text
+            return prompt
+
+    messages = getattr(prompt, "messages", None)
+    if isinstance(messages, list):
+        updated_messages = list(messages)
+        system_index = None
+
+        for idx in range(len(updated_messages) - 1, -1, -1):
+            message = updated_messages[idx]
+            message_type = getattr(message, "type", "")
+            class_name = message.__class__.__name__.lower()
+            if message_type == "system" or "system" in class_name:
+                system_index = idx
+                break
+
+        if system_index is None:
+            updated_messages.insert(0, _make_system_message())
+        else:
+            system_message = updated_messages[system_index]
+            content = getattr(system_message, "content", "")
+            if isinstance(content, str):
+                updated_messages[system_index] = _clone_message_with_content(
+                    system_message,
+                    _append_korean_requirement_to_text(content),
+                )
+
+        return _clone_prompt_with_messages(prompt, updated_messages)
+
+    return prompt
+
+
+def _koreanize_default_string(value: str) -> str:
+    lower = value.lower()
+    if "no valid trade available" in lower:
+        return KOREAN_NO_TRADE_REASONING
+    if "default decision" in lower and "hold" in lower:
+        return KOREAN_DEFAULT_HOLD_REASONING
+    if "insufficient data" in lower:
+        return "데이터가 부족하여 중립 의견입니다."
+    if "error in analysis" in lower or "parsing error" in lower or "defaulting to neutral" in lower:
+        return KOREAN_DEFAULT_REASONING
+    return value
+
+
+def ensure_korean_default_texts(value: any, field_name: str | None = None):
+    """Replace known fallback reasoning strings with Korean text."""
+    if isinstance(value, str):
+        if field_name in {"reasoning", "summary", "details", "explanation", "analysis"}:
+            return _koreanize_default_string(value)
+        return value
+
+    if isinstance(value, BaseModel):
+        for nested_field_name in value.model_fields:
+            nested_value = getattr(value, nested_field_name, None)
+            updated_value = ensure_korean_default_texts(nested_value, nested_field_name)
+            if updated_value is not nested_value:
+                setattr(value, nested_field_name, updated_value)
+        return value
+
+    if isinstance(value, dict):
+        for key, nested_value in value.items():
+            value[key] = ensure_korean_default_texts(nested_value, str(key))
+        return value
+
+    if isinstance(value, list):
+        for index, nested_value in enumerate(value):
+            value[index] = ensure_korean_default_texts(nested_value, field_name)
+        return value
+
+    return value
+
+
+def create_fallback_response(pydantic_model: type[BaseModel], default_factory=None) -> BaseModel:
+    if default_factory:
+        return ensure_korean_default_texts(default_factory())
+    return ensure_korean_default_texts(create_default_response(pydantic_model))
+
+
 def call_llm(
     prompt: any,
     pydantic_model: type[BaseModel],
@@ -59,9 +209,9 @@ def call_llm(
         if agent_name:
             progress.update_status(agent_name, None, "Error - using default response")
         print(f"Error initializing LLM {model_provider}/{model_name}: {e}")
-        if default_factory:
-            return default_factory()
-        return create_default_response(pydantic_model)
+        return create_fallback_response(pydantic_model, default_factory)
+
+    prompt = enforce_korean_output_requirement(prompt)
 
     # Call the LLM with retries
     for attempt in range(max_retries):
@@ -83,13 +233,10 @@ def call_llm(
 
             if attempt == max_retries - 1:
                 print(f"Error in LLM call after {max_retries} attempts: {e}")
-                # Use default_factory if provided, otherwise create a basic default
-                if default_factory:
-                    return default_factory()
-                return create_default_response(pydantic_model)
+                return create_fallback_response(pydantic_model, default_factory)
 
     # This should never be reached due to the retry logic above
-    return create_default_response(pydantic_model)
+    return create_fallback_response(pydantic_model, default_factory)
 
 
 def create_default_response(model_class: type[BaseModel]) -> BaseModel:
@@ -97,7 +244,7 @@ def create_default_response(model_class: type[BaseModel]) -> BaseModel:
     default_values = {}
     for field_name, field in model_class.model_fields.items():
         if field.annotation == str:
-            default_values[field_name] = "Error in analysis, using default"
+            default_values[field_name] = KOREAN_DEFAULT_REASONING
         elif field.annotation == float:
             default_values[field_name] = 0.0
         elif field.annotation == int:
@@ -117,6 +264,8 @@ def create_default_response(model_class: type[BaseModel]) -> BaseModel:
 def extract_json_from_response(content: str) -> dict | None:
     """Extracts JSON from markdown-formatted response."""
     try:
+        if isinstance(content, bytes):
+            content = content.decode("utf-8")
         stripped = content.strip()
         if stripped.startswith("{") and stripped.endswith("}"):
             return json.loads(stripped)

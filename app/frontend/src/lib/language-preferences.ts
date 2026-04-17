@@ -210,7 +210,7 @@ export const translations = {
     shares: '주',
     longAction: '매수',
     shortAction: '매도',
-    holdAction: '보유',
+    holdAction: '관망',
     bullish: '강세',
     bearish: '약세',
     neutral: '중립',

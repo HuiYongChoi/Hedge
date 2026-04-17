@@ -5,11 +5,12 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { ModelSelector } from '@/components/ui/llm-selector';
 import { TickerInput } from '@/components/ui/ticker-input';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useLanguage } from '@/contexts/language-context';
 import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
 import { t } from '@/lib/language-preferences';
-import { Bot, ChevronDown, ChevronUp, Loader2, Play, Search, Square } from 'lucide-react';
+import { Bot, ChevronDown, ChevronUp, Info, Loader2, Play, Search, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
@@ -73,7 +74,7 @@ function getSignalLabel(signal: unknown, language: 'ko' | 'en') {
   if (raw === 'bearish' || raw === 'sell' || raw === 'short') {
     return language === 'ko' ? '매도/약세' : 'Sell / Bearish';
   }
-  return language === 'ko' ? '보유/중립' : 'Hold / Neutral';
+  return language === 'ko' ? '중립/관망' : 'Hold / Neutral';
 }
 
 function getSignalClass(signal: unknown) {
@@ -91,6 +92,164 @@ function getSignalClass(signal: unknown) {
 function formatConfidence(value: unknown) {
   const confidence = normalizeConfidence(value);
   return confidence === null ? null : `${confidence}%`;
+}
+
+function getTickerAnalystReports(analystSignals: Record<string, any> | undefined, ticker: string) {
+  if (!analystSignals) return [];
+
+  return Object.entries(analystSignals)
+    .filter(([agentId]) => !agentId.startsWith('risk_management_agent'))
+    .map(([agentId, signals]) => {
+      const report = signals && typeof signals === 'object' ? (signals as Record<string, any>)[ticker] : null;
+      if (!report || typeof report !== 'object') return null;
+      return {
+        agentId,
+        signal: report.signal,
+        confidence: report.confidence,
+      };
+    })
+    .filter((entry): entry is { agentId: string; signal: unknown; confidence: unknown } => Boolean(entry));
+}
+
+function scoreSignal(signal: unknown, confidence: unknown) {
+  const raw = String(signal || 'neutral').toLowerCase();
+  const normalizedConfidence = normalizeConfidence(confidence) ?? 50;
+
+  if (raw === 'bullish' || raw === 'buy' || raw === 'long' || raw === 'positive') {
+    return 50 + normalizedConfidence / 2;
+  }
+  if (raw === 'bearish' || raw === 'sell' || raw === 'short' || raw === 'negative') {
+    return 50 - normalizedConfidence / 2;
+  }
+  return 50;
+}
+
+function scoreDecision(decision: any) {
+  const action = String(decision?.action || 'hold').toLowerCase();
+  const confidence = normalizeConfidence(decision?.confidence) ?? 50;
+
+  if (action === 'buy' || action === 'cover') return 50 + confidence / 2;
+  if (action === 'sell' || action === 'short') return 50 - confidence / 2;
+  return 50;
+}
+
+function calculateCompositeScore(
+  analystSignals: Record<string, any> | undefined,
+  ticker: string,
+  decision: any,
+) {
+  const reports = getTickerAnalystReports(analystSignals, ticker);
+  const scores = reports
+    .map(report => scoreSignal(report.signal, report.confidence))
+    .filter(score => Number.isFinite(score));
+
+  if (scores.length === 0) {
+    return Math.round(scoreDecision(decision));
+  }
+
+  const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+  return Math.max(0, Math.min(100, Math.round(average)));
+}
+
+function getScoreBand(score: number, language: 'ko' | 'en') {
+  if (score >= 80) {
+    return {
+      label: language === 'ko' ? '강력 매수' : 'Strong Buy',
+      className: 'border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400',
+    };
+  }
+  if (score >= 60) {
+    return {
+      label: language === 'ko' ? '매수' : 'Buy',
+      className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    };
+  }
+  if (score >= 40) {
+    return {
+      label: language === 'ko' ? '관망' : 'Watch',
+      className: 'border-yellow-500/30 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400',
+    };
+  }
+  if (score >= 20) {
+    return {
+      label: language === 'ko' ? '비중 축소' : 'Reduce',
+      className: 'border-orange-500/30 bg-orange-500/10 text-orange-600 dark:text-orange-400',
+    };
+  }
+  return {
+    label: language === 'ko' ? '강력 매도' : 'Strong Sell',
+    className: 'border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400',
+  };
+}
+
+function buildExecutiveSummary(
+  ticker: string,
+  score: number,
+  analystSignals: Record<string, any> | undefined,
+  decision: any,
+  language: 'ko' | 'en',
+) {
+  const reports = getTickerAnalystReports(analystSignals, ticker);
+  const band = getScoreBand(score, language);
+
+  if (reports.length === 0) {
+    return language === 'ko'
+      ? `${ticker}의 종합 점수는 ${score}점으로 ${band.label} 구간입니다. 에이전트 신호가 제한적이므로 추가 확인이 필요합니다.`
+      : `${ticker} has a composite score of ${score}, placing it in the ${band.label} range. Agent signal coverage is limited, so review the details before acting.`;
+  }
+
+  const bullishCount = reports.filter(report => scoreSignal(report.signal, report.confidence) > 55).length;
+  const bearishCount = reports.filter(report => scoreSignal(report.signal, report.confidence) < 45).length;
+  const neutralCount = reports.length - bullishCount - bearishCount;
+  const quantity = Number(decision?.quantity || 0);
+  const actionNote = quantity > 0
+    ? language === 'ko'
+      ? `참고 주문 수량은 ${quantity}주입니다.`
+      : `Reference order size is ${quantity} shares.`
+    : language === 'ko'
+      ? '시드머니 기반 주문 수량 없이 판단 상태만 표시합니다.'
+      : 'No seed-money-based order size is shown; this is a decision status only.';
+
+  return language === 'ko'
+    ? `${reports.length}개 에이전트 기준 강세 ${bullishCount}개, 약세 ${bearishCount}개, 중립 ${neutralCount}개입니다. 종합 판단은 ${band.label}이며 ${actionNote}`
+    : `${reports.length} agents show ${bullishCount} bullish, ${bearishCount} bearish, and ${neutralCount} neutral views. The combined decision is ${band.label}. ${actionNote}`;
+}
+
+function ScoreTooltip({ language }: { language: 'ko' | 'en' }) {
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus:outline-none focus:ring-2 focus:ring-ring"
+            aria-label={language === 'ko' ? '종합 점수 기준' : 'Composite score guide'}
+          >
+            <Info className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+          {language === 'ko' ? (
+            <div className="space-y-1">
+              <div>80~100점: 강력 매수</div>
+              <div>60~79점: 매수</div>
+              <div>40~59점: 관망(중립)</div>
+              <div>20~39점: 비중 축소</div>
+              <div>0~19점: 강력 매도</div>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <div>80-100: Strong Buy</div>
+              <div>60-79: Buy</div>
+              <div>40-59: Watch / Neutral</div>
+              <div>20-39: Reduce</div>
+              <div>0-19: Strong Sell</div>
+            </div>
+          )}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 export function StockSearchTab() {
@@ -572,29 +731,62 @@ export function StockSearchTab() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-0">
-                <div className="space-y-2">
-                  {Object.entries(completeResult.decisions).map(([ticker, decision]: [string, any]) => (
-                    <div key={ticker} className="flex items-center justify-between p-2 rounded border">
-                      <span className="font-mono font-medium">{ticker}</span>
-                      <div className="flex items-center gap-3 text-sm">
-                        <span className={
-                          decision.action === 'buy' ? 'text-green-500 font-medium' :
-                          decision.action === 'sell' ? 'text-red-500 font-medium' :
-                          'text-yellow-500 font-medium'
-                        }>
-                          {decision.action === 'buy' ? t('longAction', language).toUpperCase() : 
-                           decision.action === 'sell' ? t('shortAction', language).toUpperCase() : 
-                           t('holdAction', language).toUpperCase()}
-                        </span>
-                        {decision.quantity && <span className="text-muted-foreground">{decision.quantity} {t('shares', language)}</span>}
-                        {formatConfidence(decision.confidence) && (
-                          <span className="text-muted-foreground text-xs">
-                            {formatConfidence(decision.confidence)} {language === 'ko' ? '신뢰도' : 'confidence'}
-                          </span>
-                        )}
+                <div className="space-y-3">
+                  {Object.entries(completeResult.decisions).map(([ticker, decision]: [string, any]) => {
+                    const compositeScore = calculateCompositeScore(
+                      completeResult.analyst_signals,
+                      ticker,
+                      decision,
+                    );
+                    const scoreBand = getScoreBand(compositeScore, language);
+                    const executiveSummary = buildExecutiveSummary(
+                      ticker,
+                      compositeScore,
+                      completeResult.analyst_signals,
+                      decision,
+                      language,
+                    );
+                    const quantity = Number(decision?.quantity || 0);
+                    const action = String(decision?.action || '').toLowerCase();
+
+                    return (
+                      <div key={ticker} className="rounded-md border border-border bg-background/60 p-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-sm font-semibold text-primary">{ticker}</span>
+                            <Badge variant="outline" className={scoreBand.className}>
+                              {scoreBand.label}
+                            </Badge>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-sm">
+                            <span className="font-semibold text-primary">
+                              {language === 'ko' ? '종합 점수' : 'Composite Score'}: {compositeScore} / 100
+                            </span>
+                            <ScoreTooltip language={language} />
+                            {quantity > 0 && action !== 'hold' && (
+                              <span className="text-xs text-muted-foreground">
+                                {language === 'ko' ? '참고 수량' : 'Reference Qty'}: {quantity} {t('shares', language)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 rounded-md bg-muted/20 p-3">
+                          <div className="mb-1 text-xs font-medium text-muted-foreground">
+                            {language === 'ko' ? '약식 요약' : 'Executive Summary'}
+                          </div>
+                          <p className="text-sm leading-relaxed text-foreground">
+                            {executiveSummary}
+                          </p>
+                          {decision?.reasoning && (
+                            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                              {String(decision.reasoning)}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {completeResult.reasoning && (
                   <div className="mt-4 p-4 bg-muted/20 border border-muted rounded-lg shadow-sm">

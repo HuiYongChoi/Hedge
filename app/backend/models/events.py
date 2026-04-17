@@ -1,3 +1,4 @@
+import json
 from typing import Dict, Optional, Any, Literal
 from pydantic import BaseModel
 
@@ -10,7 +11,8 @@ class BaseEvent(BaseModel):
     def to_sse(self) -> str:
         """Convert to Server-Sent Event format"""
         event_type = self.type.lower()
-        return f"event: {event_type}\ndata: {self.model_dump_json()}\n\n"
+        data = json.dumps(self.model_dump(mode="json"), ensure_ascii=False)
+        return f"event: {event_type}\ndata: {data}\n\n"
 
 
 class StartEvent(BaseEvent):

@@ -180,6 +180,8 @@ def run_graph(
 def parse_hedge_fund_response(response):
     """Parses a JSON string and returns a dictionary."""
     try:
+        if isinstance(response, bytes):
+            response = response.decode("utf-8")
         return json.loads(response)
     except json.JSONDecodeError as e:
         print(f"JSON decoding error: {e}\nResponse: {repr(response)}")
