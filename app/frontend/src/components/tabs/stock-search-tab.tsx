@@ -451,7 +451,7 @@ export function StockSearchTab() {
                 {isExpanded && result.analysis && (
                   <CardContent className="px-4 pb-4 pt-0">
                     <div className="border-t pt-3 space-y-2">
-                      <AnalysisDisplay analysis={result.analysis} agentKey={result.agentKey} />
+                      <AnalysisDisplay analysis={result.analysis} agentKey={result.agentKey} language={language} />
                     </div>
                   </CardContent>
                 )}
@@ -506,7 +506,7 @@ export function StockSearchTab() {
   );
 }
 
-function AnalysisDisplay({ analysis }: { analysis: any; agentKey?: string }) {
+function AnalysisDisplay({ analysis, language }: { analysis: any; agentKey?: string; language: any }) {
   if (!analysis) return null;
 
   // Try to render structured analysis data

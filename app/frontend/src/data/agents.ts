@@ -3,8 +3,11 @@ import { api } from '@/services/api';
 export interface Agent {
   key: string;
   display_name: string;
+  display_name_ko?: string;
   description: string;
+  description_ko?: string;
   investing_style: string;
+  investing_style_ko?: string;
   order: number;
 }
 
