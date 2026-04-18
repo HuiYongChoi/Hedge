@@ -1,29 +1,32 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useLanguage } from '@/contexts/language-context';
+import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
 import { Monitor, Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
 export function ThemeSettings() {
   const { theme, setTheme } = useTheme();
+  const { language } = useLanguage();
 
   const themes = [
     {
       id: 'light',
-      name: 'Light',
-      description: 'A clean, bright interface',
+      nameKey: 'lightTheme' as const,
+      descKey: 'lightThemeDesc' as const,
       icon: Sun,
     },
     {
       id: 'dark',
-      name: 'Dark',
-      description: 'A comfortable dark interface',
+      nameKey: 'darkTheme' as const,
+      descKey: 'darkThemeDesc' as const,
       icon: Moon,
     },
     {
       id: 'system',
-      name: 'System',
-      description: 'Use your system preference',
+      nameKey: 'systemTheme' as const,
+      descKey: 'systemThemeDesc' as const,
       icon: Monitor,
     },
   ];
@@ -31,28 +34,28 @@ export function ThemeSettings() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-primary mb-2">Theme</h2>
+        <h2 className="text-xl font-semibold text-primary mb-2">{t('themeTitle', language)}</h2>
         <p className="text-sm text-muted-foreground">
-          Customize the look and feel of your application.
+          {t('themeDescription', language)}
         </p>
       </div>
 
       <Card className="bg-panel border-gray-700 dark:border-gray-700">
         <CardHeader>
           <CardTitle className="text-lg font-medium text-primary">
-            Theme
+            {t('themeTitle', language)}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Select your preferred theme or use system setting to automatically switch between light and dark modes.
+            {t('themeCustomize', language)}
           </p>
-          
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {themes.map((themeOption) => {
               const Icon = themeOption.icon;
               const isSelected = theme === themeOption.id;
-              
+
               return (
                 <Button
                   key={themeOption.id}
@@ -65,9 +68,9 @@ export function ThemeSettings() {
                 >
                   <Icon className="h-6 w-6" />
                   <div className="text-center">
-                    <div className="font-medium text-sm">{themeOption.name}</div>
+                    <div className="font-medium text-sm">{t(themeOption.nameKey, language)}</div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      {themeOption.description}
+                      {t(themeOption.descKey, language)}
                     </div>
                   </div>
                 </Button>
@@ -78,4 +81,4 @@ export function ThemeSettings() {
       </Card>
     </div>
   );
-} 
+}

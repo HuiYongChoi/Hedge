@@ -38,7 +38,10 @@ export function NodeShell({
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm('Delete this node?')) {
+    const msg = document.documentElement.lang === 'ko' || localStorage.getItem('preferred-language') === 'ko'
+      ? '이 노드를 삭제하시겠습니까?'
+      : 'Delete this node?';
+    if (!window.confirm(msg)) {
       return;
     }
     deleteElements({ nodes: [{ id }] });
@@ -85,8 +88,8 @@ export function NodeShell({
                 "absolute top-2 right-2 h-6 w-6 flex items-center justify-center rounded-sm text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-all",
                 selected ? "opacity-100" : "opacity-70 group-hover:opacity-100"
               )}
-              title="Delete node"
-              aria-label="Delete node"
+              title={localStorage.getItem('preferred-language') === 'ko' ? '노드 삭제' : 'Delete node'}
+              aria-label={localStorage.getItem('preferred-language') === 'ko' ? '노드 삭제' : 'Delete node'}
             >
               <Trash2 size={13} />
             </button>

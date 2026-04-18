@@ -1,8 +1,8 @@
 import { cn } from '@/lib/utils';
 import { CubeIcon } from '@radix-ui/react-icons';
-import { Key, Palette, Globe } from 'lucide-react';
+import { Palette, Globe } from 'lucide-react';
 import { useState } from 'react';
-import { ApiKeysSettings, Models } from './';
+import { Models } from './';
 import { ThemeSettings } from './appearance';
 import { LanguageSettings } from './language';
 import { useLanguage } from '@/contexts/language-context';
@@ -20,16 +20,10 @@ interface SettingsNavItem {
 }
 
 export function Settings({ className }: SettingsProps) {
-  const [selectedSection, setSelectedSection] = useState('api');
+  const [selectedSection, setSelectedSection] = useState('models');
   const { language } = useLanguage();
 
   const navigationItems: SettingsNavItem[] = [
-    {
-      id: 'api',
-      label: t('apiKeys', language),
-      icon: Key,
-      description: t('apiKeysDescription', language),
-    },
     {
       id: 'models',
       label: t('models', language),
@@ -58,10 +52,8 @@ export function Settings({ className }: SettingsProps) {
         return <ThemeSettings />;
       case 'language':
         return <LanguageSettings />;
-      case 'api':
-        return <ApiKeysSettings />;
       default:
-        return <ApiKeysSettings />;
+        return <Models />;
     }
   };
 

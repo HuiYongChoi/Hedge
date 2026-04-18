@@ -95,9 +95,13 @@ export const translations = {
     // Theme
     themeTitle: '테마',
     themeDescription: '테마 및 표시 설정',
-    lightTheme: '라이트 테마',
-    darkTheme: '다크 테마',
-    systemTheme: '시스템 설정',
+    lightTheme: '라이트',
+    darkTheme: '다크',
+    systemTheme: '시스템',
+    lightThemeDesc: '깔끔하고 밝은 인터페이스',
+    darkThemeDesc: '편안한 다크 인터페이스',
+    systemThemeDesc: '시스템 설정을 따릅니다',
+    themeCustomize: '테마를 선택하거나 시스템 설정에 따라 자동 전환하세요.',
 
     // Language Settings
     languageTitle: '언어',
@@ -139,7 +143,7 @@ export const translations = {
 
     // Node UI
     tickers: '종목 코드',
-    tickersTooltip: '쉼표로 여러 종목을 입력하세요 (AAPL,NVDA,TSLA)',
+    tickersTooltip: '여러 종목을 입력할 때는 쉼표(,)로 구분하세요. 예: AAPL,NVDA,TSLA',
     enterTickers: '종목 코드 입력',
     run: '실행',
     singleRun: '단일 실행',
@@ -301,9 +305,13 @@ export const translations = {
     // Theme
     themeTitle: 'Theme',
     themeDescription: 'Theme and display preferences',
-    lightTheme: 'Light Theme',
-    darkTheme: 'Dark Theme',
+    lightTheme: 'Light',
+    darkTheme: 'Dark',
     systemTheme: 'System',
+    lightThemeDesc: 'A clean, bright interface',
+    darkThemeDesc: 'A comfortable dark interface',
+    systemThemeDesc: 'Use your system preference',
+    themeCustomize: 'Select your preferred theme or use system setting to automatically switch between light and dark modes.',
 
     // Language Settings
     languageTitle: 'Language',
@@ -345,7 +353,7 @@ export const translations = {
 
     // Node UI
     tickers: 'Tickers',
-    tickersTooltip: 'You can add multiple tickers using commas (AAPL,NVDA,TSLA)',
+    tickersTooltip: 'Separate multiple tickers with commas (,). e.g. AAPL,NVDA,TSLA',
     enterTickers: 'Enter tickers',
     run: 'Run',
     singleRun: 'Single Run',

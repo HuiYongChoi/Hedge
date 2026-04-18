@@ -51,7 +51,7 @@ export function StockAnalyzerNode({
   const { language } = useLanguage();
 
   // Use persistent state hooks
-  const [tickers, setTickers] = useNodeState(id, 'tickers', 'AAPL,NVDA,TSLA');
+  const [tickers, setTickers] = useNodeState(id, 'tickers', '');
   const [runMode, setRunMode] = useNodeState(id, 'runMode', 'single');
   const [initialCash, setInitialCash] = useNodeState(id, 'initialCash', '100000');
   const [startDate, setStartDate] = useNodeState(id, 'startDate', threeMonthsAgo.toISOString().split('T')[0]);
@@ -244,7 +244,7 @@ export function StockAnalyzerNode({
         selected={selected}
         isConnectable={isConnectable}
         icon={<ChartLine className="h-5 w-5" />}
-        name={data.name || "Stock Analyzer"}
+        name={t('stockInput', language)}
         description={data.description}
         hasLeftHandle={false}
       >

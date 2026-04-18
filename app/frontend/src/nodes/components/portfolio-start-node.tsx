@@ -268,7 +268,7 @@ export function PortfolioStartNode({
         selected={selected}
         isConnectable={isConnectable}
         icon={<PieChart className="h-5 w-5" />}
-        name={data.name || "Portfolio Analyzer"}
+        name={t('portfolioInput', language)}
         description={data.description}
         hasLeftHandle={false}
         width="w-80"
