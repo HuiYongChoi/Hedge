@@ -49,6 +49,8 @@ class StockSearchFinalDecisionUiStaticTests(unittest.TestCase):
         self.assertIn("function getResearchLinks", source)
         self.assertIn("참고 자료 및 원본 공시", source)
         self.assertIn("SEC 10-K", source)
+        self.assertIn("https://www.sec.gov/edgar/browse/?CIK=${encodeURIComponent(normalized)}&owner=exclude", source)
+        self.assertNotIn("cgi-bin/browse-edgar?action=getcompany", source)
         self.assertIn("Finviz", source)
         self.assertIn("DART 정기보고서", source)
         self.assertIn("네이버 증권", source)

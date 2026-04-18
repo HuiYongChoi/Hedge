@@ -228,7 +228,7 @@ function getResearchLinks(ticker: string) {
   return [
     {
       label: 'SEC 10-K',
-      href: `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${encodeURIComponent(normalized)}&type=10-K&dateb=&owner=include&count=40&search_text=`,
+      href: `https://www.sec.gov/edgar/browse/?CIK=${encodeURIComponent(normalized)}&owner=exclude`,
     },
     {
       label: 'Finviz',
