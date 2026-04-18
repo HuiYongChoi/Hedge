@@ -32,9 +32,39 @@ def extract_base_agent_key(unique_id: str) -> str:
     return unique_id  # Return original if no suffix pattern found
 
 
+def _deduplicate_graph_nodes(graph_nodes: list) -> list:
+    """Keep the first React Flow node for each ID before building LangGraph."""
+    deduplicated = []
+    seen_ids = set()
+    for node in graph_nodes:
+        node_id = getattr(node, "id", None)
+        if not node_id or node_id in seen_ids:
+            continue
+        seen_ids.add(node_id)
+        deduplicated.append(node)
+    return deduplicated
+
+
+def _deduplicate_graph_edges(graph_edges: list) -> list:
+    """Keep the first React Flow edge for each ID/source-target pair."""
+    deduplicated = []
+    seen_keys = set()
+    for edge in graph_edges:
+        edge_id = getattr(edge, "id", None)
+        edge_key = edge_id or (getattr(edge, "source", None), getattr(edge, "target", None))
+        if not edge_key or edge_key in seen_keys:
+            continue
+        seen_keys.add(edge_key)
+        deduplicated.append(edge)
+    return deduplicated
+
+
 # Helper function to create the agent graph
 def create_graph(graph_nodes: list, graph_edges: list) -> StateGraph:
     """Create the workflow based on the React Flow graph structure."""
+    graph_nodes = _deduplicate_graph_nodes(graph_nodes)
+    graph_edges = _deduplicate_graph_edges(graph_edges)
+
     graph = StateGraph(AgentState)
     graph.add_node("start_node", start)
 
@@ -47,6 +77,7 @@ def create_graph(graph_nodes: list, graph_edges: list) -> StateGraph:
     
     # Track which nodes are portfolio managers for special handling
     portfolio_manager_nodes = set()
+    execution_node_ids = {"start_node"}
     
     # Add agent nodes
     for unique_agent_id in agent_ids:
@@ -64,12 +95,14 @@ def create_graph(graph_nodes: list, graph_edges: list) -> StateGraph:
         node_name, node_func = analyst_nodes[base_agent_key]
         agent_function = create_agent_function(node_func, unique_agent_id)
         graph.add_node(unique_agent_id, agent_function)
+        execution_node_ids.add(unique_agent_id)
     
     # Add portfolio manager nodes and their corresponding risk managers
     risk_manager_nodes = {}  # Map portfolio manager ID to risk manager ID
     for portfolio_manager_id in portfolio_manager_nodes:
         portfolio_manager_function = create_agent_function(portfolio_management_agent, portfolio_manager_id)
         graph.add_node(portfolio_manager_id, portfolio_manager_function)
+        execution_node_ids.add(portfolio_manager_id)
         
         # Create unique risk manager for this portfolio manager
         suffix = portfolio_manager_id.split('_')[-1]
@@ -79,6 +112,7 @@ def create_graph(graph_nodes: list, graph_edges: list) -> StateGraph:
         # Add the risk manager node
         risk_manager_function = create_agent_function(risk_management_agent, risk_manager_id)
         graph.add_node(risk_manager_id, risk_manager_function)
+        execution_node_ids.add(risk_manager_id)
 
     # Build connections based on React Flow graph structure
     nodes_with_incoming_edges = set()
@@ -86,6 +120,9 @@ def create_graph(graph_nodes: list, graph_edges: list) -> StateGraph:
     direct_to_portfolio_managers = {}  # Map analyst ID to portfolio manager ID for direct connections
     
     for edge in graph_edges:
+        if edge.source not in execution_node_ids or edge.target not in execution_node_ids:
+            continue
+
         # Only consider edges between agent nodes (not from stock tickers)
         if edge.source in agent_ids_set and edge.target in agent_ids_set:
             source_base_key = extract_base_agent_key(edge.source)
