@@ -42,7 +42,6 @@ const runModes = [
 ];
 
 export function PortfolioStartNode({
-  data,
   selected,
   id,
   isConnectable,

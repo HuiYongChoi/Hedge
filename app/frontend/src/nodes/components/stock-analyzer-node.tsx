@@ -38,7 +38,6 @@ const runModes = [
 ];
 
 export function StockAnalyzerNode({
-  data,
   selected,
   id,
   isConnectable,

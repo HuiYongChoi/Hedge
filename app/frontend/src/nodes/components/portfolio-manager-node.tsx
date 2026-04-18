@@ -19,7 +19,6 @@ import { InvestmentReportDialog } from './investment-report-dialog';
 import { NodeShell } from './node-shell';
 
 export function PortfolioManagerNode({
-  data,
   selected,
   id,
   isConnectable,
