@@ -26,6 +26,23 @@ def test_main_page_explains_current_workflow_and_scoring() -> None:
         assert text in source
 
 
+def test_main_page_has_agent_quant_scoring_detail_view() -> None:
+    source = TAB_CONTENT.read_text(encoding="utf-8")
+
+    for text in [
+        "showAgentScoring",
+        "상세보기",
+        "에이전트별 정량 평가 기준",
+        "피터 린치",
+        "필 피셔",
+        "성장: 30%",
+        "마진 안정성: 25%",
+        "7.5점 이상이면 Buy",
+        "4.5점 이하이면 Sell",
+    ]:
+        assert text in source
+
+
 def test_settings_surface_keeps_api_keys_hidden() -> None:
     settings_source = SETTINGS.read_text(encoding="utf-8")
     index_source = SETTINGS_INDEX.read_text(encoding="utf-8")
