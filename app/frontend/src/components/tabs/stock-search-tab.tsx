@@ -437,6 +437,27 @@ function ResearchQuickLinks({ tickers, language }: { tickers: string[]; language
   );
 }
 
+function normalizeCrossCheckGuideHeading(markdown: string) {
+  return markdown.replace(
+    /#{1,6}\s*🔍\s*(?:[^\n#]*?의\s*)?원문 대조 체크리스트/gu,
+    '### 🔍 원문 대조 체크리스트',
+  );
+}
+
+function formatDecisionReasoning(value: unknown) {
+  if (!value) return '';
+
+  return normalizeCrossCheckGuideHeading(String(value))
+    .replace(/\r\n?/g, '\n')
+    .replace(/([^\n])\s*(###\s*🔍\s*원문 대조 체크리스트)/gu, '$1\n\n$2')
+    .replace(/(###\s*🔍\s*원문 대조 체크리스트)\s*/gu, '$1\n\n')
+    .replace(/\s*(\d+)[).]\s+\*\*(핵심 타겟 데이터|원문 추적 섹션|경영진 멘트 검증):\*\*/gu, '\n$1. **$2:**')
+    .replace(/\s*[-–]\s+\*\*(핵심 타겟 데이터|원문 추적 섹션|경영진 멘트 검증):\*\*/gu, '\n- **$1:**')
+    .replace(/\s+\*\*(핵심 타겟 데이터|원문 추적 섹션|경영진 멘트 검증):\*\*/gu, '\n\n**$1:**')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function extractCrossCheckGuide(value: unknown): string | null {
   if (!value) return null;
 
@@ -446,13 +467,15 @@ function extractCrossCheckGuide(value: unknown): string | null {
 
     const headingIndex = trimmed.search(/###\s*🔍/u);
     if (headingIndex >= 0) {
-      return trimmed.slice(headingIndex).trim();
+      return normalizeCrossCheckGuideHeading(trimmed.slice(headingIndex).trim());
     }
 
     const checklistIndex = trimmed.search(/원문 대조 체크리스트|핵심 타겟 데이터|원문 추적 섹션|경영진 멘트 검증/u);
     if (checklistIndex >= 0) {
       const body = trimmed.slice(checklistIndex).trim();
-      return body.startsWith('###') ? body : `### 🔍 원문 대조 체크리스트\n${body}`;
+      return body.startsWith('###')
+        ? normalizeCrossCheckGuideHeading(body)
+        : normalizeCrossCheckGuideHeading(`### 🔍 원문 대조 체크리스트\n${body}`);
     }
 
     return null;
@@ -559,7 +582,7 @@ function buildFallbackCrossCheckGuide(result: AgentResult) {
     ? 'DART 사업보고서의 「사업의 내용」, 「재무에 관한 사항」, 「이사의 경영진단 및 분석의견」, 주요 주석을 우선 확인하십시오.'
     : 'SEC 10-K의 MD&A, Risk Factors, Financial Statements, Notes to Financial Statements를 우선 확인하십시오.';
 
-  return `### 🔍 ${result.agentName}의 원문 대조 체크리스트
+  return `### 🔍 원문 대조 체크리스트
 
 1. **핵심 타겟 데이터:** ${targetData}.
 2. **원문 추적 섹션:** ${sourceSections}
@@ -647,7 +670,7 @@ function renderMarkdownBlocks(markdown: string): ReactNode {
       return;
     }
 
-    const orderedMatch = trimmed.match(/^\d+\.\s+(.*)$/);
+    const orderedMatch = trimmed.match(/^\d+[.)]\s+(.*)$/);
     if (orderedMatch) {
       orderedItems.push(orderedMatch[1]);
       return;
@@ -1360,9 +1383,14 @@ export function StockSearchTab() {
                             {executiveSummary}
                           </p>
                           {decision?.reasoning && (
-                            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                              {String(decision.reasoning)}
-                            </p>
+                            <div className="mt-3 border-t border-border/60 pt-3">
+                              <div className="mb-2 text-xs font-medium text-muted-foreground">
+                                {language === 'ko' ? '상세 근거' : 'Detailed Rationale'}
+                              </div>
+                              <div className="text-xs leading-relaxed text-muted-foreground [&_h2]:mb-2 [&_h2]:mt-1 [&_h2]:text-sm [&_h3]:mb-2 [&_h3]:mt-1 [&_h3]:text-sm [&_li]:text-muted-foreground [&_ol]:my-2 [&_p]:my-2 [&_p]:text-muted-foreground [&_ul]:my-2">
+                                {renderMarkdownBlocks(formatDecisionReasoning(decision.reasoning))}
+                              </div>
+                            </div>
                           )}
                         </div>
                       </div>

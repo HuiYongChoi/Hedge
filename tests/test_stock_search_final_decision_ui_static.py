@@ -25,6 +25,23 @@ class StockSearchFinalDecisionUiStaticTests(unittest.TestCase):
         self.assertIn("80~100점: 강력 매수", source)
         self.assertIn("Info", source)
 
+    def test_final_decision_reasoning_is_split_into_markdown_blocks(self):
+        source = STOCK_TAB.read_text(encoding="utf-8")
+        final_decision_source = source[
+            source.index("{/* Final Decision */}") : source.index("{completeResult.reasoning &&")
+        ]
+
+        self.assertIn("function formatDecisionReasoning", source)
+        self.assertIn("function normalizeCrossCheckGuideHeading", source)
+        self.assertIn("{renderMarkdownBlocks(formatDecisionReasoning(decision.reasoning))}", final_decision_source)
+        self.assertNotIn("{String(decision.reasoning)}", final_decision_source)
+
+    def test_cross_check_heading_is_generic_in_fallback_guides(self):
+        source = STOCK_TAB.read_text(encoding="utf-8")
+
+        self.assertIn("### 🔍 원문 대조 체크리스트", source)
+        self.assertNotIn("${result.agentName}의 원문 대조 체크리스트", source)
+
     def test_research_quick_links_support_us_and_korean_tickers(self):
         source = STOCK_TAB.read_text(encoding="utf-8")
 

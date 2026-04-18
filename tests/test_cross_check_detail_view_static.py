@@ -11,7 +11,8 @@ def test_llm_injects_exact_cross_check_prompt() -> None:
 
     assert "CROSS_CHECK_GUIDE_REQUIREMENT" in source
     assert "[추가 지시사항: 원문 대조 가이드 작성]" in source
-    assert "### 🔍 [당신의 이름]의 원문 대조 체크리스트" in source
+    assert "### 🔍 원문 대조 체크리스트" in source
+    assert "[당신의 이름]의 원문 대조 체크리스트" not in source
     assert "핵심 타겟 데이터" in source
     assert "원문 추적 섹션" in source
     assert "경영진 멘트 검증" in source
