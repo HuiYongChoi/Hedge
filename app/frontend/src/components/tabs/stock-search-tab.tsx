@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { ModelSelector } from '@/components/ui/llm-selector';
-import { TickerInput } from '@/components/ui/ticker-input';
+import { resolveTickerValue, TickerInput } from '@/components/ui/ticker-input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useLanguage } from '@/contexts/language-context';
 import { Agent, getAgents } from '@/data/agents';
@@ -104,12 +104,21 @@ function normalizeTicker(ticker: string) {
 }
 
 function isKoreanStock(ticker: string) {
-  const normalized = normalizeTicker(ticker);
+  const trimmed = ticker.trim();
+  // 한글 기업명 또는 숫자로 시작하는 KS/KQ 티커
+  if (/[\uAC00-\uD7A3]/.test(trimmed)) return true;
+  const normalized = normalizeTicker(trimmed);
   return /^[0-9][0-9A-Z._-]*$/.test(normalized);
 }
 
 function getKoreanStockCode(ticker: string) {
-  const normalized = normalizeTicker(ticker);
+  const trimmed = ticker.trim();
+  // 한글 기업명이면 숫자 코드 추출을 위해 resolveTickerValue로 먼저 변환
+  if (/[\uAC00-\uD7A3]/.test(trimmed)) {
+    const resolved = resolveTickerValue(trimmed);
+    return resolved.match(/\d+/)?.[0] || trimmed;
+  }
+  const normalized = normalizeTicker(trimmed);
   return normalized.match(/\d+/)?.[0] || normalized;
 }
 
@@ -301,7 +310,10 @@ function ScoreTooltip({ language }: { language: 'ko' | 'en' }) {
 }
 
 function ResearchQuickLinks({ tickers, language }: { tickers: string[]; language: 'ko' | 'en' }) {
-  const normalizedTickers = Array.from(new Set(tickers.map(normalizeTicker).filter(Boolean)));
+  // 한국 기업명은 티커 코드로 변환 후 처리
+  const normalizedTickers = Array.from(new Set(
+    tickers.map(t => normalizeTicker(resolveTickerValue(t.trim()))).filter(Boolean)
+  ));
 
   if (normalizedTickers.length === 0) {
     return null;
@@ -646,10 +658,12 @@ export function StockSearchTab() {
     if (!tickers.trim() || selectedAgents.size === 0) return;
 
     // Use only the first ticker for single ticker analysis
-    const singleTicker = tickers.split(',')[0].trim().toUpperCase();
+    // 한국 기업명이 입력된 경우 티커 코드로 변환
+    const rawTicker = tickers.split(',')[0].trim();
+    const singleTicker = resolveTickerValue(rawTicker).toUpperCase();
     if (!singleTicker) return;
 
-    setTickers(singleTicker);
+    setTickers(rawTicker);
 
     setIsRunning(true);
     setErrorMessage(null);

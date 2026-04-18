@@ -1,7 +1,7 @@
 import { useReactFlow, type NodeProps } from '@xyflow/react';
 import { ChartLine, ChevronDown, Play, Square } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { TickerInput } from '@/components/ui/ticker-input';
+import { resolveTickerValue, TickerInput } from '@/components/ui/ticker-input';
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
@@ -188,8 +188,8 @@ export function StockAnalyzerNode({
       }
     }
     
-    // Convert tickers to array    
-    const tickerList = tickers.split(',').map(t => t.trim());
+    // Convert tickers to array (한국 기업명은 티커 코드로 변환)
+    const tickerList = tickers.split(',').map(t => resolveTickerValue(t.trim()));
     
     // Check if we're in backtest mode
     if (runMode === 'backtest') {

@@ -56,6 +56,23 @@ export const POPULAR_TICKERS: TickerSuggestion[] = [
   { ticker: '247540.KQ', name: '에코프로비엠', market: 'KR' },
 ];
 
+// 한국 기업명 → 티커 코드 변환 테이블 (API 제출 전 변환에 사용)
+export const KOREAN_NAME_TO_TICKER: Record<string, string> = {};
+POPULAR_TICKERS.forEach(t => {
+  if (t.market === 'KR') {
+    KOREAN_NAME_TO_TICKER[t.name] = t.ticker;
+  }
+});
+
+/**
+ * 한국 기업명을 티커 코드로 변환합니다.
+ * 미국 티커 또는 이미 티커 형식이면 그대로 반환합니다.
+ */
+export function resolveTickerValue(input: string): string {
+  const trimmed = input.trim();
+  return KOREAN_NAME_TO_TICKER[trimmed] || trimmed;
+}
+
 function MarketBadge({ market }: { market?: string }) {
   if (!market || market === 'GLOBAL') return null;
   const isKR = market === 'KR';
@@ -85,6 +102,8 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const skipBlurRef = useRef(false);
+  // 선택 직후 다음 fetchSuggestions를 건너뛰기 위한 플래그
+  const skipNextFetchRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -147,6 +166,12 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
 
   // currentTerm 변경 시 검색 실행
   useEffect(() => {
+    // 선택 직후에는 드롭다운을 다시 열지 않음
+    if (skipNextFetchRef.current) {
+      skipNextFetchRef.current = false;
+      return;
+    }
+
     if (currentTerm.length >= 1) {
       fetchSuggestions(currentTerm);
     } else {
@@ -160,10 +185,19 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
 
   const showDropdown = open && suggestions.length > 0;
 
-  const handleSelect = (ticker: string) => {
+  /**
+   * 제안 선택 처리:
+   * - 한국 종목(market==='KR')은 기업명을 입력값으로 사용
+   * - 미국/기타 종목은 티커 코드를 사용
+   */
+  const handleSelect = (suggestion: TickerSuggestion) => {
     skipBlurRef.current = true;
+    skipNextFetchRef.current = true;
+
+    const insertValue = suggestion.market === 'KR' ? suggestion.name : suggestion.ticker;
+
     const parts = value.split(',');
-    parts[parts.length - 1] = ticker;
+    parts[parts.length - 1] = insertValue;
     onChange(parts.map(p => p.trim()).join(','));
     setOpen(false);
     setActiveIdx(-1);
@@ -193,7 +227,7 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
       }
       if (e.key === 'Enter' && activeIdx >= 0) {
         e.preventDefault();
-        handleSelect(suggestions[activeIdx].ticker);
+        handleSelect(suggestions[activeIdx]);
         return;
       }
       if (e.key === 'Escape') {
@@ -265,10 +299,14 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
                   : 'hover:bg-accent hover:text-accent-foreground'
               }`}
               onMouseEnter={() => setActiveIdx(idx)}
-              onMouseDown={() => handleSelect(s.ticker)}
+              onMouseDown={() => handleSelect(s)}
             >
-              <span className="font-mono font-semibold w-20 shrink-0 text-primary text-xs truncate">{s.ticker}</span>
-              <span className="text-muted-foreground text-xs truncate flex-1">{s.name}</span>
+              <span className="font-mono font-semibold w-20 shrink-0 text-primary text-xs truncate">
+                {s.market === 'KR' ? s.name : s.ticker}
+              </span>
+              <span className="text-muted-foreground text-xs truncate flex-1">
+                {s.market === 'KR' ? s.ticker : s.name}
+              </span>
               <MarketBadge market={s.market} />
             </div>
           ))}
