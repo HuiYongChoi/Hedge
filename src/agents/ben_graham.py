@@ -38,7 +38,29 @@ def ben_graham_agent(state: AgentState, agent_id: str = "ben_graham_agent"):
         metrics = get_financial_metrics(ticker, end_date, period="annual", limit=10, api_key=api_key)
 
         progress.update_status(agent_id, ticker, "Gathering financial line items")
-        financial_line_items = search_line_items(ticker, ["earnings_per_share", "revenue", "net_income", "book_value_per_share", "total_assets", "total_liabilities", "current_assets", "current_liabilities", "dividends_and_other_cash_distributions", "outstanding_shares"], end_date, period="annual", limit=10, api_key=api_key)
+        financial_line_items = search_line_items(
+            ticker,
+            [
+                "earnings_per_share",
+                "revenue",
+                "net_income",
+                "book_value_per_share",
+                "total_assets",
+                "total_liabilities",
+                "total_debt",
+                "shareholders_equity",
+                "debt_to_equity",
+                "debt_to_assets",
+                "current_assets",
+                "current_liabilities",
+                "dividends_and_other_cash_distributions",
+                "outstanding_shares",
+            ],
+            end_date,
+            period="annual",
+            limit=10,
+            api_key=api_key,
+        )
 
         progress.update_status(agent_id, ticker, "Getting market cap")
         market_cap = get_market_cap(ticker, end_date, api_key=api_key)
@@ -65,7 +87,19 @@ def ben_graham_agent(state: AgentState, agent_id: str = "ben_graham_agent"):
         else:
             signal = "neutral"
 
-        analysis_data[ticker] = {"signal": signal, "score": total_score, "max_score": max_possible_score, "earnings_analysis": earnings_analysis, "strength_analysis": strength_analysis, "valuation_analysis": valuation_analysis}
+        analysis_data[ticker] = {
+            "signal": signal,
+            "score": total_score,
+            "max_score": max_possible_score,
+            "earnings_analysis": earnings_analysis,
+            "strength_analysis": strength_analysis,
+            "valuation_analysis": valuation_analysis,
+            "metric_scale_notes": (
+                "Financial ratios are x-ratios, not whole-number percentages. "
+                "For example, debt_to_equity 0.11 means 0.11x and current_ratio 0.98 means 0.98x. "
+                "Liabilities-to-assets is a separate balance-sheet ratio and must not be described as debt-to-equity."
+            ),
+        }
 
         progress.update_status(agent_id, ticker, "Generating Ben Graham analysis")
         graham_output = generate_graham_output(
@@ -152,6 +186,9 @@ def analyze_financial_strength(financial_line_items: list) -> dict:
     latest_item = financial_line_items[0]
     total_assets = latest_item.total_assets or 0
     total_liabilities = latest_item.total_liabilities or 0
+    total_debt = getattr(latest_item, "total_debt", None)
+    shareholders_equity = getattr(latest_item, "shareholders_equity", None)
+    debt_to_equity = getattr(latest_item, "debt_to_equity", None)
     current_assets = latest_item.current_assets or 0
     current_liabilities = latest_item.current_liabilities or 0
 
@@ -169,19 +206,31 @@ def analyze_financial_strength(financial_line_items: list) -> dict:
     else:
         details.append("Cannot compute current ratio (missing or zero current_liabilities).")
 
-    # 2. Debt vs. Assets
-    if total_assets > 0:
-        debt_ratio = total_liabilities / total_assets
-        if debt_ratio < 0.5:
+    # 2. Debt-to-equity. Keep this separate from total liabilities / total assets.
+    if debt_to_equity is None and total_debt is not None and shareholders_equity and shareholders_equity > 0:
+        debt_to_equity = total_debt / shareholders_equity
+
+    if debt_to_equity is not None:
+        if debt_to_equity <= 0.5:
             score += 2
-            details.append(f"Debt ratio = {debt_ratio:.2f}, under 0.50 (conservative).")
-        elif debt_ratio < 0.8:
+            details.append(f"Debt-to-equity = {debt_to_equity:.2f}x (<=0.50x: conservative leverage).")
+        elif debt_to_equity <= 1.0:
             score += 1
-            details.append(f"Debt ratio = {debt_ratio:.2f}, somewhat high but could be acceptable.")
+            details.append(f"Debt-to-equity = {debt_to_equity:.2f}x (<=1.00x: acceptable but not ideal).")
         else:
-            details.append(f"Debt ratio = {debt_ratio:.2f}, quite high by Graham standards.")
+            details.append(f"Debt-to-equity = {debt_to_equity:.2f}x (>1.00x: high leverage by Graham standards).")
     else:
-        details.append("Cannot compute debt ratio (missing total_assets).")
+        details.append("Debt-to-equity = N/A (missing total_debt or shareholders_equity).")
+
+    # Context-only obligation load. This is not scored as D/E.
+    if total_assets > 0:
+        liabilities_to_assets = total_liabilities / total_assets
+        details.append(
+            f"Liabilities-to-assets = {liabilities_to_assets:.2f}x "
+            "(total_liabilities / total_assets; not the same as debt-to-equity)."
+        )
+    else:
+        details.append("Liabilities-to-assets = N/A (missing total_assets).")
 
     # 3. Dividend track record
     div_periods = [item.dividends_and_other_cash_distributions for item in financial_line_items if item.dividends_and_other_cash_distributions is not None]
@@ -201,7 +250,15 @@ def analyze_financial_strength(financial_line_items: list) -> dict:
     else:
         details.append("No dividend data available to assess payout consistency.")
 
-    return {"score": score, "details": "; ".join(details)}
+    return {
+        "score": score,
+        "details": "; ".join(details),
+        "metrics": {
+            "current_ratio": (current_assets / current_liabilities) if current_liabilities > 0 else None,
+            "debt_to_equity": debt_to_equity,
+            "liabilities_to_assets": (total_liabilities / total_assets) if total_assets > 0 else None,
+        },
+    }
 
 
 def analyze_valuation_graham(financial_line_items: list, market_cap: float) -> dict:
@@ -301,6 +358,7 @@ def generate_graham_output(
             3. Prefer stable earnings over multiple years.
             4. Consider dividend record for extra safety.
             5. Avoid speculative or high-growth assumptions; focus on proven metrics.
+            6. Preserve decimal points in every ratio: D/E 0.11 means 0.11x, not 11x or 11%.
             
             When providing your reasoning, be thorough and specific by:
             1. Explaining the key valuation metrics that influenced your decision the most (Graham Number, NCAV, P/E, etc.)
@@ -309,9 +367,15 @@ def generate_graham_output(
             4. Providing quantitative evidence with precise numbers
             5. Comparing current metrics to Graham's specific thresholds (e.g., "Current ratio of 2.5 exceeds Graham's minimum of 2.0")
             6. Using Benjamin Graham's conservative, analytical voice and style in your explanation
-            
+
             For example, if bullish: "The stock trades at a 35% discount to net current asset value, providing an ample margin of safety. The current ratio of 2.5 and debt-to-equity of 0.3 indicate strong financial position..."
             For example, if bearish: "Despite consistent earnings, the current price of $50 exceeds our calculated Graham Number of $35, offering no margin of safety. Additionally, the current ratio of only 1.2 falls below Graham's preferred 2.0 threshold..."
+
+            Ratio interpretation guard:
+            - debt_to_equity, current_ratio, quick_ratio, and liabilities_to_assets are x-ratios. Keep the decimal point.
+            - Debt-to-equity uses total_debt / shareholders_equity.
+            - Liabilities-to-assets uses total_liabilities / total_assets and is not the same as debt-to-equity.
+            - Do not call liabilities-to-assets "D/E" or infer high interest-bearing debt from it alone.
                         
             Return a rational recommendation: bullish, bearish, or neutral, with a confidence level (0-100) and thorough reasoning.
             """,

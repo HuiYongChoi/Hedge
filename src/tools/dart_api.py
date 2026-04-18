@@ -75,7 +75,9 @@ BS_ACCOUNT_MAP: dict[str, list[str]] = {
     ],
     "cash_and_equivalents": ["현금및현금성자산", "현금및현금성 자산"],
     "inventory": ["재고자산"],
-    "total_debt": ["차입금합계", "단기차입금"],  # 근사치: 단기+장기 차입금 합산 필요
+    "total_debt": ["차입금합계", "총차입금", "차입금 총계"],
+    "short_term_debt": ["단기차입금", "유동성장기차입금", "유동성사채", "유동성장기부채"],
+    "long_term_debt": ["장기차입금", "비유동차입금", "사채", "비유동사채", "장기차입부채"],
     "retained_earnings": ["이익잉여금"],
     "goodwill": ["영업권"],
     "intangible_assets": ["무형자산"],
@@ -268,6 +270,11 @@ def _extract_financials(df) -> dict:
         if ta and eq:
             result["total_liabilities"] = ta - eq
 
+    if "total_debt" not in result:
+        debt_parts = [result.get("short_term_debt"), result.get("long_term_debt")]
+        if any(part is not None for part in debt_parts):
+            result["total_debt"] = sum(part or 0 for part in debt_parts)
+
     # working_capital
     ca = result.get("current_assets")
     cl = result.get("current_liabilities")
@@ -449,6 +456,7 @@ def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
     net_income = fin.get("net_income")
     total_assets = fin.get("total_assets")
     total_liabilities = fin.get("total_liabilities")
+    total_debt = fin.get("total_debt")
     shareholders_equity = fin.get("shareholders_equity")
     current_assets = fin.get("current_assets")
     current_liabilities = fin.get("current_liabilities")
@@ -470,14 +478,15 @@ def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
     roe = safe_div(net_income, shareholders_equity)
     roa = safe_div(net_income, total_assets)
     current_ratio = safe_div(current_assets, current_liabilities)
-    debt_to_equity = safe_div(total_liabilities, shareholders_equity)
+    debt_to_equity = safe_div(total_debt, shareholders_equity)
+    liabilities_to_equity = safe_div(total_liabilities, shareholders_equity)
     debt_to_assets = safe_div(total_liabilities, total_assets)
 
     # 성장률: prev 연도 대비
     revenue_prev = fin.get("revenue_prev")
     net_income_prev = fin.get("net_income_prev")
-    revenue_growth = safe_div(revenue - revenue_prev, revenue_prev) if (revenue and revenue_prev) else None
-    earnings_growth = safe_div(net_income - net_income_prev, abs(net_income_prev)) if (net_income and net_income_prev) else None
+    revenue_growth = safe_div(revenue - revenue_prev, revenue_prev) if (revenue is not None and revenue_prev not in (None, 0)) else None
+    earnings_growth = safe_div(net_income - net_income_prev, abs(net_income_prev)) if (net_income is not None and net_income_prev not in (None, 0)) else None
 
     # 주당 지표
     eps = fin.get("earnings_per_share") or safe_div(net_income, outstanding_shares)
@@ -517,6 +526,7 @@ def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
         "current_ratio": current_ratio,
         "quick_ratio": yf_info.get("quickRatio"),
         "debt_to_equity": debt_to_equity,
+        "liabilities_to_equity": liabilities_to_equity,
         "debt_to_assets": debt_to_assets,
         "interest_coverage": None,
         "revenue_growth": revenue_growth,
@@ -535,7 +545,7 @@ def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
         "capital_expenditure": fin.get("capital_expenditure"),
         "depreciation_and_amortization": fin.get("depreciation_and_amortization"),
         "interest_expense": fin.get("interest_expense"),
-        "total_debt": fin.get("total_debt"),
+        "total_debt": total_debt,
         "cash_and_equivalents": fin.get("cash_and_equivalents"),
         "outstanding_shares": outstanding_shares,
         "total_assets": total_assets,

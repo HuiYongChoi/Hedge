@@ -15,6 +15,12 @@ DATA_GAP_HANDLING_REQUIREMENT = (
     "'데이터가 부족', or '평가할 수 없다'. State the unavailable metric as N/A, use available proxy metrics and qualitative context, "
     "and explain the resulting uncertainty. Never invent numbers."
 )
+RATIO_SCALE_REQUIREMENT = (
+    "RATIO SCALE REQUIREMENT: Preserve decimal points and units for every financial ratio. "
+    "Ratios such as debt_to_equity, current_ratio, quick_ratio, debt_to_assets, and liabilities_to_assets are x-ratios, not whole-number percentages. "
+    "0.11 means 0.11x; 0.98 means 0.98x. Do NOT rewrite 0.80 as 080, 0.11 as 11, or 0.98 as 098. "
+    "Only convert a ratio to a percentage when explicitly labeling it as a percentage, and never confuse debt_to_equity with liabilities_to_assets."
+)
 CROSS_CHECK_GUIDE_REQUIREMENT = """[추가 지시사항: 원문 대조 가이드 작성]
 당신은 자신의 투자 철학에 따라 기업을 분석한 후, 최종 의사결정권자(사용자)가 원본 사업보고서(SEC 10-K 또는 DART)를 직접 읽으며 당신의 분석을 검증할 수 있도록 돕는 '크로스체크 가이드'를 함께 제출해야 합니다.
 
@@ -88,6 +94,8 @@ def _append_korean_requirement_to_text(text: str) -> str:
     requirements = []
     if DATA_GAP_HANDLING_REQUIREMENT not in text:
         requirements.append(DATA_GAP_HANDLING_REQUIREMENT)
+    if RATIO_SCALE_REQUIREMENT not in text:
+        requirements.append(RATIO_SCALE_REQUIREMENT)
     if CROSS_CHECK_GUIDE_REQUIREMENT not in text:
         requirements.append(CROSS_CHECK_GUIDE_REQUIREMENT)
     if REPORT_QUALITY_REQUIREMENT not in text:
@@ -124,6 +132,7 @@ def _make_system_message():
     content = "\n\n".join(
         [
             DATA_GAP_HANDLING_REQUIREMENT,
+            RATIO_SCALE_REQUIREMENT,
             CROSS_CHECK_GUIDE_REQUIREMENT,
             REPORT_QUALITY_REQUIREMENT,
             SCHEMA_COMPATIBILITY_REQUIREMENT,

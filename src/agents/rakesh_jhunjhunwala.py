@@ -336,35 +336,39 @@ def analyze_balance_sheet(financial_line_items: list) -> dict[str, any]:
     score = 0
     reasoning = []
 
-    # Debt to asset ratio
-    if (getattr(latest, "total_assets", None) and getattr(latest, "total_liabilities", None) 
-        and latest.total_assets and latest.total_liabilities 
-        and latest.total_assets > 0):
-        debt_ratio = latest.total_liabilities / latest.total_assets
-        if debt_ratio < 0.5:
+    # Liabilities-to-assets ratio. This is not debt-to-equity.
+    if (
+        getattr(latest, "total_assets", None) is not None
+        and getattr(latest, "total_liabilities", None) is not None
+        and latest.total_assets > 0
+    ):
+        liabilities_to_assets = latest.total_liabilities / latest.total_assets
+        if liabilities_to_assets < 0.5:
             score += 2
-            reasoning.append(f"Low debt ratio: {debt_ratio:.2f}")
-        elif debt_ratio < 0.7:
+            reasoning.append(f"Low liabilities-to-assets ratio: {liabilities_to_assets:.2f}x")
+        elif liabilities_to_assets < 0.7:
             score += 1
-            reasoning.append(f"Moderate debt ratio: {debt_ratio:.2f}")
+            reasoning.append(f"Moderate liabilities-to-assets ratio: {liabilities_to_assets:.2f}x")
         else:
-            reasoning.append(f"High debt ratio: {debt_ratio:.2f}")
+            reasoning.append(f"High liabilities-to-assets ratio: {liabilities_to_assets:.2f}x")
     else:
-        reasoning.append("Insufficient data to calculate debt ratio")
+        reasoning.append("Insufficient data to calculate liabilities-to-assets ratio")
 
     # Current ratio (liquidity)
-    if (getattr(latest, "current_assets", None) and getattr(latest, "current_liabilities", None) 
-        and latest.current_assets and latest.current_liabilities 
-        and latest.current_liabilities > 0):
+    if (
+        getattr(latest, "current_assets", None) is not None
+        and getattr(latest, "current_liabilities", None) is not None
+        and latest.current_liabilities > 0
+    ):
         current_ratio = latest.current_assets / latest.current_liabilities
         if current_ratio > 2.0:
             score += 2
-            reasoning.append(f"Excellent liquidity with current ratio: {current_ratio:.2f}")
+            reasoning.append(f"Excellent liquidity with current ratio: {current_ratio:.2f}x")
         elif current_ratio > 1.5:
             score += 1
-            reasoning.append(f"Good liquidity with current ratio: {current_ratio:.2f}")
+            reasoning.append(f"Good liquidity with current ratio: {current_ratio:.2f}x")
         else:
-            reasoning.append(f"Weak liquidity with current ratio: {current_ratio:.2f}")
+            reasoning.append(f"Weak liquidity with current ratio: {current_ratio:.2f}x")
     else:
         reasoning.append("Insufficient data to calculate current ratio")
 
@@ -466,16 +470,19 @@ def assess_quality_metrics(financial_line_items: list) -> float:
         quality_factors.append(0.5)
     
     # Debt levels (lower is better)
-    if (getattr(latest, 'total_assets', None) and getattr(latest, 'total_liabilities', None) and 
-        latest.total_assets and latest.total_liabilities):
-        debt_ratio = latest.total_liabilities / latest.total_assets
-        if debt_ratio < 0.3:  # Low debt
+    if (
+        getattr(latest, 'total_assets', None) is not None
+        and getattr(latest, 'total_liabilities', None) is not None
+        and latest.total_assets > 0
+    ):
+        liabilities_to_assets = latest.total_liabilities / latest.total_assets
+        if liabilities_to_assets < 0.3:  # Low obligation load
             quality_factors.append(1.0)
-        elif debt_ratio < 0.5:  # Moderate debt
+        elif liabilities_to_assets < 0.5:  # Moderate obligation load
             quality_factors.append(0.7)
-        elif debt_ratio < 0.7:  # High debt
+        elif liabilities_to_assets < 0.7:  # High obligation load
             quality_factors.append(0.4)
-        else:  # Very high debt
+        else:  # Very high obligation load
             quality_factors.append(0.1)
     else:
         quality_factors.append(0.5)

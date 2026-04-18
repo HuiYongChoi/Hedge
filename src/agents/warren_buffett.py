@@ -164,38 +164,38 @@ def analyze_fundamentals(metrics: list) -> dict[str, any]:
     reasoning = []
 
     # Check ROE (Return on Equity)
-    if latest_metrics.return_on_equity and latest_metrics.return_on_equity > 0.15:  # 15% ROE threshold
+    if latest_metrics.return_on_equity is not None and latest_metrics.return_on_equity > 0.15:  # 15% ROE threshold
         score += 2
         reasoning.append(f"Strong ROE of {latest_metrics.return_on_equity:.1%}")
-    elif latest_metrics.return_on_equity:
+    elif latest_metrics.return_on_equity is not None:
         reasoning.append(f"Weak ROE of {latest_metrics.return_on_equity:.1%}")
     else:
         reasoning.append("ROE data not available")
 
     # Check Debt to Equity
-    if latest_metrics.debt_to_equity and latest_metrics.debt_to_equity < 0.5:
+    if latest_metrics.debt_to_equity is not None and latest_metrics.debt_to_equity < 0.5:
         score += 2
-        reasoning.append("Conservative debt levels")
-    elif latest_metrics.debt_to_equity:
-        reasoning.append(f"High debt to equity ratio of {latest_metrics.debt_to_equity:.1f}")
+        reasoning.append(f"Conservative debt levels (D/E {latest_metrics.debt_to_equity:.2f}x)")
+    elif latest_metrics.debt_to_equity is not None:
+        reasoning.append(f"High debt to equity ratio of {latest_metrics.debt_to_equity:.2f}x")
     else:
         reasoning.append("Debt to equity data not available")
 
     # Check Operating Margin
-    if latest_metrics.operating_margin and latest_metrics.operating_margin > 0.15:
+    if latest_metrics.operating_margin is not None and latest_metrics.operating_margin > 0.15:
         score += 2
         reasoning.append("Strong operating margins")
-    elif latest_metrics.operating_margin:
+    elif latest_metrics.operating_margin is not None:
         reasoning.append(f"Weak operating margin of {latest_metrics.operating_margin:.1%}")
     else:
         reasoning.append("Operating margin data not available")
 
     # Check Current Ratio
-    if latest_metrics.current_ratio and latest_metrics.current_ratio > 1.5:
+    if latest_metrics.current_ratio is not None and latest_metrics.current_ratio > 1.5:
         score += 1
-        reasoning.append("Good liquidity position")
-    elif latest_metrics.current_ratio:
-        reasoning.append(f"Weak liquidity with current ratio of {latest_metrics.current_ratio:.1f}")
+        reasoning.append(f"Good liquidity position (current ratio {latest_metrics.current_ratio:.2f}x)")
+    elif latest_metrics.current_ratio is not None:
+        reasoning.append(f"Weak liquidity with current ratio of {latest_metrics.current_ratio:.2f}x")
     else:
         reasoning.append("Current ratio data not available")
 
@@ -211,7 +211,7 @@ def analyze_consistency(financial_line_items: list) -> dict[str, any]:
     reasoning = []
 
     # Check earnings growth trend
-    earnings_values = [item.net_income for item in financial_line_items if item.net_income]
+    earnings_values = [item.net_income for item in financial_line_items if item.net_income is not None]
     if len(earnings_values) >= 4:
         # Simple check: is each period's earnings bigger than the next?
         earnings_growth = all(earnings_values[i] > earnings_values[i + 1] for i in range(len(earnings_values) - 1))

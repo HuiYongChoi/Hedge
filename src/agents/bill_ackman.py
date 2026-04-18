@@ -215,7 +215,7 @@ def analyze_business_quality(metrics: list, financial_line_items: list) -> dict:
 def analyze_financial_discipline(metrics: list, financial_line_items: list) -> dict:
     """
     Evaluate the company's balance sheet over multiple periods:
-    - Debt ratio trends
+    - Debt-to-equity trends, with liabilities-to-assets as a separate fallback
     - Capital returns to shareholders over time (dividends, buybacks)
     """
     score = 0
@@ -227,7 +227,7 @@ def analyze_financial_discipline(metrics: list, financial_line_items: list) -> d
             "details": "Insufficient data to analyze financial discipline"
         }
     
-    # 1. Multi-period debt ratio or debt_to_equity
+    # 1. Multi-period debt-to-equity; fall back to liabilities-to-assets only as a separate ratio.
     debt_to_equity_vals = [item.debt_to_equity for item in financial_line_items if item.debt_to_equity is not None]
     if debt_to_equity_vals:
         below_one_count = sum(1 for d in debt_to_equity_vals if d < 1.0)
@@ -240,7 +240,7 @@ def analyze_financial_discipline(metrics: list, financial_line_items: list) -> d
         # Fallback to total_liabilities / total_assets
         liab_to_assets = []
         for item in financial_line_items:
-            if item.total_liabilities and item.total_assets and item.total_assets > 0:
+            if item.total_liabilities is not None and item.total_assets is not None and item.total_assets > 0:
                 liab_to_assets.append(item.total_liabilities / item.total_assets)
         
         if liab_to_assets:

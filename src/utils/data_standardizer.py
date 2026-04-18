@@ -47,6 +47,28 @@ def _first_present(row: dict[str, Any], *names: str) -> float | None:
     return None
 
 
+def _sum_present(row: dict[str, Any], *names: str) -> float | None:
+    values = [_safe_float(row.get(name)) for name in names]
+    present_values = [value for value in values if value is not None]
+    return sum(present_values) if present_values else None
+
+
+def _derive_total_debt(row: dict[str, Any]) -> float | None:
+    direct_total_debt = _safe_float(row.get("total_debt"))
+    if direct_total_debt is not None:
+        return direct_total_debt
+
+    return _sum_present(
+        row,
+        "short_term_debt",
+        "long_term_debt",
+        "current_debt",
+        "non_current_debt",
+        "short_term_borrowings",
+        "long_term_borrowings",
+    )
+
+
 def _cash_outflow(value: Any) -> float | None:
     value = _safe_float(value)
     return abs(value) if value is not None else None
@@ -63,7 +85,7 @@ def derive_financial_fields(row: dict[str, Any]) -> dict[str, Any]:
     shareholders_equity = _safe_float(row.get("shareholders_equity"))
     current_assets = _safe_float(row.get("current_assets"))
     current_liabilities = _safe_float(row.get("current_liabilities"))
-    total_debt = _first_present(row, "total_debt", "short_term_debt", "long_term_debt")
+    total_debt = _derive_total_debt(row)
     cash = _safe_float(row.get("cash_and_equivalents"))
     shares = _safe_float(row.get("outstanding_shares"))
     operating_cash_flow = _safe_float(row.get("operating_cash_flow"))
@@ -94,13 +116,15 @@ def derive_financial_fields(row: dict[str, Any]) -> dict[str, Any]:
     if derived.get("total_liabilities") is None and total_assets is not None and shareholders_equity is not None:
         derived["total_liabilities"] = total_assets - shareholders_equity
         total_liabilities = _safe_float(derived["total_liabilities"])
+    if derived.get("total_debt") is None and total_debt is not None:
+        derived["total_debt"] = total_debt
 
     if derived.get("working_capital") is None and current_assets is not None and current_liabilities is not None:
         derived["working_capital"] = current_assets - current_liabilities
     working_capital = _safe_float(derived.get("working_capital"))
 
     if derived.get("debt_to_equity") is None:
-        derived["debt_to_equity"] = _safe_div(total_debt if total_debt is not None else total_liabilities, shareholders_equity)
+        derived["debt_to_equity"] = _safe_div(total_debt, shareholders_equity)
     if derived.get("debt_to_assets") is None:
         derived["debt_to_assets"] = _safe_div(total_liabilities, total_assets)
     if derived.get("current_ratio") is None:

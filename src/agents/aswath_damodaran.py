@@ -240,9 +240,9 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
     if dte is not None:
         if dte < 1:
             score += 1
-            details.append(f"D/E {dte:.1f}")
+            details.append(f"D/E {dte:.2f}x")
         else:
-            details.append(f"High D/E {dte:.1f}")
+            details.append(f"High D/E {dte:.2f}x")
     else:
         details.append("D/E N/A")
 

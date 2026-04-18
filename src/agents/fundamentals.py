@@ -75,7 +75,7 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
         signals.append("bullish" if growth_score >= 2 else "bearish" if growth_score == 0 else "neutral")
         reasoning["growth_signal"] = {
             "signal": signals[1],
-            "details": (f"Revenue Growth: {revenue_growth:.2%}" if revenue_growth else "Revenue Growth: N/A") + ", " + (f"Earnings Growth: {earnings_growth:.2%}" if earnings_growth else "Earnings Growth: N/A"),
+            "details": (f"Revenue Growth: {revenue_growth:.2%}" if revenue_growth is not None else "Revenue Growth: N/A") + ", " + (f"Earnings Growth: {earnings_growth:.2%}" if earnings_growth is not None else "Earnings Growth: N/A"),
         }
 
         progress.update_status(agent_id, ticker, "Analyzing financial health")
@@ -86,17 +86,17 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
         earnings_per_share = metrics.earnings_per_share
 
         health_score = 0
-        if current_ratio and current_ratio > 1.5:  # Strong liquidity
+        if current_ratio is not None and current_ratio > 1.5:  # Strong liquidity
             health_score += 1
-        if debt_to_equity and debt_to_equity < 0.5:  # Conservative debt levels
+        if debt_to_equity is not None and debt_to_equity < 0.5:  # Conservative debt levels
             health_score += 1
-        if free_cash_flow_per_share and earnings_per_share and free_cash_flow_per_share > earnings_per_share * 0.8:  # Strong FCF conversion
+        if free_cash_flow_per_share is not None and earnings_per_share is not None and free_cash_flow_per_share > earnings_per_share * 0.8:  # Strong FCF conversion
             health_score += 1
 
         signals.append("bullish" if health_score >= 2 else "bearish" if health_score == 0 else "neutral")
         reasoning["financial_health_signal"] = {
             "signal": signals[2],
-            "details": (f"Current Ratio: {current_ratio:.2f}" if current_ratio else "Current Ratio: N/A") + ", " + (f"D/E: {debt_to_equity:.2f}" if debt_to_equity else "D/E: N/A"),
+            "details": (f"Current Ratio: {current_ratio:.2f}x" if current_ratio is not None else "Current Ratio: N/A") + ", " + (f"D/E: {debt_to_equity:.2f}x" if debt_to_equity is not None else "D/E: N/A"),
         }
 
         progress.update_status(agent_id, ticker, "Analyzing valuation ratios")
