@@ -34,8 +34,10 @@ class KoreanOutputRequirementStaticTests(unittest.TestCase):
     def test_portfolio_manager_default_reasoning_is_korean(self):
         source = (ROOT / "src/agents/portfolio_manager.py").read_text(encoding="utf-8")
 
-        self.assertIn("현재 실행 가능한 거래가 없어 관망합니다.", source)
-        self.assertIn("모델 응답 실패로 관망 결정을 적용했습니다.", source)
+        self.assertIn("에이전트 신호 기준 강세", source)
+        self.assertIn("보수적 관망 판단입니다.", source)
+        self.assertNotIn("현재 실행 가능한 거래가 없어 관망합니다.", source)
+        self.assertNotIn("모델 응답 실패로 관망합니다.", source)
 
 
 if __name__ == "__main__":

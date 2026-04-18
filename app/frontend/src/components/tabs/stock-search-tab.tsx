@@ -10,8 +10,9 @@ import { useLanguage } from '@/contexts/language-context';
 import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
 import { t } from '@/lib/language-preferences';
+import { stockAnalysisRunService, StockAnalysisRunStatus } from '@/services/stock-analysis-run-service';
 import { Bot, ChevronDown, ChevronUp, Info, Loader2, Play, Search, Square } from 'lucide-react';
-import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 
@@ -40,6 +41,91 @@ interface CompleteResult {
 interface DetailReportState {
   agentName: string;
   markdown: string;
+}
+
+interface StockAnalysisSavedState {
+  tickers: string;
+  startDate: string;
+  endDate: string;
+  selectedModel: LanguageModel | null;
+  selectedAgentKeys: string[];
+  agentResults: AgentResult[];
+  completeResult: CompleteResult | null;
+  expandedAgentKeys: string[];
+  selectedDetailReport: DetailReportState | null;
+  errorMessage: string | null;
+}
+
+function serializeStockAnalysisState(state: {
+  tickers: string;
+  startDate: string;
+  endDate: string;
+  selectedModel: LanguageModel | null;
+  selectedAgents: Set<string>;
+  agentResults: Map<string, AgentResult>;
+  completeResult: CompleteResult | null;
+  expandedAgents: Set<string>;
+  selectedDetailReport: DetailReportState | null;
+  errorMessage: string | null;
+}): StockAnalysisSavedState {
+  return {
+    tickers: state.tickers,
+    startDate: state.startDate,
+    endDate: state.endDate,
+    selectedModel: state.selectedModel,
+    selectedAgentKeys: Array.from(state.selectedAgents),
+    agentResults: Array.from(state.agentResults.values()),
+    completeResult: state.completeResult,
+    expandedAgentKeys: Array.from(state.expandedAgents),
+    selectedDetailReport: state.selectedDetailReport,
+    errorMessage: state.errorMessage,
+  };
+}
+
+function restoreStockAnalysisState(
+  savedState: Record<string, any> | null | undefined,
+  availableAgents: Agent[],
+  availableModels: LanguageModel[],
+  defaultModel: LanguageModel | null,
+) {
+  const state = (savedState || {}) as Partial<StockAnalysisSavedState>;
+  const availableAgentKeys = new Set(availableAgents.map(agent => agent.key));
+  const selectedAgentKeys = (state.selectedAgentKeys || []).filter(key => availableAgentKeys.has(key));
+  const restoredModel = state.selectedModel
+    ? availableModels.find(model =>
+        model.model_name === state.selectedModel?.model_name &&
+        model.provider === state.selectedModel?.provider
+      ) || state.selectedModel
+    : defaultModel;
+
+  return {
+    tickers: state.tickers || '',
+    startDate: state.startDate || (() => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - 3);
+      return d.toISOString().split('T')[0];
+    })(),
+    endDate: state.endDate || new Date().toISOString().split('T')[0],
+    selectedModel: restoredModel,
+    selectedAgents: new Set(selectedAgentKeys),
+    agentResults: new Map((state.agentResults || []).map(result => [result.agentKey, result])),
+    completeResult: state.completeResult || null,
+    expandedAgents: new Set(state.expandedAgentKeys || []),
+    selectedDetailReport: state.selectedDetailReport || null,
+    errorMessage: state.errorMessage || null,
+  };
+}
+
+function getStockAnalysisStatus(
+  isRunning: boolean,
+  errorMessage: string | null,
+  completeResult: CompleteResult | null,
+  agentResults: Map<string, AgentResult>,
+): StockAnalysisRunStatus {
+  if (isRunning) return 'IN_PROGRESS';
+  if (errorMessage) return 'ERROR';
+  if (completeResult || Array.from(agentResults.values()).some(result => result.status === 'complete')) return 'COMPLETE';
+  return 'IDLE';
 }
 
 function extractBaseAgentKey(agentId: string) {
@@ -605,6 +691,10 @@ export function StockSearchTab() {
   const [selectedDetailReport, setSelectedDetailReport] = useState<DetailReportState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const savedRunIdRef = useRef<number | null>(null);
+  const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastPersistedPayloadRef = useRef<string>('');
+  const [hasRestoredSavedRun, setHasRestoredSavedRun] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -616,15 +706,133 @@ export function StockSearchTab() {
         ]);
         setAgents(agentList);
         setModels(modelList);
-        setSelectedModel(defaultModel);
-        // Select nothing by default
-        setSelectedAgents(new Set());
+
+        let restored = false;
+        try {
+          const latestRun = await stockAnalysisRunService.getLatestRun();
+          if (latestRun?.ui_state) {
+            const restoredState = restoreStockAnalysisState(latestRun.ui_state, agentList, modelList, defaultModel);
+            savedRunIdRef.current = latestRun.id;
+            setTickers(restoredState.tickers);
+            setStartDate(restoredState.startDate);
+            setEndDate(restoredState.endDate);
+            setSelectedModel(restoredState.selectedModel);
+            setSelectedAgents(restoredState.selectedAgents);
+            setAgentResults(restoredState.agentResults);
+            setCompleteResult(restoredState.completeResult);
+            setExpandedAgents(restoredState.expandedAgents);
+            setSelectedDetailReport(restoredState.selectedDetailReport);
+            setErrorMessage(restoredState.errorMessage);
+            restored = true;
+          }
+        } catch (restoreError) {
+          console.warn('Failed to restore latest Stock Analysis run', restoreError);
+        }
+
+        if (!restored) {
+          setSelectedModel(defaultModel);
+          // Select nothing by default
+          setSelectedAgents(new Set());
+        }
       } catch (err) {
         console.error('Failed to load agents/models', err);
+      } finally {
+        setHasRestoredSavedRun(true);
       }
     };
     load();
   }, []);
+
+  const persistCurrentRun = useCallback(async () => {
+    if (!hasRestoredSavedRun) return;
+
+    const uiState = serializeStockAnalysisState({
+      tickers,
+      startDate,
+      endDate,
+      selectedModel,
+      selectedAgents,
+      agentResults,
+      completeResult,
+      expandedAgents,
+      selectedDetailReport,
+      errorMessage,
+    });
+    const firstTicker = tickers.trim() ? resolveTickerValue(tickers.split(',')[0].trim()).toUpperCase() : null;
+    const payload = {
+      ticker: firstTicker,
+      language,
+      status: getStockAnalysisStatus(isRunning, errorMessage, completeResult, agentResults),
+      request_data: {
+        tickers: firstTicker ? [firstTicker] : [],
+        start_date: startDate,
+        end_date: endDate,
+        selected_agent_keys: Array.from(selectedAgents),
+        selected_model: selectedModel,
+      },
+      result_data: {
+        completeResult,
+        agentResults: uiState.agentResults,
+      },
+      ui_state: uiState,
+      error_message: errorMessage,
+    };
+    const serializedPayload = JSON.stringify(payload);
+    if (serializedPayload === lastPersistedPayloadRef.current) return;
+
+    try {
+      const savedRun = await stockAnalysisRunService.saveLatestRun(payload, savedRunIdRef.current);
+      savedRunIdRef.current = savedRun.id;
+      lastPersistedPayloadRef.current = serializedPayload;
+    } catch (saveError) {
+      console.warn('Failed to persist Stock Analysis run', saveError);
+    }
+  }, [
+    agentResults,
+    completeResult,
+    endDate,
+    errorMessage,
+    expandedAgents,
+    hasRestoredSavedRun,
+    isRunning,
+    language,
+    selectedAgents,
+    selectedDetailReport,
+    selectedModel,
+    startDate,
+    tickers,
+  ]);
+
+  useEffect(() => {
+    if (!hasRestoredSavedRun) return;
+    if (persistTimeoutRef.current) {
+      clearTimeout(persistTimeoutRef.current);
+    }
+    persistTimeoutRef.current = setTimeout(() => {
+      persistCurrentRun();
+    }, 700);
+
+    return () => {
+      if (persistTimeoutRef.current) {
+        clearTimeout(persistTimeoutRef.current);
+      }
+    };
+  }, [
+    agentResults,
+    completeResult,
+    endDate,
+    errorMessage,
+    expandedAgents,
+    hasRestoredSavedRun,
+    isRunning,
+    language,
+    persistCurrentRun,
+    selectedAgents,
+    selectedDetailReport,
+    selectedModel,
+    startDate,
+    tickers,
+  ]);
 
   const allSelected = agents.length > 0 && selectedAgents.size === agents.length;
   const someSelected = selectedAgents.size > 0 && !allSelected;

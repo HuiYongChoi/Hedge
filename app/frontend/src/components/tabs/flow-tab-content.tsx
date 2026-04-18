@@ -1,5 +1,6 @@
 import { Flow } from '@/components/Flow';
 import { useFlowContext } from '@/contexts/flow-context';
+import { useNodeContext } from '@/contexts/node-context';
 import { useTabsContext } from '@/contexts/tabs-context';
 import { setNodeInternalState, setCurrentFlowId as setNodeStateFlowId } from '@/hooks/use-node-state';
 import { cn } from '@/lib/utils';
@@ -16,16 +17,17 @@ interface FlowTabContentProps {
 
 export function FlowTabContent({ flow, className }: FlowTabContentProps) {
   const { loadFlow } = useFlowContext();
+  const { importNodeContextData } = useNodeContext();
   const { activeTabId } = useTabsContext();
 
   // Enhanced load function that restores both use-node-state and node context data
   const loadFlowWithCompleteState = async (flowToLoad: FlowType) => {
     try {
       const flowId = flowToLoad.id.toString();
-      
+
       // First, set the flow ID for node state isolation
       setNodeStateFlowId(flowId);
-      
+
       // DO NOT clear configuration state when switching tabs - useNodeState handles flow isolation automatically
       // DO NOT reset runtime data when switching tabs - preserve all runtime state
       // Runtime data should only be reset when explicitly starting a new run via the Play button
@@ -42,10 +44,12 @@ export function FlowTabContent({ flow, className }: FlowTabContentProps) {
           }
         });
       }
-      
-      // NOTE: We intentionally do NOT restore nodeContextData here
-      // Runtime execution data (messages, analysis, agent status) should start fresh
-      // Only configuration data (tickers, model selections) is restored above
+
+      const savedNodeContextData = flowToLoad.data?.nodeContextData;
+      // Restores the saved flow.data.nodeContextData runtime payload.
+      if (savedNodeContextData) {
+        importNodeContextData(flowId, savedNodeContextData);
+      }
     } catch (error) {
       console.error('Failed to load flow with complete state:', error);
       throw error;
@@ -55,7 +59,7 @@ export function FlowTabContent({ flow, className }: FlowTabContentProps) {
   // Fetch the latest flow state when this tab becomes active
   useEffect(() => {
     const isThisTabActive = activeTabId === `flow-${flow.id}`;
-    
+
     if (isThisTabActive) {
       const fetchAndLoadFlow = async () => {
         try {
@@ -72,11 +76,11 @@ export function FlowTabContent({ flow, className }: FlowTabContentProps) {
 
       fetchAndLoadFlow();
     }
-  }, [activeTabId, flow.id, flow, loadFlow]);
+  }, [activeTabId, flow.id, flow, loadFlow, importNodeContextData]);
 
   return (
     <div className={cn("h-full w-full", className)}>
       <Flow />
     </div>
   );
-} 
+}

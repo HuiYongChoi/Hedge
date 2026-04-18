@@ -241,6 +241,46 @@ class FlowRunSummaryResponse(BaseModel):
         from_attributes = True
 
 
+# Stock Analysis run schemas
+class StockAnalysisRunCreateRequest(BaseModel):
+    """Persist a standalone Stock Analysis tab snapshot"""
+    ticker: Optional[str] = None
+    language: str = "ko"
+    status: FlowRunStatus = FlowRunStatus.IDLE
+    request_data: Optional[Dict[str, Any]] = None
+    result_data: Optional[Dict[str, Any]] = None
+    ui_state: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+
+
+class StockAnalysisRunUpdateRequest(BaseModel):
+    """Update a standalone Stock Analysis tab snapshot"""
+    ticker: Optional[str] = None
+    language: Optional[str] = None
+    status: Optional[FlowRunStatus] = None
+    request_data: Optional[Dict[str, Any]] = None
+    result_data: Optional[Dict[str, Any]] = None
+    ui_state: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+
+
+class StockAnalysisRunResponse(BaseModel):
+    """Complete Stock Analysis run response"""
+    id: int
+    ticker: Optional[str]
+    language: str
+    status: FlowRunStatus
+    request_data: Optional[Dict[str, Any]]
+    result_data: Optional[Dict[str, Any]]
+    ui_state: Optional[Dict[str, Any]]
+    error_message: Optional[str]
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
 # API Key schemas
 class ApiKeyCreateRequest(BaseModel):
     """Request to create or update an API key"""

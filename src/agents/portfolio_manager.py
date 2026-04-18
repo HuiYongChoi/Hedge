@@ -206,6 +206,30 @@ def _compute_composite_confidence(ticker_signals: dict) -> int:
     return max(0, min(100, int(consensus_conf * agreement_ratio)))
 
 
+def _build_signal_based_hold_reasoning(ticker_signals: dict, language: str) -> str:
+    """Build a user-facing fallback summary from available analyst signals."""
+    bullish = 0
+    bearish = 0
+    neutral = 0
+    for payload in ticker_signals.values():
+        sig = str(payload.get("sig") or payload.get("signal") or "neutral").lower()
+        if sig in ("bullish", "buy", "long"):
+            bullish += 1
+        elif sig in ("bearish", "sell", "short"):
+            bearish += 1
+        else:
+            neutral += 1
+
+    if language == "ko":
+        if bullish + bearish + neutral == 0:
+            return "에이전트 신호가 제한적이어서 추가 확인 전 보수적으로 관망합니다."
+        return f"에이전트 신호 기준 강세 {bullish}개, 약세 {bearish}개, 중립 {neutral}개로 보수적 관망 판단입니다."
+
+    if bullish + bearish + neutral == 0:
+        return "Agent signal coverage is limited, so the conservative decision is to watch."
+    return f"Agent signals show {bullish} bullish, {bearish} bearish, and {neutral} neutral views; conservative decision is watch."
+
+
 def generate_trading_decision(
         tickers: list[str],
         signals_by_ticker: dict[str, dict],
@@ -292,7 +316,7 @@ def generate_trading_decision(
         decisions = {}
         for t in all_tickers_for_llm:
             conf = composite_confidence.get(t, 0)
-            msg = "모델 응답 실패로 관망합니다." if language == 'ko' else "Model error, defaulting to hold."
+            msg = _build_signal_based_hold_reasoning(signals_by_ticker.get(t, {}), language)
             decisions[t] = PortfolioDecision(action="hold", quantity=0, confidence=conf, reasoning=msg)
         return PortfolioManagerOutput(decisions=decisions)
 

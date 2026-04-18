@@ -9,6 +9,7 @@ from app.backend.routes.ollama import router as ollama_router
 from app.backend.routes.language_models import router as language_models_router
 from app.backend.routes.api_keys import router as api_keys_router
 from app.backend.routes.ticker_search import router as ticker_search_router
+from app.backend.routes.stock_analysis_runs import router as stock_analysis_runs_router
 
 # Main API router
 api_router = APIRouter()
@@ -23,3 +24,4 @@ api_router.include_router(ollama_router, tags=["ollama"])
 api_router.include_router(language_models_router, tags=["language-models"])
 api_router.include_router(api_keys_router, tags=["api-keys"])
 api_router.include_router(ticker_search_router, tags=["ticker-search"])
+api_router.include_router(stock_analysis_runs_router, tags=["stock-analysis-runs"])

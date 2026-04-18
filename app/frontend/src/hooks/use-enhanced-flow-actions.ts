@@ -15,18 +15,18 @@ import { useCallback } from 'react';
  */
 export function useEnhancedFlowActions() {
   const { saveCurrentFlow, loadFlow, reactFlowInstance, currentFlowId } = useFlowContext();
-  const { exportNodeContextData } = useNodeContext();
+  const { exportNodeContextData, importNodeContextData } = useNodeContext();
 
   // Enhanced save that includes node context data
   const saveCurrentFlowWithCompleteState = useCallback(async (name?: string, description?: string): Promise<Flow | null> => {
     try {
       // Get current nodes from React Flow
       const currentNodes = reactFlowInstance.getNodes();
-      
+
       // Get node context data (runtime data: agent status, messages, output data)
       const flowId = currentFlowId?.toString() || null;
       const nodeContextData = exportNodeContextData(flowId);
-      
+
       // Enhance nodes with internal states
       const nodesWithStates = currentNodes.map((node: any) => {
         const internalState = getNodeInternalState(node.id);
@@ -42,11 +42,11 @@ export function useEnhancedFlowActions() {
 
       // Temporarily replace nodes in React Flow with enhanced nodes
       reactFlowInstance.setNodes(nodesWithStates);
-      
+
       try {
         // Use the basic save function
         const savedFlow = await saveCurrentFlow(name, description);
-        
+
         if (savedFlow) {
           // After basic save, update with node context data
           const updatedFlow = await flowService.updateFlow(savedFlow.id, {
@@ -56,10 +56,10 @@ export function useEnhancedFlowActions() {
               nodeContextData, // Add runtime data from node context
             }
           });
-          
+
           return updatedFlow;
         }
-        
+
         return savedFlow;
       } finally {
         // Restore original nodes (without internal_state in React Flow)
@@ -76,7 +76,7 @@ export function useEnhancedFlowActions() {
     try {
       // First, set the flow ID for node state isolation
       setNodeStateFlowId(flow.id.toString());
-      
+
       // DO NOT clear configuration state when loading flows - useNodeState handles flow isolation automatically
       // DO NOT reset runtime data when loading flows - preserve all runtime state
       // Runtime data should only be reset when explicitly starting a new run via the Play button
@@ -93,20 +93,22 @@ export function useEnhancedFlowActions() {
           }
         });
       }
-      
-      // NOTE: We intentionally do NOT restore nodeContextData here
-      // Runtime execution data (messages, analysis, agent status) should start fresh
-      // Only configuration data (tickers, model selections) is restored above
+
+      const savedNodeContextData = flow.data?.nodeContextData;
+      // Restores the saved flow.data.nodeContextData runtime payload.
+      if (savedNodeContextData) {
+        importNodeContextData(flow.id.toString(), savedNodeContextData);
+      }
 
       console.log('Flow loaded with complete state restoration:', flow.name);
     } catch (error) {
       console.error('Failed to load flow with complete state:', error);
       throw error;
     }
-  }, [loadFlow]);
+  }, [loadFlow, importNodeContextData]);
 
   return {
     saveCurrentFlowWithCompleteState,
     loadFlowWithCompleteState,
   };
-} 
+}
