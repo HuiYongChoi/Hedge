@@ -729,6 +729,7 @@ export function StockSearchTab() {
       agent_models: agentModels,
       start_date: startDate,
       end_date: endDate,
+      language: language,
     };
 
     const controller = new AbortController();

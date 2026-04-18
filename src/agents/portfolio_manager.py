@@ -174,6 +174,38 @@ def _compact_signals(signals_by_ticker: dict[str, dict]) -> dict[str, dict]:
     return out
 
 
+def _compute_composite_confidence(ticker_signals: dict) -> int:
+    """Compute composite confidence from analyst signals weighted by direction consensus."""
+    if not ticker_signals:
+        return 50
+    bullish_conf = []
+    bearish_conf = []
+    for payload in ticker_signals.values():
+        sig = payload.get("sig") or payload.get("signal", "")
+        conf = payload.get("conf") if "conf" in payload else payload.get("confidence", 50)
+        try:
+            conf = int(conf)
+        except (TypeError, ValueError):
+            conf = 50
+        if sig in ("bullish", "buy", "long"):
+            bullish_conf.append(conf)
+        elif sig in ("bearish", "sell", "short"):
+            bearish_conf.append(conf)
+        # neutral signals are skipped
+    total = len(bullish_conf) + len(bearish_conf)
+    if total == 0:
+        return 50
+    # Weighted consensus: majority direction confidence, penalized by disagreement ratio
+    bull_avg = sum(bullish_conf) / len(bullish_conf) if bullish_conf else 0
+    bear_avg = sum(bearish_conf) / len(bearish_conf) if bearish_conf else 0
+    if len(bullish_conf) >= len(bearish_conf):
+        consensus_conf = bull_avg
+    else:
+        consensus_conf = bear_avg
+    agreement_ratio = max(len(bullish_conf), len(bearish_conf)) / total
+    return max(0, min(100, int(consensus_conf * agreement_ratio)))
+
+
 def generate_trading_decision(
         tickers: list[str],
         signals_by_ticker: dict[str, dict],
@@ -185,43 +217,59 @@ def generate_trading_decision(
 ) -> PortfolioManagerOutput:
     """Get decisions from the LLM with deterministic constraints and a minimal prompt."""
 
+    language = state.get("metadata", {}).get("language", "en")
+
     # Deterministic constraints
     allowed_actions_full = compute_allowed_actions(tickers, current_prices, max_shares, portfolio)
 
-    # Pre-fill pure holds to avoid sending them to the LLM at all
-    prefilled_decisions: dict[str, PortfolioDecision] = {}
+    # Separate tickers into hold-only (no tradable actions) and those that can trade
+    hold_only_tickers: list[str] = []
     tickers_for_llm: list[str] = []
     for t in tickers:
         aa = allowed_actions_full.get(t, {"hold": 0})
-        # If only 'hold' key exists, there is no trade possible
         if set(aa.keys()) == {"hold"}:
-            prefilled_decisions[t] = PortfolioDecision(
-                action="hold", quantity=0, confidence=100, reasoning="현재 실행 가능한 거래가 없어 관망합니다."
-            )
+            hold_only_tickers.append(t)
         else:
             tickers_for_llm.append(t)
 
-    if not tickers_for_llm:
-        return PortfolioManagerOutput(decisions=prefilled_decisions)
+    # All tickers go to LLM — hold-only tickers get qualitative analysis with hold forced
+    all_tickers_for_llm = tickers_for_llm + hold_only_tickers
 
-    # Build compact payloads only for tickers sent to LLM
-    compact_signals = _compact_signals({t: signals_by_ticker.get(t, {}) for t in tickers_for_llm})
-    compact_allowed = {t: allowed_actions_full[t] for t in tickers_for_llm}
+    # Build compact signals for all tickers
+    compact_signals = _compact_signals({t: signals_by_ticker.get(t, {}) for t in all_tickers_for_llm})
+    # For allowed actions: hold-only tickers show only {"hold":0}
+    compact_allowed = {t: allowed_actions_full[t] for t in all_tickers_for_llm}
 
-    # Minimal prompt template
+    # Composite confidence per ticker (computed deterministically from signals)
+    composite_confidence = {
+        t: _compute_composite_confidence(signals_by_ticker.get(t, {}))
+        for t in all_tickers_for_llm
+    }
+
+    if language == 'ko':
+        system_msg = (
+            "당신은 포트폴리오 매니저입니다.\n"
+            "각 종목별로 애널리스트 신호와 허용된 행동(이미 검증된 최대 수량 포함)이 주어집니다.\n"
+            "허용된 행동 중 하나를 선택하고 수량은 최대값 이하로 설정하세요.\n"
+            "reasoning은 신호들의 핵심 근거를 한국어로 간결하게 작성하세요 (최대 150자).\n"
+            "현금이나 마진 계산은 하지 마세요. JSON만 반환하세요."
+        )
+    else:
+        system_msg = (
+            "You are a portfolio manager.\n"
+            "Inputs per ticker: analyst signals and allowed actions with max qty (already validated).\n"
+            "Pick one allowed action per ticker and a quantity ≤ the max.\n"
+            "Keep reasoning concise and grounded in the signals (max 150 chars). No cash or margin math. Return JSON only."
+        )
+
     template = ChatPromptTemplate.from_messages(
         [
-            (
-                "system",
-                "You are a portfolio manager.\n"
-                "Inputs per ticker: analyst signals and allowed actions with max qty (already validated).\n"
-                "Pick one allowed action per ticker and a quantity ≤ the max. "
-                "Keep reasoning very concise (max 100 chars). No cash or margin math. Return JSON only."
-            ),
+            ("system", system_msg),
             (
                 "human",
                 "Signals:\n{signals}\n\n"
                 "Allowed:\n{allowed}\n\n"
+                "Composite confidence per ticker (use as baseline, adjust based on signal quality):\n{confidence}\n\n"
                 "Format:\n"
                 "{{\n"
                 '  "decisions": {{\n'
@@ -235,17 +283,17 @@ def generate_trading_decision(
     prompt_data = {
         "signals": json.dumps(compact_signals, separators=(",", ":"), ensure_ascii=False),
         "allowed": json.dumps(compact_allowed, separators=(",", ":"), ensure_ascii=False),
+        "confidence": json.dumps(composite_confidence, separators=(",", ":"), ensure_ascii=False),
     }
     prompt = template.invoke(prompt_data)
 
-    # Default factory fills remaining tickers as hold if the LLM fails
+    # Default factory fills all tickers as hold if the LLM fails
     def create_default_portfolio_output():
-        # start from prefilled
-        decisions = dict(prefilled_decisions)
-        for t in tickers_for_llm:
-            decisions[t] = PortfolioDecision(
-                action="hold", quantity=0, confidence=0, reasoning="모델 응답 실패로 관망 결정을 적용했습니다."
-            )
+        decisions = {}
+        for t in all_tickers_for_llm:
+            conf = composite_confidence.get(t, 0)
+            msg = "모델 응답 실패로 관망합니다." if language == 'ko' else "Model error, defaulting to hold."
+            decisions[t] = PortfolioDecision(action="hold", quantity=0, confidence=conf, reasoning=msg)
         return PortfolioManagerOutput(decisions=decisions)
 
     llm_out = call_llm(
@@ -256,7 +304,4 @@ def generate_trading_decision(
         default_factory=create_default_portfolio_output,
     )
 
-    # Merge prefilled holds with LLM results
-    merged = dict(prefilled_decisions)
-    merged.update(llm_out.decisions)
-    return PortfolioManagerOutput(decisions=merged)
+    return PortfolioManagerOutput(decisions=llm_out.decisions)
