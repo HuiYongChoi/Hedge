@@ -5,6 +5,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from src.graph.state import AgentState, show_agent_reasoning
 from pydantic import BaseModel, Field
+from typing import Any
 from typing_extensions import Literal
 from src.utils.progress import progress
 from src.utils.llm import call_llm
@@ -33,6 +34,7 @@ def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_man
     current_prices = {}
     max_shares = {}
     signals_by_ticker = {}
+    risk_by_ticker = {}
     for ticker in tickers:
         progress.update_status(agent_id, ticker, "Processing analyst signals")
 
@@ -44,6 +46,7 @@ def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_man
             risk_manager_id = "risk_management_agent"  # Fallback for CLI
 
         risk_data = analyst_signals.get(risk_manager_id, {}).get(ticker, {})
+        risk_by_ticker[ticker] = risk_data
         position_limits[ticker] = risk_data.get("remaining_position_limit", 0.0)
         current_prices[ticker] = float(risk_data.get("current_price", 0.0))
 
@@ -57,10 +60,16 @@ def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_man
         ticker_signals = {}
         for agent, signals in analyst_signals.items():
             if not agent.startswith("risk_management_agent") and ticker in signals:
-                sig = signals[ticker].get("signal")
-                conf = signals[ticker].get("confidence")
+                agent_signal = signals[ticker]
+                sig = agent_signal.get("signal")
+                conf = agent_signal.get("confidence")
                 if sig is not None and conf is not None:
-                    ticker_signals[agent] = {"sig": sig, "conf": conf}
+                    ticker_signals[agent] = {
+                        "sig": sig,
+                        "conf": conf,
+                        "reasoning": agent_signal.get("reasoning"),
+                        "raw": agent_signal,
+                    }
         signals_by_ticker[ticker] = ticker_signals
 
     state["data"]["current_prices"] = current_prices
@@ -72,6 +81,7 @@ def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_man
         signals_by_ticker=signals_by_ticker,
         current_prices=current_prices,
         max_shares=max_shares,
+        risk_by_ticker=risk_by_ticker,
         portfolio=portfolio,
         agent_id=agent_id,
         state=state,
@@ -206,6 +216,85 @@ def _compute_composite_confidence(ticker_signals: dict) -> int:
     return max(0, min(100, int(consensus_conf * agreement_ratio)))
 
 
+def _truncate_text(value: str | None, max_chars: int = 1600) -> str | None:
+    if not value or not isinstance(value, str):
+        return None
+    value = value.strip()
+    if len(value) <= max_chars:
+        return value
+    return value[:max_chars].rstrip() + "..."
+
+
+def _compact_json_value(value: Any, max_chars: int = 900):
+    """Keep structured evidence small enough for the final decision prompt."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return _truncate_text(value, max_chars)
+    try:
+        rendered = json.dumps(value, ensure_ascii=False, default=str, separators=(",", ":"))
+    except TypeError:
+        rendered = str(value)
+    if len(rendered) <= max_chars:
+        return value
+    return rendered[:max_chars].rstrip() + "..."
+
+
+def _build_decision_context(
+    tickers: list[str],
+    signals_by_ticker: dict[str, dict],
+    current_prices: dict[str, float],
+    max_shares: dict[str, int],
+    allowed_actions: dict[str, dict[str, int]],
+    risk_by_ticker: dict[str, dict],
+) -> dict[str, dict]:
+    """Provide the PM with compact analyst evidence instead of signal labels only."""
+    context: dict[str, dict] = {}
+    for ticker in tickers:
+        analyst_evidence = {}
+        for agent, payload in signals_by_ticker.get(ticker, {}).items():
+            raw = payload.get("raw") or {}
+            evidence = {
+                "signal": payload.get("sig") or raw.get("signal"),
+                "confidence": payload.get("conf") if "conf" in payload else raw.get("confidence"),
+            }
+            reasoning = _truncate_text(payload.get("reasoning") or raw.get("reasoning"))
+            if reasoning:
+                evidence["reasoning_excerpt"] = reasoning
+            for key in (
+                "score",
+                "max_score",
+                "metrics",
+                "earnings_analysis",
+                "strength_analysis",
+                "valuation_analysis",
+                "moat_analysis",
+                "predictability_analysis",
+                "financial_discipline_analysis",
+            ):
+                if key in raw:
+                    compact_value = _compact_json_value(raw.get(key))
+                    if compact_value is not None:
+                        evidence[key] = compact_value
+            analyst_evidence[agent] = evidence
+
+        risk_data = risk_by_ticker.get(ticker, {}) or {}
+        context[ticker] = {
+            "current_price": current_prices.get(ticker),
+            "max_shares": max_shares.get(ticker),
+            "allowed_actions": allowed_actions.get(ticker),
+            "risk_constraints": {
+                "remaining_position_limit": risk_data.get("remaining_position_limit"),
+                "current_price": risk_data.get("current_price"),
+                "volatility_metrics": risk_data.get("volatility_metrics"),
+                "correlation_metrics": risk_data.get("correlation_metrics"),
+                "reasoning": risk_data.get("reasoning"),
+            },
+            "analyst_evidence": analyst_evidence,
+        }
+    return context
+
+
 def _build_signal_based_hold_reasoning(ticker_signals: dict, language: str) -> str:
     """Build a user-facing fallback summary from available analyst signals."""
     bullish = 0
@@ -235,6 +324,7 @@ def generate_trading_decision(
         signals_by_ticker: dict[str, dict],
         current_prices: dict[str, float],
         max_shares: dict[str, int],
+        risk_by_ticker: dict[str, dict],
         portfolio: dict[str, float],
         agent_id: str,
         state: AgentState,
@@ -263,6 +353,14 @@ def generate_trading_decision(
     compact_signals = _compact_signals({t: signals_by_ticker.get(t, {}) for t in all_tickers_for_llm})
     # For allowed actions: hold-only tickers show only {"hold":0}
     compact_allowed = {t: allowed_actions_full[t] for t in all_tickers_for_llm}
+    decision_context = _build_decision_context(
+        tickers=all_tickers_for_llm,
+        signals_by_ticker=signals_by_ticker,
+        current_prices=current_prices,
+        max_shares=max_shares,
+        allowed_actions=allowed_actions_full,
+        risk_by_ticker=risk_by_ticker,
+    )
 
     # Composite confidence per ticker (computed deterministically from signals)
     composite_confidence = {
@@ -278,6 +376,9 @@ def generate_trading_decision(
             "reasoning은 한국어로 structured, decision-grade reasoning 형태로 작성하세요.\n"
             "반드시 ### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거 섹션을 포함하세요.\n"
             "에이전트 신호의 합의/불일치, 신뢰도, 허용 행동 제약을 함께 설명하세요.\n"
+            "Decision context의 analyst_evidence와 risk_constraints에 있는 전처리 정량 근거를 활용하세요.\n"
+            "Decision context에 정량 근거가 있으면 정량 데이터가 제공되지 않았다고 쓰지 마세요.\n"
+            "원문 재무제표 직접 수치가 없는 경우에도 에이전트가 계산한 전처리 지표는 구분해서 인용하세요.\n"
             "현금이나 마진 계산은 하지 마세요. JSON만 반환하세요."
         )
     else:
@@ -288,6 +389,9 @@ def generate_trading_decision(
             "Write structured, decision-grade reasoning in Korean using sections: "
             "### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거. "
             "Explain signal consensus/disagreement, confidence, and allowed-action constraints. "
+            "Use preprocessed quantitative evidence in Decision context analyst_evidence and risk_constraints. "
+            "Do not claim quantitative data was not provided when Decision context contains analyst evidence or risk constraints. "
+            "If raw filing figures are absent, distinguish that from agent-computed preprocessed metrics. "
             "No cash or margin math. Return JSON only."
         )
 
@@ -298,6 +402,7 @@ def generate_trading_decision(
                 "human",
                 "Signals:\n{signals}\n\n"
                 "Allowed:\n{allowed}\n\n"
+                "Decision context (agent evidence excerpts and risk constraints):\n{decision_context}\n\n"
                 "Composite confidence per ticker (use as baseline, adjust based on signal quality):\n{confidence}\n\n"
                 "Format:\n"
                 "{{\n"
@@ -312,6 +417,7 @@ def generate_trading_decision(
     prompt_data = {
         "signals": json.dumps(compact_signals, separators=(",", ":"), ensure_ascii=False),
         "allowed": json.dumps(compact_allowed, separators=(",", ":"), ensure_ascii=False),
+        "decision_context": json.dumps(decision_context, separators=(",", ":"), ensure_ascii=False, default=str),
         "confidence": json.dumps(composite_confidence, separators=(",", ":"), ensure_ascii=False),
     }
     prompt = template.invoke(prompt_data)
