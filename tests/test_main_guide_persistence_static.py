@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TAB_CONTENT = ROOT / "app/frontend/src/components/tabs/tab-content.tsx"
 SETTINGS = ROOT / "app/frontend/src/components/settings/settings.tsx"
 SETTINGS_INDEX = ROOT / "app/frontend/src/components/settings/index.ts"
+SETTINGS_MODELS = ROOT / "app/frontend/src/components/settings/models.tsx"
 STOCK_TAB = ROOT / "app/frontend/src/components/tabs/stock-search-tab.tsx"
 FLOW_TAB = ROOT / "app/frontend/src/components/tabs/flow-tab-content.tsx"
 FLOW_ACTIONS = ROOT / "app/frontend/src/hooks/use-enhanced-flow-actions.ts"
@@ -28,10 +29,19 @@ def test_main_page_explains_current_workflow_and_scoring() -> None:
 def test_settings_surface_keeps_api_keys_hidden() -> None:
     settings_source = SETTINGS.read_text(encoding="utf-8")
     index_source = SETTINGS_INDEX.read_text(encoding="utf-8")
+    models_source = SETTINGS_MODELS.read_text(encoding="utf-8")
 
     assert "ApiKeysSettings" not in settings_source
     assert "apiKeys" not in settings_source
     assert "export { ApiKeysSettings }" not in index_source
+    assert "CloudModels" not in index_source
+    assert "OllamaSettings" not in index_source
+    assert "fetch(" not in models_source
+    assert "API 키를 입력하거나 조회하는 곳이 아닙니다" in models_source
+    assert "키 노출 없이 서버에서만 사용" in models_source
+    assert "yfinance" in models_source
+    assert "SEC EDGAR" in models_source
+    assert "DART" in models_source
     assert "models" in settings_source
     assert "theme" in settings_source
     assert "language" in settings_source
