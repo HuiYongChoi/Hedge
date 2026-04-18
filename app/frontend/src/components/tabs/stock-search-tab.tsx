@@ -1452,7 +1452,11 @@ function AnalysisDisplay({ analysis, language }: { analysis: any; agentKey?: str
 
   // Try to render structured analysis data
   if (typeof analysis === 'string') {
-    return <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{analysis}</p>;
+    return (
+      <div className="text-sm leading-relaxed text-foreground [&_h2]:mb-2 [&_h2]:mt-1 [&_h2]:text-sm [&_h3]:mb-2 [&_h3]:mt-1 [&_h3]:text-sm [&_li]:text-muted-foreground [&_ol]:my-2 [&_p]:my-2 [&_p]:text-muted-foreground [&_ul]:my-2">
+        {renderMarkdownBlocks(formatDecisionReasoning(analysis))}
+      </div>
+    );
   }
 
   if (typeof analysis === 'object') {
@@ -1514,9 +1518,9 @@ function AgentReportSummary({ analysis, language }: { analysis: any; language: '
               )}
             </div>
             {entry.reasoning && (
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
-                {String(entry.reasoning)}
-              </p>
+              <div className="mt-2 text-xs leading-relaxed text-muted-foreground [&_h2]:mb-2 [&_h2]:mt-1 [&_h2]:text-sm [&_h3]:mb-2 [&_h3]:mt-1 [&_h3]:text-sm [&_li]:text-muted-foreground [&_ol]:my-2 [&_p]:my-2 [&_p]:text-muted-foreground [&_ul]:my-2">
+                {renderMarkdownBlocks(formatDecisionReasoning(entry.reasoning))}
+              </div>
             )}
           </div>
         ))}

@@ -792,7 +792,10 @@ def generate_buffett_output(
                 "- 30-49%: Outside my expertise or concerning fundamentals\n"
                 "- 10-29%: Poor business or significantly overvalued\n"
                 "\n"
-                "Keep reasoning under 120 characters. Do not invent data. Return JSON only."
+                "Write structured, decision-grade reasoning in Korean using these sections: "
+                "### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거. "
+                "Ground the report in the provided facts, discuss moat/management/valuation tradeoffs, "
+                "and do not invent data. Return JSON only."
             ),
             (
                 "human",
@@ -802,7 +805,7 @@ def generate_buffett_output(
                 "{{\n"
                 '  "signal": "bullish" | "bearish" | "neutral",\n'
                 '  "confidence": int,\n'
-                '  "reasoning": "short justification"\n'
+                '  "reasoning": "structured, decision-grade reasoning"\n'
                 "}}"
             ),
         ]

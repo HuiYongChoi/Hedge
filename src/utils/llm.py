@@ -25,13 +25,27 @@ CROSS_CHECK_GUIDE_REQUIREMENT = """[추가 지시사항: 원문 대조 가이드
 2. **원문 추적 섹션:** 사용자가 사업보고서를 열었을 때, 당신이 제기한 긍정/부정적 논거의 진짜 증거를 찾기 위해 **정확히 어느 섹션**(예: MD&A, 재무제표 주석 5번, 핵심 위험 요소 등)을 읽어야 하는지 구체적인 위치 지목.
 3. **경영진 멘트 검증:** 원문에서 사용자가 두 눈으로 직접 확인해야 할 경영진의 워딩이나 뉘앙스(예: "경영진이 R&D 축소를 언급하는지 확인하십시오", "자사주 매입 계획의 연기 사유를 읽어보십시오").
 """
+REPORT_QUALITY_REQUIREMENT = """[추가 지시사항: 결과 보고 품질]
+reasoning, summary, details, explanation, analysis 필드가 있다면 짧은 결론 한 문장으로 끝내지 말고, 사용자가 에이전트 간 결과를 비교할 수 있는 구조화된 보고서로 작성하십시오. 이 요구사항은 기존의 짧은 글자 수 제한보다 우선합니다.
+
+권장 구성:
+### 핵심 판단
+- 최종 신호와 신뢰도를 한 문단으로 설명.
+
+### 핵심 근거
+- 제공된 전처리 수치, 점수, 섹션별 details 중 중요한 근거 3~5개를 연결.
+- 수치가 N/A이면 N/A라고 밝히고, 사용 가능한 대체 지표와 정성 맥락으로 불확실성을 설명.
+
+### 리스크와 반대 근거
+- 현재 판단을 약화시킬 수 있는 반대 증거, 데이터 공백, 밸류에이션/재무/사업 리스크를 분리해 설명.
+"""
 SCHEMA_COMPATIBILITY_REQUIREMENT = (
     "스키마 호환 지시사항: 응답 JSON 스키마에 별도의 cross_check_guide 필드가 없다면, 투자 의견 및 추론을 작성한 뒤 reasoning 문자열의 마지막에 원문 대조 체크리스트 마크다운을 이어서 작성하십시오. 이 지시사항은 reasoning 길이 제한보다 우선합니다."
 )
-KOREAN_DEFAULT_REASONING = "분석 중 오류가 발생하여 중립 의견으로 기본 처리했습니다."
-KOREAN_NO_TRADE_REASONING = "현재 실행 가능한 거래가 없어 관망합니다."
-KOREAN_DEFAULT_HOLD_REASONING = "모델 응답 실패로 관망 결정을 적용했습니다."
-KOREAN_DATA_GAP_REASONING = "일부 핵심 지표는 N/A라서, 확인 가능한 대체 지표 기준으로 보수적으로 관망합니다."
+KOREAN_DEFAULT_REASONING = "### 핵심 판단\n분석 중 오류가 발생하여 중립 의견으로 기본 처리했습니다.\n\n### 핵심 근거\n- 모델 응답을 신뢰 가능한 구조로 파싱하지 못했습니다.\n- 제공된 신호와 전처리 데이터는 보존되므로 세부 에이전트 결과를 함께 확인해야 합니다.\n\n### 리스크와 반대 근거\n- 자동 fallback 결과이므로 실제 투자 판단에는 원문 공시와 에이전트별 세부 근거 대조가 필요합니다."
+KOREAN_NO_TRADE_REASONING = "### 핵심 판단\n현재 실행 가능한 거래가 없어 관망합니다.\n\n### 핵심 근거\n- 허용된 행동이 hold로 제한되어 주문 수량을 만들 수 없습니다.\n- 에이전트 신호는 참고하되 포지션 제약을 우선 적용했습니다.\n\n### 리스크와 반대 근거\n- 시드머니, 보유 수량, 주문 가능 수량이 바뀌면 최종 행동도 달라질 수 있습니다."
+KOREAN_DEFAULT_HOLD_REASONING = "### 핵심 판단\n모델 응답 실패로 관망 결정을 적용했습니다.\n\n### 핵심 근거\n- 구조화된 최종 주문 응답을 받지 못해 보수적 기본값을 사용했습니다.\n- 기존 에이전트 신호는 별도 결과 카드에서 확인할 수 있습니다.\n\n### 리스크와 반대 근거\n- fallback 판단이므로 모델 재실행 또는 원문 공시 대조가 필요합니다."
+KOREAN_DATA_GAP_REASONING = "### 핵심 판단\n일부 핵심 지표는 N/A라서 확인 가능한 대체 지표 기준으로 보수적으로 관망합니다.\n\n### 핵심 근거\n- 정확한 수치가 없는 항목은 N/A로 유지했습니다.\n- 사용 가능한 재무/시장/정성 지표를 중심으로 불확실성을 반영했습니다.\n\n### 리스크와 반대 근거\n- 데이터 공백이 해소되면 신호와 신뢰도가 달라질 수 있으므로 원문 공시 대조가 필요합니다."
 
 
 DATA_GAP_LANGUAGE_PATTERNS = (
@@ -76,6 +90,8 @@ def _append_korean_requirement_to_text(text: str) -> str:
         requirements.append(DATA_GAP_HANDLING_REQUIREMENT)
     if CROSS_CHECK_GUIDE_REQUIREMENT not in text:
         requirements.append(CROSS_CHECK_GUIDE_REQUIREMENT)
+    if REPORT_QUALITY_REQUIREMENT not in text:
+        requirements.append(REPORT_QUALITY_REQUIREMENT)
     if SCHEMA_COMPATIBILITY_REQUIREMENT not in text:
         requirements.append(SCHEMA_COMPATIBILITY_REQUIREMENT)
     if KOREAN_OUTPUT_REQUIREMENT not in text:
@@ -109,6 +125,7 @@ def _make_system_message():
         [
             DATA_GAP_HANDLING_REQUIREMENT,
             CROSS_CHECK_GUIDE_REQUIREMENT,
+            REPORT_QUALITY_REQUIREMENT,
             SCHEMA_COMPATIBILITY_REQUIREMENT,
             KOREAN_OUTPUT_REQUIREMENT,
         ]

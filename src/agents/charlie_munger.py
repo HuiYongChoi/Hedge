@@ -824,7 +824,10 @@ def generate_munger_output(
     template = ChatPromptTemplate.from_messages([
         ("system",
          "You are Charlie Munger. Decide bullish, bearish, or neutral using only the facts. "
-         "Return JSON only. Keep reasoning under 120 characters. "
+         "Write structured, decision-grade reasoning in Korean using these sections: "
+         "### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거. "
+         "Ground the report in moat strength, management quality, predictability, valuation, "
+         "and the provided facts. Return JSON only. "
          "Use the provided confidence exactly; do not change it."),
         ("human",
          "Ticker: {ticker}\n"
@@ -834,7 +837,7 @@ def generate_munger_output(
          "{{\n"  # escaped {
          '  "signal": "bullish" | "bearish" | "neutral",\n'
          f'  "confidence": {confidence_hint},\n'
-         '  "reasoning": "short justification"\n'
+         '  "reasoning": "structured, decision-grade reasoning"\n'
          "}}")  # escaped }
     ])
 

@@ -275,7 +275,9 @@ def generate_trading_decision(
             "당신은 포트폴리오 매니저입니다.\n"
             "각 종목별로 애널리스트 신호와 허용된 행동(이미 검증된 최대 수량 포함)이 주어집니다.\n"
             "허용된 행동 중 하나를 선택하고 수량은 최대값 이하로 설정하세요.\n"
-            "reasoning은 신호들의 핵심 근거를 한국어로 간결하게 작성하세요 (최대 150자).\n"
+            "reasoning은 한국어로 structured, decision-grade reasoning 형태로 작성하세요.\n"
+            "반드시 ### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거 섹션을 포함하세요.\n"
+            "에이전트 신호의 합의/불일치, 신뢰도, 허용 행동 제약을 함께 설명하세요.\n"
             "현금이나 마진 계산은 하지 마세요. JSON만 반환하세요."
         )
     else:
@@ -283,7 +285,10 @@ def generate_trading_decision(
             "You are a portfolio manager.\n"
             "Inputs per ticker: analyst signals and allowed actions with max qty (already validated).\n"
             "Pick one allowed action per ticker and a quantity ≤ the max.\n"
-            "Keep reasoning concise and grounded in the signals (max 150 chars). No cash or margin math. Return JSON only."
+            "Write structured, decision-grade reasoning in Korean using sections: "
+            "### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거. "
+            "Explain signal consensus/disagreement, confidence, and allowed-action constraints. "
+            "No cash or margin math. Return JSON only."
         )
 
     template = ChatPromptTemplate.from_messages(

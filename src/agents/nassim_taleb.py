@@ -728,7 +728,10 @@ def generate_taleb_output(
                 "- 10-29%: Clearly fragile or dangerous vol regime\n"
                 "\n"
                 "Use Taleb's vocabulary: antifragile, convexity, skin in the game, via negativa, barbell, turkey problem, Lindy effect.\n"
-                "Keep reasoning under 150 characters. Do not invent data. Return JSON only.",
+                "Write structured, decision-grade reasoning in Korean using these sections: "
+                "### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거. "
+                "Ground the report in the provided fragility, tail risk, convexity, and volatility facts. "
+                "Do not invent data. Return JSON only.",
             ),
             (
                 "human",
@@ -738,7 +741,7 @@ def generate_taleb_output(
                 "{{\n"
                 '  "signal": "bullish" | "bearish" | "neutral",\n'
                 '  "confidence": int,\n'
-                '  "reasoning": "short justification"\n'
+                '  "reasoning": "structured, decision-grade reasoning"\n'
                 "}}",
             ),
         ]
