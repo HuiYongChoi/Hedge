@@ -1,5 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { useTabsContext } from '@/contexts/tabs-context';
+import { useLanguage } from '@/contexts/language-context';
+import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
 import { FileText, Layout, Search, Settings, X } from 'lucide-react';
 import { ReactNode, useState } from 'react';
@@ -24,7 +26,14 @@ const getTabIcon = (type: string): ReactNode => {
 
 export function TabBar({ className }: TabBarProps) {
   const { tabs, activeTabId, setActiveTab, closeTab, reorderTabs } = useTabsContext();
+  const { language } = useLanguage();
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+  const getTabTitle = (tab: { type: string; title: string }): string => {
+    if (tab.type === 'settings') return t('settings', language);
+    if (tab.type === 'stock-search') return t('stockAnalysis', language);
+    return tab.title;
+  };
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   if (tabs.length === 0) {
@@ -132,7 +141,7 @@ export function TabBar({ className }: TabBarProps) {
             <span className={cn(
               "text-[13px] font-normal truncate min-w-0 transition-colors duration-150"
             )}>
-              {tab.title}
+              {getTabTitle(tab)}
             </span>
 
             {/* Close Button */}

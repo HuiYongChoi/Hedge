@@ -245,7 +245,7 @@ export function StockAnalyzerNode({
         isConnectable={isConnectable}
         icon={<ChartLine className="h-5 w-5" />}
         name={t('stockInput', language)}
-        description={data.description}
+        description={t('stockInputDescription', language)}
         hasLeftHandle={false}
       >
         <CardContent className="p-0">

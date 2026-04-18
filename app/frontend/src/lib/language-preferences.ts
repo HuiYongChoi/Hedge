@@ -141,10 +141,15 @@ export const translations = {
     marketMavericks: '마켓 매버릭스',
     valueInvestors: '가치 투자자',
 
+    // Node Descriptions
+    stockInputDescription: '종목을 입력하고 이 노드를 분석가에 연결하여 인사이트를 생성하세요.',
+    portfolioManagerDescription: '분석가의 입력을 바탕으로 투자 결정을 생성합니다.',
+    portfolioInputDescription: '보유 종목, 수량, 가격을 입력하고 분석가 노드에 연결하세요.',
+
     // Node UI
     tickers: '종목 코드',
     tickersTooltip: '여러 종목을 입력할 때는 쉼표(,)로 구분하세요. 예: AAPL,NVDA,TSLA',
-    enterTickers: '종목 코드 입력',
+    enterTickers: '예: AAPL,NVDA,TSLA',
     run: '실행',
     singleRun: '단일 실행',
     backtestRun: '백테스트',
@@ -351,10 +356,15 @@ export const translations = {
     marketMavericks: 'Market Mavericks',
     valueInvestors: 'Value Investors',
 
+    // Node Descriptions
+    stockInputDescription: 'Enter individual stocks and connect this node to Analysts to generate insights.',
+    portfolioManagerDescription: 'Generates investment decisions based on input from Analysts.',
+    portfolioInputDescription: 'Enter your portfolio including tickers, shares, and prices. Connect this node to Analysts to generate insights.',
+
     // Node UI
     tickers: 'Tickers',
     tickersTooltip: 'Separate multiple tickers with commas (,). e.g. AAPL,NVDA,TSLA',
-    enterTickers: 'Enter tickers',
+    enterTickers: 'e.g. AAPL,NVDA,TSLA',
     run: 'Run',
     singleRun: 'Single Run',
     backtestRun: 'Backtest',

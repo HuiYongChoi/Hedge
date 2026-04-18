@@ -103,7 +103,7 @@ export function PortfolioManagerNode({
         icon={<Brain className="h-5 w-5" />}
         iconColor={getStatusColor(status)}
         name={t('portfolioManager', language)}
-        description={data.description}
+        description={t('portfolioManagerDescription', language)}
         hasRightHandle={false}
         status={status}
       >

@@ -225,9 +225,15 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
         setActiveIdx(i => Math.max(i - 1, 0));
         return;
       }
-      if (e.key === 'Enter' && activeIdx >= 0) {
+      if (e.key === 'Enter') {
         e.preventDefault();
-        handleSelect(suggestions[activeIdx]);
+        if (activeIdx >= 0) {
+          handleSelect(suggestions[activeIdx]);
+        } else {
+          // Close dropdown and confirm current value without requiring a second Enter
+          setOpen(false);
+          setActiveIdx(-1);
+        }
         return;
       }
       if (e.key === 'Escape') {
@@ -287,7 +293,7 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
         >
           {loading && (
             <div className="px-3 py-1.5 text-xs text-muted-foreground border-b border-border">
-              검색 중...
+              Searching...
             </div>
           )}
           {suggestions.map((s, idx) => (
