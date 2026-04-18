@@ -2,7 +2,7 @@ import { useLanguage } from '@/contexts/language-context';
 import { useTabsContext } from '@/contexts/tabs-context';
 import { cn } from '@/lib/utils';
 import { TabService } from '@/services/tab-service';
-import { BarChart3, Bot, Brain, ChevronDown, ChevronUp, Database, FileText, GitBranch, ShieldCheck } from 'lucide-react';
+import { BarChart3, Bot, Brain, ChevronDown, ChevronUp, Database, FileText, GitBranch, Search, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface TabContentProps {
@@ -12,6 +12,7 @@ interface TabContentProps {
 interface AgentScoringGuide {
   nameKo: string;
   nameEn: string;
+  category: 'value' | 'growth' | 'macro' | 'technical';
   styleKo: string;
   styleEn: string;
   summaryKo: string;
@@ -32,6 +33,7 @@ const agentScoringGuides: AgentScoringGuide[] = [
   {
     nameKo: '워런 버핏',
     nameEn: 'Warren Buffett',
+    category: 'value',
     styleKo: '우량 기업 + 안전마진',
     styleEn: 'Quality business + margin of safety',
     summaryKo: '사업의 질, 이익 지속성, 해자, 경영진, 가격 결정력, 장부가치 성장을 합산한 뒤 내재가치 대비 할인 여부를 확인합니다.',
@@ -50,6 +52,7 @@ const agentScoringGuides: AgentScoringGuide[] = [
   {
     nameKo: '찰리 멍거',
     nameEn: 'Charlie Munger',
+    category: 'value',
     styleKo: '위대한 기업 + 예측가능성',
     styleEn: 'Great business + predictability',
     summaryKo: '품질 기준이 가장 엄격한 편입니다. 해자와 경영진, 예측가능성을 훨씬 더 크게 보고 현재 밸류에이션은 보조적으로 봅니다.',
@@ -63,11 +66,12 @@ const agentScoringGuides: AgentScoringGuide[] = [
     buySignalsKo: ['ROIC가 15%를 꾸준히 넘으면 해자 점수가 크게 올라갑니다.', 'FCF 전환율, 낮은 부채, 주식 수 관리가 경영진 점수에 반영됩니다.', '매출, 영업이익, 마진, FCF가 안정적이면 예측가능성이 높아집니다.'],
     buySignalsEn: ['Consistent ROIC above 15% is a major moat signal.', 'FCF conversion, low debt, and share-count discipline support management scoring.', 'Stable revenue, operating income, margins, and FCF increase predictability.'],
     sellSignalsKo: ['ROIC가 15%를 넘지 못하거나 마진이 불안정하면 멍거 기준을 통과하기 어렵습니다.', '높은 레버리지와 낮은 현금창출력은 즉시 감점됩니다.', '사업이 복잡하고 예측이 어려우면 밸류에이션 매력이 있어도 보수적으로 봅니다.'],
-    sellSignalsEn: ['ROIC below 15% or unstable margins make it hard to pass Munger’s bar.', 'High leverage and weak cash generation are immediate negatives.', 'Hard-to-predict businesses stay conservative even with apparent valuation appeal.'],
+    sellSignalsEn: ['ROIC below 15% or unstable margins make it hard to pass Munger\'s bar.', 'High leverage and weak cash generation are immediate negatives.', 'Hard-to-predict businesses stay conservative even with apparent valuation appeal.'],
   },
   {
     nameKo: '애스워스 다모다란',
     nameEn: 'Aswath Damodaran',
+    category: 'value',
     styleKo: '내재가치 + 위험 조정',
     styleEn: 'Intrinsic value + risk adjustment',
     summaryKo: '성장과 재투자, 위험, 상대가치를 점수화하고 DCF 내재가치 대비 안전마진이 있는지 확인합니다.',
@@ -86,6 +90,7 @@ const agentScoringGuides: AgentScoringGuide[] = [
   {
     nameKo: '캐시 우드',
     nameEn: 'Cathie Wood',
+    category: 'growth',
     styleKo: '파괴적 혁신 + 장기 성장',
     styleEn: 'Disruptive innovation + long-term growth',
     summaryKo: '파괴적 잠재력, 혁신 성장, 고성장 밸류에이션 시나리오를 각각 5점 축으로 정규화해 15점 만점으로 봅니다.',
@@ -104,6 +109,7 @@ const agentScoringGuides: AgentScoringGuide[] = [
   {
     nameKo: '피터 린치',
     nameEn: 'Peter Lynch',
+    category: 'value',
     styleKo: 'GARP + PEG',
     styleEn: 'GARP + PEG',
     summaryKo: '이해하기 쉬운 성장주를 합리적인 가격에 사는지 봅니다. PEG와 EPS/매출 성장의 균형이 핵심입니다.',
@@ -122,6 +128,7 @@ const agentScoringGuides: AgentScoringGuide[] = [
   {
     nameKo: '필 피셔',
     nameEn: 'Phil Fisher',
+    category: 'value',
     styleKo: '장기 성장 품질',
     styleEn: 'Long-term growth quality',
     summaryKo: '우수한 경영진, R&D, 장기 성장, 안정적인 마진을 선호합니다. 싸기만 한 회사보다 품질 지속성을 봅니다.',
@@ -140,6 +147,7 @@ const agentScoringGuides: AgentScoringGuide[] = [
   {
     nameKo: '빌 애크먼',
     nameEn: 'Bill Ackman',
+    category: 'macro',
     styleKo: '집중 투자 + 행동주의',
     styleEn: 'Concentrated investing + activism',
     summaryKo: '고품질 사업, 재무 규율, 행동주의 개선 여지, 내재가치 할인 여부를 각각 5점 축으로 합산합니다.',
@@ -158,6 +166,7 @@ const agentScoringGuides: AgentScoringGuide[] = [
   {
     nameKo: '벤 그레이엄',
     nameEn: 'Ben Graham',
+    category: 'value',
     styleKo: '방어적 가치 + 안전마진',
     styleEn: 'Defensive value + margin of safety',
     summaryKo: '이익 안정성, 재무 건전성, 그레이엄식 가치평가를 15점 만점으로 합산하는 가장 보수적인 가치 평가입니다.',
@@ -173,11 +182,230 @@ const agentScoringGuides: AgentScoringGuide[] = [
     sellSignalsKo: ['EPS가 여러 기간 음수이거나 성장하지 않으면 방어적 가치 기준을 통과하기 어렵습니다.', '유동비율 1.5 미만 또는 부채/자산 0.8 이상은 약한 재무구조로 봅니다.', '현재가가 그레이엄 넘버보다 높으면 안전마진이 낮다고 봅니다.'],
     sellSignalsEn: ['Negative EPS in several periods or no EPS growth makes the defensive value bar hard to pass.', 'Current ratio below 1.5 or debt/assets above 0.8 signals weak finances.', 'A price above Graham Number implies low margin of safety.'],
   },
+  {
+    nameKo: '마이클 버리',
+    nameEn: 'Michael Burry',
+    category: 'macro',
+    styleKo: '역발상 가치 + 숏 포지션',
+    styleEn: 'Contrarian value + short positions',
+    summaryKo: 'FCF 수익률(6점), 대차대조표 건전성(3점), 내부자 순매수(2점), 역발상 감성(1점)을 합산합니다. 총 12점 만점입니다.',
+    summaryEn: 'Adds FCF yield (6 pts), balance sheet strength (3 pts), net insider buying (2 pts), and contrarian sentiment (1 pt). 12 points total.',
+    weightsKo: ['FCF 수익률/EV/EBIT: 6점', '대차대조표: 3점', '내부자 순매수: 2점', '역발상 감성: 1점'],
+    weightsEn: ['FCF yield / EV/EBIT: 6 pts', 'Balance sheet: 3 pts', 'Net insider buying: 2 pts', 'Contrarian sentiment: 1 pt'],
+    buyRuleKo: '12점 만점 기준 70% 이상, 즉 8.4점 이상이면 Buy 성향입니다.',
+    buyRuleEn: 'On the 12-point scale, 70% or higher (8.4+) leans Buy.',
+    sellRuleKo: '12점 만점 기준 30% 이하, 즉 3.6점 이하이면 Sell 성향입니다.',
+    sellRuleEn: 'On the 12-point scale, 30% or lower (3.6 or below) leans Sell.',
+    buySignalsKo: ['FCF 수익률 10% 초과 +4점, 7% 초과 +3점, 4% 초과 +2점으로 밸류에이션을 평가합니다.', 'EV/EBIT 6 미만이면 +2점, 10 미만이면 +1점이 추가됩니다.', '내부자 순매수가 있으면 최대 +2점, 부정적 뉴스 비율이 높을수록 역발상 +1점이 가산됩니다.'],
+    buySignalsEn: ['FCF yield above 10% adds 4 pts; above 7% adds 3; above 4% adds 2 for valuation.', 'EV/EBIT below 6 adds 2 pts; below 10 adds 1.', 'Net insider buying adds up to 2 pts. Heavy negative news adds 1 contrarian point.'],
+    sellSignalsKo: ['FCF 수익률이 낮거나 마이너스이면 밸류에이션 점수가 0점입니다.', 'D/E 1 초과 또는 유동비율 1 미만이면 대차대조표 점수가 낮습니다.', '내부자 순매도는 점수를 추가하지 않으며, 긍정적 뉴스가 우세하면 역발상 점수가 0점입니다.'],
+    sellSignalsEn: ['Zero or negative FCF yield scores 0 on the valuation axis.', 'D/E above 1 or current ratio below 1 weakens balance sheet scoring.', 'Net insider selling adds no points; predominantly positive news prevents contrarian scoring.'],
+  },
+  {
+    nameKo: '모니시 파브라이',
+    nameEn: 'Mohnish Pabrai',
+    category: 'value',
+    styleKo: '단도(Dhandho) + 낮은 위험 / 높은 불확실성',
+    styleEn: 'Dhandho + low risk / high uncertainty',
+    summaryKo: '하방 보호(45%), FCF 기반 밸류에이션(35%), 2배 상승 잠재력(20%)을 가중 합산합니다. 최종 점수는 10점 만점입니다.',
+    summaryEn: 'Weighted combination of downside protection (45%), FCF-based valuation (35%), and doubling potential (20%). Final score on a 10-point scale.',
+    weightsKo: ['하방 보호: 45%', 'FCF 밸류에이션: 35%', '2배 상승 잠재력: 20%'],
+    weightsEn: ['Downside protection: 45%', 'FCF valuation: 35%', 'Doubling potential: 20%'],
+    buyRuleKo: '10점 만점 기준 7.5점 이상이면 Buy 성향입니다.',
+    buyRuleEn: 'On the 10-point scale, 7.5 or above leans Buy.',
+    sellRuleKo: '10점 만점 기준 4.0점 이하이면 Sell 성향입니다.',
+    sellRuleEn: 'On the 10-point scale, 4.0 or below leans Sell.',
+    buySignalsKo: ['D/E 0.5 미만 +3점, 유동비율 1.5 이상 +2점, 이자보상배율 5배 이상 +2점이 하방 보호 점수입니다.', 'FCF 수익률 10% 이상 +4점, 7% 이상 +3점, 5% 이상 +2점, 3% 이상 +1점입니다.', 'FCF 수익률 기준 4~5년 내 시가총액 2배 가능성이 있으면 추가 점수가 부여됩니다.'],
+    buySignalsEn: ['D/E below 0.5 adds 3 pts, current ratio ≥1.5 adds 2, interest coverage ≥5x adds 2 for downside protection.', 'FCF yield ≥10% adds 4 pts; ≥7% adds 3; ≥5% adds 2; ≥3% adds 1.', 'A FCF-based doubling horizon of 4-5 years earns additional points.'],
+    sellSignalsKo: ['정규화된 FCF가 음수이면 밸류에이션 계산 자체가 불가합니다.', '높은 레버리지와 낮은 유동성은 하방 보호 점수를 크게 낮춥니다.', 'FCF 수익률 3% 미만이면 파브라이의 핵심 기준인 저렴한 가격을 충족하지 못합니다.'],
+    sellSignalsEn: ['Negative normalized FCF prevents any valuation calculation.', 'High leverage and low liquidity severely reduce downside protection scores.', 'FCF yield below 3% fails Pabrai\'s core criterion of a cheap price.'],
+  },
+  {
+    nameKo: '나심 탈레브',
+    nameEn: 'Nassim Taleb',
+    category: 'macro',
+    styleKo: '반취약성 + 꼬리 위험 + 볼록 포지션',
+    styleEn: 'Antifragility + tail risk + convex payoffs',
+    summaryKo: '꼬리 위험(8점), 반취약성(10점), 볼록성(10점), 취약성 배제(8점), 스킨인더게임(4점), 변동성 레짐(6점), 블랙스완 감시(4점)로 총 50점 만점입니다.',
+    summaryEn: 'Seven components: tail risk (8), antifragility (10), convexity (10), fragility-via-negativa (8), skin in game (4), volatility regime (6), black swan sentinel (4) — 50 points total.',
+    weightsKo: ['꼬리 위험: 8점', '반취약성: 10점', '볼록성: 10점', '취약성 배제: 8점', '스킨인더게임: 4점', '변동성 레짐: 6점', '블랙스완 감시: 4점'],
+    weightsEn: ['Tail risk: 8 pts', 'Antifragility: 10 pts', 'Convexity: 10 pts', 'Fragility check: 8 pts', 'Skin in game: 4 pts', 'Volatility regime: 6 pts', 'Black swan sentinel: 4 pts'],
+    buyRuleKo: '50점 만점 기준 70% 이상, 즉 35점 이상이면 Buy 성향입니다.',
+    buyRuleEn: 'On the 50-point scale, 70% or higher (35+ pts) leans Buy.',
+    sellRuleKo: '50점 만점 기준 30% 이하, 즉 15점 이하이면 Sell 성향입니다.',
+    sellRuleEn: 'On the 50-point scale, 30% or lower (15 or below) leans Sell.',
+    buySignalsKo: ['양(+)의 왜도와 팻테일, 꼬리비율 1.2 초과, 작은 최대 낙폭이 꼬리 위험 가점입니다.', 'FCF가 강하고 D/E가 낮으며 마진이 안정적일수록 반취약성 점수가 높습니다.', '내부자 순매수는 스킨인더게임 최대 4점을 부여합니다.'],
+    buySignalsEn: ['Positive skew, fat tails, tail ratio above 1.2, and small max drawdown are tail-risk positives.', 'Strong FCF, low D/E, and stable margins improve antifragility scoring.', 'Net insider buying awards up to 4 skin-in-game points.'],
+    sellSignalsKo: ['D/E 1.5 초과 또는 이자보상배율 1 미만의 취약 대차대조표는 즉시 감점합니다.', '음(-)의 왜도와 낙폭 30% 초과는 꼬리 위험 점수를 낮춥니다.', 'FCF가 약하고 성장이 없는 회사는 볼록 포지션 요건을 충족하기 어렵습니다.'],
+    sellSignalsEn: ['Fragile balance sheets (D/E above 1.5 or interest coverage below 1) are immediate negatives.', 'Negative skew and max drawdown above 30% reduce tail risk scoring.', 'Weak FCF and no growth make it hard to qualify as a convex position.'],
+  },
+  {
+    nameKo: '스탠리 드러켄밀러',
+    nameEn: 'Stanley Druckenmiller',
+    category: 'macro',
+    styleKo: '성장 + 모멘텀 + 거시 + 센티먼트',
+    styleEn: 'Growth + momentum + macro + sentiment',
+    summaryKo: '성장/모멘텀(35%), 리스크/리워드(20%), 밸류에이션(20%), 센티먼트(15%), 내부자(10%)를 가중 합산해 10점 만점으로 환산합니다.',
+    summaryEn: 'Weighted 10-point scale: growth/momentum (35%), risk/reward (20%), valuation (20%), sentiment (15%), insider activity (10%).',
+    weightsKo: ['성장/모멘텀: 35%', '리스크/리워드: 20%', '밸류에이션: 20%', '센티먼트: 15%', '내부자: 10%'],
+    weightsEn: ['Growth/momentum: 35%', 'Risk/reward: 20%', 'Valuation: 20%', 'Sentiment: 15%', 'Insider activity: 10%'],
+    buyRuleKo: '10점 만점 기준 7.5점 이상이면 Buy 성향입니다.',
+    buyRuleEn: 'On the 10-point scale, 7.5 or above leans Buy.',
+    sellRuleKo: '10점 만점 기준 4.5점 이하이면 Sell 성향입니다.',
+    sellRuleEn: 'On the 10-point scale, 4.5 or below leans Sell.',
+    buySignalsKo: ['매출 CAGR 8% 초과 +3점, 4% 초과 +2점, 1% 초과 +1점입니다. EPS 성장도 동일하게 적용됩니다.', '1/3/6개월 가중 가격 모멘텀 50% 초과 +3점, 20% 초과 +2점, 양(+)이면 +1점입니다.', '뉴스 센티먼트가 강하게 긍정적이면 높은 점수를 받고, 내부자 매수 비율 70% 초과이면 +8점입니다.'],
+    buySignalsEn: ['Revenue CAGR above 8% adds 3 pts; above 4% adds 2; above 1% adds 1. Same scale applies to EPS growth.', 'Weighted 1/3/6-month price momentum above 50% adds 3 pts; above 20% adds 2; positive adds 1.', 'Strong positive news sentiment scores high; insider buy ratio above 70% scores 8 on a 10-point insider axis.'],
+    sellSignalsKo: ['매출 또는 EPS 성장이 1% 미만이거나 음수이면 가중 성장 점수가 낮습니다.', '가격 모멘텀이 음수이고 거래량이 확인되면 모멘텀 점수가 낮아집니다.', '부정 뉴스가 우세하고 내부자 매도 비율이 높으면 두 항목 모두 감점됩니다.'],
+    sellSignalsEn: ['Revenue or EPS growth below 1% or negative keeps weighted growth scoring low.', 'Negative price momentum with volume confirmation reduces momentum scores.', 'Predominantly negative news and high insider sell ratio lower both sub-scores.'],
+  },
+  {
+    nameKo: '라케시 준준왈라',
+    nameEn: 'Rakesh Jhunjhunwala',
+    category: 'growth',
+    styleKo: '성장성 + 수익성 + 인도식 성장투자',
+    styleEn: 'Growth + profitability + India-style growth investing',
+    summaryKo: '수익성(8점), 성장(7점), 대차대조표(4점), 현금흐름(3점), 경영진 행동(2점)으로 총 24점 만점입니다. DCF 기반 안전마진도 신호 결정에 활용됩니다.',
+    summaryEn: '24-point scale: profitability (8), growth (7), balance sheet (4), cash flow (3), management actions (2). DCF-based margin of safety also informs the final signal.',
+    weightsKo: ['수익성: 8점', '성장: 7점', '대차대조표: 4점', '현금흐름: 3점', '경영진: 2점'],
+    weightsEn: ['Profitability: 8 pts', 'Growth: 7 pts', 'Balance sheet: 4 pts', 'Cash flow: 3 pts', 'Management: 2 pts'],
+    buyRuleKo: '24점 만점 기준 70% 이상(≥16.8점)이면 Buy 성향입니다. 양(+)의 MOS는 신뢰도를 높입니다.',
+    buyRuleEn: 'On the 24-point scale, 70% or higher (16.8+) leans Buy. Positive margin of safety increases confidence.',
+    sellRuleKo: '24점 만점 기준 30% 이하(≤7.2점)이면 Sell 성향입니다.',
+    sellRuleEn: 'On the 24-point scale, 30% or lower (7.2 or below) leans Sell.',
+    buySignalsKo: ['ROE 20% 초과 +3점, 영업이익률 25% 초과 +3점, ROIC 20% 초과 +3점이 수익성의 핵심입니다.', '매출 성장 25% 초과 +3점, EPS 성장 25% 초과 +3점, 성장 가속화이면 +1점입니다.', 'D/E 1 미만, 유동비율 1.5 이상, 양(+)의 FCF, 자사주 매입이 모두 추가 가점입니다.'],
+    buySignalsEn: ['ROE above 20% adds 3 pts, operating margin above 25% adds 3, ROIC above 20% adds 3 for profitability.', 'Revenue growth above 25% adds 3 pts, EPS growth above 25% adds 3, and accelerating growth adds 1.', 'D/E below 1, current ratio ≥1.5, positive FCF, and buybacks all add further points.'],
+    sellSignalsKo: ['ROE, 영업이익률, ROIC가 모두 약하면 수익성 점수가 낮습니다.', '매출 및 EPS 성장이 없거나 감속 중이면 성장 점수가 낮습니다.', 'FCF가 음수이거나 D/E가 높으면 대차대조표와 현금흐름 점수 모두 낮습니다.'],
+    sellSignalsEn: ['Weak ROE, operating margin, and ROIC together keep profitability scoring low.', 'No revenue or EPS growth, or decelerating growth, reduces the growth sub-score.', 'Negative FCF or high D/E hurts both balance sheet and cash flow scoring.'],
+  },
+  {
+    nameKo: '기술적 분석가',
+    nameEn: 'Technical Analyst',
+    category: 'technical',
+    styleKo: '추세 + 모멘텀 + 평균회귀 + 변동성',
+    styleEn: 'Trend + momentum + mean reversion + volatility',
+    summaryKo: '추세(25%), 모멘텀(25%), 평균회귀(20%), 변동성(15%), 통계적 차익(15%)를 가중 앙상블로 결합합니다. 최종 점수 +0.2 초과 = 강세, -0.2 미만 = 약세입니다.',
+    summaryEn: 'Weighted ensemble of trend (25%), momentum (25%), mean reversion (20%), volatility (15%), and stat-arb (15%). Final score above +0.2 = bullish; below -0.2 = bearish.',
+    weightsKo: ['추세(ADX): 25%', '모멘텀(1/3/6개월): 25%', '평균회귀(볼린저/Z점수): 20%', '변동성 레짐: 15%', '허스트 지수: 15%'],
+    weightsEn: ['Trend (ADX): 25%', 'Momentum (1/3/6-month): 25%', 'Mean reversion (Bollinger/Z): 20%', 'Volatility regime: 15%', 'Hurst exponent: 15%'],
+    buyRuleKo: '가중 최종 점수가 +0.2 초과이면 Buy 성향입니다.',
+    buyRuleEn: 'Weighted final score above +0.2 leans Buy.',
+    sellRuleKo: '가중 최종 점수가 -0.2 미만이면 Sell 성향입니다.',
+    sellRuleEn: 'Weighted final score below -0.2 leans Sell.',
+    buySignalsKo: ['ADX 기반 추세 강도가 상승 방향이면 추세 점수가 올라갑니다.', '1/3/6개월 가중 모멘텀 +0.05 초과이고 거래량 확인이 되면 강한 모멘텀 신호입니다.', 'Z점수 -2 미만 + 볼린저 하단(20th 백분위) 이하는 평균회귀 매수 신호입니다.'],
+    buySignalsEn: ['ADX-measured trend strength in an upward direction improves trend scoring.', 'Weighted 1/3/6-month momentum above +0.05 with volume confirmation signals strong momentum.', 'Z-score below -2 and price in the bottom 20th Bollinger percentile is a mean-reversion buy signal.'],
+    sellSignalsKo: ['ADX 추세가 하락 방향이면 추세 점수가 낮아집니다.', '가중 모멘텀이 -0.05 미만이고 거래량이 확인되면 모멘텀 매도 신호입니다.', 'Z점수 +2 초과 + 볼린저 상단(80th 백분위) 이상은 평균회귀 매도 신호입니다.'],
+    sellSignalsEn: ['ADX-measured trend in a downward direction lowers trend scoring.', 'Weighted momentum below -0.05 with volume confirmation is a momentum sell.', 'Z-score above +2 and price in the top 80th Bollinger percentile is a mean-reversion sell signal.'],
+  },
+  {
+    nameKo: '기본적 분석가',
+    nameEn: 'Fundamentals Analyst',
+    category: 'technical',
+    styleKo: '수익성 + 성장성 + 재무건전성 + 밸류에이션',
+    styleEn: 'Profitability + growth + financial health + valuation',
+    summaryKo: '수익성, 성장성, 재무건전성, 가격비율 4가지 신호를 다수결로 결합합니다. 각 항목은 독립적으로 강세/약세/중립을 결정합니다.',
+    summaryEn: 'Combines four sub-signals by majority vote: profitability, growth, financial health, and price ratios. Each sub-signal independently returns bullish, bearish, or neutral.',
+    weightsKo: ['수익성 신호', '성장 신호', '재무건전성 신호', '가격비율 신호'],
+    weightsEn: ['Profitability signal', 'Growth signal', 'Financial health signal', 'Price ratios signal'],
+    buyRuleKo: '4개 신호 중 강세가 약세보다 많으면 최종 강세입니다.',
+    buyRuleEn: 'More bullish sub-signals than bearish among the four determines an overall bullish result.',
+    sellRuleKo: '4개 신호 중 약세가 강세보다 많으면 최종 약세입니다.',
+    sellRuleEn: 'More bearish sub-signals than bullish among the four determines an overall bearish result.',
+    buySignalsKo: ['ROE 15% 초과, 순이익률 20% 초과, 영업이익률 15% 초과 중 2개 이상이면 수익성 강세입니다.', '매출 성장 10% 초과, EPS 성장 10% 초과, 장부가치 성장 10% 초과 중 2개 이상이면 성장 강세입니다.', '유동비율 1.5 이상, D/E 0.5 미만, FCF가 EPS의 80% 이상이면 재무건전성 강세입니다.'],
+    buySignalsEn: ['ROE above 15%, net margin above 20%, and operating margin above 15% — 2+ of 3 = profitability bullish.', 'Revenue growth above 10%, EPS growth above 10%, and book value growth above 10% — 2+ of 3 = growth bullish.', 'Current ratio ≥1.5, D/E below 0.5, and FCF at least 80% of EPS = financial health bullish.'],
+    sellSignalsKo: ['수익성 지표 3개 모두 기준 미달이면 수익성 약세입니다.', 'P/E 25 초과, P/B 3 초과, P/S 5 초과 중 2개 이상이면 가격비율 약세(고평가)입니다.', '성장 지표 3개 모두 10% 미달이면 성장 약세입니다.'],
+    sellSignalsEn: ['All three profitability metrics failing their thresholds = profitability bearish.', 'P/E above 25, P/B above 3, P/S above 5 — 2+ triggers a price-ratios bearish (expensive) signal.', 'All three growth metrics below 10% = growth bearish.'],
+  },
+  {
+    nameKo: '성장 분석가',
+    nameEn: 'Growth Analyst',
+    category: 'technical',
+    styleKo: '성장 추세 + 밸류에이션 + 마진',
+    styleEn: 'Growth trends + valuation + margins',
+    summaryKo: '성장(40%), 밸류에이션(25%), 마진(15%), 내부자(10%), 재무건전성(10%)을 0~1 척도로 가중 합산합니다. 0.6 초과 = 강세, 0.4 미만 = 약세입니다.',
+    summaryEn: 'Weighted 0-1 scale: growth (40%), valuation (25%), margins (15%), insider conviction (10%), financial health (10%). Above 0.6 = bullish; below 0.4 = bearish.',
+    weightsKo: ['성장 추세: 40%', '밸류에이션: 25%', '마진 추세: 15%', '내부자 신뢰도: 10%', '재무건전성: 10%'],
+    weightsEn: ['Growth trends: 40%', 'Valuation: 25%', 'Margin trends: 15%', 'Insider conviction: 10%', 'Financial health: 10%'],
+    buyRuleKo: '가중 합산 점수 0.6 초과이면 Buy 성향입니다.',
+    buyRuleEn: 'Weighted score above 0.6 leans Buy.',
+    sellRuleKo: '가중 합산 점수 0.4 미만이면 Sell 성향입니다.',
+    sellRuleEn: 'Weighted score below 0.4 leans Sell.',
+    buySignalsKo: ['최근 매출 성장률 20% 초과 +0.4점, EPS 성장 20% 초과 +0.25점, FCF 성장 15% 초과 +0.1점입니다.', 'P/E 15 미만 +0.5점, P/S 2 미만 +0.5점의 밸류에이션 가점이 있습니다.', '총마진 50% 초과, 영업마진 15% 초과, 마진 개선 추세가 각각 +0.2점씩 가산됩니다.'],
+    buySignalsEn: ['Recent revenue growth above 20% adds 0.4; EPS growth above 20% adds 0.25; FCF growth above 15% adds 0.1.', 'P/E below 15 adds 0.5; P/S below 2 adds 0.5 as valuation support.', 'Gross margin above 50%, operating margin above 15%, and improving trend each add 0.2.'],
+    sellSignalsKo: ['성장 지표가 낮거나 감속 중이면 성장 항목 점수가 낮습니다.', 'P/E 15 이상이거나 P/S 2 이상이면 밸류에이션 점수를 받지 못합니다.', 'D/E 1 초과 또는 유동비율 1 미만이면 재무건전성 점수가 0.5씩 차감됩니다.'],
+    sellSignalsEn: ['Low or decelerating growth metrics keep the growth sub-score low.', 'P/E at or above 15 and P/S at or above 2 add no valuation points.', 'D/E above 1 or current ratio below 1 each deduct 0.5 from financial health scoring.'],
+  },
+  {
+    nameKo: '뉴스 감성 분석가',
+    nameEn: 'News Sentiment Analyst',
+    category: 'technical',
+    styleKo: 'LLM 기반 뉴스 분류',
+    styleEn: 'LLM-based news classification',
+    summaryKo: 'LLM이 각 뉴스를 positive/negative/neutral로 분류합니다. 다수결로 최종 신호를 결정하며, 신뢰도는 LLM 점수 70%와 신호 비율 30%를 합산합니다.',
+    summaryEn: 'The LLM classifies each article as positive, negative, or neutral. The majority signal wins; confidence is 70% LLM score + 30% signal proportion.',
+    weightsKo: ['LLM 신뢰도: 70%', '신호 비율: 30%'],
+    weightsEn: ['LLM confidence: 70%', 'Signal proportion: 30%'],
+    buyRuleKo: '긍정 기사가 부정 기사보다 많으면 강세 신호입니다.',
+    buyRuleEn: 'More positive articles than negative results in a bullish signal.',
+    sellRuleKo: '부정 기사가 긍정 기사보다 많으면 약세 신호입니다.',
+    sellRuleEn: 'More negative articles than positive results in a bearish signal.',
+    buySignalsKo: ['LLM이 긍정으로 분류한 기사 수가 부정 기사보다 많으면 강세 신호를 만듭니다.', 'LLM 신뢰도 점수가 높은 긍정 기사는 전체 신뢰도 계산에 크게 기여합니다.', '중립 기사는 신호를 만들지 않으며, 분류되지 않은 기사는 중립으로 처리됩니다.'],
+    buySignalsEn: ['More LLM-classified positive articles than negative produces a bullish signal.', 'Positive articles with high LLM confidence scores contribute more to overall confidence.', 'Neutral articles produce no signal; unclassified articles default to neutral.'],
+    sellSignalsKo: ['부정 기사가 긍정 기사보다 많으면 약세 신호가 만들어집니다.', '뉴스 데이터가 없으면 신호도 없으며 신뢰도는 0입니다.', '총 기사 수가 적으면 다수결 신뢰도가 낮아질 수 있습니다.'],
+    sellSignalsEn: ['More negative articles than positive produces a bearish signal.', 'No news data means no signal and zero confidence.', 'A small total article count can reduce majority-based confidence.'],
+  },
+  {
+    nameKo: '시장 심리 분석가',
+    nameEn: 'Sentiment Analyst',
+    category: 'technical',
+    styleKo: '내부자 거래 + 뉴스 감성',
+    styleEn: 'Insider trades + news sentiment',
+    summaryKo: '내부자 거래(30%)와 뉴스 감성(70%)을 가중 결합합니다. 내부자 매수/매도 방향과 뉴스 긍정/부정 비율을 각각 신호로 변환합니다.',
+    summaryEn: 'Weighted combination of insider trades (30%) and news sentiment (70%). Insider buy/sell direction and news positive/negative ratio are each converted to signals.',
+    weightsKo: ['뉴스 감성: 70%', '내부자 거래: 30%'],
+    weightsEn: ['News sentiment: 70%', 'Insider trades: 30%'],
+    buyRuleKo: '가중 강세 합계(내부자×0.3 + 뉴스×0.7)가 가중 약세 합계를 초과하면 최종 강세입니다.',
+    buyRuleEn: 'Total weighted bullish (insider×0.3 + news×0.7) exceeding total weighted bearish produces an overall bullish signal.',
+    sellRuleKo: '가중 약세 합계가 가중 강세 합계를 초과하면 최종 약세입니다.',
+    sellRuleEn: 'Total weighted bearish count exceeding total weighted bullish count produces an overall bearish signal.',
+    buySignalsKo: ['내부자가 순매수(양의 거래량)이면 내부자 신호는 강세로 변환됩니다.', '뉴스 기사의 감성이 positive이면 강세 신호로 분류됩니다.', '가중 강세 합계 = 내부자 강세 수 × 0.3 + 뉴스 강세 수 × 0.7'],
+    buySignalsEn: ['Net insider buying (positive transaction shares) is classified as a bullish signal.', 'News articles classified as positive are converted to bullish signals.', 'Weighted bullish total = insider bullish count × 0.3 + news bullish count × 0.7.'],
+    sellSignalsKo: ['내부자 순매도(음의 거래량)이면 내부자 신호는 약세로 변환됩니다.', '뉴스 감성이 negative이면 약세 신호로 분류됩니다.', '내부자와 뉴스 데이터가 모두 없으면 신뢰도는 0입니다.'],
+    sellSignalsEn: ['Net insider selling (negative transaction shares) is classified as a bearish signal.', 'News articles classified as negative are converted to bearish signals.', 'Zero confidence when both insider and news data are absent.'],
+  },
+  {
+    nameKo: '가치평가 분석가',
+    nameEn: 'Valuation Analyst',
+    category: 'technical',
+    styleKo: '다중 모델 내재가치 가중 평균',
+    styleEn: 'Multi-model intrinsic value weighted average',
+    summaryKo: 'DCF(35%), 오너이익(35%), EV/EBITDA(20%), 잔여이익(10%)의 가중 평균 내재가치와 현재 시가총액의 괴리율로 신호를 결정합니다.',
+    summaryEn: 'Determines the signal from the weighted gap between market cap and blended intrinsic value: DCF (35%), owner earnings (35%), EV/EBITDA (20%), residual income (10%).',
+    weightsKo: ['DCF: 35%', '오너이익: 35%', 'EV/EBITDA: 20%', '잔여이익: 10%'],
+    weightsEn: ['DCF: 35%', 'Owner earnings: 35%', 'EV/EBITDA: 20%', 'Residual income: 10%'],
+    buyRuleKo: '가중 괴리율이 +15% 초과이면 Buy 성향입니다. 즉, 내재가치가 시가총액보다 15% 이상 높을 때입니다.',
+    buyRuleEn: 'Weighted gap above +15% leans Buy — blended intrinsic value is 15%+ above market cap.',
+    sellRuleKo: '가중 괴리율이 -15% 미만이면 Sell 성향입니다. 즉, 시가총액이 내재가치보다 15% 이상 높을 때입니다.',
+    sellRuleEn: 'Weighted gap below -15% leans Sell — market cap is 15%+ above blended intrinsic value.',
+    buySignalsKo: ['FCF 기반 DCF 내재가치가 시가총액보다 15% 이상 높으면 강한 가점입니다.', '오너이익 DCF는 성장률 5%, 요구수익률 15%, 안전마진 25%를 기본값으로 계산합니다.', 'EV/EBITDA가 섹터 벤치마크 대비 낮으면 가치 불일치 신호를 제공합니다.'],
+    buySignalsEn: ['FCF-based DCF intrinsic value at least 15% above market cap is a strong positive.', 'Owner earnings DCF uses 5% growth, 15% required return, and 25% margin of safety by default.', 'EV/EBITDA below sector benchmark suggests value mispricing.'],
+    sellSignalsKo: ['FCF가 음수이거나 EBITDA 데이터가 없으면 해당 모델을 계산할 수 없습니다.', '시가총액이 모든 내재가치 추정치보다 15% 이상 높으면 약세입니다.', '모든 방법이 유효한 값을 산출하지 못하면 전체 가중 괴리율도 계산되지 않습니다.'],
+    sellSignalsEn: ['Negative FCF or missing EBITDA prevents those models from computing.', 'Market cap exceeding all intrinsic value estimates by 15%+ is bearish.', 'If all methods produce invalid values, the overall weighted gap cannot be computed.'],
+  },
 ];
+
+const CATEGORY_LABELS: Record<string, { ko: string; en: string }> = {
+  all:       { ko: '전체', en: 'All' },
+  value:     { ko: '가치 투자', en: 'Value Investing' },
+  growth:    { ko: '성장 투자', en: 'Growth Investing' },
+  macro:     { ko: '거시 및 행동주의', en: 'Macro & Activist' },
+  technical: { ko: '기술 및 분석', en: 'Technical & Analysis' },
+};
 
 function MainGuide({ language }: { language: 'ko' | 'en' }) {
   const isKo = language === 'ko';
   const [showAgentScoring, setShowAgentScoring] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const stages = isKo
     ? [
         {
@@ -302,8 +530,51 @@ function MainGuide({ language }: { language: 'ko' | 'en' }) {
               </div>
             </div>
 
+            <div className="mt-4 flex flex-col gap-3 border-b border-border/70 pb-4">
+              <div className="flex flex-wrap items-center gap-2">
+                {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSelectedCategory(key)}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                      selectedCategory === key
+                        ? 'border-blue-500 bg-blue-500/20 text-blue-400'
+                        : 'border-border bg-muted/20 text-muted-foreground hover:border-blue-500/50 hover:text-blue-400'
+                    }`}
+                  >
+                    {isKo ? label.ko : label.en}
+                  </button>
+                ))}
+              </div>
+              <div className="relative max-w-sm">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={isKo ? '에이전트 이름 검색...' : 'Search agent name...'}
+                  className="w-full rounded-md border border-border bg-background/70 py-1.5 pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-blue-500/50 focus:outline-none"
+                />
+              </div>
+            </div>
+
             <div className="mt-5 grid gap-4">
-              {agentScoringGuides.map((agent) => (
+              {(() => {
+                const q = searchQuery.trim().toLowerCase();
+                const filtered = agentScoringGuides.filter((a) => {
+                  const matchCat = selectedCategory === 'all' || a.category === selectedCategory;
+                  const matchQ = !q || a.nameKo.includes(q) || a.nameEn.toLowerCase().includes(q);
+                  return matchCat && matchQ;
+                });
+                if (filtered.length === 0) {
+                  return (
+                    <p className="py-6 text-center text-sm text-muted-foreground">
+                      {isKo ? '검색 결과가 없습니다.' : 'No agents match your search.'}
+                    </p>
+                  );
+                }
+                return filtered.map((agent) => (
                 <article key={agent.nameEn} className="rounded-md border border-border/70 bg-background/70 p-4">
                   <div className="flex flex-col gap-2 border-b border-border/60 pb-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -363,7 +634,8 @@ function MainGuide({ language }: { language: 'ko' | 'en' }) {
                     </div>
                   </div>
                 </article>
-              ))}
+                ));
+              })()}
             </div>
           </section>
         )}
