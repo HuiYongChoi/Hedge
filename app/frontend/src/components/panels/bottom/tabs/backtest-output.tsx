@@ -7,13 +7,9 @@ import { getActionColor } from './output-tab-utils';
 // Component for displaying backtest progress
 function BacktestProgress({ agentData }: { agentData: Record<string, any> }) {
   const backtestAgent = agentData['backtest'];
-  
+
   if (!backtestAgent) return null;
-  
-  // Get the latest backtest result from the backtest results array
-  const backtestResults = backtestAgent.backtestResults || [];
-  const latestBacktestResult = backtestResults.length > 0 ? backtestResults[backtestResults.length - 1] : null;
-  
+
   return (
     <Card className="bg-transparent mb-4">
       <CardHeader>
@@ -38,22 +34,22 @@ function BacktestTradingTable({ agentData }: { agentData: Record<string, any> })
   const backtestAgent = agentData['backtest'];
 
   // console.log("backtestAgent", backtestAgent);
-  
+
   if (!backtestAgent || !backtestAgent.backtestResults) {
     return null;
   }
-    
+
   // Get the backtest results directly from the agent data
   const backtestResults = backtestAgent.backtestResults || [];
-  
+
   if (backtestResults.length === 0) {
     return null;
   }
-  
+
   // Build table rows similar to CLI format
   const tableRows: any[] = [];
-  
-  backtestResults.forEach((backtestResult: any) => {    
+
+  backtestResults.forEach((backtestResult: any) => {
     // Add ticker rows for this period
     if (backtestResult.ticker_details) {
       backtestResult.ticker_details.forEach((ticker: any) => {
@@ -74,7 +70,7 @@ function BacktestTradingTable({ agentData }: { agentData: Record<string, any> })
         });
       });
     }
-    
+
     // Add portfolio summary row for this period
     tableRows.push({
       type: 'summary',
@@ -86,13 +82,13 @@ function BacktestTradingTable({ agentData }: { agentData: Record<string, any> })
       performance_metrics: backtestResult.performance_metrics,
     });
   });
-    
+
   // Sort by date descending (newest first) and show only the last 50 rows to avoid performance issues
   const recentRows = tableRows
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 50);
-  
-  
+
+
   return (
     <Card className="bg-transparent mb-4">
       <CardHeader>
@@ -157,7 +153,7 @@ function BacktestResults({ outputData }: { outputData: any }) {
   }
 
   console.log("outputData", outputData);
-  
+
   if (!outputData.performance_metrics) {
     return (
       <Card className="bg-transparent mb-4">
@@ -172,9 +168,9 @@ function BacktestResults({ outputData }: { outputData: any }) {
       </Card>
     );
   }
-  
+
   const { performance_metrics, final_portfolio, total_days } = outputData;
-  
+
   return (
     <Card className="bg-transparent mb-4">
       <CardHeader>
@@ -212,7 +208,7 @@ function BacktestResults({ outputData }: { outputData: any }) {
               )}
             </div>
           </div>
-          
+
           {/* Portfolio Summary */}
           <div className="space-y-2">
             <h4 className="font-medium">Portfolio Summary</h4>
@@ -231,7 +227,7 @@ function BacktestResults({ outputData }: { outputData: any }) {
               </div>
             </div>
           </div>
-          
+
           {/* Exposure Metrics */}
           <div className="space-y-2">
             <h4 className="font-medium">Exposure Metrics</h4>
@@ -259,7 +255,7 @@ function BacktestResults({ outputData }: { outputData: any }) {
             </div>
           </div>
         </div>
-        
+
         {/* Final Positions */}
         {final_portfolio.positions && (
           <div>
@@ -300,35 +296,35 @@ function BacktestResults({ outputData }: { outputData: any }) {
 // Component for displaying real-time backtest performance
 function BacktestPerformanceMetrics({ agentData }: { agentData: Record<string, any> }) {
   const backtestAgent = agentData['backtest'];
-  
+
   if (!backtestAgent || !backtestAgent.backtestResults) return null;
-  
+
   // Get the backtest results directly from the agent data
   const backtestResults = backtestAgent.backtestResults || [];
-  
+
   if (backtestResults.length === 0) return null;
-  
+
   const firstPeriod = backtestResults[0];
   const latestPeriod = backtestResults[backtestResults.length - 1];
-  
+
   // Calculate performance metrics
   const initialValue = firstPeriod.portfolio_value;
   const currentValue = latestPeriod.portfolio_value;
   const totalReturn = ((currentValue - initialValue) / initialValue) * 100;
-  
+
   // Calculate win rate (periods with positive returns)
   const periodReturns = backtestResults.slice(1).map((period: any, idx: number) => {
     const prevPeriod = backtestResults[idx];
     return ((period.portfolio_value - prevPeriod.portfolio_value) / prevPeriod.portfolio_value) * 100;
   });
-  
+
   const winningPeriods = periodReturns.filter((ret: number) => ret > 0).length;
   const winRate = periodReturns.length > 0 ? (winningPeriods / periodReturns.length) * 100 : 0;
-  
+
   // Calculate max drawdown
   let maxDrawdown = 0;
   let peak = initialValue;
-  
+
   backtestResults.forEach((period: any) => {
     if (period.portfolio_value > peak) {
       peak = period.portfolio_value;
@@ -338,7 +334,7 @@ function BacktestPerformanceMetrics({ agentData }: { agentData: Record<string, a
       maxDrawdown = drawdown;
     }
   });
-  
+
   return (
     <Card className="bg-transparent mb-4">
       <CardHeader>
@@ -365,7 +361,7 @@ function BacktestPerformanceMetrics({ agentData }: { agentData: Record<string, a
             <div className="font-sm">{backtestResults.length}</div>
           </div>
         </div>
-        
+
         {/* Additional metrics */}
         <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="text-center">
@@ -395,12 +391,12 @@ function BacktestPerformanceMetrics({ agentData }: { agentData: Record<string, a
 }
 
 // Main component for backtest output
-export function BacktestOutput({ 
-  agentData, 
-  outputData 
-}: { 
-  agentData: Record<string, any>; 
-  outputData: any; 
+export function BacktestOutput({
+  agentData,
+  outputData
+}: {
+  agentData: Record<string, any>;
+  outputData: any;
 }) {
   return (
     <>
@@ -413,4 +409,4 @@ export function BacktestOutput({
 
     </>
   );
-} 
+}

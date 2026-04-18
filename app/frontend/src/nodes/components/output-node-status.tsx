@@ -29,7 +29,7 @@ export function OutputNodeStatus({
   const isGloballyProcessing = !isProcessing && isAnyAgentRunning; // Other agents running
   const hasGradientAnimation = isLocallyProcessing || isGloballyProcessing;
   const isClickable = isOutputAvailable && !isLocallyProcessing && !isGloballyProcessing;
-  
+
   // Determine display text based on current state
   let displayText: string;
   if (isLocallyProcessing) {
@@ -43,9 +43,11 @@ export function OutputNodeStatus({
   }
 
   const status = hasGradientAnimation ? 'IN_PROGRESS' : 'IDLE';
+  const connectionState = isConnected ? 'connected' : 'idle';
 
   return (
-    <div 
+    <div
+      data-connection={connectionState}
       className={cn(
         "text-foreground text-xs rounded p-2 border border-status transition-colors",
         hasGradientAnimation ? "gradient-animation" : getStatusColor(status),
@@ -63,4 +65,4 @@ export function OutputNodeStatus({
       )}
     </div>
   );
-} 
+}
