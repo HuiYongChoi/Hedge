@@ -8,6 +8,7 @@ import {
 import { useNodeContext } from '@/contexts/node-context';
 import { useLanguage } from '@/contexts/language-context';
 import { formatTimeFromTimestamp } from '@/utils/date-utils';
+import { copyTextToClipboard, stringifyClipboardValue } from '@/utils/clipboard-utils';
 import { formatTextIntoParagraphs, isJsonString } from '@/utils/text-utils';
 import { AlignJustify, Copy, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -18,15 +19,15 @@ function toReadableKey(key: string, t: any): string {
   // If translation exists exactly
   const translated = t(key as any);
   if (translated !== key) return translated;
-  
+
   const formatted = key
     .replace(/_/g, ' ')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/\b\w/g, l => l.toUpperCase());
-    
+
   const translatedFormatted = t(formatted as any);
   if (translatedFormatted !== formatted) return translatedFormatted;
-  
+
   return formatted;
 }
 
@@ -38,10 +39,118 @@ function signalColor(signal: string): string {
   return 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/30';
 }
 
+function formatKoreanWonAmount(rawValue: string): string {
+  const number = Number(rawValue.replace(/,/g, ''));
+  if (!Number.isFinite(number)) return rawValue;
+
+  const sign = number < 0 ? '-' : '';
+  const absNumber = Math.abs(number);
+  const joUnit = 1_000_000_000_000;
+  const eokUnit = 100_000_000;
+
+  if (absNumber >= joUnit) {
+    let jo = Math.floor(absNumber / joUnit);
+    const eok = Math.floor((absNumber % joUnit) / eokUnit);
+    return eok > 0
+      ? `${sign}${jo.toLocaleString()}조 ${eok.toLocaleString()}억 원`
+      : `${sign}${jo.toLocaleString()}조 원`;
+  }
+
+  if (absNumber >= eokUnit) {
+    return `${sign}${Math.floor(absNumber / eokUnit).toLocaleString()}억 원`;
+  }
+
+  return `${sign}${Math.round(absNumber).toLocaleString()}원`;
+}
+
+function normalizeFinancialDisplayText(text: string): string {
+  return text
+    .replace(/현금으로\s*돌아오는\s*힘/g, '잉여현금흐름(FCF) 창출력')
+    .replace(/영업현금흐름\(FCF\)/g, '잉여현금흐름(FCF)')
+    .replace(/\bNet\s+cash\b/gi, '순현금(Net Cash)')
+    .replace(/\bD\/E\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\s*\(([^)]+)\)/gi, 'Debt-To-Equity(부채비율): $1x ($2)')
+    .replace(/\bD\/E\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\b/gi, 'Debt-To-Equity(부채비율): $1x')
+    .replace(/(Debt-To-Equity\(부채비율\):?\s*\d+(?:\.\d+)?x)\s*\(([^)]+)\)/g, '$1 ($2)')
+    .replace(
+      /(시가\s*총액|시가총액|Market Cap\(시가총액\))\s*[:：]?\s*(₩|KRW\s*)?([0-9][0-9,]{8,})\s*(원)?/gi,
+      (_match, label: string, _currency: string, rawNumber: string) => `${label.replace(/\s+/g, '')}: ${formatKoreanWonAmount(rawNumber)}`,
+    );
+}
+
+const FINANCIAL_METRIC_CHIP_PATTERN =
+  /(Debt-To-Equity\(부채비율\)|잉여현금흐름\(FCF\)\s*수익률|FCF\s*수익률|순현금\(Net Cash\)|EV\/EBITDA|EV\/EBIT|Current Ratio|유동비율)/i;
+
+function renderInlineFinancialText(text: string): React.ReactNode[] {
+  const normalizedText = normalizeFinancialDisplayText(text);
+  return normalizedText.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((segment, index) => {
+    const isBold = segment.startsWith('**') && segment.endsWith('**');
+    const content = isBold ? segment.slice(2, -2) : segment;
+
+    if (!isBold) {
+      return <span key={index}>{content}</span>;
+    }
+
+    if (FINANCIAL_METRIC_CHIP_PATTERN.test(content)) {
+      return (
+        <span
+          key={index}
+          className="financial-metric-chip inline-flex items-center rounded-md border border-primary/25 bg-primary/10 px-1.5 py-0.5 font-semibold text-primary"
+        >
+          {content}
+        </span>
+      );
+    }
+
+    return (
+      <strong key={index} className="font-semibold text-foreground">
+        {content}
+      </strong>
+    );
+  });
+}
+
+function renderFinancialParagraph(paragraph: string, index: number): React.ReactElement {
+  const normalizedParagraph = normalizeFinancialDisplayText(paragraph.trim());
+  const heading = normalizedParagraph.match(/^(#{2,6})\s+(.+)$/);
+  if (heading) {
+    return (
+      <h4 key={index} className="mt-4 first:mt-0 text-base font-semibold text-foreground">
+        {renderInlineFinancialText(heading[2])}
+      </h4>
+    );
+  }
+
+  const numbered = normalizedParagraph.match(/^(\d+\.)\s+(.+)$/);
+  if (numbered) {
+    return (
+      <p key={index} className="flex gap-2 text-sm leading-7 text-muted-foreground">
+        <span className="font-semibold text-primary">{numbered[1]}</span>
+        <span>{renderInlineFinancialText(numbered[2])}</span>
+      </p>
+    );
+  }
+
+  const bullet = normalizedParagraph.match(/^[-•]\s+(.+)$/);
+  if (bullet) {
+    return (
+      <p key={index} className="flex gap-2 text-sm leading-7 text-muted-foreground">
+        <span className="mt-[0.65rem] h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
+        <span>{renderInlineFinancialText(bullet[1])}</span>
+      </p>
+    );
+  }
+
+  return (
+    <p key={index} className="text-sm leading-7 text-muted-foreground">
+      {renderInlineFinancialText(normalizedParagraph)}
+    </p>
+  );
+}
+
 /** Recursively render a value from a parsed JSON object in human-readable form */
 function RenderValue({ value }: { value: any }): React.ReactElement {
   const { t } = useLanguage();
-  
+
   if (value === null || value === undefined) {
     return <span className="text-muted-foreground italic">N/A</span>;
   }
@@ -56,7 +165,7 @@ function RenderValue({ value }: { value: any }): React.ReactElement {
     if (['bullish', 'buy', 'bearish', 'sell', 'neutral', 'hold', 'positive', 'negative'].includes(lower)) {
       return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${signalColor(lower)}`}>{t(lower as any).toUpperCase()}</span>;
     }
-    return <span className="text-foreground leading-relaxed">{value}</span>;
+    return <span className="text-foreground leading-relaxed">{renderInlineFinancialText(value)}</span>;
   }
   if (Array.isArray(value)) {
     return (
@@ -83,14 +192,15 @@ function RenderValue({ value }: { value: any }): React.ReactElement {
 }
 
 /** Human-readable display for an analysis value (string JSON or object) */
-function AnalysisView({ content }: { content: string }) {
+function AnalysisView({ content }: { content: unknown }) {
   const { t } = useLanguage();
   if (!content) return null;
+  const contentString = stringifyClipboardValue(content);
 
   // Try to parse as JSON and display structured
-  if (isJsonString(content)) {
+  if (isJsonString(contentString)) {
     try {
-      const parsed = JSON.parse(content);
+      const parsed = JSON.parse(contentString);
       if (typeof parsed === 'object' && parsed !== null) {
         return (
           <div className="space-y-3">
@@ -109,10 +219,10 @@ function AnalysisView({ content }: { content: string }) {
   }
 
   // Plain text fallback
-  const paragraphs = formatTextIntoParagraphs(content);
+  const paragraphs = formatTextIntoParagraphs(normalizeFinancialDisplayText(contentString));
   return (
     <div className="space-y-2 text-sm leading-relaxed">
-      {paragraphs.map((p, i) => <p key={i}>{p}</p>)}
+      {paragraphs.map((p, i) => renderFinancialParagraph(p, i))}
     </div>
   );
 }
@@ -125,27 +235,27 @@ interface AgentOutputDialogProps {
   flowId: string | null;
 }
 
-export function AgentOutputDialog({ 
-  isOpen, 
-  onOpenChange, 
-  name, 
+export function AgentOutputDialog({
+  isOpen,
+  onOpenChange,
+  name,
   nodeId,
   flowId
 }: AgentOutputDialogProps) {
   const { getAgentNodeDataForFlow } = useNodeContext();
 
   const agentNodeData = getAgentNodeDataForFlow(flowId);
-  const nodeData = agentNodeData[nodeId] || { 
-    status: 'IDLE', 
-    ticker: null, 
-    message: '', 
+  const nodeData = agentNodeData[nodeId] || {
+    status: 'IDLE',
+    ticker: null,
+    message: '',
     messages: [],
     lastUpdated: 0
   };
 
   const messages = nodeData.messages || [];
   const nodeStatus = nodeData.status;
-  
+
   const [copySuccess, setCopySuccess] = useState(false);
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const initialFocusRef = useRef<HTMLDivElement>(null);
@@ -154,7 +264,7 @@ export function AgentOutputDialog({
   // Collect all analysis from all messages into a single analysis dictionary
   const allAnalysis = messages
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()) // Sort by timestamp
-    .reduce<Record<string, string>>((acc, msg) => {
+    .reduce<Record<string, unknown>>((acc, msg) => {
       // Add analysis from this message to our accumulated analysis
       if (msg.analysis && Object.keys(msg.analysis).length > 0) {
         // Filter out null values before adding to our accumulated decisions
@@ -163,8 +273,8 @@ export function AgentOutputDialog({
           .reduce((obj, [key, value]) => {
             obj[key] = value;
             return obj;
-          }, {} as Record<string, string>);
-        
+          }, {} as Record<string, unknown>);
+
         if (Object.keys(validDecisions).length > 0) {
           // Combine with accumulated decisions, newer messages overwrite older ones for the same ticker
           return { ...acc, ...validDecisions };
@@ -191,22 +301,21 @@ export function AgentOutputDialog({
   // Get the selected decision text
   const selectedDecision = selectedTicker && allAnalysis[selectedTicker] ? allAnalysis[selectedTicker] : null;
 
-  const copyToClipboard = () => {
+  const copyToClipboard = async () => {
     if (selectedDecision) {
-      navigator.clipboard.writeText(selectedDecision)
-        .then(() => {
-          setCopySuccess(true);
-          setTimeout(() => setCopySuccess(false), 2000);
-        })
-        .catch(err => {
-          console.error('Failed to copy text: ', err);
-        });
+      const didCopy = await copyTextToClipboard(selectedDecision);
+      if (didCopy) {
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
+      } else {
+        console.error('Failed to copy text');
+      }
     }
   };
 
   return (
-    <Dialog 
-      open={isOpen} 
+    <Dialog
+      open={isOpen}
       onOpenChange={onOpenChange}
       defaultOpen={false}
       modal={true}
@@ -219,15 +328,15 @@ export function AgentOutputDialog({
           </div>
         </div>
       </DialogTrigger>
-      <DialogContent 
-        className="sm:max-w-[900px]" 
-        autoFocus={false} 
+      <DialogContent
+        className="sm:max-w-[900px]"
+        autoFocus={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle>{name}</DialogTitle>
         </DialogHeader>
-        
+
         <div className="grid grid-cols-2 gap-6 pt-4" ref={initialFocusRef} tabIndex={-1}>
           {/* Activity Log Section */}
           <div>
@@ -256,7 +365,7 @@ export function AgentOutputDialog({
               )}
             </div>
           </div>
-          
+
           {/* Analysis Section */}
           <div>
             <div className="flex justify-between items-center mb-3">
@@ -266,7 +375,7 @@ export function AgentOutputDialog({
                 {tickersWithDecisions.length > 0 && (
                   <div className="flex items-center gap-1">
                     <span className="text-xs text-muted-foreground font-medium">Ticker:</span>
-                    <select 
+                    <select
                       className="text-xs p-1 rounded bg-background border border-border cursor-pointer"
                       value={selectedTicker || ''}
                       onChange={(e) => setSelectedTicker(e.target.value)}
@@ -289,9 +398,10 @@ export function AgentOutputDialog({
                     <>
                       <div className="mb-4 pb-3 border-b border-border flex justify-between items-center">
                         <h4 className="font-semibold text-lg">{t('summaryFor')} {selectedTicker}</h4>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
                           className="h-8 text-xs relative"
                           onClick={copyToClipboard}
                         >
@@ -303,8 +413,8 @@ export function AgentOutputDialog({
                     </>
                   ) : (
                     <div className="flex items-center justify-center h-full border border-border rounded-lg bg-muted/10 text-muted-foreground">
-                      {nodeStatus === 'IN_PROGRESS' 
-                        ? t('analysisInProgress') 
+                      {nodeStatus === 'IN_PROGRESS'
+                        ? t('analysisInProgress')
                         : t('noAnalysisForTicker')}
                     </div>
                   )}
@@ -333,4 +443,4 @@ export function AgentOutputDialog({
       </DialogContent>
     </Dialog>
   );
-} 
+}

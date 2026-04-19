@@ -4,6 +4,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 import { Button } from '@/components/ui/button';
+import { copyTextToClipboard } from '@/utils/clipboard-utils';
 import {
     Dialog,
     DialogContent,
@@ -18,9 +19,9 @@ interface JsonOutputDialogProps {
   connectedAgentIds: Set<string>;
 }
 
-export function JsonOutputDialog({ 
-  isOpen, 
-  onOpenChange, 
+export function JsonOutputDialog({
+  isOpen,
+  onOpenChange,
   outputNodeData,
   connectedAgentIds
 }: JsonOutputDialogProps) {
@@ -31,13 +32,13 @@ export function JsonOutputDialog({
 
   // Convert React Flow node IDs to backend agent keys for filtering
   const connectedBackendAgentKeys = Array.from(connectedAgentIds).map(nodeId => `${nodeId}_agent`);
-  
+
   // Filter the outputNodeData to only include connected agents
   const filteredOutputData = {
     ...outputNodeData,
     analyst_signals: Object.fromEntries(
       Object.entries(outputNodeData.analyst_signals || {})
-        .filter(([agentId]) => 
+        .filter(([agentId]) =>
           agentId === 'risk_management_agent' || connectedBackendAgentKeys.includes(agentId)
         )
     )
@@ -45,15 +46,14 @@ export function JsonOutputDialog({
 
   const jsonString = JSON.stringify(filteredOutputData, null, 2);
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(jsonString)
-      .then(() => {
-        setCopySuccess(true);
-        setTimeout(() => setCopySuccess(false), 2000);
-      })
-      .catch(err => {
-        console.error('Failed to copy text: ', err);
-      });
+  const copyToClipboard = async () => {
+    const didCopy = await copyTextToClipboard(jsonString);
+    if (didCopy) {
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } else {
+      console.error('Failed to copy text');
+    }
   };
 
   const downloadJson = () => {
@@ -67,7 +67,7 @@ export function JsonOutputDialog({
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      
+
       setDownloadSuccess(true);
       setTimeout(() => setDownloadSuccess(false), 2000);
     } catch (err) {
@@ -83,6 +83,7 @@ export function JsonOutputDialog({
             JSON Output
             <div className="flex items-center gap-2">
               <Button
+                type="button"
                 variant="outline"
                 size="sm"
                 onClick={copyToClipboard}
@@ -103,7 +104,7 @@ export function JsonOutputDialog({
             </div>
           </DialogTitle>
         </DialogHeader>
-        
+
         <div className="flex-1 min-h-0 my-4 overflow-auto rounded-md border border-border bg-muted/30">
           <SyntaxHighlighter
             language="json"
@@ -126,4 +127,4 @@ export function JsonOutputDialog({
       </DialogContent>
     </Dialog>
   );
-} 
+}

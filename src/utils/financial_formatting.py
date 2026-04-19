@@ -57,6 +57,29 @@ def format_money(value: Any, currency: str | None = None, decimals: int = 2) -> 
     return f"{prefix}{compact}"
 
 
+def format_korean_won_amount(value: Any) -> str:
+    number = _safe_float(value)
+    if number is None:
+        return "N/A"
+
+    sign = "-" if number < 0 else ""
+    abs_number = abs(number)
+    jo_unit = 1_000_000_000_000
+    eok_unit = 100_000_000
+
+    if abs_number >= jo_unit:
+        jo = int(abs_number // jo_unit)
+        eok = int((abs_number % jo_unit) // eok_unit)
+        if eok:
+            return f"{sign}{jo:,}조 {eok:,}억 원"
+        return f"{sign}{jo:,}조 원"
+
+    if abs_number >= eok_unit:
+        return f"{sign}{int(abs_number // eok_unit):,}억 원"
+
+    return f"{sign}{round(abs_number):,}원"
+
+
 def format_period_note(period: Any, report_period: Any) -> str:
     period_text = str(period or "N/A").upper()
     report_text = str(report_period or "N/A")
@@ -128,9 +151,58 @@ def _normalize_graham_number_text(text: str) -> str:
     return text
 
 
+def _normalize_financial_term_text(text: str) -> str:
+    text = re.sub(r"현금으로\s*돌아오는\s*힘", "잉여현금흐름(FCF) 창출력", text)
+    text = text.replace("영업현금흐름(FCF)", "잉여현금흐름(FCF)")
+    text = re.sub(
+        r"\bD/E\b\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\s*\(([^)]+)\)",
+        r"Debt-To-Equity(부채비율) \1x (\2)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"\bD/E\b\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\b",
+        r"Debt-To-Equity(부채비율) \1x",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"\bDebt[-\s_/]*To[-\s_/]*Equity\b(?!\()",
+        "Debt-To-Equity(부채비율)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(Debt-To-Equity\(부채비율\)\s+\d+(?:\.\d+)?x)\s*\(([^)]+)\)",
+        r"\1 (\2)",
+        text,
+    )
+    return text
+
+
+def _normalize_korean_market_cap_text(text: str) -> str:
+    market_cap_pattern = re.compile(
+        r"(?P<label>시가\s*총액|시가총액|Market\s+Cap\(시가총액\))"
+        r"(?P<separator>\s*[:：]?\s*)"
+        r"(?:₩|KRW\s*)?"
+        r"(?P<number>[0-9][0-9,]{8,})"
+        r"\s*(?:원)?",
+        flags=re.IGNORECASE,
+    )
+
+    def replace_market_cap(match: re.Match[str]) -> str:
+        label = re.sub(r"\s+", "", match.group("label"))
+        number = match.group("number").replace(",", "")
+        return f"{label}: {format_korean_won_amount(number)}"
+
+    return market_cap_pattern.sub(replace_market_cap, text)
+
+
 def normalize_financial_language(text: str) -> str:
     """Repair common LLM readability errors in financial ratio prose."""
     if not isinstance(text, str):
         return text
     normalized = _normalize_ratio_text(text)
-    return _normalize_graham_number_text(normalized)
+    normalized = _normalize_graham_number_text(normalized)
+    normalized = _normalize_financial_term_text(normalized)
+    return _normalize_korean_market_cap_text(normalized)

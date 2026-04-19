@@ -23,7 +23,10 @@ RATIO_SCALE_REQUIREMENT = (
     "Use exactly two decimals for x-ratios, for example D/E 0.20x and Current Ratio 1.21x. "
     "Only convert a ratio to a percentage when explicitly labeling it as a percentage, and never confuse debt_to_equity with liabilities_to_assets. "
     "Always label the period and report period for quantitative evidence, for example TTM, Report Period 2026-02-28 or Annual, Report Period FY2025. "
-    "When writing Korean output, introduce important English financial terms in Title Case with Korean translation in parentheses, for example Margin Of Safety(안전마진), Current Ratio(유동비율), and Debt-To-Equity(부채비율)."
+    "When writing Korean output, use official financial terms first and add plain-language explanation only after the term. "
+    "Do not use colloquial phrases such as '현금으로 돌아오는 힘'; write Free Cash Flow(잉여현금흐름), Free Cash Flow Yield(FCF 수익률), Cash Conversion(현금전환율), or Cash Flow Generation(현금흐름 창출력). "
+    "Introduce important English financial terms in Title Case with Korean translation in parentheses, for example Margin Of Safety(안전마진), Current Ratio(유동비율), and Debt-To-Equity(부채비율). "
+    "For Korean-company KRW values such as Market Cap(시가총액), use 조/억 원 units instead of long raw numbers."
 )
 CROSS_CHECK_GUIDE_REQUIREMENT = """[추가 지시사항: 원문 대조 가이드 작성]
 당신은 자신의 투자 철학에 따라 기업을 분석한 후, 최종 의사결정권자(사용자)가 원본 사업보고서(SEC 10-K 또는 DART)를 직접 읽으며 당신의 분석을 검증할 수 있도록 돕는 '크로스체크 가이드'를 함께 제출해야 합니다.

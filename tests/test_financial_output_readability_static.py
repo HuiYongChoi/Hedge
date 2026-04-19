@@ -18,11 +18,29 @@ def test_financial_language_normalizer_repairs_lost_ratio_decimals() -> None:
 
     normalized = normalize_financial_language(raw)
 
-    assert "D/E 0.47x" in normalized
+    assert "Debt-To-Equity(부채비율) 0.47x" in normalized
     assert "Current Ratio 1.21x" in normalized
-    assert "Debt-To-Equity 0.12x" in normalized
+    assert "Debt-To-Equity(부채비율) 0.12x" in normalized
     assert "그레이엄 넘버(212.35)" in normalized
     assert "21235" not in normalized
+
+
+def test_financial_language_normalizer_uses_formal_terms_and_korean_money_units() -> None:
+    from src.utils.financial_formatting import normalize_financial_language
+
+    raw = (
+        "현금으로 돌아오는 힘이 약하고 D/E 0.06x(낮음). "
+        "영업현금흐름(FCF) 수익률이 낮다. 시가총액 123456789000원."
+    )
+
+    normalized = normalize_financial_language(raw)
+
+    assert "잉여현금흐름(FCF) 창출력" in normalized
+    assert "잉여현금흐름(FCF) 수익률" in normalized
+    assert "Debt-To-Equity(부채비율) 0.06x (낮음)" in normalized
+    assert "1,234억 원" in normalized
+    assert "현금으로 돌아오는 힘" not in normalized
+    assert "영업현금흐름(FCF)" not in normalized
 
 
 def test_llm_output_postprocessing_applies_financial_language_normalizer() -> None:
@@ -32,6 +50,8 @@ def test_llm_output_postprocessing_applies_financial_language_normalizer() -> No
     assert "normalize_financial_language" in source[source.index("def ensure_korean_default_texts") :]
     assert "Use exactly two decimals for x-ratios" in source
     assert "label the period and report period" in source
+    assert "official financial terms" in source
+    assert "조/억 원" in source
 
 
 def test_buffett_prompt_includes_formatted_evidence_period_and_valuation_fallback() -> None:
