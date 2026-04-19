@@ -98,8 +98,9 @@ def ben_graham_agent(state: AgentState, agent_id: str = "ben_graham_agent"):
             "strength_analysis": strength_analysis,
             "valuation_analysis": valuation_analysis,
             "metric_scale_notes": (
-                "Financial ratios are x-ratios, not whole-number percentages. "
-                "For example, debt_to_equity 0.11 means 0.11x and current_ratio 0.98 means 0.98x. "
+                "Financial ratios use the source decimal exactly as provided. "
+                "Debt-To-Equity is a proportion, so render it without the 'x' suffix (e.g., 0.11). "
+                "Multiplier-style ratios such as Current Ratio keep their 'x' suffix (e.g., 0.98x). "
                 "Liabilities-to-assets is a separate balance-sheet ratio and must not be described as debt-to-equity."
             ),
         }
@@ -229,12 +230,12 @@ def analyze_financial_strength(financial_line_items: list) -> dict:
     if debt_to_equity is not None:
         if debt_to_equity <= 0.5:
             score += 2
-            details.append(f"Debt-to-equity = {debt_to_equity:.2f}x (<=0.50x: conservative leverage).")
+            details.append(f"Debt-to-equity = {debt_to_equity:.2f} (<=0.50: conservative leverage).")
         elif debt_to_equity <= 1.0:
             score += 1
-            details.append(f"Debt-to-equity = {debt_to_equity:.2f}x (<=1.00x: acceptable but not ideal).")
+            details.append(f"Debt-to-equity = {debt_to_equity:.2f} (<=1.00: acceptable but not ideal).")
         else:
-            details.append(f"Debt-to-equity = {debt_to_equity:.2f}x (>1.00x: high leverage by Graham standards).")
+            details.append(f"Debt-to-equity = {debt_to_equity:.2f} (>1.00: high leverage by Graham standards).")
     else:
         details.append("Debt-to-equity = N/A (missing total_debt or shareholders_equity).")
 
@@ -400,7 +401,8 @@ def generate_graham_output(
             For example, if bearish: "Despite consistent earnings, the current price of $50 exceeds our calculated Graham Number of $35, offering no margin of safety. Additionally, the current ratio of only 1.2 falls below Graham's preferred 2.0 threshold..."
 
             Ratio interpretation guard:
-            - debt_to_equity, current_ratio, quick_ratio, and liabilities_to_assets are x-ratios. Keep the decimal point.
+            - debt_to_equity is a proportion: render as a plain decimal without 'x' (e.g., 0.11). Keep two decimal places.
+            - current_ratio, quick_ratio, and liabilities_to_assets are multiplier-style x-ratios. Keep the decimal point and the 'x' suffix.
             - Debt-to-equity uses total_debt / shareholders_equity.
             - Liabilities-to-assets uses total_liabilities / total_assets and is not the same as debt-to-equity.
             - Do not call liabilities-to-assets "D/E" or infer high interest-bearing debt from it alone.

@@ -33,6 +33,19 @@ def format_x_ratio(value: Any, decimals: int = 2) -> str:
     return f"{number:.{decimals}f}x"
 
 
+def format_leverage_ratio(value: Any, decimals: int = 2) -> str:
+    """Format leverage-style ratios (e.g., Debt-To-Equity) as a plain decimal.
+
+    Avoids the misleading ``x`` suffix used by ``format_x_ratio`` because
+    Debt/Equity is a proportion, not a multiplier — ``0.11`` is clearer than
+    ``0.11x``.
+    """
+    number = _safe_float(value)
+    if number is None:
+        return "N/A"
+    return f"{number:.{decimals}f}"
+
+
 def format_percent(value: Any, decimals: int = 1) -> str:
     number = _safe_float(value)
     if number is None:
@@ -154,15 +167,16 @@ def _normalize_graham_number_text(text: str) -> str:
 def _normalize_financial_term_text(text: str) -> str:
     text = re.sub(r"현금으로\s*돌아오는\s*힘", "잉여현금흐름(FCF) 창출력", text)
     text = text.replace("영업현금흐름(FCF)", "잉여현금흐름(FCF)")
+    # Strip the misleading "x" suffix from Debt-To-Equity values; D/E is a proportion, not a multiplier.
     text = re.sub(
         r"\bD/E\b\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\s*\(([^)]+)\)",
-        r"Debt-To-Equity(부채비율) \1x (\2)",
+        r"Debt-To-Equity(부채비율) \1 (\2)",
         text,
         flags=re.IGNORECASE,
     )
     text = re.sub(
         r"\bD/E\b\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\b",
-        r"Debt-To-Equity(부채비율) \1x",
+        r"Debt-To-Equity(부채비율) \1",
         text,
         flags=re.IGNORECASE,
     )
@@ -172,8 +186,15 @@ def _normalize_financial_term_text(text: str) -> str:
         text,
         flags=re.IGNORECASE,
     )
+    # Remove residual 'x' suffix that may have been emitted directly after the localized label.
     text = re.sub(
-        r"(Debt-To-Equity\(부채비율\)\s+\d+(?:\.\d+)?x)\s*\(([^)]+)\)",
+        r"(Debt-To-Equity\(부채비율\)\s*[:=]?\s*)(\d+(?:\.\d+)?)\s*x\b",
+        r"\1\2",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(Debt-To-Equity\(부채비율\)\s+\d+(?:\.\d+)?)\s*\(([^)]+)\)",
         r"\1 (\2)",
         text,
     )

@@ -7,12 +7,12 @@ import {
 } from '@/components/ui/dialog';
 import { useNodeContext } from '@/contexts/node-context';
 import { useLanguage } from '@/contexts/language-context';
-import { formatTimeFromTimestamp } from '@/utils/date-utils';
 import { copyTextToClipboard, stringifyClipboardValue } from '@/utils/clipboard-utils';
 import { formatTextIntoParagraphs, isJsonString } from '@/utils/text-utils';
 import { AlignJustify, Copy, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { AgentFormulaToggle } from '@/components/ui/agent-formula-tooltip';
 
 /** Converts snake_case / camelCase key to a readable label */
 function toReadableKey(key: string, t: any): string {
@@ -68,12 +68,21 @@ function normalizeFinancialDisplayText(text: string): string {
     .replace(/현금으로\s*돌아오는\s*힘/g, '잉여현금흐름(FCF) 창출력')
     .replace(/영업현금흐름\(FCF\)/g, '잉여현금흐름(FCF)')
     .replace(/\bNet\s+cash\b/gi, '순현금(Net Cash)')
-    .replace(/\bD\/E\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\s*\(([^)]+)\)/gi, 'Debt-To-Equity(부채비율): $1x ($2)')
-    .replace(/\bD\/E\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\b/gi, 'Debt-To-Equity(부채비율): $1x')
-    .replace(/(Debt-To-Equity\(부채비율\):?\s*\d+(?:\.\d+)?x)\s*\(([^)]+)\)/g, '$1 ($2)')
+    // Remove trailing 'x' from Debt-To-Equity expressions (e.g. 0.11x -> 0.11)
+    .replace(/\bD\/E\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\s*\(([^)]+)\)/gi, 'Debt-To-Equity(부채비율): $1 ($2)')
+    .replace(/\bD\/E\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\b/gi, 'Debt-To-Equity(부채비율): $1')
+    .replace(/(Debt-To-Equity\(부채비율\):?\s*)(\d+(?:\.\d+)?)\s*x\b/gi, '$1$2')
+    .replace(/(부채비율[^\d]{0,4})(\d+(?:\.\d+)?)\s*x\b/g, '$1$2')
+    .replace(/(Debt-To-Equity\(부채비율\):?\s*\d+(?:\.\d+)?)\s*\(([^)]+)\)/g, '$1 ($2)')
+    // Any large number suffixed with 원 -> convert to 조/억 units for readability
     .replace(
-      /(시가\s*총액|시가총액|Market Cap\(시가총액\))\s*[:：]?\s*(₩|KRW\s*)?([0-9][0-9,]{8,})\s*(원)?/gi,
-      (_match, label: string, _currency: string, rawNumber: string) => `${label.replace(/\s+/g, '')}: ${formatKoreanWonAmount(rawNumber)}`,
+      /(?:~|약\s*)?(₩|KRW\s*)?([0-9]{1,3}(?:[,\s][0-9]{3}){2,}(?:\.\d+)?|[0-9]{9,}(?:\.\d+)?)\s*원/gi,
+      (_match, _currency: string | undefined, rawNumber: string) => formatKoreanWonAmount(rawNumber.replace(/[,\s]/g, '')),
+    )
+    // Market Cap / Intrinsic Value label with explicit KRW / ₩ prefix
+    .replace(
+      /(시가\s*총액|시가총액|Market Cap\(시가총액\)|Market Cap|Intrinsic Value\(내재가치\)|Intrinsic Value|내재가치)\s*[:：]?\s*(?:~|약\s*)?(₩|KRW\s+)([0-9]{1,3}(?:[,\s][0-9]{3})+(?:\.\d+)?|[0-9]{9,}(?:\.\d+)?)/gi,
+      (_match, label: string, _currency: string, rawNumber: string) => `${label.replace(/\s+/g, ' ').trim()}: ${formatKoreanWonAmount(rawNumber.replace(/[,\s]/g, ''))}`,
     );
 }
 
@@ -259,7 +268,7 @@ export function AgentOutputDialog({
   const [copySuccess, setCopySuccess] = useState(false);
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const initialFocusRef = useRef<HTMLDivElement>(null);
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   // Collect all analysis from all messages into a single analysis dictionary
   const allAnalysis = messages
@@ -329,115 +338,85 @@ export function AgentOutputDialog({
         </div>
       </DialogTrigger>
       <DialogContent
-        className="sm:max-w-[900px]"
+        className="sm:max-w-[1200px] w-[95vw] max-h-[90vh] overflow-hidden flex flex-col"
         autoFocus={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <DialogHeader>
-          <DialogTitle>{name}</DialogTitle>
+        <DialogHeader className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <DialogTitle className="text-xl">{name}</DialogTitle>
+          </div>
+          <AgentFormulaToggle agentKey={nodeId} language={language as 'ko' | 'en'} />
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-6 pt-4" ref={initialFocusRef} tabIndex={-1}>
-          {/* Activity Log Section */}
-          <div>
-            <h3 className="font-medium mb-3 text-primary">{t('log')}</h3>
-            <div className="h-[400px] overflow-y-auto border border-border rounded-lg p-3">
-              {messages.length > 0 ? (
-                <div className="p-3 space-y-3">
-                  {messages
-                    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()) // Sort newest first for log
-                    .map((msg, idx) => (
-                    <div key={idx} className="border-l-2 border-primary pl-3 text-sm">
-                      <div className="text-foreground">
-                        {msg.ticker && <span>[{msg.ticker}] </span>}
-                        {msg.message}
-                      </div>
-                      <div className="text-muted-foreground">
-                        {formatTimeFromTimestamp(msg.timestamp)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  {t('noActivity')}
+        <div className="pt-2 flex-1 min-h-0 flex flex-col" ref={initialFocusRef} tabIndex={-1}>
+          {/* Analysis Section (full width — log panel removed for readability) */}
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-medium text-primary">{t('analysis')}</h3>
+            <div className="flex items-center gap-2">
+              {tickersWithDecisions.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-muted-foreground font-medium">Ticker:</span>
+                  <select
+                    className="text-xs p-1 rounded bg-background border border-border cursor-pointer"
+                    value={selectedTicker || ''}
+                    onChange={(e) => setSelectedTicker(e.target.value)}
+                    autoFocus={false}
+                  >
+                    {tickersWithDecisions.map((ticker) => (
+                      <option key={ticker} value={ticker}>
+                        {ticker}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
             </div>
           </div>
-
-          {/* Analysis Section */}
-          <div>
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="font-medium text-primary">{t('analysis')}</h3>
-              <div className="flex items-center gap-2">
-                {/* Ticker selector */}
-                {tickersWithDecisions.length > 0 && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-muted-foreground font-medium">Ticker:</span>
-                    <select
-                      className="text-xs p-1 rounded bg-background border border-border cursor-pointer"
-                      value={selectedTicker || ''}
-                      onChange={(e) => setSelectedTicker(e.target.value)}
-                      autoFocus={false}
+          <div className="flex-1 min-h-0 overflow-y-auto border border-border rounded-lg p-4 bg-muted/10">
+            {tickersWithDecisions.length > 0 ? (
+              selectedDecision ? (
+                <>
+                  <div className="mb-4 pb-3 border-b border-border flex justify-between items-center">
+                    <h4 className="font-semibold text-lg">{t('summaryFor')} {selectedTicker}</h4>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs relative"
+                      onClick={copyToClipboard}
                     >
-                      {tickersWithDecisions.map((ticker) => (
-                        <option key={ticker} value={ticker}>
-                          {ticker}
-                        </option>
-                      ))}
-                    </select>
+                      <Copy className="h-3 w-3 mr-1" />
+                      {copySuccess ? t('copied') : t('copy')}
+                    </Button>
                   </div>
-                )}
-              </div>
-            </div>
-            <div className="h-[400px] overflow-y-auto border border-border rounded-lg p-3">
-              {tickersWithDecisions.length > 0 ? (
-                <div className="p-4 border border-border rounded-lg bg-muted/10 h-[400px] overflow-y-auto">
-                  {selectedDecision ? (
-                    <>
-                      <div className="mb-4 pb-3 border-b border-border flex justify-between items-center">
-                        <h4 className="font-semibold text-lg">{t('summaryFor')} {selectedTicker}</h4>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8 text-xs relative"
-                          onClick={copyToClipboard}
-                        >
-                          <Copy className="h-3 w-3 mr-1" />
-                          {copySuccess ? t('copied') : t('copy')}
-                        </Button>
-                      </div>
-                      <AnalysisView content={selectedDecision} />
-                    </>
-                  ) : (
-                    <div className="flex items-center justify-center h-full border border-border rounded-lg bg-muted/10 text-muted-foreground">
-                      {nodeStatus === 'IN_PROGRESS'
-                        ? t('analysisInProgress')
-                        : t('noAnalysisForTicker')}
-                    </div>
-                  )}
-                </div>
-              ) : nodeStatus === 'IN_PROGRESS' ? (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                  Analysis in progress...
-                </div>
-              ) : nodeStatus === 'COMPLETE' ? (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  Analysis completed with no results
-                </div>
-              ) : nodeStatus === 'ERROR' ? (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  Analysis failed
-                </div>
+                  <AnalysisView content={selectedDecision} />
+                </>
               ) : (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
-                  No analysis available
+                  {nodeStatus === 'IN_PROGRESS'
+                    ? t('analysisInProgress')
+                    : t('noAnalysisForTicker')}
                 </div>
-              )}
-            </div>
+              )
+            ) : nodeStatus === 'IN_PROGRESS' ? (
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                Analysis in progress...
+              </div>
+            ) : nodeStatus === 'COMPLETE' ? (
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                Analysis completed with no results
+              </div>
+            ) : nodeStatus === 'ERROR' ? (
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                Analysis failed
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                No analysis available
+              </div>
+            )}
           </div>
         </div>
       </DialogContent>

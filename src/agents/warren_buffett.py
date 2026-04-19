@@ -8,7 +8,7 @@ from src.tools.api import get_financial_metrics, get_market_cap, search_line_ite
 from src.utils.llm import call_llm
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
-from src.utils.financial_formatting import format_money, format_percent, format_period_note, format_x_ratio
+from src.utils.financial_formatting import format_leverage_ratio, format_money, format_percent, format_period_note, format_x_ratio
 
 
 class WarrenBuffettSignal(BaseModel):
@@ -667,7 +667,7 @@ def build_buffett_evidence_summary(analysis_data: dict[str, any]) -> dict[str, a
         "formatted_evidence": {
             "Return On Equity(자기자본이익률)": format_percent(metrics.get("return_on_equity")),
             "Operating Margin(영업이익률)": format_percent(metrics.get("operating_margin")),
-            "Debt-To-Equity(부채비율)": format_x_ratio(metrics.get("debt_to_equity")),
+            "Debt-To-Equity(부채비율)": format_leverage_ratio(metrics.get("debt_to_equity")),
             "Current Ratio(유동비율)": format_x_ratio(metrics.get("current_ratio")),
             "Free Cash Flow Yield(잉여현금흐름수익률)": format_percent(metrics.get("free_cash_flow_yield")),
         },
