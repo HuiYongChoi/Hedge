@@ -11,12 +11,36 @@ def test_call_llm_injects_report_quality_requirement() -> None:
     source = LLM_SOURCE.read_text(encoding="utf-8")
 
     assert "REPORT_QUALITY_REQUIREMENT" in source
+    assert "DEBT_QUALITY_REQUIREMENT" in source
     assert "기존의 짧은 글자 수 제한보다 우선합니다" in source
     assert "### 핵심 판단" in source
     assert "### 핵심 근거" in source
     assert "### 리스크와 반대 근거" in source
+    assert "### 검토 필요 항목" in source
     assert "REPORT_QUALITY_REQUIREMENT" in source[source.index("def _make_system_message") :]
     assert "REPORT_QUALITY_REQUIREMENT" in source[source.index("def _append_korean_requirement_to_text") :]
+    assert "DEBT_QUALITY_REQUIREMENT" in source[source.index("def _make_system_message") :]
+    assert "DEBT_QUALITY_REQUIREMENT" in source[source.index("def _append_korean_requirement_to_text") :]
+
+
+def test_call_llm_injects_debt_quality_requirement_with_supported_limits() -> None:
+    source = LLM_SOURCE.read_text(encoding="utf-8")
+
+    for phrase in [
+        "착한 부채",
+        "나쁜 부채",
+        "Debt-To-Equity",
+        "ROIC",
+        "interest_coverage",
+        "operating_cash_flow",
+        "free_cash_flow",
+        "capital_expenditure",
+        "부채 사용 목적",
+        "M&A",
+        "검토 필요 항목",
+        "Never invent numbers",
+    ]:
+        assert phrase in source
 
 
 def test_compact_agent_prompts_do_not_cap_reasoning_length() -> None:
@@ -43,6 +67,7 @@ def test_compact_agent_prompts_do_not_cap_reasoning_length() -> None:
         "핵심 판단",
         "핵심 근거",
         "리스크와 반대 근거",
+        "검토 필요 항목",
     ]:
         assert required in combined
 

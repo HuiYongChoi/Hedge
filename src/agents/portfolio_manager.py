@@ -450,11 +450,13 @@ def generate_trading_decision(
             "각 종목별로 애널리스트 신호와 검증된 거래 상한이 주어집니다.\n"
             "백테스트 시뮬레이션을 위해 허용된 행동 중 하나를 선택하고 거래 크기는 상한 이하로 설정하세요.\n"
             "reasoning은 한국어로 structured, decision-grade reasoning 형태로 작성하세요.\n"
-            "반드시 ### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거 섹션을 포함하세요.\n"
+            "반드시 ### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거, ### 검토 필요 항목 섹션을 포함하세요.\n"
             "에이전트 신호의 합의/불일치, 신뢰도, 허용 행동 제약을 함께 설명하세요.\n"
             "Decision context의 analyst_evidence와 risk_constraints에 있는 전처리 정량 근거를 활용하세요.\n"
             "Decision context에 정량 근거가 있으면 정량 데이터가 제공되지 않았다고 쓰지 마세요.\n"
             "원문 재무제표 직접 수치가 없는 경우에도 에이전트가 계산한 전처리 지표는 구분해서 인용하세요.\n"
+            "부채 평가는 Debt-To-Equity(부채비율)의 절대값만으로 단정하지 말고, Decision context에 있는 ROIC, 이자보상배율, 현금흐름 근거가 있을 때만 착한 부채 또는 나쁜 부채로 구분하세요.\n"
+            "산업/비즈니스 모델, 부채 사용 목적, M&A 시너지처럼 확인되지 않은 항목은 ### 검토 필요 항목에 작성하세요.\n"
             "현금이나 마진 계산은 하지 마세요. JSON만 반환하세요."
         )
     elif is_backtest_run:
@@ -463,11 +465,13 @@ def generate_trading_decision(
             "Inputs per ticker: analyst signals and allowed actions with an already validated maximum trade size.\n"
             "For the backtest simulation, pick one allowed action per ticker and keep the trade size within that limit.\n"
             "Write structured, decision-grade reasoning in Korean using sections: "
-            "### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거. "
+            "### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거, ### 검토 필요 항목. "
             "Explain signal consensus/disagreement, confidence, and allowed-action constraints. "
             "Use preprocessed quantitative evidence in Decision context analyst_evidence and risk_constraints. "
             "Do not claim quantitative data was not provided when Decision context contains analyst evidence or risk constraints. "
             "If raw filing figures are absent, distinguish that from agent-computed preprocessed metrics. "
+            "For debt quality, do not judge only by Debt-To-Equity; classify 착한 부채 or 나쁜 부채 only when ROIC, 이자보상배율, and cash-flow evidence support it. "
+            "Put unverified 산업/비즈니스 모델, 부채 사용 목적, or M&A synergy assumptions under ### 검토 필요 항목. "
             "No cash or margin math. Return JSON only."
         )
     elif language == 'ko':
@@ -478,9 +482,11 @@ def generate_trading_decision(
             "quantity is a schema-compatibility placeholder; 항상 0으로 반환하세요.\n"
             "reasoning must not mention order quantity, allowed_actions, max_shares, 거래 가능 여부, 현금 부족, 포지션 한도, 주문 크기.\n"
             "reasoning은 한국어로 structured, decision-grade reasoning 형태로 작성하세요.\n"
-            "반드시 ### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거 섹션을 포함하세요.\n"
+            "반드시 ### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거, ### 검토 필요 항목 섹션을 포함하세요.\n"
             "에이전트 신호의 합의/불일치, 신뢰도, 전처리 정량 근거를 중심으로 설명하세요.\n"
             "Decision context에 정량 근거가 있으면 정량 데이터가 제공되지 않았다고 쓰지 마세요.\n"
+            "부채 평가는 Debt-To-Equity(부채비율)의 절대값만으로 단정하지 말고, Decision context에 있는 ROIC, 이자보상배율, 현금흐름 근거가 있을 때만 착한 부채 또는 나쁜 부채로 구분하세요.\n"
+            "산업/비즈니스 모델, 부채 사용 목적, M&A 시너지처럼 확인되지 않은 항목은 ### 검토 필요 항목에 작성하세요.\n"
             "JSON만 반환하세요."
         )
     else:
@@ -491,9 +497,11 @@ def generate_trading_decision(
             "quantity is a schema-compatibility placeholder; always return 0.\n"
             "reasoning must not mention order quantity, allowed_actions, max_shares, trade availability, cash shortage, position limits, or order size.\n"
             "Write structured, decision-grade reasoning in English using sections: "
-            "### Core Judgment, ### Key Evidence, ### Risks And Counterarguments. "
+            "### Core Judgment, ### Key Evidence, ### Risks And Counterarguments, and ### 검토 필요 항목 when unsupported debt-quality assumptions remain. "
             "Explain signal consensus/disagreement, confidence, and preprocessed quantitative evidence. "
             "Do not claim quantitative data was not provided when Decision context contains analyst evidence or risk constraints. "
+            "For debt quality, do not judge only by Debt-To-Equity; classify 착한 부채 or 나쁜 부채 only when ROIC, 이자보상배율, and cash-flow evidence support it. "
+            "Put unverified 산업/비즈니스 모델, 부채 사용 목적, or M&A synergy assumptions under ### 검토 필요 항목. "
             "Return JSON only."
         )
 
