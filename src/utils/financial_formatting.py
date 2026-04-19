@@ -206,14 +206,18 @@ def _normalize_korean_market_cap_text(text: str) -> str:
         r"(?P<label>시가\s*총액|시가총액|Market\s+Cap\(시가총액\))"
         r"(?P<separator>\s*[:：]?\s*)"
         r"(?:₩|KRW\s*)?"
-        r"(?P<number>[0-9][0-9,]{8,})"
+        r"(?P<number>(?:[0-9]{1,3}(?:,[0-9]{3}){2,}|[0-9]{9,})(?:\.\d+)?)"
         r"\s*(?:원)?",
         flags=re.IGNORECASE,
     )
 
     def replace_market_cap(match: re.Match[str]) -> str:
         label = re.sub(r"\s+", "", match.group("label"))
-        number = match.group("number").replace(",", "")
+        raw_number = match.group("number")
+        integer_digits = re.sub(r"\D", "", raw_number.split(".", 1)[0])
+        if len(integer_digits) < 9:
+            return match.group(0)
+        number = raw_number.replace(",", "")
         return f"{label}: {format_korean_won_amount(number)}"
 
     return market_cap_pattern.sub(replace_market_cap, text)

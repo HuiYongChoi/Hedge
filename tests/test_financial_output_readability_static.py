@@ -18,9 +18,9 @@ def test_financial_language_normalizer_repairs_lost_ratio_decimals() -> None:
 
     normalized = normalize_financial_language(raw)
 
-    assert "Debt-To-Equity(부채비율) 0.47x" in normalized
+    assert "Debt-To-Equity(부채비율) 0.47" in normalized
     assert "Current Ratio 1.21x" in normalized
-    assert "Debt-To-Equity(부채비율) 0.12x" in normalized
+    assert "Debt-To-Equity(부채비율) 0.12" in normalized
     assert "그레이엄 넘버(212.35)" in normalized
     assert "21235" not in normalized
 
@@ -37,10 +37,19 @@ def test_financial_language_normalizer_uses_formal_terms_and_korean_money_units(
 
     assert "잉여현금흐름(FCF) 창출력" in normalized
     assert "잉여현금흐름(FCF) 수익률" in normalized
-    assert "Debt-To-Equity(부채비율) 0.06x (낮음)" in normalized
+    assert "Debt-To-Equity(부채비율) 0.06 (낮음)" in normalized
     assert "1,234억 원" in normalized
     assert "현금으로 돌아오는 힘" not in normalized
     assert "영업현금흐름(FCF)" not in normalized
+
+
+def test_financial_language_normalizer_handles_decimal_korean_won_amounts() -> None:
+    from src.utils.financial_formatting import normalize_financial_language
+
+    normalized = normalize_financial_language("시가총액 62,863,252,250.34원")
+
+    assert normalized == "시가총액: 628억 원"
+    assert ".34원" not in normalized
 
 
 def test_llm_output_postprocessing_applies_financial_language_normalizer() -> None:
@@ -86,10 +95,12 @@ def test_graham_output_keeps_decimal_graham_number_and_structured_metrics() -> N
 
 def test_agent_result_cards_expose_formula_tooltips_next_to_agent_name() -> None:
     source = STOCK_SEARCH_TAB.read_text(encoding="utf-8")
+    guide_source = (ROOT / "app/frontend/src/components/ui/agent-formula-tooltip.tsx").read_text(encoding="utf-8")
 
-    assert "function AgentFormulaTooltip" in source
-    assert "getAgentFormulaGuide" in source
-    assert "Owner Earnings(소유자 이익)" in source
-    assert "Margin Of Safety(안전마진)" in source
-    assert "Graham Number(그레이엄 넘버)" in source
+    assert "from '@/components/ui/agent-formula-tooltip'" in source
+    assert "export function AgentFormulaTooltip" in guide_source
+    assert "getAgentFormulaGuide" in guide_source
+    assert "Owner Earnings(소유자 이익)" in guide_source
+    assert "Margin Of Safety(안전마진)" in guide_source
+    assert "Graham Number(그레이엄 넘버)" in guide_source
     assert "<AgentFormulaTooltip agentKey={result.agentKey} language={language} />" in source
