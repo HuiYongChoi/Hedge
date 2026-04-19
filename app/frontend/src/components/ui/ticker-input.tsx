@@ -73,6 +73,33 @@ export function resolveTickerValue(input: string): string {
   return KOREAN_NAME_TO_TICKER[trimmed] || trimmed;
 }
 
+function getTermFromValue(inputValue: string): string {
+  const parts = inputValue.split(',');
+  return parts[parts.length - 1].trim();
+}
+
+function getSuggestionInsertValue(suggestion: TickerSuggestion): string {
+  return suggestion.market === 'KR' ? suggestion.name : suggestion.ticker;
+}
+
+function normalizeAutocompleteToken(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
+function isExactSuggestionMatch(term: string, suggestionList: TickerSuggestion[]): boolean {
+  const normalizedTerm = normalizeAutocompleteToken(term);
+  if (!normalizedTerm) return false;
+
+  return suggestionList.some(suggestion => {
+    const values = [getSuggestionInsertValue(suggestion), suggestion.ticker, suggestion.name];
+    return values.some(value => normalizeAutocompleteToken(value) === normalizedTerm);
+  });
+}
+
+function hasCompletedSuggestion(term: string, suggestionList: TickerSuggestion[]): boolean {
+  return isExactSuggestionMatch(term, suggestionList);
+}
+
 function MarketBadge({ market }: { market?: string }) {
   if (!market || market === 'GLOBAL') return null;
   const isKR = market === 'KR';
@@ -102,17 +129,13 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const skipBlurRef = useRef(false);
+  const isComposingRef = useRef(false);
   // 선택 직후 다음 fetchSuggestions를 건너뛰기 위한 플래그
   const skipNextFetchRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const getCurrentTerm = () => {
-    const parts = value.split(',');
-    return parts[parts.length - 1].trim();
-  };
-
-  const currentTerm = getCurrentTerm();
+  const currentTerm = getTermFromValue(value);
 
   // 정적 fallback 필터 (API 응답 전 즉시 표시)
   const getStaticSuggestions = (term: string): TickerSuggestion[] => {
@@ -124,20 +147,27 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
   };
 
   const fetchSuggestions = (term: string) => {
+    if (abortRef.current) abortRef.current.abort();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
     if (term.length < 1) {
       setSuggestions([]);
       setOpen(false);
+      setActiveIdx(-1);
       return;
     }
 
     // 즉시 정적 결과 표시
     const staticResults = getStaticSuggestions(term);
+    if (hasCompletedSuggestion(term, staticResults)) {
+      setSuggestions([]);
+      setOpen(false);
+      setActiveIdx(-1);
+      return;
+    }
+
     setSuggestions(staticResults);
     if (staticResults.length > 0) setOpen(true);
-
-    // 기존 요청 취소
-    if (abortRef.current) abortRef.current.abort();
-    if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(async () => {
       abortRef.current = new AbortController();
@@ -149,6 +179,16 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
         );
         if (!res.ok) throw new Error('Search failed');
         const data: TickerSuggestion[] = await res.json();
+        const liveTerm = getTermFromValue(inputRef.current?.value ?? value);
+        if (normalizeAutocompleteToken(liveTerm) !== normalizeAutocompleteToken(term)) {
+          return;
+        }
+        if (hasCompletedSuggestion(term, data)) {
+          setSuggestions([]);
+          setOpen(false);
+          setActiveIdx(-1);
+          return;
+        }
         if (data.length > 0) {
           setSuggestions(data);
           setOpen(true);
@@ -183,7 +223,7 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
     };
   }, [currentTerm]);
 
-  const showDropdown = open && suggestions.length > 0;
+  const showDropdown = open && suggestions.length > 0 && !isExactSuggestionMatch(currentTerm, suggestions);
 
   /**
    * 제안 선택 처리:
@@ -194,9 +234,13 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
     skipBlurRef.current = true;
     skipNextFetchRef.current = true;
 
-    const insertValue = suggestion.market === 'KR' ? suggestion.name : suggestion.ticker;
+    if (abortRef.current) abortRef.current.abort();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
 
-    const parts = value.split(',');
+    const insertValue = getSuggestionInsertValue(suggestion);
+
+    const currentValue = inputRef.current?.value ?? value;
+    const parts = currentValue.split(',');
     parts[parts.length - 1] = insertValue;
     onChange(parts.map(p => p.trim()).join(','));
     setOpen(false);
@@ -214,6 +258,13 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const isComposing = isComposingRef.current || e.nativeEvent.isComposing;
+    if (isComposing) {
+      if (['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) {
+        return;
+      }
+    }
+
     if (showDropdown) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -245,6 +296,25 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
     onKeyDown?.(e);
   };
 
+  const handleCompositionStart = () => {
+    isComposingRef.current = true;
+  };
+
+  const handleCompositionEnd = (e: React.CompositionEvent<HTMLInputElement>) => {
+    isComposingRef.current = false;
+    const nextValue = e.currentTarget.value;
+    onChange(nextValue);
+
+    const term = getTermFromValue(nextValue);
+    if (term.length >= 1) {
+      fetchSuggestions(term);
+    } else {
+      setSuggestions([]);
+      setOpen(false);
+      setActiveIdx(-1);
+    }
+  };
+
   const handleBlur = () => {
     if (skipBlurRef.current) return;
     setTimeout(() => setOpen(false), 150);
@@ -257,10 +327,9 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
-        onFocus={() => {
-          const term = value.split(',').pop()?.trim() || '';
-          if (term.length >= 1 && suggestions.length > 0) setOpen(true);
-        }}
+        onCompositionStart={handleCompositionStart}
+        onCompositionEnd={handleCompositionEnd}
+        onFocus={() => {}}
         onBlur={handleBlur}
         placeholder={placeholder}
         className={`${className || ''} ${value ? 'pr-8' : ''}`}
