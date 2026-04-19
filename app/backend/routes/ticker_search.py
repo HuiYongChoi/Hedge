@@ -63,6 +63,7 @@ KOREAN_STOCKS = [
     {"ticker": "006800.KS", "name": "미래에셋증권", "market": "KR"},
     {"ticker": "005940.KS", "name": "NH투자증권", "market": "KR"},
     {"ticker": "016360.KS", "name": "삼성증권", "market": "KR"},
+    {"ticker": "211050.KQ", "name": "인카금융서비스", "market": "KR"},
     {"ticker": "024110.KS", "name": "IBK기업은행", "market": "KR"},
     {"ticker": "000720.KS", "name": "현대건설", "market": "KR"},
     {"ticker": "006360.KS", "name": "GS건설", "market": "KR"},
@@ -139,6 +140,8 @@ KOREAN_STOCKS = [
     {"ticker": "064350.KQ", "name": "현대로템", "market": "KR"},
 ]
 
+_KOREAN_LISTING_CACHE: Optional[list[dict]] = None
+
 
 def _is_korean(text: str) -> bool:
     return any('\uAC00' <= c <= '\uD7A3' for c in text)
@@ -147,6 +150,67 @@ def _is_korean(text: str) -> bool:
 def _is_ticker_pattern(text: str) -> bool:
     """6자리 숫자는 한국 종목코드 패턴"""
     return text.isdigit() and len(text) <= 6
+
+
+def _suffix_for_pykrx_market(market_code: str) -> Optional[str]:
+    normalized = (market_code or "").upper()
+    if normalized in {"STK", "KOSPI"}:
+        return ".KS"
+    if normalized in {"KSQ", "KOSDAQ"}:
+        return ".KQ"
+    return None
+
+
+def _to_korean_search_result(code: str, name: str, market_code: str = "") -> Optional[dict]:
+    cleaned_code = str(code or "").strip()
+    cleaned_name = str(name or "").strip()
+    if not cleaned_code or not cleaned_name:
+        return None
+
+    suffix = _suffix_for_pykrx_market(market_code)
+    ticker = f"{cleaned_code}{suffix}" if suffix and not cleaned_code.endswith((".KS", ".KQ")) else cleaned_code
+    return {"ticker": ticker, "name": cleaned_name, "market": "KR"}
+
+
+def _get_korean_listing_cache() -> list[dict]:
+    """Load the current pykrx listed-stock table once, then serve Korean autocomplete locally."""
+    global _KOREAN_LISTING_CACHE
+    if _KOREAN_LISTING_CACHE is not None:
+        return _KOREAN_LISTING_CACHE
+
+    listing: list[dict] = []
+    try:
+        from pykrx import stock
+
+        frame = stock.krx.StockTicker().listed
+        for code, row in frame.iterrows():
+            result = _to_korean_search_result(
+                code=str(code),
+                name=str(row.get("종목", "")),
+                market_code=str(row.get("시장", "")),
+            )
+            if result:
+                listing.append(result)
+    except Exception:
+        listing = []
+
+    _KOREAN_LISTING_CACHE = listing
+    return listing
+
+
+def _search_korean_code_with_pykrx(query: str) -> list[dict]:
+    if not query.isdigit() or len(query) != 6:
+        return []
+
+    try:
+        from pykrx import stock
+
+        name = stock.get_market_ticker_name(query)
+        market_code = stock.krx.get_stock_ticekr_market(query)
+        result = _to_korean_search_result(query, name, market_code)
+        return [result] if result else []
+    except Exception:
+        return []
 
 
 async def _search_yfinance(query: str) -> list[dict]:
@@ -253,6 +317,24 @@ def _search_korean_static(query: str) -> list[dict]:
     return results
 
 
+def _search_korean_listing(query: str) -> list[dict]:
+    """Search the pykrx listed-stock cache so Korean autocomplete is not limited to a hand-written list."""
+    q = query.strip()
+    if not q:
+        return []
+
+    results = []
+    for stock in _get_korean_listing_cache():
+        ticker = stock["ticker"]
+        code = ticker.split(".")[0]
+        if q in stock["name"] or ticker.startswith(q) or code.startswith(q):
+            results.append(stock)
+
+    if not results:
+        results.extend(_search_korean_code_with_pykrx(q))
+    return results
+
+
 def _deduplicate(results: list[dict]) -> list[dict]:
     seen = set()
     unique = []
@@ -272,8 +354,9 @@ async def ticker_search(q: str = Query(..., min_length=1, max_length=50)):
 
     # 한글 입력 또는 한국 종목코드(숫자 6자리) → 정적 한국 리스트 검색
     if _is_korean(q) or _is_ticker_pattern(q):
-        results = _search_korean_static(q)
-        return _deduplicate(results)[:10]
+        static_results = _search_korean_static(q)
+        dynamic_results = _search_korean_listing(q)
+        return _deduplicate(static_results + dynamic_results)[:10]
 
     # 영문 입력: yfinance + FMP 병렬 호출, AV는 결과 부족 시
     yf_task = asyncio.create_task(_search_yfinance(q))

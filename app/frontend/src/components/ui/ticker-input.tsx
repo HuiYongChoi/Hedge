@@ -61,6 +61,7 @@ export const KOREAN_NAME_TO_TICKER: Record<string, string> = {};
 POPULAR_TICKERS.forEach(t => {
   if (t.market === 'KR') {
     KOREAN_NAME_TO_TICKER[t.name] = t.ticker;
+    KOREAN_NAME_TO_TICKER[t.ticker] = t.ticker;
   }
 });
 
@@ -80,6 +81,12 @@ function getTermFromValue(inputValue: string): string {
 
 function getSuggestionInsertValue(suggestion: TickerSuggestion): string {
   return suggestion.market === 'KR' ? suggestion.name : suggestion.ticker;
+}
+
+function rememberKoreanTickerSuggestion(suggestion: TickerSuggestion) {
+  if (suggestion.market !== 'KR') return;
+  KOREAN_NAME_TO_TICKER[suggestion.name] = suggestion.ticker;
+  KOREAN_NAME_TO_TICKER[suggestion.ticker] = suggestion.ticker;
 }
 
 function normalizeAutocompleteToken(value: string): string {
@@ -123,6 +130,7 @@ interface TickerInputProps {
 }
 
 export function TickerInput({ value, onChange, placeholder, className, onKeyDown }: TickerInputProps) {
+  const [draftValue, setDraftValue] = useState(value);
   const [open, setOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
   const [suggestions, setSuggestions] = useState<TickerSuggestion[]>([]);
@@ -135,7 +143,13 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const currentTerm = getTermFromValue(value);
+  const currentTerm = getTermFromValue(draftValue);
+
+  useEffect(() => {
+    if (!isComposingRef.current) {
+      setDraftValue(value);
+    }
+  }, [value]);
 
   // 정적 fallback 필터 (API 응답 전 즉시 표시)
   const getStaticSuggestions = (term: string): TickerSuggestion[] => {
@@ -179,7 +193,8 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
         );
         if (!res.ok) throw new Error('Search failed');
         const data: TickerSuggestion[] = await res.json();
-        const liveTerm = getTermFromValue(inputRef.current?.value ?? value);
+        data.forEach(rememberKoreanTickerSuggestion);
+        const liveTerm = getTermFromValue(inputRef.current?.value ?? draftValue);
         if (normalizeAutocompleteToken(liveTerm) !== normalizeAutocompleteToken(term)) {
           return;
         }
@@ -206,6 +221,10 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
 
   // currentTerm 변경 시 검색 실행
   useEffect(() => {
+    if (isComposingRef.current) {
+      return;
+    }
+
     // 선택 직후에는 드롭다운을 다시 열지 않음
     if (skipNextFetchRef.current) {
       skipNextFetchRef.current = false;
@@ -233,6 +252,7 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
   const handleSelect = (suggestion: TickerSuggestion) => {
     skipBlurRef.current = true;
     skipNextFetchRef.current = true;
+    rememberKoreanTickerSuggestion(suggestion);
 
     if (abortRef.current) abortRef.current.abort();
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -242,7 +262,9 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
     const currentValue = inputRef.current?.value ?? value;
     const parts = currentValue.split(',');
     parts[parts.length - 1] = insertValue;
-    onChange(parts.map(p => p.trim()).join(','));
+    const nextValue = parts.map(p => p.trim()).join(',');
+    setDraftValue(nextValue);
+    onChange(nextValue);
     setOpen(false);
     setActiveIdx(-1);
     setSuggestions([]);
@@ -253,8 +275,14 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onChange(e.target.value);
+    const nextValue = e.target.value;
+    const isInputComposing = isComposingRef.current || Boolean((e.nativeEvent as InputEvent).isComposing);
+    setDraftValue(nextValue);
     setActiveIdx(-1);
+    if (isInputComposing) {
+      return;
+    }
+    onChange(nextValue);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -303,6 +331,7 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
   const handleCompositionEnd = (e: React.CompositionEvent<HTMLInputElement>) => {
     isComposingRef.current = false;
     const nextValue = e.currentTarget.value;
+    setDraftValue(nextValue);
     onChange(nextValue);
 
     const term = getTermFromValue(nextValue);
@@ -324,7 +353,7 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
     <div className="relative w-full">
       <Input
         ref={inputRef}
-        value={value}
+        value={draftValue}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         onCompositionStart={handleCompositionStart}
@@ -332,16 +361,17 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
         onFocus={() => {}}
         onBlur={handleBlur}
         placeholder={placeholder}
-        className={`${className || ''} ${value ? 'pr-8' : ''}`}
+        className={`${className || ''} ${draftValue ? 'pr-8' : ''}`}
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}
       />
-      {value && (
+      {draftValue && (
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
+            setDraftValue('');
             onChange('');
             setOpen(false);
             setActiveIdx(-1);
@@ -357,7 +387,7 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
       )}
       {showDropdown && (
         <div
-          className="absolute z-50 top-full left-0 mt-1 w-72 rounded-md border border-border bg-popover shadow-md overflow-hidden"
+          className="absolute z-50 top-full left-0 mt-1 w-full max-h-72 rounded-md border border-border bg-popover shadow-md overflow-y-auto"
           onMouseDown={e => { e.preventDefault(); }}
         >
           {loading && (
@@ -376,12 +406,14 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
               onMouseEnter={() => setActiveIdx(idx)}
               onMouseDown={() => handleSelect(s)}
             >
-              <span className="font-mono font-semibold w-20 shrink-0 text-primary text-xs truncate">
-                {s.market === 'KR' ? s.name : s.ticker}
-              </span>
-              <span className="text-muted-foreground text-xs truncate flex-1">
-                {s.market === 'KR' ? s.ticker : s.name}
-              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold text-primary">
+                  {s.market === 'KR' ? s.name : s.ticker}
+                </div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {s.market === 'KR' ? s.ticker : s.name}
+                </div>
+              </div>
               <MarketBadge market={s.market} />
             </div>
           ))}
