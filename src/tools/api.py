@@ -58,6 +58,7 @@ def _build_financial_metric(raw_payload: dict) -> dict:
     payload = standardize_financial_metric_payload(raw_payload)
     for field_name in DEFAULT_FINANCIAL_METRIC_FIELDS:
         payload.setdefault(field_name, None)
+    payload.setdefault("source", raw_payload.get("source") or "Financial Datasets")
     return payload
 
 
@@ -220,6 +221,7 @@ def _fetch_fmp_metrics(ticker: str) -> dict | None:
         report_date = m.get("date") or inc_row.get("date") or bal_row.get("date") or "TTM"
         return {
             "ticker": ticker,
+            "source": "FMP",
             "report_period": report_date,
             "period": "ttm",
             "currency": m.get("reportedCurrency") or inc_row.get("reportedCurrency") or "USD",
@@ -307,6 +309,7 @@ def _fetch_yfinance_metrics(ticker: str) -> dict | None:
 
         return {
             "ticker": ticker,
+            "source": "Yahoo Finance",
             "report_period": str(report_date),
             "period": "ttm",
             "currency": currency,
@@ -765,6 +768,7 @@ def _fetch_alphavantage_metrics(ticker: str) -> dict | None:
                 
                 return {
                     "ticker": ticker,
+                    "source": "Alpha Vantage",
                     "report_period": data.get("LatestQuarter", "TTM"),
                     "period": "ttm",
                     "currency": data.get("Currency", "USD"),

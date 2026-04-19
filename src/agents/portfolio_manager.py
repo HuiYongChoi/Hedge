@@ -13,7 +13,12 @@ from src.utils.llm import call_llm
 
 class PortfolioDecision(BaseModel):
     action: Literal["buy", "sell", "short", "cover", "hold"]
-    quantity: int = Field(description="Number of shares to trade")
+    quantity: int = Field(
+        description=(
+            "quantity is a schema-compatibility placeholder for report mode; "
+            "backtests may populate it for simulated trades"
+        )
+    )
     confidence: int = Field(description="Confidence 0-100")
     reasoning: str = Field(description="Reasoning for the decision")
 
@@ -23,12 +28,18 @@ class PortfolioManagerOutput(BaseModel):
 
 
 ##### Portfolio Management Agent #####
+def _is_backtest_request(state: AgentState) -> bool:
+    request = state.get("metadata", {}).get("request")
+    return request.__class__.__name__ == "BacktestRequest"
+
+
 def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_manager"):
     """Makes final trading decisions and generates orders for multiple tickers"""
 
     portfolio = state["data"]["portfolio"]
     analyst_signals = state["data"]["analyst_signals"]
     tickers = state["data"]["tickers"]
+    is_backtest_run = _is_backtest_request(state)
 
     position_limits = {}
     current_prices = {}
@@ -50,8 +61,8 @@ def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_man
         position_limits[ticker] = risk_data.get("remaining_position_limit", 0.0)
         current_prices[ticker] = float(risk_data.get("current_price", 0.0))
 
-        # Calculate maximum shares allowed based on position limit and price
-        if current_prices[ticker] > 0:
+        # Only the backtest path needs simulated trade sizing.
+        if is_backtest_run and current_prices[ticker] > 0:
             max_shares[ticker] = int(position_limits[ticker] // current_prices[ticker])
         else:
             max_shares[ticker] = 0
@@ -247,6 +258,7 @@ def _build_decision_context(
     max_shares: dict[str, int],
     allowed_actions: dict[str, dict[str, int]],
     risk_by_ticker: dict[str, dict],
+    include_trade_constraints: bool = True,
 ) -> dict[str, dict]:
     """Provide the PM with compact analyst evidence instead of signal labels only."""
     context: dict[str, dict] = {}
@@ -279,12 +291,9 @@ def _build_decision_context(
             analyst_evidence[agent] = evidence
 
         risk_data = risk_by_ticker.get(ticker, {}) or {}
-        context[ticker] = {
+        ticker_context = {
             "current_price": current_prices.get(ticker),
-            "max_shares": max_shares.get(ticker),
-            "allowed_actions": allowed_actions.get(ticker),
             "risk_constraints": {
-                "remaining_position_limit": risk_data.get("remaining_position_limit"),
                 "current_price": risk_data.get("current_price"),
                 "volatility_metrics": risk_data.get("volatility_metrics"),
                 "correlation_metrics": risk_data.get("correlation_metrics"),
@@ -292,7 +301,70 @@ def _build_decision_context(
             },
             "analyst_evidence": analyst_evidence,
         }
+        if include_trade_constraints:
+            ticker_context["maximum_trade_size"] = max_shares.get(ticker)
+            ticker_context["allowed_actions"] = allowed_actions.get(ticker)
+            ticker_context["risk_constraints"]["remaining_position_limit"] = risk_data.get("remaining_position_limit")
+        context[ticker] = ticker_context
     return context
+
+
+def _signal_based_report_action(ticker_signals: dict) -> Literal["buy", "sell", "hold"]:
+    bullish = 0
+    bearish = 0
+    for payload in ticker_signals.values():
+        sig = str(payload.get("sig") or payload.get("signal") or "neutral").lower()
+        if sig in ("bullish", "buy", "long"):
+            bullish += 1
+        elif sig in ("bearish", "sell", "short"):
+            bearish += 1
+    if bullish > bearish:
+        return "buy"
+    if bearish > bullish:
+        return "sell"
+    return "hold"
+
+
+def _normalize_report_action(action: str | None) -> Literal["buy", "sell", "hold"]:
+    normalized = str(action or "hold").lower()
+    if normalized in ("buy", "long", "cover"):
+        return "buy"
+    if normalized in ("sell", "short"):
+        return "sell"
+    return "hold"
+
+
+def _remove_report_quantity_references(reasoning: Any, language: str) -> str:
+    text = str(reasoning or "").strip()
+    if not text:
+        return _build_signal_based_hold_reasoning({}, language)
+
+    forbidden_lower = (
+        "allowed_actions",
+        "max_shares",
+        "order quantity",
+        "trade quantity",
+        "maximum trade size",
+        "schema-compatibility placeholder",
+    )
+    forbidden_ko = ("허용 행동", "주문 수량", "거래 수량", "최대 주문", "최대 거래", "수량")
+    kept_lines = []
+    for line in text.splitlines():
+        lower = line.lower()
+        if any(token in lower for token in forbidden_lower):
+            continue
+        if any(token in line for token in forbidden_ko):
+            continue
+        kept_lines.append(line)
+
+    cleaned = "\n".join(kept_lines).strip()
+    if cleaned:
+        return cleaned
+    return (
+        "에이전트 신호와 전처리 정량 근거를 종합한 정성적 투자 판단입니다."
+        if language == "ko"
+        else "This is a qualitative investment decision based on agent signals and preprocessed evidence."
+    )
 
 
 def _build_signal_based_hold_reasoning(ticker_signals: dict, language: str) -> str:
@@ -332,26 +404,29 @@ def generate_trading_decision(
     """Get decisions from the LLM with deterministic constraints and a minimal prompt."""
 
     language = state.get("metadata", {}).get("language", "en")
+    is_backtest_run = _is_backtest_request(state)
 
     # Deterministic constraints
     allowed_actions_full = compute_allowed_actions(tickers, current_prices, max_shares, portfolio)
 
-    # Separate tickers into hold-only (no tradable actions) and those that can trade
-    hold_only_tickers: list[str] = []
-    tickers_for_llm: list[str] = []
-    for t in tickers:
-        aa = allowed_actions_full.get(t, {"hold": 0})
-        if set(aa.keys()) == {"hold"}:
-            hold_only_tickers.append(t)
-        else:
-            tickers_for_llm.append(t)
-
-    # All tickers go to LLM — hold-only tickers get qualitative analysis with hold forced
-    all_tickers_for_llm = tickers_for_llm + hold_only_tickers
+    if is_backtest_run:
+        # Separate tickers into hold-only and those that can trade in the simulation.
+        hold_only_tickers: list[str] = []
+        tickers_for_llm: list[str] = []
+        for t in tickers:
+            aa = allowed_actions_full.get(t, {"hold": 0})
+            if set(aa.keys()) == {"hold"}:
+                hold_only_tickers.append(t)
+            else:
+                tickers_for_llm.append(t)
+        all_tickers_for_llm = tickers_for_llm + hold_only_tickers
+    else:
+        # Report mode is not a virtual-cash simulation, so all tickers receive
+        # qualitative buy/sell/hold judgments without order sizing constraints.
+        all_tickers_for_llm = tickers
 
     # Build compact signals for all tickers
     compact_signals = _compact_signals({t: signals_by_ticker.get(t, {}) for t in all_tickers_for_llm})
-    # For allowed actions: hold-only tickers show only {"hold":0}
     compact_allowed = {t: allowed_actions_full[t] for t in all_tickers_for_llm}
     decision_context = _build_decision_context(
         tickers=all_tickers_for_llm,
@@ -360,6 +435,7 @@ def generate_trading_decision(
         max_shares=max_shares,
         allowed_actions=allowed_actions_full,
         risk_by_ticker=risk_by_ticker,
+        include_trade_constraints=is_backtest_run,
     )
 
     # Composite confidence per ticker (computed deterministically from signals)
@@ -368,11 +444,11 @@ def generate_trading_decision(
         for t in all_tickers_for_llm
     }
 
-    if language == 'ko':
+    if is_backtest_run and language == 'ko':
         system_msg = (
             "당신은 포트폴리오 매니저입니다.\n"
-            "각 종목별로 애널리스트 신호와 허용된 행동(이미 검증된 최대 수량 포함)이 주어집니다.\n"
-            "허용된 행동 중 하나를 선택하고 수량은 최대값 이하로 설정하세요.\n"
+            "각 종목별로 애널리스트 신호와 검증된 거래 상한이 주어집니다.\n"
+            "백테스트 시뮬레이션을 위해 허용된 행동 중 하나를 선택하고 거래 크기는 상한 이하로 설정하세요.\n"
             "reasoning은 한국어로 structured, decision-grade reasoning 형태로 작성하세요.\n"
             "반드시 ### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거 섹션을 포함하세요.\n"
             "에이전트 신호의 합의/불일치, 신뢰도, 허용 행동 제약을 함께 설명하세요.\n"
@@ -381,11 +457,11 @@ def generate_trading_decision(
             "원문 재무제표 직접 수치가 없는 경우에도 에이전트가 계산한 전처리 지표는 구분해서 인용하세요.\n"
             "현금이나 마진 계산은 하지 마세요. JSON만 반환하세요."
         )
-    else:
+    elif is_backtest_run:
         system_msg = (
             "You are a portfolio manager.\n"
-            "Inputs per ticker: analyst signals and allowed actions with max qty (already validated).\n"
-            "Pick one allowed action per ticker and a quantity ≤ the max.\n"
+            "Inputs per ticker: analyst signals and allowed actions with an already validated maximum trade size.\n"
+            "For the backtest simulation, pick one allowed action per ticker and keep the trade size within that limit.\n"
             "Write structured, decision-grade reasoning in Korean using sections: "
             "### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거. "
             "Explain signal consensus/disagreement, confidence, and allowed-action constraints. "
@@ -394,25 +470,60 @@ def generate_trading_decision(
             "If raw filing figures are absent, distinguish that from agent-computed preprocessed metrics. "
             "No cash or margin math. Return JSON only."
         )
+    elif language == 'ko':
+        system_msg = (
+            "당신은 포트폴리오 매니저입니다.\n"
+            "이 화면은 가상 자금이나 주문 체결 시뮬레이션이 아니라, 에이전트 신호를 종합한 최종 투자 판단 리포트입니다.\n"
+            "action은 buy, sell, hold 중 하나의 정성적 판단으로만 선택하세요.\n"
+            "quantity is a schema-compatibility placeholder; 항상 0으로 반환하세요.\n"
+            "reasoning must not mention order quantity, allowed_actions, max_shares, 거래 가능 여부, 현금 부족, 포지션 한도, 주문 크기.\n"
+            "reasoning은 한국어로 structured, decision-grade reasoning 형태로 작성하세요.\n"
+            "반드시 ### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거 섹션을 포함하세요.\n"
+            "에이전트 신호의 합의/불일치, 신뢰도, 전처리 정량 근거를 중심으로 설명하세요.\n"
+            "Decision context에 정량 근거가 있으면 정량 데이터가 제공되지 않았다고 쓰지 마세요.\n"
+            "JSON만 반환하세요."
+        )
+    else:
+        system_msg = (
+            "You are a portfolio manager.\n"
+            "This screen is a final investment-decision report, not a virtual-cash or order-execution simulation.\n"
+            "Choose action as a qualitative buy, sell, or hold decision only.\n"
+            "quantity is a schema-compatibility placeholder; always return 0.\n"
+            "reasoning must not mention order quantity, allowed_actions, max_shares, trade availability, cash shortage, position limits, or order size.\n"
+            "Write structured, decision-grade reasoning in English using sections: "
+            "### Core Judgment, ### Key Evidence, ### Risks And Counterarguments. "
+            "Explain signal consensus/disagreement, confidence, and preprocessed quantitative evidence. "
+            "Do not claim quantitative data was not provided when Decision context contains analyst evidence or risk constraints. "
+            "Return JSON only."
+        )
 
-    template = ChatPromptTemplate.from_messages(
-        [
-            ("system", system_msg),
-            (
-                "human",
-                "Signals:\n{signals}\n\n"
-                "Allowed:\n{allowed}\n\n"
-                "Decision context (agent evidence excerpts and risk constraints):\n{decision_context}\n\n"
-                "Composite confidence per ticker (use as baseline, adjust based on signal quality):\n{confidence}\n\n"
-                "Format:\n"
-                "{{\n"
-                '  "decisions": {{\n'
-                '    "TICKER": {{"action":"...","quantity":int,"confidence":int,"reasoning":"..."}}\n'
-                "  }}\n"
-                "}}"
-            ),
-        ]
-    )
+    if is_backtest_run:
+        human_msg = (
+            "Signals:\n{signals}\n\n"
+            "Allowed:\n{allowed}\n\n"
+            "Decision context (agent evidence excerpts and risk constraints):\n{decision_context}\n\n"
+            "Composite confidence per ticker (use as baseline, adjust based on signal quality):\n{confidence}\n\n"
+            "Format:\n"
+            "{{\n"
+            '  "decisions": {{\n'
+            '    "TICKER": {{"action":"...","quantity":int,"confidence":int,"reasoning":"..."}}\n'
+            "  }}\n"
+            "}}"
+        )
+    else:
+        human_msg = (
+            "Signals:\n{signals}\n\n"
+            "Decision context (agent evidence excerpts and risk context):\n{decision_context}\n\n"
+            "Composite confidence per ticker (use as baseline, adjust based on signal quality):\n{confidence}\n\n"
+            "Format:\n"
+            "{{\n"
+            '  "decisions": {{\n'
+            '    "TICKER": {{"action":"buy|sell|hold","quantity":0,"confidence":int,"reasoning":"..."}}\n'
+            "  }}\n"
+            "}}"
+        )
+
+    template = ChatPromptTemplate.from_messages([("system", system_msg), ("human", human_msg)])
 
     prompt_data = {
         "signals": json.dumps(compact_signals, separators=(",", ":"), ensure_ascii=False),
@@ -428,7 +539,8 @@ def generate_trading_decision(
         for t in all_tickers_for_llm:
             conf = composite_confidence.get(t, 0)
             msg = _build_signal_based_hold_reasoning(signals_by_ticker.get(t, {}), language)
-            decisions[t] = PortfolioDecision(action="hold", quantity=0, confidence=conf, reasoning=msg)
+            action = "hold" if is_backtest_run else _signal_based_report_action(signals_by_ticker.get(t, {}))
+            decisions[t] = PortfolioDecision(action=action, quantity=0, confidence=conf, reasoning=msg)
         return PortfolioManagerOutput(decisions=decisions)
 
     llm_out = call_llm(
@@ -439,4 +551,15 @@ def generate_trading_decision(
         default_factory=create_default_portfolio_output,
     )
 
-    return PortfolioManagerOutput(decisions=llm_out.decisions)
+    if is_backtest_run:
+        return PortfolioManagerOutput(decisions=llm_out.decisions)
+
+    report_decisions = {}
+    for ticker, decision in llm_out.decisions.items():
+        report_decisions[ticker] = PortfolioDecision(
+            action=_normalize_report_action(decision.action),
+            quantity=0,
+            confidence=decision.confidence,
+            reasoning=_remove_report_quantity_references(decision.reasoning, language),
+        )
+    return PortfolioManagerOutput(decisions=report_decisions)

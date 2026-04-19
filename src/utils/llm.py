@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from src.llm.models import get_model, get_model_info
 from src.utils.progress import progress
 from src.graph.state import AgentState
+from src.utils.financial_formatting import normalize_financial_language
 
 
 KOREAN_OUTPUT_REQUIREMENT = "CRITICAL REQUIREMENT: You MUST write your entire analysis, reasoning, and summary exclusively in Korean (한국어). Do NOT output any English sentences."
@@ -19,7 +20,10 @@ RATIO_SCALE_REQUIREMENT = (
     "RATIO SCALE REQUIREMENT: Preserve decimal points and units for every financial ratio. "
     "Ratios such as debt_to_equity, current_ratio, quick_ratio, debt_to_assets, and liabilities_to_assets are x-ratios, not whole-number percentages. "
     "0.11 means 0.11x; 0.98 means 0.98x. Do NOT rewrite 0.80 as 080, 0.11 as 11, or 0.98 as 098. "
-    "Only convert a ratio to a percentage when explicitly labeling it as a percentage, and never confuse debt_to_equity with liabilities_to_assets."
+    "Use exactly two decimals for x-ratios, for example D/E 0.20x and Current Ratio 1.21x. "
+    "Only convert a ratio to a percentage when explicitly labeling it as a percentage, and never confuse debt_to_equity with liabilities_to_assets. "
+    "Always label the period and report period for quantitative evidence, for example TTM, Report Period 2026-02-28 or Annual, Report Period FY2025. "
+    "When writing Korean output, introduce important English financial terms in Title Case with Korean translation in parentheses, for example Margin Of Safety(안전마진), Current Ratio(유동비율), and Debt-To-Equity(부채비율)."
 )
 CROSS_CHECK_GUIDE_REQUIREMENT = """[추가 지시사항: 원문 대조 가이드 작성]
 당신은 자신의 투자 철학에 따라 기업을 분석한 후, 최종 의사결정권자(사용자)가 원본 사업보고서(SEC 10-K 또는 DART)를 직접 읽으며 당신의 분석을 검증할 수 있도록 돕는 '크로스체크 가이드'를 함께 제출해야 합니다.
@@ -85,7 +89,7 @@ def sanitize_data_gap_language(text: str) -> str:
             sanitized,
             flags=re.IGNORECASE,
         )
-    return sanitized
+    return normalize_financial_language(sanitized)
 
 
 def _append_korean_requirement_to_text(text: str) -> str:
@@ -216,6 +220,7 @@ def enforce_korean_output_requirement(prompt: any) -> any:
 
 
 def _koreanize_default_string(value: str) -> str:
+    value = normalize_financial_language(value)
     lower = value.lower()
     if "no valid trade available" in lower:
         return KOREAN_NO_TRADE_REASONING
@@ -245,7 +250,7 @@ def ensure_korean_default_texts(value: any, field_name: str | None = None):
     """Replace known fallback reasoning strings with Korean text."""
     if isinstance(value, str):
         if field_name in {"reasoning", "summary", "details", "explanation", "analysis"}:
-            return _koreanize_default_string(sanitize_data_gap_language(value))
+            return normalize_financial_language(_koreanize_default_string(sanitize_data_gap_language(value)))
         return value
 
     if isinstance(value, BaseModel):

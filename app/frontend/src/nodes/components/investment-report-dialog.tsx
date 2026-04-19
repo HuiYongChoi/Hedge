@@ -38,7 +38,7 @@ interface InvestmentReportDialogProps {
   connectedAgentIds: Set<string>;
 }
 
-type ActionType = 'long' | 'short' | 'hold';
+type ActionType = 'buy' | 'sell' | 'long' | 'short' | 'cover' | 'hold';
 
 /** Convert snake_case key to readable label */
 function toLabel(key: string): string {
@@ -157,8 +157,11 @@ export function InvestmentReportDialog({
 
   const getActionIcon = (action: ActionType) => {
     switch (action) {
+      case 'buy':
       case 'long':
+      case 'cover':
         return <ArrowUp className="h-4 w-4 text-green-500" />;
+      case 'sell':
       case 'short':
         return <ArrowDown className="h-4 w-4 text-red-500" />;
       case 'hold':
@@ -169,8 +172,8 @@ export function InvestmentReportDialog({
   };
 
   const getActionLabel = (action: string) => {
-    if (action === 'long') return t('longAction');
-    if (action === 'short') return t('shortAction');
+    if (action === 'buy' || action === 'long' || action === 'cover') return t('longAction');
+    if (action === 'sell' || action === 'short') return t('shortAction');
     if (action === 'hold') return t('holdAction');
     return action;
   };
@@ -228,7 +231,6 @@ export function InvestmentReportDialog({
                       <TableHead>{t('tickerCol')}</TableHead>
                       <TableHead>{t('priceCol')}</TableHead>
                       <TableHead>{t('actionCol')}</TableHead>
-                      <TableHead>{t('quantityCol')}</TableHead>
                       <TableHead>{t('confidenceCol')}</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -246,7 +248,6 @@ export function InvestmentReportDialog({
                               <span className="capitalize">{getActionLabel(decision.action)}</span>
                             </div>
                           </TableCell>
-                          <TableCell>{decision.quantity}</TableCell>
                           <TableCell>{getConfidenceBadge(decision.confidence)}</TableCell>
                         </TableRow>
                       );
@@ -283,7 +284,7 @@ export function InvestmentReportDialog({
                       <div className="flex items-center gap-1">
                         {getActionIcon(outputNodeData.decisions[ticker].action as ActionType)}
                         <span className="text-sm font-normal text-muted-foreground">
-                          {getActionLabel(outputNodeData.decisions[ticker].action)} {outputNodeData.decisions[ticker].quantity} {t('shares')}
+                          {getActionLabel(outputNodeData.decisions[ticker].action)}
                         </span>
                       </div>
                     </div>

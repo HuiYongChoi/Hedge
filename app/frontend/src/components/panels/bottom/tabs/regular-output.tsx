@@ -60,7 +60,6 @@ function SummarySection({ outputData }: { outputData: any }) {
             <TableRow>
               <TableHead>Ticker</TableHead>
               <TableHead>Action</TableHead>
-              <TableHead>Quantity</TableHead>
               <TableHead>Confidence</TableHead>
             </TableRow>
           </TableHeader>
@@ -73,7 +72,6 @@ function SummarySection({ outputData }: { outputData: any }) {
                     {decision.action?.toUpperCase() || 'UNKNOWN'}
                   </span>
                 </TableCell>
-                <TableCell>{decision.quantity || 0}</TableCell>
                 <TableCell>{decision.confidence?.toFixed(1) || 0}%</TableCell>
               </TableRow>
             ))}
@@ -186,10 +184,6 @@ function AnalysisResultsSection({ outputData }: { outputData: any }) {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium">Quantity</TableCell>
-                      <TableCell>{decision.quantity || 0}</TableCell>
-                    </TableRow>
-                    <TableRow>
                       <TableCell className="font-medium">Confidence</TableCell>
                       <TableCell>{decision.confidence?.toFixed(1) || 0}%</TableCell>
                     </TableRow>
@@ -227,4 +221,4 @@ export function RegularOutput({
       <AnalysisResultsSection outputData={outputData} />
     </>
   );
-} 
+}

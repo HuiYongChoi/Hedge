@@ -7,6 +7,7 @@ import json
 from typing_extensions import Literal
 from src.utils.progress import progress
 from src.utils.llm import call_llm
+from src.utils.financial_formatting import format_period_note
 import math
 from src.utils.api_key import get_api_key_from_state
 
@@ -91,6 +92,8 @@ def ben_graham_agent(state: AgentState, agent_id: str = "ben_graham_agent"):
             "signal": signal,
             "score": total_score,
             "max_score": max_possible_score,
+            "period_note": _build_graham_period_note(metrics, financial_line_items),
+            "source_note": _build_graham_source_note(metrics),
             "earnings_analysis": earnings_analysis,
             "strength_analysis": strength_analysis,
             "valuation_analysis": valuation_analysis,
@@ -172,6 +175,19 @@ def analyze_earnings_stability(metrics: list, financial_line_items: list) -> dic
     return {"score": score, "details": "; ".join(details)}
 
 
+def _build_graham_period_note(metrics: list, financial_line_items: list) -> str:
+    latest = metrics[0] if metrics else (financial_line_items[0] if financial_line_items else None)
+    return format_period_note(
+        getattr(latest, "period", None),
+        getattr(latest, "report_period", None),
+    )
+
+
+def _build_graham_source_note(metrics: list) -> str:
+    latest = metrics[0] if metrics else None
+    return f"Source {getattr(latest, 'source', None) or 'Financial Datasets'}"
+
+
 def analyze_financial_strength(financial_line_items: list) -> dict:
     """
     Graham checks liquidity (current ratio >= 2), manageable debt,
@@ -197,12 +213,12 @@ def analyze_financial_strength(financial_line_items: list) -> dict:
         current_ratio = current_assets / current_liabilities
         if current_ratio >= 2.0:
             score += 2
-            details.append(f"Current ratio = {current_ratio:.2f} (>=2.0: solid).")
+            details.append(f"Current ratio = {current_ratio:.2f}x (>=2.00x: solid).")
         elif current_ratio >= 1.5:
             score += 1
-            details.append(f"Current ratio = {current_ratio:.2f} (moderately strong).")
+            details.append(f"Current ratio = {current_ratio:.2f}x (moderately strong).")
         else:
-            details.append(f"Current ratio = {current_ratio:.2f} (<1.5: weaker liquidity).")
+            details.append(f"Current ratio = {current_ratio:.2f}x (<1.50x: weaker liquidity).")
     else:
         details.append("Cannot compute current ratio (missing or zero current_liabilities).")
 
@@ -280,6 +296,8 @@ def analyze_valuation_graham(financial_line_items: list, market_cap: float) -> d
 
     details = []
     score = 0
+    current_price = None
+    margin_of_safety = None
 
     # 1. Net-Net Check
     #   NCAV = Current Assets - Total Liabilities
@@ -288,6 +306,7 @@ def analyze_valuation_graham(financial_line_items: list, market_cap: float) -> d
     if net_current_asset_value > 0 and shares_outstanding > 0:
         net_current_asset_value_per_share = net_current_asset_value / shares_outstanding
         price_per_share = market_cap / shares_outstanding if shares_outstanding else 0
+        current_price = price_per_share
 
         details.append(f"Net Current Asset Value = {net_current_asset_value:,.2f}")
         details.append(f"NCAV Per Share = {net_current_asset_value_per_share:,.2f}")
@@ -333,7 +352,16 @@ def analyze_valuation_graham(financial_line_items: list, market_cap: float) -> d
             details.append("Current price is zero or invalid; can't compute margin of safety.")
     # else: already appended details for missing graham_number
 
-    return {"score": score, "details": "; ".join(details)}
+    return {
+        "score": score,
+        "details": "; ".join(details),
+        "metrics": {
+            "graham_number": graham_number,
+            "current_price": current_price,
+            "margin_of_safety": margin_of_safety,
+            "net_current_asset_value": net_current_asset_value,
+        },
+    }
 
 
 def generate_graham_output(
@@ -376,6 +404,9 @@ def generate_graham_output(
             - Debt-to-equity uses total_debt / shareholders_equity.
             - Liabilities-to-assets uses total_liabilities / total_assets and is not the same as debt-to-equity.
             - Do not call liabilities-to-assets "D/E" or infer high interest-bearing debt from it alone.
+            - Copy Graham Number decimals exactly from valuation_analysis.metrics. Never compress 212.35 into 21235.
+            - Label quantitative evidence with period_note and source_note.
+            - In Korean output, important formula terms must be Title Case plus Korean translation in parentheses: Graham Number(그레이엄 넘버), Margin Of Safety(안전마진), Current Ratio(유동비율), Debt-To-Equity(부채비율).
                         
             Return a rational recommendation: bullish, bearish, or neutral, with a confidence level (0-100) and thorough reasoning.
             """,

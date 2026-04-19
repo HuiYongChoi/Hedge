@@ -8,6 +8,7 @@ from src.tools.api import get_financial_metrics, get_market_cap, search_line_ite
 from src.utils.llm import call_llm
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
+from src.utils.financial_formatting import format_money, format_percent, format_period_note, format_x_ratio
 
 
 class WarrenBuffettSignal(BaseModel):
@@ -41,12 +42,20 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
                 "outstanding_shares",
                 "total_assets",
                 "total_liabilities",
+                "total_debt",
+                "short_term_debt",
+                "long_term_debt",
                 "shareholders_equity",
+                "current_assets",
+                "current_liabilities",
                 "dividends_and_other_cash_distributions",
                 "issuance_or_purchase_of_equity_shares",
                 "gross_profit",
                 "revenue",
+                "operating_income",
+                "operating_cash_flow",
                 "free_cash_flow",
+                "book_value_per_share",
             ],
             end_date,
             period="ttm",
@@ -383,11 +392,14 @@ def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
     Enhanced methodology: Net Income + Depreciation/Amortization - Maintenance CapEx - Working Capital Changes
     Uses multi-period analysis for better maintenance capex estimation.
     """
-    if not financial_line_items or len(financial_line_items) < 2:
-        return {"owner_earnings": None, "details": ["Insufficient data for owner earnings calculation"]}
+    if not financial_line_items:
+        return {"owner_earnings": None, "details": ["N/A: owner earnings inputs are unavailable"]}
 
     latest = financial_line_items[0]
     details = []
+    fallback_owner_earnings = getattr(latest, "owner_earnings", None)
+    if fallback_owner_earnings is None:
+        fallback_owner_earnings = getattr(latest, "free_cash_flow", None)
 
     # Core components
     net_income = latest.net_income
@@ -399,7 +411,19 @@ def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
         if net_income is None: missing.append("net income")
         if depreciation is None: missing.append("depreciation")
         if capex is None: missing.append("capital expenditure")
-        return {"owner_earnings": None, "details": [f"Missing components: {', '.join(missing)}"]}
+        if fallback_owner_earnings is not None:
+            return {
+                "owner_earnings": fallback_owner_earnings,
+                "components": {
+                    "fallback_owner_earnings": fallback_owner_earnings,
+                    "free_cash_flow": getattr(latest, "free_cash_flow", None),
+                },
+                "details": [
+                    f"Free Cash Flow fallback Owner Earnings: {format_money(fallback_owner_earnings, getattr(latest, 'currency', 'USD'))}",
+                    f"N/A components kept explicit: {', '.join(missing)}",
+                ],
+            }
+        return {"owner_earnings": None, "details": [f"N/A components kept explicit: {', '.join(missing)}"]}
 
     # Enhanced maintenance capex estimation using historical analysis
     maintenance_capex = estimate_maintenance_capex(financial_line_items)
@@ -510,8 +534,8 @@ def calculate_intrinsic_value(financial_line_items: list) -> dict[str, any]:
     Calculate intrinsic value using enhanced DCF with owner earnings.
     Uses more sophisticated assumptions and conservative approach like Buffett.
     """
-    if not financial_line_items or len(financial_line_items) < 3:
-        return {"intrinsic_value": None, "details": ["Insufficient data for reliable valuation"]}
+    if not financial_line_items:
+        return {"intrinsic_value": None, "details": ["N/A: valuation line items are unavailable"]}
 
     # Calculate owner earnings with better methodology
     earnings_data = calculate_owner_earnings(financial_line_items)
@@ -523,7 +547,7 @@ def calculate_intrinsic_value(financial_line_items: list) -> dict[str, any]:
     shares_outstanding = latest_financial_line_items.outstanding_shares
 
     if not shares_outstanding or shares_outstanding <= 0:
-        return {"intrinsic_value": None, "details": ["Missing or invalid shares outstanding data"]}
+        return {"intrinsic_value": None, "details": ["N/A: missing or invalid shares outstanding data"]}
 
     # Enhanced DCF with more realistic assumptions
     details = []
@@ -549,6 +573,7 @@ def calculate_intrinsic_value(financial_line_items: list) -> dict[str, any]:
             conservative_growth = 0.03  # Default 3% if negative base
     else:
         conservative_growth = 0.03  # Default conservative growth
+        details.append("Limited history: using conservative default growth rate 3.0%")
 
     # Buffett's conservative assumptions
     stage1_growth = min(conservative_growth, 0.08)  # Stage 1: cap at 8%
@@ -621,6 +646,38 @@ def calculate_intrinsic_value(financial_line_items: list) -> dict[str, any]:
             "historical_growth": conservative_growth if 'conservative_growth' in locals() else None,
         },
         "details": details,
+    }
+
+
+def _latest_metric_payload(analysis_data: dict[str, any]) -> dict[str, any]:
+    metrics = analysis_data.get("fundamental_analysis", {}).get("metrics") or {}
+    return metrics if isinstance(metrics, dict) else {}
+
+
+def build_buffett_evidence_summary(analysis_data: dict[str, any]) -> dict[str, any]:
+    metrics = _latest_metric_payload(analysis_data)
+    valuation = analysis_data.get("intrinsic_value_analysis", {}) or {}
+    currency = metrics.get("currency") or "USD"
+    period_note = format_period_note(metrics.get("period"), metrics.get("report_period"))
+    margin_of_safety = analysis_data.get("margin_of_safety")
+
+    return {
+        "period_note": period_note,
+        "source_note": f"Source {metrics.get('source') or 'Financial Datasets'}",
+        "formatted_evidence": {
+            "Return On Equity(자기자본이익률)": format_percent(metrics.get("return_on_equity")),
+            "Operating Margin(영업이익률)": format_percent(metrics.get("operating_margin")),
+            "Debt-To-Equity(부채비율)": format_x_ratio(metrics.get("debt_to_equity")),
+            "Current Ratio(유동비율)": format_x_ratio(metrics.get("current_ratio")),
+            "Free Cash Flow Yield(잉여현금흐름수익률)": format_percent(metrics.get("free_cash_flow_yield")),
+        },
+        "valuation_summary": {
+            "Owner Earnings(소유자 이익)": format_money(valuation.get("owner_earnings"), currency),
+            "Intrinsic Value(내재가치)": format_money(valuation.get("intrinsic_value"), currency),
+            "Market Cap(시가총액)": format_money(analysis_data.get("market_cap"), currency),
+            "Margin Of Safety(안전마진)": format_percent(margin_of_safety),
+            "DCF Details": valuation.get("details", []),
+        },
     }
 
 
@@ -752,9 +809,13 @@ def generate_buffett_output(
     """Get investment decision from LLM with a compact prompt."""
 
     # --- Build compact facts here ---
+    evidence_summary = build_buffett_evidence_summary(analysis_data)
     facts = {
         "score": analysis_data.get("score"),
         "max_score": analysis_data.get("max_score"),
+        "period_note": evidence_summary["period_note"],
+        "source_note": evidence_summary["source_note"],
+        "formatted_evidence": evidence_summary["formatted_evidence"],
         "fundamentals": analysis_data.get("fundamental_analysis", {}).get("details"),
         "consistency": analysis_data.get("consistency_analysis", {}).get("details"),
         "moat": analysis_data.get("moat_analysis", {}).get("details"),
@@ -764,6 +825,7 @@ def generate_buffett_output(
         "intrinsic_value": analysis_data.get("intrinsic_value_analysis", {}).get("intrinsic_value"),
         "market_cap": analysis_data.get("market_cap"),
         "margin_of_safety": analysis_data.get("margin_of_safety"),
+        "valuation_summary": evidence_summary["valuation_summary"],
     }
 
     template = ChatPromptTemplate.from_messages(
@@ -794,6 +856,8 @@ def generate_buffett_output(
                 "\n"
                 "Write structured, decision-grade reasoning in Korean using these sections: "
                 "### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거. "
+                "Use the formatted_evidence and valuation_summary values exactly when discussing numbers. "
+                "Label each quantitative fact with period_note and source_note. "
                 "Ground the report in the provided facts, discuss moat/management/valuation tradeoffs, "
                 "and do not invent data. Return JSON only."
             ),
