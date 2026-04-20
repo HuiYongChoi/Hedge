@@ -22,24 +22,43 @@ export async function copyTextToClipboard(value: unknown): Promise<boolean> {
     }
   }
 
+  return copyTextWithClipboardEvent(text);
+}
+
+function copyTextWithClipboardEvent(text: string): boolean {
+  let didSetClipboardData = false;
   const textArea = document.createElement('textarea');
   textArea.value = text;
   textArea.setAttribute('readonly', '');
+  textArea.setAttribute('aria-hidden', 'true');
   textArea.style.position = 'fixed';
-  textArea.style.top = '-1000px';
-  textArea.style.left = '-1000px';
+  textArea.style.top = '0';
+  textArea.style.left = '0';
+  textArea.style.width = '1px';
+  textArea.style.height = '1px';
   textArea.style.opacity = '0';
+  textArea.style.pointerEvents = 'none';
 
+  const handleCopy = (event: ClipboardEvent) => {
+    if (!event.clipboardData) return;
+    event.preventDefault();
+    event.clipboardData.setData('text/plain', text);
+    didSetClipboardData = true;
+  };
+
+  document.addEventListener('copy', handleCopy);
   document.body.appendChild(textArea);
-  textArea.focus();
+  textArea.focus({ preventScroll: true });
   textArea.select();
   textArea.setSelectionRange(0, textArea.value.length);
 
   try {
-    return document.execCommand('copy');
+    const commandSucceeded = document.execCommand('copy');
+    return commandSucceeded && didSetClipboardData;
   } catch {
     return false;
   } finally {
+    document.removeEventListener('copy', handleCopy);
     document.body.removeChild(textArea);
   }
 }

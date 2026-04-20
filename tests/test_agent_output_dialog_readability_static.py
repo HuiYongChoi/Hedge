@@ -15,6 +15,9 @@ def test_agent_output_copy_uses_http_safe_clipboard_fallback() -> None:
     reasoning_source = REASONING_CONTENT.read_text(encoding="utf-8")
 
     assert "document.execCommand('copy')" in clipboard_source
+    assert "copyTextWithClipboardEvent" in clipboard_source
+    assert "event.clipboardData.setData('text/plain', text)" in clipboard_source
+    assert "commandSucceeded && didSetClipboardData" in clipboard_source
     assert "copyTextToClipboard" in agent_dialog_source
     assert "copyTextToClipboard" in json_dialog_source
     assert "copyTextToClipboard" in reasoning_source
