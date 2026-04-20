@@ -1,9 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
-import { getActionColor, getDisplayName, getSignalColor, getStatusIcon } from './output-tab-utils';
+import { getDisplayName, getStatusIcon } from './output-tab-utils';
 import { ReasoningContent } from './reasoning-content';
 
 // Progress Section Component
@@ -18,21 +17,21 @@ function ProgressSection({ sortedAgents }: { sortedAgents: [string, any][] }) {
       <CardContent>
         <div className="space-y-1">
           {sortedAgents.map(([agentId, data]) => {
-            const { icon: StatusIcon, color } = getStatusIcon(data.status);
+            const { icon: StatusIcon } = getStatusIcon(data.status);
             const displayName = getDisplayName(agentId);
-            
+
             return (
               <div key={agentId} className="flex items-center gap-2">
-                <StatusIcon className={cn("h-4 w-4 flex-shrink-0", color)} />
+                <StatusIcon className="h-4 w-4 flex-shrink-0" />
                 <span className="font-medium">{displayName}</span>
                 {data.ticker && (
                   <span>[{data.ticker}]</span>
                 )}
-                <span className={cn("flex-1", color)}>
+                <span className="flex-1 text-sm">
                   {data.message || data.status}
                 </span>
                 {data.timestamp && (
-                  <span className="text-muted-foreground text-xs">
+                  <span className="text-xs">
                     {new Date(data.timestamp).toLocaleTimeString()}
                   </span>
                 )}
@@ -67,12 +66,10 @@ function SummarySection({ outputData }: { outputData: any }) {
             {Object.entries(outputData.decisions).map(([ticker, decision]: [string, any]) => (
               <TableRow key={ticker}>
                 <TableCell className="font-medium">{ticker}</TableCell>
-                <TableCell>
-                  <span className={cn("font-medium", getActionColor(decision.action || ''))}>
-                    {decision.action?.toUpperCase() || 'UNKNOWN'}
-                  </span>
+                <TableCell className="text-sm">
+                  {decision.action?.toUpperCase() || 'UNKNOWN'}
                 </TableCell>
-                <TableCell>{decision.confidence?.toFixed(1) || 0}%</TableCell>
+                <TableCell className="text-sm">{decision.confidence?.toFixed(1) || 0}%</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -144,19 +141,16 @@ function AnalysisResultsSection({ outputData }: { outputData: any }) {
                        .map(([agent, signals]: [string, any]) => {
                          const signal = signals[ticker];
                          const signalType = signal.signal?.toUpperCase() || 'UNKNOWN';
-                         const signalColor = getSignalColor(signalType);
-                        
+
                         return (
                           <TableRow key={agent}>
                             <TableCell className="font-medium">
                               {getDisplayName(agent)}
                             </TableCell>
-                            <TableCell>
-                              <span className={cn("font-medium", signalColor)}>
-                                {signalType}
-                              </span>
+                            <TableCell className="text-sm">
+                              {signalType}
                             </TableCell>
-                            <TableCell>{signal.confidence || 0}%</TableCell>
+                            <TableCell className="text-sm">{signal.confidence || 0}%</TableCell>
                             <TableCell className="max-w-md">
                               <ReasoningContent content={signal.reasoning} />
                             </TableCell>
@@ -177,10 +171,8 @@ function AnalysisResultsSection({ outputData }: { outputData: any }) {
                   <TableBody>
                     <TableRow>
                       <TableCell className="font-medium">Action</TableCell>
-                      <TableCell>
-                        <span className={cn("font-medium", getActionColor(decision.action || ''))}>
-                          {decision.action?.toUpperCase() || 'UNKNOWN'}
-                        </span>
+                      <TableCell className="text-sm">
+                        {decision.action?.toUpperCase() || 'UNKNOWN'}
                       </TableCell>
                     </TableRow>
                     <TableRow>

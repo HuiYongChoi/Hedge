@@ -1,8 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { cn } from '@/lib/utils';
 import { MoreHorizontal } from 'lucide-react';
-import { getActionColor } from './output-tab-utils';
 
 // Component for displaying backtest progress
 function BacktestProgress({ agentData }: { agentData: Record<string, any> }) {
@@ -117,23 +115,21 @@ function BacktestTradingTable({ agentData }: { agentData: Record<string, any> })
                   return (
                     <TableRow key={idx}>
                       <TableCell className="font-medium">{row.date}</TableCell>
-                      <TableCell className="font-medium text-cyan-500">{row.ticker}</TableCell>
-                      <TableCell>
-                        <span className={cn("font-medium", getActionColor(row.action || ''))}>
-                          {row.action?.toUpperCase() || 'HOLD'}
-                        </span>
+                      <TableCell className="font-medium">{row.ticker}</TableCell>
+                      <TableCell className="text-sm">
+                        {row.action?.toUpperCase() || 'HOLD'}
                       </TableCell>
-                      <TableCell className={cn("font-medium", getActionColor(row.action || ''))}>
+                      <TableCell className="text-sm">
                         {row.quantity?.toLocaleString() || 0}
                       </TableCell>
-                      <TableCell>${row.price?.toFixed(2) || '0.00'}</TableCell>
-                      <TableCell>{row.shares_owned?.toLocaleString() || 0}</TableCell>
-                      <TableCell className="text-primary">
+                      <TableCell className="text-sm">${row.price?.toFixed(2) || '0.00'}</TableCell>
+                      <TableCell className="text-sm">{row.shares_owned?.toLocaleString() || 0}</TableCell>
+                      <TableCell className="text-sm">
                         ${row.position_value?.toLocaleString() || '0'}
                       </TableCell>
-                      <TableCell className="text-green-500">{row.bullish_count || 0}</TableCell>
-                      <TableCell className="text-red-500">{row.bearish_count || 0}</TableCell>
-                      <TableCell className="text-blue-500">{row.neutral_count || 0}</TableCell>
+                      <TableCell className="text-sm">{row.bullish_count || 0}</TableCell>
+                      <TableCell className="text-sm">{row.bearish_count || 0}</TableCell>
+                      <TableCell className="text-sm">{row.neutral_count || 0}</TableCell>
                     </TableRow>
                   );
                 }
@@ -185,7 +181,7 @@ function BacktestResults({ outputData }: { outputData: any }) {
               {performance_metrics.sharpe_ratio !== null && performance_metrics.sharpe_ratio !== undefined && (
                 <div className="flex justify-between">
                   <span>Sharpe Ratio:</span>
-                  <span className={cn("font-medium", performance_metrics.sharpe_ratio > 1 ? "text-green-500" : "text-red-500")}>
+                  <span className="font-medium text-sm">
                     {performance_metrics.sharpe_ratio.toFixed(2)}
                   </span>
                 </div>
@@ -193,7 +189,7 @@ function BacktestResults({ outputData }: { outputData: any }) {
               {performance_metrics.sortino_ratio !== null && performance_metrics.sortino_ratio !== undefined && (
                 <div className="flex justify-between">
                   <span>Sortino Ratio:</span>
-                  <span className={cn("font-medium", performance_metrics.sortino_ratio > 1 ? "text-green-500" : "text-red-500")}>
+                  <span className="font-medium text-sm">
                     {performance_metrics.sortino_ratio.toFixed(2)}
                   </span>
                 </div>
@@ -201,7 +197,7 @@ function BacktestResults({ outputData }: { outputData: any }) {
               {performance_metrics.max_drawdown !== null && performance_metrics.max_drawdown !== undefined && (
                 <div className="flex justify-between">
                   <span>Max Drawdown:</span>
-                  <span className="font-medium text-red-500">
+                  <span className="font-medium text-sm">
                     {Math.abs(performance_metrics.max_drawdown).toFixed(2)}%
                   </span>
                 </div>
@@ -274,10 +270,10 @@ function BacktestResults({ outputData }: { outputData: any }) {
                 {Object.entries(final_portfolio.positions).map(([ticker, position]: [string, any]) => (
                   <TableRow key={ticker}>
                     <TableCell className="font-medium">{ticker}</TableCell>
-                    <TableCell className={cn(position.long > 0 ? "text-green-500" : "text-muted-foreground")}>
+                    <TableCell className="text-sm">
                       {position.long}
                     </TableCell>
-                    <TableCell className={cn(position.short > 0 ? "text-red-500" : "text-muted-foreground")}>
+                    <TableCell className="text-sm">
                       {position.short}
                     </TableCell>
                     <TableCell>${position.long_cost_basis.toFixed(2)}</TableCell>
@@ -343,44 +339,44 @@ function BacktestPerformanceMetrics({ agentData }: { agentData: Record<string, a
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="text-center">
-            <div className="text-xs text-muted-foreground">Total Return</div>
-            <div className={cn("font-sm", totalReturn >= 0 ? "text-green-500" : "text-red-500")}>
+            <div className="text-xs">Total Return</div>
+            <div className="text-sm">
               {totalReturn >= 0 ? '+' : ''}{totalReturn.toFixed(2)}%
             </div>
           </div>
           <div className="text-center">
-            <div className="text-xs text-muted-foreground">Win Rate</div>
-            <div className="font-sm">{winRate.toFixed(1)}%</div>
+            <div className="text-xs">Win Rate</div>
+            <div className="text-sm">{winRate.toFixed(1)}%</div>
           </div>
           <div className="text-center">
-            <div className="text-xs text-muted-foreground">Max Drawdown</div>
-            <div className="font-sm text-red-500">{Math.abs(maxDrawdown).toFixed(2)}%</div>
+            <div className="text-xs">Max Drawdown</div>
+            <div className="text-sm">{Math.abs(maxDrawdown).toFixed(2)}%</div>
           </div>
           <div className="text-center">
-            <div className="text-xs text-muted-foreground">Periods Traded</div>
-            <div className="font-sm">{backtestResults.length}</div>
+            <div className="text-xs">Periods Traded</div>
+            <div className="text-sm">{backtestResults.length}</div>
           </div>
         </div>
 
         {/* Additional metrics */}
         <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="text-center">
-            <div className="text-xs text-muted-foreground">Current Value</div>
-            <div className="font-sm">${currentValue?.toLocaleString()}</div>
+            <div className="text-xs">Current Value</div>
+            <div className="text-sm">${currentValue?.toLocaleString()}</div>
           </div>
           <div className="text-center">
-            <div className="text-xs text-muted-foreground">Initial Value</div>
-            <div className="font-sm">${initialValue?.toLocaleString()}</div>
+            <div className="text-xs">Initial Value</div>
+            <div className="text-sm">${initialValue?.toLocaleString()}</div>
           </div>
           <div className="text-center">
-            <div className="text-xs text-muted-foreground">P&L</div>
-            <div className={cn("font-sm", totalReturn >= 0 ? "text-green-500" : "text-red-500")}>
+            <div className="text-xs">P&L</div>
+            <div className="text-sm">
               ${(currentValue - initialValue).toLocaleString()}
             </div>
           </div>
           <div className="text-center">
-            <div className="text-xs text-muted-foreground">Long/Short Ratio</div>
-            <div className="font-sm">
+            <div className="text-xs">Long/Short Ratio</div>
+            <div className="text-sm">
               {latestPeriod.long_short_ratio === Infinity || latestPeriod.long_short_ratio === null ? '∞' : latestPeriod.long_short_ratio?.toFixed(2)}
             </div>
           </div>

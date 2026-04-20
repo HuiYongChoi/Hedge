@@ -4,7 +4,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { Badge } from '@/components/ui/badge';
 import {
   Card,
   CardContent,
@@ -62,63 +61,22 @@ function ReasoningView({ reasoning }: { reasoning: any }) {
   }
 
   if (typeof parsedReasoning === 'string') {
-    const lines = parsedReasoning.split('\n');
     return (
-      <div className="space-y-1.5 text-sm leading-relaxed">
-        {lines.map((line, idx) => {
-          if ((line.includes('Details:') || line.includes('details:')) && line.includes(',')) {
-            const prefixMatch = line.match(/^(.*?Details:\s*)(.*)/i);
-            const prefix = prefixMatch ? prefixMatch[1] : 'Details: ';
-            const content = prefixMatch ? prefixMatch[2] : line;
-            
-            // Split by comma if the next token looks like a key (Word:)
-            const parts = content.split(/,\s*(?=[A-Za-z0-9\s]+:)/).filter(Boolean);
-            
-            if (parts.length > 2) {
-              return (
-                <div key={idx} className="bg-muted/30 p-3 rounded-md border border-border mt-2 mb-2">
-                  <span className="font-semibold text-primary block mb-2">{prefix.trim()}</span>
-                  <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
-                    {parts.map((p, i) => {
-                      const splitIdx = p.indexOf(':');
-                      if (splitIdx !== -1) {
-                        const k = p.substring(0, splitIdx).trim();
-                        const v = p.substring(splitIdx + 1).trim();
-                        return (
-                          <li key={i} className="flex">
-                            <span className="font-semibold text-muted-foreground mr-2 min-w-[90px]">{k}:</span>
-                            <span className="break-all">{v}</span>
-                          </li>
-                        );
-                      }
-                      return <li key={i}>{p.trim()}</li>;
-                    })}
-                  </ul>
-                </div>
-              );
-            }
-          }
-          return <p key={idx} className="whitespace-pre-wrap">{line}</p>;
-        })}
+      <div className="space-y-1 text-sm leading-relaxed">
+        {parsedReasoning.split('\n').map((line, idx) => (
+          <p key={idx} className="whitespace-pre-wrap">{line}</p>
+        ))}
       </div>
     );
   }
 
   if (typeof parsedReasoning === 'object' && !Array.isArray(parsedReasoning)) {
     return (
-      <div className="space-y-2 text-sm">
+      <div className="space-y-1.5 text-sm">
         {Object.entries(parsedReasoning).map(([key, value]) => (
-          <div key={key} className="rounded border border-border bg-muted/20 px-3 py-2">
-            <div className="text-xs font-semibold text-primary uppercase tracking-wide mb-1">
-              {toLabel(key)}
-            </div>
-            {typeof value === 'string' ? (
-              <p className="leading-relaxed">{value}</p>
-            ) : (
-              <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
-                {JSON.stringify(value, null, 2)}
-              </pre>
-            )}
+          <div key={key}>
+            <span className="font-semibold">{toLabel(key)}: </span>
+            <span>{typeof value === 'string' ? value : JSON.stringify(value)}</span>
           </div>
         ))}
       </div>
@@ -179,23 +137,14 @@ export function InvestmentReportDialog({
   };
 
   const getSignalBadge = (signal: string) => {
-    const variant = signal === 'bullish' ? 'success' :
-                   signal === 'bearish' ? 'destructive' : 'outline';
     const label = signal === 'bullish' ? t('bullish') :
                   signal === 'bearish' ? t('bearish') : t('neutral');
-    return (
-      <Badge variant={variant as any}>{label}</Badge>
-    );
+    return <span className="text-sm">{label}</span>;
   };
 
   const getConfidenceBadge = (confidence: number) => {
-    let variant = 'outline';
-    if (confidence >= 50) variant = 'success';
-    else if (confidence >= 0) variant = 'warning';
     const rounded = Number(confidence.toFixed(1));
-    return (
-      <Badge variant={variant as any}>{rounded}%</Badge>
-    );
+    return <span className="text-sm">{rounded}%</span>;
   };
 
   const tickers = Object.keys(outputNodeData.decisions || {});
@@ -261,8 +210,8 @@ export function InvestmentReportDialog({
                     const decision = outputNodeData.decisions[ticker];
                     if (!decision?.reasoning) return null;
                     return (
-                      <div key={`reasoning-${ticker}`} className="bg-muted/30 p-4 rounded-md">
-                        <h3 className="text-sm font-semibold mb-2">{ticker} {t('summary')}</h3>
+                      <div key={`reasoning-${ticker}`} className="mt-2">
+                        <p className="font-semibold mb-1">{ticker} {t('summary')}</p>
                         <ReasoningView reasoning={decision.reasoning} />
                       </div>
                     );
@@ -278,7 +227,7 @@ export function InvestmentReportDialog({
             <Accordion type="multiple" className="w-full">
               {tickers.map(ticker => (
                 <AccordionItem key={ticker} value={ticker}>
-                  <AccordionTrigger className="text-base font-medium px-4 py-3 bg-muted/30 rounded-md hover:bg-muted/50">
+                  <AccordionTrigger className="text-base font-medium px-4 py-3">
                     <div className="flex items-center gap-2">
                       {ticker}
                       <div className="flex items-center gap-1">
@@ -298,7 +247,7 @@ export function InvestmentReportDialog({
 
                           return (
                             <Card key={agent} className="overflow-hidden">
-                              <CardHeader className="bg-muted/50 pb-3">
+                              <CardHeader className="pb-3">
                                 <div className="flex items-center justify-between">
                                   <CardTitle className="text-base">
                                     {agentDisplayNames.get(agent) || agent}
