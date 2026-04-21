@@ -69,6 +69,7 @@ class BaseHedgeFundRequest(BaseModel):
     portfolio_positions: Optional[List[PortfolioPosition]] = None
     api_keys: Optional[Dict[str, str]] = None
     language: Optional[str] = 'en'
+    metric_overrides: Optional[Dict[str, Dict[str, Any]]] = None
 
     def get_agent_ids(self) -> List[str]:
         """Extract agent IDs from graph structure"""

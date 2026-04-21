@@ -3,9 +3,10 @@
 이 문서는 추후 Claude 등 AI 어시스턴트가 프로젝트 구조를 파악하고 유지보수할 때 핵심 컨텍스트로 사용하기 위해 만들어졌습니다.
 
 ## Cluade 또는 Antigravity 내 model 사용시
-- 단계별 모델 활용 (Hybrid Approach):
-  - Opus (분석/설계): 복잡한 로직, 아키텍처 설계, 코드베이스의 의존성 분석은 Opus에 맡겨 정확한 청사진을 작성.
-  - Sonnet (실행/구현): Opus가 도출한 구체적인 명세와 파일 트리를 바탕으로 실제 코드 구현 및 수정은 빠르고 저렴한 Sonnet으로 실행.
+- 분석/설계 단계만 Opus: Plan 또는 general-purpose 서브에이전트를 model: "opus"로 호출해 청사진 작성.
+- 반복적 코드 편집/리팩토링: 변경 범위가 정해지면 Agent(general-purpose, model: "sonnet")에게 "이 파일들을 이렇게 수정해라"라고 명세를 통째로 넘겨 위임.
+- 단순 검색/검증/grep/AST 파싱: Agent(Explore, model: "haiku")에게 위임.
+- 메인 세션은 조율자 역할: 직접 편집은 최소화하고 서브에이전트 결과를 받아 통합·검증.
 
   - 프롬프트 캐싱 (Prompt Caching) 활용:
 반복되는 시스템 프롬프트, API 문서, 대형 프로젝트 코드베이스는 '프로젝트(Projects)' 기능이나 프롬프트 캐싱을 사용하여 매번 토큰을 소비하지 않도록 함.
@@ -38,6 +39,24 @@
 - 서버 의존성 충돌 문제로 인해 `shadcn/ui`의 무거운 컴포넌트(Label, RadioGroup 등) 대신 가급적 순수 HTML 태그(`<label>`, `<input type="radio">`, `<div>` dropdown)로 풀어쓰는 방식을 선호합니다 (예: `ticker-input.tsx`).
 - 검색 탭 등 모든 UI는 반응형보다는 넓은 화면의 대시보드 구조에 최적화되어 있습니다.
 
-## 4. Troubleshooting Checklist (유의사항)
+## 4. 서버 배포 절차
+- **SSH 키**: `/Users/huiyong/Desktop/Vibe Investment/LightsailDefaultKey-ap-northeast-2.pem` 사용 (Hedge Fund 폴더 내 동명 키는 인증 안 됨)
+- **서버**: `bitnami@54.116.99.19`, 웹 루트: `/opt/bitnami/apache/htdocs/hedge/`
+- **서버 내 프로젝트 경로**: `/home/bitnami/ai-hedge-fund/`
+
+```
+# Step 1. 로컬 커밋 & 푸시
+git add <파일> && git commit -m "메시지" && git push origin main
+
+# Step 2. 서버 pull & 빌드 (하나의 명령으로)
+ssh -i "/Users/huiyong/Desktop/Vibe Investment/LightsailDefaultKey-ap-northeast-2.pem" bitnami@54.116.99.19 \
+  "cd /home/bitnami/ai-hedge-fund && git pull origin main && cd app/frontend && npm run build"
+
+# Step 3. 배포
+ssh -i "/Users/huiyong/Desktop/Vibe Investment/LightsailDefaultKey-ap-northeast-2.pem" bitnami@54.116.99.19 \
+  "sudo cp -r /home/bitnami/ai-hedge-fund/app/frontend/dist/* /opt/bitnami/apache/htdocs/hedge/"
+```
+
+## 5. Troubleshooting Checklist (유의사항)
 1. **Flow 연결 500 에러**: 프론트엔드에서 backend로 노드/엣지 정보를 보낼 때 시작점(`stock-analyzer-node` 등)과 도착점(`portfolio-manager-node`)이 모두 `graph_nodes`와 `graph_edges` 구조에 온전히 포함되어야 LangGraph 작동 에러가 발생하지 않습니다.
 2. **포커스/키보드 이벤트 씹힘**: PopoverTrigger 등을 Input에 감싸면 radix-ui가 이벤트를 훔쳐 타이핑이 안 되는 현상이 발생합니다. dropdown UI는 가급적 absolute + div 기반으로 커스텀 작성합니다.

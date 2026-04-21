@@ -163,6 +163,41 @@ async def run(request_data: HedgeFundRequest, request: Request, db: Session = De
         # Create the portfolio
         portfolio = create_portfolio(request_data.initial_cash, request_data.margin_requirement, request_data.tickers, request_data.portfolio_positions)
 
+        # Inject metric overrides into cache before graph execution
+        if request_data.metric_overrides:
+            from src.data.cache import get_cache as _get_cache
+            _run_cache = _get_cache()
+            from datetime import datetime as _dt
+            _end_date = request_data.end_date or _dt.now().strftime("%Y-%m-%d")
+            for _ticker, _overrides in request_data.metric_overrides.items():
+                _tkr = _ticker.upper()
+
+                # Financial metrics: merge user overrides onto existing cached record (or create fresh)
+                if "metrics" in _overrides:
+                    _raw = _overrides["metrics"]
+                    _clean = {k: v for k, v in _raw.items() if v is not None and v != ""}
+                    if _clean:
+                        _metrics_key = f"{_tkr}_ttm_{_end_date}_10"
+                        _existing = _run_cache.get_financial_metrics(_metrics_key)
+                        _base = dict(_existing[0]) if _existing else {}
+                        _base.update(_clean)
+                        _base.setdefault("report_period", _end_date)
+                        # Force-overwrite (bypass merge-only set_financial_metrics)
+                        _run_cache._financial_metrics_cache[_metrics_key] = [_base]
+
+                # Line items: force-set so search_line_items cache-check picks it up
+                if "line_items" in _overrides:
+                    _li_data = _overrides["line_items"]
+                    if _li_data:
+                        # Filter out rows where all override values are None/""
+                        _li_clean = [
+                            {k: v for k, v in row.items() if v is not None and v != ""}
+                            for row in _li_data
+                        ]
+                        _li_clean = [row for row in _li_clean if row]
+                        if _li_clean:
+                            _run_cache._line_items_cache[_tkr] = _li_clean
+
         # Construct agent graph using the React Flow graph structure
         graph = create_graph(
             graph_nodes=request_data.graph_nodes,
@@ -279,6 +314,12 @@ async def run(request_data: HedgeFundRequest, request: Request, db: Session = De
                 print("Event generator cancelled")
                 return
             finally:
+                # Clean up injected sandbox overrides so they don't bleed into subsequent runs
+                if request_data.metric_overrides:
+                    from src.data.cache import get_cache as _get_cache
+                    _cleanup_cache = _get_cache()
+                    for _ticker in request_data.metric_overrides:
+                        _cleanup_cache._line_items_cache.pop(_ticker.upper(), None)
                 # Clean up
                 progress.unregister_handler(progress_handler)
                 if run_task and not run_task.done():

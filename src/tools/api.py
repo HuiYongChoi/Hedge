@@ -881,6 +881,10 @@ def search_line_items(
     api_key: str = None,
 ) -> list[LineItem]:
     """Fetch line items from API."""
+    # Check for pre-injected sandbox/override data first (set by run handler before graph execution)
+    if cached_data := _cache.get_line_items(ticker):
+        return standardize_line_items(cached_data[:limit], line_items)
+
     fetch_line_items = _expand_line_items(line_items)
     # If not in cache or insufficient data, fetch from API
     headers = {}
