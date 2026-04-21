@@ -330,3 +330,31 @@ class ApiKeySummaryResponse(BaseModel):
 class ApiKeyBulkUpdateRequest(BaseModel):
     """Request to update multiple API keys at once"""
     api_keys: List[ApiKeyCreateRequest]
+
+
+# Data Sandbox schemas
+class FetchMetricsRequest(BaseModel):
+    ticker: str
+    end_date: str
+    start_date: Optional[str] = None
+    period: str = "ttm"
+    limit: int = 10
+    api_keys: Optional[Dict[str, str]] = None
+
+
+class LineItemSnapshot(BaseModel):
+    """A single period's worth of line item data (extra fields allowed)."""
+    report_period: Optional[str] = None
+    period: Optional[str] = None
+
+    class Config:
+        extra = "allow"
+
+
+class FetchMetricsResponse(BaseModel):
+    ticker: str
+    metrics: Optional[Dict[str, Any]] = None
+    market_cap: Optional[float] = None
+    prices: Optional[List[Dict[str, Any]]] = None
+    line_items: Optional[List[Dict[str, Any]]] = None
+    cache_key: str

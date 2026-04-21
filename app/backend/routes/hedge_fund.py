@@ -4,7 +4,10 @@ from sqlalchemy.orm import Session
 import asyncio
 
 from app.backend.database import get_db
-from app.backend.models.schemas import ErrorResponse, HedgeFundRequest, BacktestRequest, BacktestDayResult, BacktestPerformanceMetrics
+from app.backend.models.schemas import (
+    ErrorResponse, HedgeFundRequest, BacktestRequest, BacktestDayResult,
+    BacktestPerformanceMetrics, FetchMetricsRequest, FetchMetricsResponse,
+)
 from app.backend.models.events import StartEvent, ProgressUpdateEvent, ErrorEvent, CompleteEvent
 from app.backend.services.graph import create_graph, parse_hedge_fund_response, run_graph_async
 from app.backend.services.portfolio import create_portfolio
@@ -12,8 +15,135 @@ from app.backend.services.backtest_service import BacktestService
 from app.backend.services.api_key_service import ApiKeyService
 from src.utils.progress import progress
 from src.utils.analysts import get_agents_list
+from src.tools.api import get_financial_metrics, get_market_cap, get_prices, search_line_items
 
 router = APIRouter(prefix="/hedge-fund")
+
+# Union of all line_items fields requested by any of the 18 agents.
+# Used by /fetch-metrics to batch-fetch everything in one call.
+COMMON_LINE_ITEMS_UNION = [
+    # Revenue & Profitability
+    "revenue",
+    "gross_profit",
+    "gross_margin",
+    "operating_income",
+    "operating_margin",
+    "net_income",
+    "earnings_per_share",
+    "operating_expense",
+    # Cash Flow
+    "free_cash_flow",
+    "operating_cash_flow",
+    "capital_expenditure",
+    "depreciation_and_amortization",
+    # Balance Sheet
+    "total_assets",
+    "total_liabilities",
+    "shareholders_equity",
+    "cash_and_equivalents",
+    "current_assets",
+    "current_liabilities",
+    "total_debt",
+    "short_term_debt",
+    "long_term_debt",
+    "goodwill",
+    "intangible_assets",
+    # Leverage / Capital Allocation
+    "debt_to_equity",
+    "return_on_invested_capital",
+    "book_value_per_share",
+    "free_cash_flow_per_share",
+    "interest_coverage",
+    "outstanding_shares",
+    "dividends_and_other_cash_distributions",
+    "issuance_or_purchase_of_equity_shares",
+    # R&D (Cathie Wood)
+    "research_and_development",
+    # Interest
+    "interest_expense",
+    "ebit",
+    "ebitda",
+]
+
+@router.post(
+    path="/fetch-metrics",
+    response_model=FetchMetricsResponse,
+    responses={
+        200: {"description": "Raw financial metrics and line items for the given ticker"},
+        400: {"model": ErrorResponse, "description": "Invalid request parameters"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+)
+async def fetch_metrics(request_data: FetchMetricsRequest, db: Session = Depends(get_db)):
+    """Fetch raw financial data for a ticker WITHOUT running any agents.
+
+    Returned data is intended for the Data Sandbox UI so users can review
+    and override values before triggering a full agent run.
+    """
+    try:
+        # Hydrate API keys from database if not provided
+        api_keys = request_data.api_keys
+        if not api_keys:
+            api_key_service = ApiKeyService(db)
+            api_keys = api_key_service.get_api_keys_dict()
+
+        fin_api_key = api_keys.get("FINANCIAL_DATASETS_API_KEY") if api_keys else None
+
+        ticker = request_data.ticker.upper().strip()
+        end_date = request_data.end_date
+        period = request_data.period
+        limit = request_data.limit
+
+        # 1. FinancialMetrics (cache_key matches what agents use internally)
+        cache_key = f"{ticker}_{period}_{end_date}_{limit}"
+        metrics_list = get_financial_metrics(
+            ticker=ticker,
+            end_date=end_date,
+            period=period,
+            limit=limit,
+            api_key=fin_api_key,
+        )
+        metrics_dict = metrics_list[0].model_dump() if metrics_list else None
+
+        # 2. Market cap
+        market_cap = get_market_cap(ticker=ticker, end_date=end_date, api_key=fin_api_key)
+
+        # 3. Prices (use start_date if given, else 90 days back)
+        from datetime import datetime, timedelta
+        start_date = request_data.start_date or (
+            datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=90)
+        ).strftime("%Y-%m-%d")
+        prices_list = get_prices(
+            ticker=ticker,
+            start_date=start_date,
+            end_date=end_date,
+            api_key=fin_api_key,
+        )
+        prices_dicts = [p.model_dump() for p in prices_list]
+
+        # 4. Line items — all agents' union in a single call
+        line_items_list = search_line_items(
+            ticker=ticker,
+            line_items=COMMON_LINE_ITEMS_UNION,
+            end_date=end_date,
+            period=period,
+            limit=limit,
+            api_key=fin_api_key,
+        )
+        line_items_dicts = [li.model_dump() for li in line_items_list]
+
+        return FetchMetricsResponse(
+            ticker=ticker,
+            metrics=metrics_dict,
+            market_cap=market_cap,
+            prices=prices_dicts,
+            line_items=line_items_dicts,
+            cache_key=cache_key,
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch metrics: {str(e)}")
+
 
 @router.post(
     path="/run",
