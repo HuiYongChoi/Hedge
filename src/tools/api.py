@@ -30,6 +30,11 @@ from src.utils.data_standardizer import (
 # Global cache instance
 _cache = get_cache()
 
+# Module-level caches for enrichment (prevent duplicate API calls across agents in same run)
+_MARKET_CAP_CACHE: dict[tuple[str, str], float | None] = {}
+_ENRICHMENT_LINE_ITEMS_CACHE: dict[tuple[str, str], list[dict]] = {}
+_ENRICHMENT_IN_PROGRESS: set[tuple[str, str]] = set()  # recursion guard
+
 DEFAULT_FINANCIAL_METRIC_FIELDS = tuple(FinancialMetrics.model_fields.keys())
 LINE_ITEM_DERIVED_FIELDS = (
     "gross_margin",
@@ -871,7 +876,46 @@ def get_financial_metrics(
     if not financial_metrics:
         return []
 
-    # Cache the results as dicts using the comprehensive cache key
+    # Enrich each metric: fill null income-statement fields from line_items[0] and
+    # re-derive valuation ratios (P/E, P/B, P/S) so every agent gets correct values.
+    #
+    # Design notes:
+    # - Uses financial_metrics[0].market_cap directly to avoid calling get_market_cap,
+    #   which itself calls get_financial_metrics → infinite recursion.
+    # - _ENRICHMENT_IN_PROGRESS guard provides an extra safety net.
+    # - _ENRICHMENT_LINE_ITEMS_CACHE is separate from _cache._line_items_cache so it
+    #   never interferes with sandbox overrides written by the /run route.
+    _ENRICHMENT_FIELDS = [
+        "revenue", "gross_profit", "operating_income", "net_income",
+        "free_cash_flow", "operating_cash_flow", "capital_expenditure",
+        "earnings_per_share", "ebitda", "total_debt", "cash_and_equivalents",
+        "shareholders_equity", "total_assets", "total_liabilities",
+        "research_and_development", "interest_expense", "depreciation_and_amortization",
+    ]
+    _enrich_key = (ticker, end_date)
+    if _enrich_key not in _ENRICHMENT_IN_PROGRESS:
+        _ENRICHMENT_IN_PROGRESS.add(_enrich_key)
+        try:
+            _mc = financial_metrics[0].market_cap  # avoids calling get_market_cap → no recursion
+            _li_dicts = _ENRICHMENT_LINE_ITEMS_CACHE.get(_enrich_key)
+            if _li_dicts is None:
+                _li_enrich = search_line_items(
+                    ticker, _ENRICHMENT_FIELDS, end_date, period="ttm", limit=1, api_key=api_key
+                )
+                _li_dicts = [item.model_dump() for item in _li_enrich]
+                _ENRICHMENT_LINE_ITEMS_CACHE[_enrich_key] = _li_dicts
+            financial_metrics = [
+                FinancialMetrics(**_build_financial_metric(
+                    enrich_metrics_from_line_items(m.model_dump(), _li_dicts, _mc)
+                ))
+                for m in financial_metrics
+            ]
+        except Exception as e:
+            logger.debug("Metrics enrichment skipped for %s: %s", ticker, e)
+        finally:
+            _ENRICHMENT_IN_PROGRESS.discard(_enrich_key)
+
+    # Cache the enriched results so subsequent cache-hits also return enriched data
     _cache.set_financial_metrics(cache_key, [m.model_dump() for m in financial_metrics])
     return financial_metrics
 
@@ -1114,6 +1158,10 @@ def get_market_cap(
     api_key: str = None,
 ) -> float | None:
     """Fetch market cap from the API."""
+    _mc_key = (ticker, end_date)
+    if _mc_key in _MARKET_CAP_CACHE:
+        return _MARKET_CAP_CACHE[_mc_key]
+
     # Check if end_date is today
     if end_date == datetime.datetime.now().strftime("%Y-%m-%d"):
         # Get the market cap from company facts API
@@ -1129,19 +1177,24 @@ def get_market_cap(
                 data = response.json()
                 response_model = CompanyFactsResponse(**data)
                 if response_model.company_facts.market_cap:
-                    return response_model.company_facts.market_cap
+                    result = response_model.company_facts.market_cap
+                    _MARKET_CAP_CACHE[_mc_key] = result
+                    return result
             except Exception as e:
                 logger.debug("Failed to parse company facts for %s: %s", ticker, e)
 
     financial_metrics = get_financial_metrics(ticker, end_date, api_key=api_key)
     if not financial_metrics:
+        _MARKET_CAP_CACHE[_mc_key] = None
         return None
 
     market_cap = financial_metrics[0].market_cap
 
     if not market_cap:
+        _MARKET_CAP_CACHE[_mc_key] = None
         return None
 
+    _MARKET_CAP_CACHE[_mc_key] = market_cap
     return market_cap
 
 

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import asyncio
@@ -94,54 +95,38 @@ async def fetch_metrics(request_data: FetchMetricsRequest, db: Session = Depends
         period = request_data.period
         limit = request_data.limit
 
-        # 1. FinancialMetrics (cache_key matches what agents use internally)
+        # All data-fetching calls are blocking (sync HTTP).  Wrapping each in
+        # run_in_threadpool offloads them to a thread so the async event loop
+        # stays free for other requests while the API calls are in flight.
+
+        # 1. FinancialMetrics — get_financial_metrics now enriches internally
+        #    (fills income-statement nulls, re-derives P/E, P/B, P/S).
         cache_key = f"{ticker}_{period}_{end_date}_{limit}"
-        metrics_list = get_financial_metrics(
-            ticker=ticker,
-            end_date=end_date,
-            period=period,
-            limit=limit,
-            api_key=fin_api_key,
+        metrics_list = await run_in_threadpool(
+            get_financial_metrics, ticker, end_date, period, limit, fin_api_key
         )
         metrics_dict = metrics_list[0].model_dump() if metrics_list else None
 
-        # 2. Market cap
-        market_cap = get_market_cap(ticker=ticker, end_date=end_date, api_key=fin_api_key)
+        # 2. Market cap (cached after first call)
+        market_cap = await run_in_threadpool(
+            get_market_cap, ticker, end_date, fin_api_key
+        )
 
-        # 3. Prices (use start_date if given, else 90 days back)
+        # 3. Prices
         from datetime import datetime, timedelta
         start_date = request_data.start_date or (
             datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=90)
         ).strftime("%Y-%m-%d")
-        prices_list = get_prices(
-            ticker=ticker,
-            start_date=start_date,
-            end_date=end_date,
-            api_key=fin_api_key,
+        prices_list = await run_in_threadpool(
+            get_prices, ticker, start_date, end_date, fin_api_key
         )
         prices_dicts = [p.model_dump() for p in prices_list]
 
-        # 4. Line items — all agents' union in a single call
-        line_items_list = search_line_items(
-            ticker=ticker,
-            line_items=COMMON_LINE_ITEMS_UNION,
-            end_date=end_date,
-            period=period,
-            limit=limit,
-            api_key=fin_api_key,
+        # 4. Line items — full agents' union for the Data Sandbox display
+        line_items_list = await run_in_threadpool(
+            search_line_items, ticker, COMMON_LINE_ITEMS_UNION, end_date, period, limit, fin_api_key
         )
         line_items_dicts = [li.model_dump() for li in line_items_list]
-
-        # Enrich metrics_dict: fill null income-statement fields from line_items[0],
-        # inject market_cap, reset valuation ratios, then re-derive P/E, P/B, P/S.
-        # Done here (route layer) so it runs once per user action, not per-agent call.
-        from src.utils.data_standardizer import enrich_metrics_from_line_items
-
-        metrics_dict = enrich_metrics_from_line_items(
-            metrics_dict or {},
-            [li.model_dump() for li in line_items_list] if line_items_list else None,
-            market_cap,
-        )
 
         return FetchMetricsResponse(
             ticker=ticker,
