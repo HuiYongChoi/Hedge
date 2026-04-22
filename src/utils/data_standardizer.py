@@ -189,6 +189,45 @@ def standardize_financial_metric_payload(payload: dict[str, Any]) -> dict[str, A
     return derive_financial_fields(dict(payload))
 
 
+_ENRICHMENT_SKIP_KEYS: frozenset[str] = frozenset({
+    "ticker", "report_period", "period", "currency", "calendar_date", "filing_type",
+})
+
+_VALUATION_RATIO_KEYS: tuple[str, ...] = (
+    "price_to_earnings_ratio",
+    "price_to_book_ratio",
+    "price_to_sales_ratio",
+    "enterprise_value_to_ebitda_ratio",
+    "enterprise_value_to_revenue_ratio",
+)
+
+
+def enrich_metrics_from_line_items(
+    metrics: dict[str, Any],
+    line_items: list[dict[str, Any]] | None,
+    market_cap: float | None = None,
+) -> dict[str, Any]:
+    """Fill null income-statement fields in metrics from line_items[0],
+    inject market_cap, reset valuation ratios, then re-derive via
+    standardize_financial_metric_payload. Returns a new dict."""
+    enriched = dict(metrics)
+
+    if line_items:
+        li0 = line_items[0]
+        for k, v in li0.items():
+            if k not in _ENRICHMENT_SKIP_KEYS and v is not None and enriched.get(k) is None:
+                enriched[k] = v
+
+    if market_cap is not None:
+        enriched["market_cap"] = market_cap
+
+    # Reset valuation ratios so standardizer re-derives them from the now-correct base data
+    for ratio in _VALUATION_RATIO_KEYS:
+        enriched[ratio] = None
+
+    return standardize_financial_metric_payload(enriched)
+
+
 def standardize_line_items(items: Iterable[Any], requested_fields: Iterable[str] | None = None) -> list[LineItem]:
     """Materialize requested fields as None and add formula-derived metrics."""
     requested = tuple(requested_fields or ())

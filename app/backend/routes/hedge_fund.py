@@ -132,28 +132,9 @@ async def fetch_metrics(request_data: FetchMetricsRequest, db: Session = Depends
         )
         line_items_dicts = [li.model_dump() for li in line_items_list]
 
-        # 5. Enrich metrics_dict: fill null income-statement fields from line_items[0],
-        #    inject the separately-fetched market_cap, then re-derive valuation ratios
-        #    so P/E, P/B, P/S are computed from reliable values instead of API nulls.
-        from src.utils.data_standardizer import standardize_financial_metric_payload
-
-        metrics_dict = metrics_dict or {}
-
-        if line_items_dicts:
-            _skip = {'ticker', 'report_period', 'period', 'currency', 'calendar_date', 'filing_type'}
-            for k, v in line_items_dicts[0].items():
-                if k not in _skip and v is not None and metrics_dict.get(k) is None:
-                    metrics_dict[k] = v
-
-        if market_cap is not None:
-            metrics_dict['market_cap'] = market_cap
-
-        # Reset valuation ratios so the standardizer re-derives them from enriched data
-        for _ratio in ('price_to_earnings_ratio', 'price_to_book_ratio', 'price_to_sales_ratio',
-                       'enterprise_value_to_ebitda_ratio', 'enterprise_value_to_revenue_ratio'):
-            metrics_dict[_ratio] = None
-
-        metrics_dict = standardize_financial_metric_payload(metrics_dict)
+        # get_financial_metrics now returns enriched data (income-statement fields merged
+        # from line_items, market_cap injected, valuation ratios re-derived).
+        # No additional enrichment needed here.
 
         return FetchMetricsResponse(
             ticker=ticker,
@@ -195,18 +176,30 @@ async def run(request_data: HedgeFundRequest, request: Request, db: Session = De
             for _ticker, _overrides in request_data.metric_overrides.items():
                 _tkr = _ticker.upper()
 
-                # Financial metrics: merge user overrides onto existing cached record (or create fresh)
+                # Financial metrics: merge user overrides, re-derive all valuation ratios,
+                # then write to every cached key that starts with this ticker prefix so
+                # agents calling get_financial_metrics with any period/limit see the overrides.
                 if "metrics" in _overrides:
                     _raw = _overrides["metrics"]
                     _clean = {k: v for k, v in _raw.items() if v is not None and v != ""}
                     if _clean:
+                        from src.utils.data_standardizer import enrich_metrics_from_line_items as _enrich
                         _metrics_key = f"{_tkr}_ttm_{_end_date}_10"
                         _existing = _run_cache.get_financial_metrics(_metrics_key)
                         _base = dict(_existing[0]) if _existing else {}
                         _base.update(_clean)
                         _base.setdefault("report_period", _end_date)
-                        # Force-overwrite (bypass merge-only set_financial_metrics)
-                        _run_cache._financial_metrics_cache[_metrics_key] = [_base]
+                        # Reset derived ratios and re-enrich with the updated base data
+                        _li_source = _run_cache._line_items_cache.get(_tkr) or []
+                        _base = _enrich(_base, _li_source, _base.get("market_cap"))
+                        # Write to every existing key for this ticker (period/limit variants)
+                        _updated_any = False
+                        for _k in list(_run_cache._financial_metrics_cache.keys()):
+                            if _k.startswith(f"{_tkr}_"):
+                                _run_cache._financial_metrics_cache[_k] = [_base]
+                                _updated_any = True
+                        if not _updated_any:
+                            _run_cache._financial_metrics_cache[_metrics_key] = [_base]
 
                 # Line items: force-set so search_line_items cache-check picks it up
                 if "line_items" in _overrides:
@@ -342,7 +335,12 @@ async def run(request_data: HedgeFundRequest, request: Request, db: Session = De
                     from src.data.cache import get_cache as _get_cache
                     _cleanup_cache = _get_cache()
                     for _ticker in request_data.metric_overrides:
-                        _cleanup_cache._line_items_cache.pop(_ticker.upper(), None)
+                        _tkr_clean = _ticker.upper()
+                        _cleanup_cache._line_items_cache.pop(_tkr_clean, None)
+                        # Also remove injected financial_metrics keys (all period/limit variants)
+                        for _ck in list(_cleanup_cache._financial_metrics_cache.keys()):
+                            if _ck.startswith(f"{_tkr_clean}_"):
+                                _cleanup_cache._financial_metrics_cache.pop(_ck, None)
                 # Clean up
                 progress.unregister_handler(progress_handler)
                 if run_task and not run_task.done():

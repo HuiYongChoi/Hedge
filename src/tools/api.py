@@ -21,7 +21,11 @@ from src.data.models import (
     InsiderTradeResponse,
     CompanyFactsResponse,
 )
-from src.utils.data_standardizer import standardize_financial_metric_payload, standardize_line_items
+from src.utils.data_standardizer import (
+    enrich_metrics_from_line_items,
+    standardize_financial_metric_payload,
+    standardize_line_items,
+)
 
 # Global cache instance
 _cache = get_cache()
@@ -867,7 +871,30 @@ def get_financial_metrics(
     if not financial_metrics:
         return []
 
-    # Cache the results as dicts using the comprehensive cache key
+    # Enrich each metric row: fill null income-statement fields from line_items[0]
+    # and re-derive valuation ratios (P/E, P/B, P/S) from the now-correct base data.
+    # search_line_items does NOT call get_financial_metrics, so no circular dependency.
+    _ENRICHMENT_FIELDS = [
+        "revenue", "gross_profit", "operating_income", "net_income",
+        "free_cash_flow", "operating_cash_flow", "capital_expenditure",
+        "earnings_per_share", "ebitda", "total_debt", "cash_and_equivalents",
+        "shareholders_equity", "total_assets", "total_liabilities",
+        "research_and_development", "interest_expense", "depreciation_and_amortization",
+    ]
+    try:
+        _li = search_line_items(ticker, _ENRICHMENT_FIELDS, end_date, period="ttm", limit=1, api_key=api_key)
+        _li_dicts = [item.model_dump() for item in _li]
+        _mc = get_market_cap(ticker, end_date, api_key=api_key)
+        financial_metrics = [
+            FinancialMetrics(**_build_financial_metric(
+                enrich_metrics_from_line_items(m.model_dump(), _li_dicts, _mc)
+            ))
+            for m in financial_metrics
+        ]
+    except Exception as e:
+        logger.debug("Metrics enrichment failed for %s: %s", ticker, e)
+
+    # Cache the enriched results so subsequent calls (cache hit) also get enriched data
     _cache.set_financial_metrics(cache_key, [m.model_dump() for m in financial_metrics])
     return financial_metrics
 
