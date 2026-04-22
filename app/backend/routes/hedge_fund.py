@@ -132,9 +132,16 @@ async def fetch_metrics(request_data: FetchMetricsRequest, db: Session = Depends
         )
         line_items_dicts = [li.model_dump() for li in line_items_list]
 
-        # get_financial_metrics now returns enriched data (income-statement fields merged
-        # from line_items, market_cap injected, valuation ratios re-derived).
-        # No additional enrichment needed here.
+        # Enrich metrics_dict: fill null income-statement fields from line_items[0],
+        # inject market_cap, reset valuation ratios, then re-derive P/E, P/B, P/S.
+        # Done here (route layer) so it runs once per user action, not per-agent call.
+        from src.utils.data_standardizer import enrich_metrics_from_line_items
+
+        metrics_dict = enrich_metrics_from_line_items(
+            metrics_dict or {},
+            [li.model_dump() for li in line_items_list] if line_items_list else None,
+            market_cap,
+        )
 
         return FetchMetricsResponse(
             ticker=ticker,
