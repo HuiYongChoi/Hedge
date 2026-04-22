@@ -32,18 +32,48 @@ const METRICS_FIELDS = [
   { key: 'debt_to_equity', labelKo: '부채비율', labelEn: 'Debt to Equity', isPercent: false },
 ];
 
-function formatOriginal(value: any, isPercent: boolean): string {
-  if (value === null || value === undefined) return '—';
+/** "3.77B", "1.2M", "500K", "0.35", "-2.1B" 등을 숫자로 파싱. 파싱 불가 시 null 반환. */
+export function parseOverrideInput(raw: string): number | null {
+  if (!raw || raw.trim() === '') return null;
+  const s = raw.trim().toUpperCase();
+  const match = s.match(/^(-?\d+\.?\d*)([BMKT]?)$/);
+  if (!match) return null;
+  const num = parseFloat(match[1]);
+  if (!Number.isFinite(num)) return null;
+  switch (match[2]) {
+    case 'B': return num * 1e9;
+    case 'M': return num * 1e6;
+    case 'K':
+    case 'T': return num * 1e3; // T = Thousand (not Trillion here)
+    default:  return num;
+  }
+}
+
+/** 숫자를 약식(B/M/K) 문자열로 표시. null/undefined면 '—' */
+function formatOriginal(value: any, isPercent: boolean): { short: string; raw: string } {
+  if (value === null || value === undefined) return { short: '—', raw: '' };
   const num = Number(value);
-  if (!Number.isFinite(num)) return String(value);
+  if (!Number.isFinite(num)) return { short: String(value), raw: '' };
+
   if (isPercent) {
     const pct = Math.abs(num) <= 1 ? num * 100 : num;
-    return `${pct.toFixed(2)}%`;
+    return { short: `${pct.toFixed(2)}%`, raw: String(num) };
   }
-  if (Math.abs(num) >= 1e9) return `${(num / 1e9).toFixed(2)}B`;
-  if (Math.abs(num) >= 1e6) return `${(num / 1e6).toFixed(2)}M`;
-  if (Math.abs(num) >= 1e3) return `${(num / 1e3).toFixed(2)}K`;
-  return num.toFixed(4);
+
+  const rawStr = Number.isInteger(num)
+    ? num.toLocaleString('en-US')
+    : num.toFixed(4);
+
+  if (Math.abs(num) >= 1e9) return { short: `${(num / 1e9).toFixed(2)}B`, raw: rawStr };
+  if (Math.abs(num) >= 1e6) return { short: `${(num / 1e6).toFixed(2)}M`, raw: rawStr };
+  if (Math.abs(num) >= 1e3) return { short: `${(num / 1e3).toFixed(2)}K`, raw: rawStr };
+  return { short: rawStr, raw: '' };
+}
+
+/** 입력값이 유효한 숫자/약식인지 검증 */
+function isValidInput(raw: string): boolean {
+  if (raw === '' || raw === '-') return true; // 입력 중 허용
+  return parseOverrideInput(raw) !== null;
 }
 
 export function MetricsGrid({ metrics, overrides, onOverrideChange, language }: MetricsGridProps) {
@@ -59,49 +89,88 @@ export function MetricsGrid({ metrics, overrides, onOverrideChange, language }: 
 
   return (
     <div className="overflow-x-auto">
+      {/* 입력 형식 안내 */}
+      <div className="mb-3 px-1 text-xs text-muted-foreground space-y-0.5">
+        <p>
+          {language === 'ko'
+            ? '수정값을 입력하면 에이전트 분석 시 원본 대신 사용됩니다. 빈칸은 원본 유지.'
+            : 'Override values replace originals during agent analysis. Leave blank to keep original.'}
+        </p>
+        <p className="text-muted-foreground/70">
+          {language === 'ko'
+            ? '입력 형식: 약식(3.77B · 1.2M · 500K) 또는 전체 숫자(3770000000) 모두 가능. 비율은 소수(0.35) 또는 퍼센트(35) 둘 다 가능.'
+            : 'Format: shorthand (3.77B · 1.2M · 500K) or full number (3770000000). Ratios: decimal (0.35) or percent (35).'}
+        </p>
+      </div>
+
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b">
             <th className="text-left py-2 px-3 font-medium text-muted-foreground w-48">
               {language === 'ko' ? '항목' : 'Field'}
             </th>
-            <th className="text-right py-2 px-3 font-medium text-muted-foreground w-40">
+            <th className="text-right py-2 px-3 font-medium text-muted-foreground w-44">
               {language === 'ko' ? '원본값' : 'Original'}
             </th>
             <th className="text-right py-2 px-3 font-medium text-muted-foreground w-44">
-              {language === 'ko' ? '수정값' : 'Override'}
+              {language === 'ko' ? '수정값 입력' : 'Override'}
             </th>
           </tr>
         </thead>
         <tbody>
           {METRICS_FIELDS.map(({ key, labelKo, labelEn, isPercent }) => {
             const originalVal = metrics[key];
+            const { short, raw } = formatOriginal(originalVal, isPercent);
             const overrideVal = overrides[key] ?? '';
             const hasOverride = overrideVal !== '';
+            const isInvalid = hasOverride && !isValidInput(overrideVal);
 
             return (
               <tr key={key} className="border-b border-dashed hover:bg-muted/30 transition-colors">
                 <td className="py-1.5 px-3 text-foreground">
                   {language === 'ko' ? labelKo : labelEn}
-                  <span className="ml-1 text-[10px] text-muted-foreground/60">{key}</span>
+                  <span className="ml-1 text-[10px] text-muted-foreground/50">{key}</span>
                 </td>
-                <td className="py-1.5 px-3 text-right font-mono text-muted-foreground">
-                  {formatOriginal(originalVal, isPercent)}
+                <td className="py-1.5 px-3 text-right">
+                  {short === '—' ? (
+                    <span className="font-mono text-muted-foreground/40">—</span>
+                  ) : (
+                    <span className="font-mono text-muted-foreground">
+                      {short}
+                      {raw && raw !== short && (
+                        <span className="block text-[10px] text-muted-foreground/40">
+                          {raw}
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </td>
                 <td className="py-1.5 px-3 text-right">
                   <input
-                    type="number"
-                    step="any"
+                    type="text"
+                    inputMode="decimal"
                     value={overrideVal}
                     onChange={e => onOverrideChange(key, e.target.value)}
-                    placeholder={language === 'ko' ? '수정 안 함' : 'unchanged'}
+                    placeholder={
+                      short === '—'
+                        ? (language === 'ko' ? '예: 3.77B' : 'e.g. 3.77B')
+                        : short
+                    }
                     className={`w-36 text-right text-sm bg-transparent border rounded px-2 py-0.5 font-mono
-                      focus:outline-none focus:ring-1 focus:ring-blue-500
-                      placeholder:text-muted-foreground/40
-                      ${hasOverride
-                        ? 'border-blue-500/60 text-blue-400'
-                        : 'border-border text-foreground'}`}
+                      focus:outline-none focus:ring-1
+                      placeholder:text-muted-foreground/30
+                      ${isInvalid
+                        ? 'border-red-500/60 text-red-400 focus:ring-red-500'
+                        : hasOverride
+                          ? 'border-blue-500/60 text-blue-400 focus:ring-blue-500'
+                          : 'border-border text-foreground focus:ring-blue-500'
+                      }`}
                   />
+                  {isInvalid && (
+                    <p className="text-[10px] text-red-400 mt-0.5 text-right">
+                      {language === 'ko' ? '예: 3.77B, 1200000' : 'e.g. 3.77B, 1200000'}
+                    </p>
+                  )}
                 </td>
               </tr>
             );

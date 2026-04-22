@@ -8,7 +8,7 @@ import { useLanguage } from '@/contexts/language-context';
 import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
 import { extractBaseAgentKey } from '@/components/ui/agent-formula-tooltip';
-import { MetricsGrid } from './data-sandbox/metrics-grid';
+import { MetricsGrid, parseOverrideInput } from './data-sandbox/metrics-grid';
 import { TrendCharts } from './data-sandbox/trend-charts';
 import { Database, Loader2, Play, RefreshCw, Square, Bot } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -237,12 +237,12 @@ export function DataSandboxTab() {
         ]
       : [];
 
-    // Build metric_overrides
+    // Build metric_overrides — supports shorthand like 3.77B, 1.2M, 500K
     const cleanMetrics: Record<string, number> = {};
     Object.entries(metricsOverrides).forEach(([k, v]) => {
       if (v !== '') {
-        const n = Number(v);
-        if (Number.isFinite(n)) cleanMetrics[k] = n;
+        const n = parseOverrideInput(v);
+        if (n !== null) cleanMetrics[k] = n;
       }
     });
     const cleanLineItems = lineItemsOverrides
