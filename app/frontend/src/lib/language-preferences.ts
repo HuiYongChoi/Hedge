@@ -249,6 +249,27 @@ export const translations = {
     errorStatus: '오류',
     finalDecision: '최종 투자 결정',
     noResultsYet: '종목과 에이전트를 선택한 후 분석을 실행하세요.',
+
+    // Data Sandbox Tab
+    dataSandbox: '데이터 샌드박스',
+    dataSandboxDesc: '실제 데이터를 가져와 수치를 수정한 후 에이전트 분석을 실행하세요.',
+    fetchData: '데이터 가져오기',
+    reFetch: '다시 가져오기',
+    fetching: '가져오는 중...',
+    fetchFirst: '종목을 입력하고 "데이터 가져오기"를 클릭하세요.',
+    metricsTab: '재무 지표',
+    lineItemsTab: '세부 항목',
+    trendsTab: '트렌드',
+    resultsTab: '분석 결과',
+    originalValue: '원본값',
+    overrideValue: '수정값',
+    resetOverrides: '수정 초기화',
+    runWithOverrides: '수정값으로 분석 실행',
+    noLineItems: '세부 항목 데이터가 없습니다.',
+    latestClose: '최근 종가',
+    periodReturn: '기간 수익률',
+    dataRange: '데이터 기간',
+    tradingDays: '거래일 수',
   },
   en: {
     // Settings Navigation
@@ -464,6 +485,27 @@ export const translations = {
     errorStatus: 'Error',
     finalDecision: 'Final Investment Decisions',
     noResultsYet: 'Enter a ticker and select agents to run analysis.',
+
+    // Data Sandbox Tab
+    dataSandbox: 'Data Sandbox',
+    dataSandboxDesc: 'Fetch real data, adjust values, then run agent analysis with your overrides.',
+    fetchData: 'Fetch Data',
+    reFetch: 'Re-fetch',
+    fetching: 'Fetching...',
+    fetchFirst: 'Enter a ticker and click "Fetch Data" to begin.',
+    metricsTab: 'Metrics',
+    lineItemsTab: 'Line Items',
+    trendsTab: 'Trends',
+    resultsTab: 'Results',
+    originalValue: 'Original',
+    overrideValue: 'Override',
+    resetOverrides: 'Reset overrides',
+    runWithOverrides: 'Run with overrides',
+    noLineItems: 'No line item data available.',
+    latestClose: 'Latest Close',
+    periodReturn: 'Period Return',
+    dataRange: 'Data Range',
+    tradingDays: 'Trading Days',
   }
 };
 
