@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { PanelBottom, PanelLeft, PanelRight, Search, Settings } from 'lucide-react';
+import { Database, PanelBottom, PanelLeft, PanelRight, Search, Settings } from 'lucide-react';
 
 interface TopBarProps {
   isLeftCollapsed: boolean;
@@ -11,6 +11,7 @@ interface TopBarProps {
   onToggleBottom: () => void;
   onSettingsClick: () => void;
   onSearchClick: () => void;
+  onDataSandboxClick: () => void;
 }
 
 export function TopBar({
@@ -22,6 +23,7 @@ export function TopBar({
   onToggleBottom,
   onSettingsClick,
   onSearchClick,
+  onDataSandboxClick,
 }: TopBarProps) {
   return (
     <div className="absolute top-0 right-0 z-40 flex items-center gap-0 py-1 px-2 bg-panel/80">
@@ -72,6 +74,18 @@ export function TopBar({
 
       {/* Divider */}
       <div className="w-px h-5 bg-ramp-grey-700 mx-1" />
+
+      {/* Data Sandbox */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onDataSandboxClick}
+        className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-ramp-grey-700 transition-colors"
+        aria-label="Open Data Sandbox"
+        title="Data Sandbox"
+      >
+        <Database size={16} />
+      </Button>
 
       {/* Stock Analysis */}
       <Button

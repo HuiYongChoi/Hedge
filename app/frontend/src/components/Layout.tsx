@@ -45,6 +45,11 @@ function LayoutContent() {
     openTab(tabData);
   };
 
+  const handleDataSandboxClick = () => {
+    const tabData = TabService.createDataSandboxTab();
+    openTab(tabData);
+  };
+
   // Add keyboard shortcuts for toggling sidebars and fit view
   useLayoutKeyboardShortcuts(
     () => setIsRightCollapsed(!isRightCollapsed), // Cmd+I for right sidebar
@@ -97,6 +102,7 @@ function LayoutContent() {
         onToggleBottom={toggleBottomPanel}
         onSettingsClick={handleSettingsClick}
         onSearchClick={handleSearchClick}
+        onDataSandboxClick={handleDataSandboxClick}
       />
 
       {/* Tab Bar - positioned absolutely like bottom panel */}
