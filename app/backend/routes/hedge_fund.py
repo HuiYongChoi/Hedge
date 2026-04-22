@@ -132,6 +132,29 @@ async def fetch_metrics(request_data: FetchMetricsRequest, db: Session = Depends
         )
         line_items_dicts = [li.model_dump() for li in line_items_list]
 
+        # 5. Enrich metrics_dict: fill null income-statement fields from line_items[0],
+        #    inject the separately-fetched market_cap, then re-derive valuation ratios
+        #    so P/E, P/B, P/S are computed from reliable values instead of API nulls.
+        from src.utils.data_standardizer import standardize_financial_metric_payload
+
+        metrics_dict = metrics_dict or {}
+
+        if line_items_dicts:
+            _skip = {'ticker', 'report_period', 'period', 'currency', 'calendar_date', 'filing_type'}
+            for k, v in line_items_dicts[0].items():
+                if k not in _skip and v is not None and metrics_dict.get(k) is None:
+                    metrics_dict[k] = v
+
+        if market_cap is not None:
+            metrics_dict['market_cap'] = market_cap
+
+        # Reset valuation ratios so the standardizer re-derives them from enriched data
+        for _ratio in ('price_to_earnings_ratio', 'price_to_book_ratio', 'price_to_sales_ratio',
+                       'enterprise_value_to_ebitda_ratio', 'enterprise_value_to_revenue_ratio'):
+            metrics_dict[_ratio] = None
+
+        metrics_dict = standardize_financial_metric_payload(metrics_dict)
+
         return FetchMetricsResponse(
             ticker=ticker,
             metrics=metrics_dict,
