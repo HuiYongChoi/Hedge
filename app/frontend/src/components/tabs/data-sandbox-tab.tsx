@@ -684,7 +684,7 @@ export function DataSandboxTab() {
 
                 {/* LINE ITEMS TAB */}
                 {viewTab === 'line-items' && (
-                  <div className="p-4 overflow-x-auto">
+                  <div className="p-4 space-y-4">
                     <p className="text-xs text-muted-foreground mb-3">
                       {t('lineItemsDescription', language)}
                     </p>
@@ -693,64 +693,75 @@ export function DataSandboxTab() {
                         {t('noLineItems', language)}
                       </p>
                     ) : (
-                      <table className="text-xs border-collapse w-full">
-                        <thead>
-                          <tr className="border-b">
-                            <th className="text-left py-2 px-2 font-medium text-muted-foreground sticky left-0 bg-background">
-                              {t('periodColumn', language)}
-                            </th>
-                            {LINE_ITEM_FIELDS.map(f => (
-                              <th key={f} className="text-right py-2 px-2 font-medium text-muted-foreground whitespace-nowrap">
-                                {getFinancialFieldLabel(f, language)}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {lineItemsOverrides.map((row, rowIdx) => (
-                            <tr key={rowIdx} className="border-b border-dashed hover:bg-muted/20">
-                              <td className="py-1 px-2 sticky left-0 bg-background font-mono text-muted-foreground">
+                      <div className="space-y-4">
+                        {lineItemsOverrides.map((row, rowIdx) => (
+                          <section key={rowIdx} className="rounded-md border bg-background">
+                            <div className="flex items-center justify-between border-b bg-muted/20 px-3 py-2">
+                              <span className="text-xs font-medium text-muted-foreground">
+                                {t('periodColumn', language)}
+                              </span>
+                              <span className="font-mono text-xs text-foreground">
                                 {String(row.report_period || '').slice(0, 10)}
-                              </td>
-                              {LINE_ITEM_FIELDS.map(field => {
-                                const originalVal = fetchedData.line_items[rowIdx]?.[field];
-                                const currentVal = row[field];
-                                const isChanged = currentVal !== originalVal;
-                                const { mismatch } = rowIdx === 0
-                                  ? compareOverrideVsLineItem0(
-                                      metricsOverrides[field] ?? '',
-                                      currentVal,
-                                      fetchedData.metrics?.[field],
-                                    )
-                                  : { mismatch: false };
-                                return (
-                                  <td key={field} className="py-1 px-2 text-right">
-                                    <div className="flex items-center justify-end gap-1">
-                                      {rowIdx === 0 && mismatch && (
-                                        <span title={t('mismatchBadgeTitle', language)} className="inline-flex">
-                                          <AlertCircle
-                                            size={12}
-                                            className="text-yellow-500 flex-shrink-0"
-                                          />
-                                        </span>
-                                      )}
-                                      <input
-                                        type="number"
-                                        step="any"
-                                        value={currentVal ?? ''}
-                                        onChange={e => handleLineItemOverride(rowIdx, field, e.target.value)}
-                                        className={`w-24 text-right text-xs bg-transparent border rounded px-1.5 py-0.5 font-mono
-                                          focus:outline-none focus:ring-1 focus:ring-blue-500
-                                          ${isChanged ? 'border-blue-500/60 text-blue-400' : 'border-border'}`}
-                                      />
-                                    </div>
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                              </span>
+                            </div>
+                            <table className="w-full table-fixed text-xs">
+                              <thead>
+                                <tr className="border-b text-muted-foreground">
+                                  <th className="w-1/2 px-3 py-1.5 text-left font-medium">
+                                    {t('metricsField', language)}
+                                  </th>
+                                  <th className="w-1/2 px-3 py-1.5 text-right font-medium">
+                                    {t('overrideValue', language)}
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {LINE_ITEM_FIELDS.map(field => {
+                                  const originalVal = fetchedData.line_items[rowIdx]?.[field];
+                                  const currentVal = row[field];
+                                  const isChanged = currentVal !== originalVal;
+                                  const { mismatch } = rowIdx === 0
+                                    ? compareOverrideVsLineItem0(
+                                        metricsOverrides[field] ?? '',
+                                        currentVal,
+                                        fetchedData.metrics?.[field],
+                                      )
+                                    : { mismatch: false };
+                                  return (
+                                    <tr key={field} className="border-b border-dashed last:border-b-0 hover:bg-muted/20">
+                                      <td className="w-1/2 px-3 py-1.5 text-foreground">
+                                        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                          {rowIdx === 0 && mismatch && (
+                                            <span title={t('mismatchBadgeTitle', language)} className="inline-flex">
+                                              <AlertCircle
+                                                size={12}
+                                                className="text-yellow-500 flex-shrink-0"
+                                              />
+                                            </span>
+                                          )}
+                                          <span>{getFinancialFieldLabel(field, language)}</span>
+                                          <span className="break-all text-[10px] text-muted-foreground/50">{field}</span>
+                                        </div>
+                                      </td>
+                                      <td className="w-1/2 px-3 py-1.5 text-right">
+                                        <input
+                                          type="number"
+                                          step="any"
+                                          value={currentVal ?? ''}
+                                          onChange={e => handleLineItemOverride(rowIdx, field, e.target.value)}
+                                          className={`w-full max-w-56 text-right text-xs bg-transparent border rounded px-2 py-1 font-mono
+                                            focus:outline-none focus:ring-1 focus:ring-blue-500
+                                            ${isChanged ? 'border-blue-500/60 text-blue-400' : 'border-border'}`}
+                                        />
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </section>
+                        ))}
+                      </div>
                     )}
                   </div>
                 )}
