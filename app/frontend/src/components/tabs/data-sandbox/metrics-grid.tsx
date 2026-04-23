@@ -10,31 +10,66 @@ interface MetricsGridProps {
   lineItemsOverrides?: Record<string, any>[];
 }
 
+export const FINANCIAL_FIELD_LABEL_KEYS: Record<string, string> = {
+  capital_expenditure: 'financialFieldCapitalExpenditure',
+  cash_and_equivalents: 'financialFieldCashAndEquivalents',
+  debt_to_equity: 'financialFieldDebtToEquity',
+  depreciation_and_amortization: 'financialFieldDepreciationAndAmortization',
+  earnings_per_share: 'financialFieldEarningsPerShare',
+  ebitda: 'financialFieldEbitda',
+  free_cash_flow: 'financialFieldFreeCashFlow',
+  gross_margin: 'financialFieldGrossMargin',
+  gross_profit: 'financialFieldGrossProfit',
+  interest_expense: 'financialFieldInterestExpense',
+  net_income: 'financialFieldNetIncome',
+  net_margin: 'financialFieldNetMargin',
+  operating_cash_flow: 'financialFieldOperatingCashFlow',
+  operating_income: 'financialFieldOperatingIncome',
+  operating_margin: 'financialFieldOperatingMargin',
+  price_to_book_ratio: 'financialFieldPriceToBookRatio',
+  price_to_earnings_ratio: 'financialFieldPriceToEarningsRatio',
+  price_to_sales_ratio: 'financialFieldPriceToSalesRatio',
+  research_and_development: 'financialFieldResearchAndDevelopment',
+  return_on_assets: 'financialFieldReturnOnAssets',
+  return_on_equity: 'financialFieldReturnOnEquity',
+  return_on_invested_capital: 'financialFieldReturnOnInvestedCapital',
+  revenue: 'financialFieldRevenue',
+  shareholders_equity: 'financialFieldShareholdersEquity',
+  total_assets: 'financialFieldTotalAssets',
+  total_debt: 'financialFieldTotalDebt',
+  total_liabilities: 'financialFieldTotalLiabilities',
+};
+
+export function getFinancialFieldLabel(field: string, language: 'ko' | 'en'): string {
+  const labelKey = FINANCIAL_FIELD_LABEL_KEYS[field];
+  return labelKey ? t(labelKey, language) : field.replace(/_/g, ' ');
+}
+
 const METRICS_FIELDS = [
-  { key: 'revenue', labelKo: '매출액', labelEn: 'Revenue', isPercent: false },
-  { key: 'gross_profit', labelKo: '매출총이익', labelEn: 'Gross Profit', isPercent: false },
-  { key: 'operating_income', labelKo: '영업이익', labelEn: 'Operating Income', isPercent: false },
-  { key: 'net_income', labelKo: '순이익', labelEn: 'Net Income', isPercent: false },
-  { key: 'ebitda', labelKo: 'EBITDA', labelEn: 'EBITDA', isPercent: false },
-  { key: 'earnings_per_share', labelKo: '주당순이익 (EPS)', labelEn: 'EPS', isPercent: false },
-  { key: 'free_cash_flow', labelKo: '잉여현금흐름', labelEn: 'Free Cash Flow', isPercent: false },
-  { key: 'operating_cash_flow', labelKo: '영업현금흐름', labelEn: 'Operating Cash Flow', isPercent: false },
-  { key: 'capital_expenditure', labelKo: '설비투자', labelEn: 'CapEx', isPercent: false },
-  { key: 'total_assets', labelKo: '총자산', labelEn: 'Total Assets', isPercent: false },
-  { key: 'total_liabilities', labelKo: '총부채', labelEn: 'Total Liabilities', isPercent: false },
-  { key: 'shareholders_equity', labelKo: '자기자본', labelEn: "Shareholders' Equity", isPercent: false },
-  { key: 'cash_and_equivalents', labelKo: '현금성자산', labelEn: 'Cash & Equivalents', isPercent: false },
-  { key: 'total_debt', labelKo: '총차입금', labelEn: 'Total Debt', isPercent: false },
-  { key: 'gross_margin', labelKo: '매출총이익률', labelEn: 'Gross Margin', isPercent: true },
-  { key: 'operating_margin', labelKo: '영업이익률', labelEn: 'Operating Margin', isPercent: true },
-  { key: 'net_margin', labelKo: '순이익률', labelEn: 'Net Margin', isPercent: true },
-  { key: 'return_on_equity', labelKo: 'ROE', labelEn: 'Return on Equity', isPercent: true },
-  { key: 'return_on_assets', labelKo: 'ROA', labelEn: 'Return on Assets', isPercent: true },
-  { key: 'return_on_invested_capital', labelKo: 'ROIC', labelEn: 'ROIC', isPercent: true },
-  { key: 'price_to_earnings_ratio', labelKo: 'PER', labelEn: 'P/E Ratio', isPercent: false },
-  { key: 'price_to_book_ratio', labelKo: 'PBR', labelEn: 'P/B Ratio', isPercent: false },
-  { key: 'price_to_sales_ratio', labelKo: 'PSR', labelEn: 'P/S Ratio', isPercent: false },
-  { key: 'debt_to_equity', labelKo: '부채비율', labelEn: 'Debt to Equity', isPercent: false },
+  { key: 'revenue', isPercent: false },
+  { key: 'gross_profit', isPercent: false },
+  { key: 'operating_income', isPercent: false },
+  { key: 'net_income', isPercent: false },
+  { key: 'ebitda', isPercent: false },
+  { key: 'earnings_per_share', isPercent: false },
+  { key: 'free_cash_flow', isPercent: false },
+  { key: 'operating_cash_flow', isPercent: false },
+  { key: 'capital_expenditure', isPercent: false },
+  { key: 'total_assets', isPercent: false },
+  { key: 'total_liabilities', isPercent: false },
+  { key: 'shareholders_equity', isPercent: false },
+  { key: 'cash_and_equivalents', isPercent: false },
+  { key: 'total_debt', isPercent: false },
+  { key: 'gross_margin', isPercent: true },
+  { key: 'operating_margin', isPercent: true },
+  { key: 'net_margin', isPercent: true },
+  { key: 'return_on_equity', isPercent: true },
+  { key: 'return_on_assets', isPercent: true },
+  { key: 'return_on_invested_capital', isPercent: true },
+  { key: 'price_to_earnings_ratio', isPercent: false },
+  { key: 'price_to_book_ratio', isPercent: false },
+  { key: 'price_to_sales_ratio', isPercent: false },
+  { key: 'debt_to_equity', isPercent: false },
 ];
 
 function _safeNum(v: any): number | null {
@@ -113,24 +148,19 @@ export function MetricsGrid({ metrics, overrides, onOverrideChange, language, li
   if (!hasMetrics) {
     return (
       <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-        {language === 'ko' ? '표시할 지표가 없습니다.' : 'No metrics to display.'}
+        {t('noMetricsToDisplay', language)}
       </div>
     );
   }
 
   return (
     <div className="overflow-x-auto">
-      {/* 입력 형식 안내 */}
       <div className="mb-3 px-1 text-xs text-muted-foreground space-y-0.5">
         <p>
-          {language === 'ko'
-            ? '수정값을 입력하면 에이전트 분석 시 원본 대신 사용됩니다. 빈칸은 원본 유지.'
-            : 'Override values replace originals during agent analysis. Leave blank to keep original.'}
+          {t('overrideInstruction', language)}
         </p>
         <p className="text-muted-foreground/70">
-          {language === 'ko'
-            ? '입력 형식: 약식(3.77B · 1.2M · 500K) 또는 전체 숫자(3770000000) 모두 가능. 비율은 소수(0.35) 또는 퍼센트(35) 둘 다 가능.'
-            : 'Format: shorthand (3.77B · 1.2M · 500K) or full number (3770000000). Ratios: decimal (0.35) or percent (35).'}
+          {t('overrideFormatHelp', language)}
         </p>
       </div>
 
@@ -149,7 +179,7 @@ export function MetricsGrid({ metrics, overrides, onOverrideChange, language, li
           </tr>
         </thead>
         <tbody>
-          {METRICS_FIELDS.map(({ key, labelKo, labelEn, isPercent }) => {
+          {METRICS_FIELDS.map(({ key, isPercent }) => {
             const originalVal = metrics[key];
             const { short, raw } = formatOriginal(originalVal, isPercent);
             const overrideVal = overrides[key] ?? '';
@@ -164,7 +194,7 @@ export function MetricsGrid({ metrics, overrides, onOverrideChange, language, li
               <tr key={key} className="border-b border-dashed hover:bg-muted/30 transition-colors">
                 <td className="py-1.5 px-3 text-foreground">
                   <span className="inline-flex items-center gap-1">
-                    {language === 'ko' ? labelKo : labelEn}
+                    {getFinancialFieldLabel(key, language)}
                     <span className="text-[10px] text-muted-foreground/50">{key}</span>
                     {mismatch && (
                       <AlertCircle

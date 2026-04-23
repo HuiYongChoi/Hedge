@@ -9,7 +9,7 @@ import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
 import { extractBaseAgentKey } from '@/components/ui/agent-formula-tooltip';
 import { t } from '@/lib/language-preferences';
-import { MetricsGrid, parseOverrideInput, compareOverrideVsLineItem0 } from './data-sandbox/metrics-grid';
+import { MetricsGrid, parseOverrideInput, compareOverrideVsLineItem0, getFinancialFieldLabel } from './data-sandbox/metrics-grid';
 import { AlertCircle, Database, Loader2, Play, RefreshCw, Square, Bot } from 'lucide-react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 
@@ -661,9 +661,7 @@ export function DataSandboxTab() {
                 {viewTab === 'metrics' && (
                   <div className="p-4">
                     <p className="text-xs text-muted-foreground mb-3">
-                      {language === 'ko'
-                        ? '수정값을 입력하면 에이전트 분석 시 원본 대신 사용됩니다. 빈칸은 원본 유지.'
-                        : 'Override values replace originals during agent analysis. Leave blank to keep original.'}
+                      {t('overrideInstruction', language)}
                     </p>
                     <MetricsGrid
                       metrics={fetchedData.metrics || {}}
@@ -691,11 +689,11 @@ export function DataSandboxTab() {
                         <thead>
                           <tr className="border-b">
                             <th className="text-left py-2 px-2 font-medium text-muted-foreground sticky left-0 bg-background">
-                              {language === 'ko' ? '기간' : 'Period'}
+                              {t('periodColumn', language)}
                             </th>
                             {LINE_ITEM_FIELDS.map(f => (
                               <th key={f} className="text-right py-2 px-2 font-medium text-muted-foreground whitespace-nowrap">
-                                {f.replace(/_/g, ' ')}
+                                {getFinancialFieldLabel(f, language)}
                               </th>
                             ))}
                           </tr>
