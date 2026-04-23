@@ -409,6 +409,15 @@ export function DataSandboxTab() {
     }
   };
 
+  const statusLabel = (status: AgentResult['status']) => {
+    switch (status) {
+      case 'complete': return t('statusComplete', language);
+      case 'running': return t('statusRunning', language);
+      case 'error': return t('statusError', language);
+      case 'waiting': return t('statusWaiting', language);
+    }
+  };
+
   const signalClass = (signal?: string) => {
     const s = (signal || '').toLowerCase();
     if (s === 'bullish' || s === 'buy' || s === 'long') return 'text-green-500';
@@ -794,7 +803,7 @@ export function DataSandboxTab() {
                             {result.status === 'running' && (
                               <Loader2 size={11} className="inline animate-spin mr-1" />
                             )}
-                            {result.status}
+                            {statusLabel(result.status)}
                           </span>
                         </div>
                         {result.signal && (
