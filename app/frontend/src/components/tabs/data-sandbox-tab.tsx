@@ -10,7 +10,7 @@ import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
 import { extractBaseAgentKey } from '@/components/ui/agent-formula-tooltip';
 import { t } from '@/lib/language-preferences';
 import { MetricsGrid, parseOverrideInput, compareOverrideVsLineItem0, getFinancialFieldLabel } from './data-sandbox/metrics-grid';
-import { AlertCircle, Database, Loader2, Play, RefreshCw, Square, Bot } from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronRight, Database, Loader2, Play, RefreshCw, Square, Bot } from 'lucide-react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 
 const TrendCharts = lazy(() =>
@@ -71,6 +71,10 @@ function fmtNumber(v: any): string {
   return n.toFixed(4);
 }
 
+function previewText(value: string, maxLength = 180): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength).trimEnd()}...` : value;
+}
+
 // ── Line Items display fields ──────────────────────────────────────────────
 
 const LINE_ITEM_FIELDS = [
@@ -113,6 +117,8 @@ export function DataSandboxTab() {
   const [agentResults, setAgentResults] = useState<Map<string, AgentResult>>(new Map());
   const [completeResult, setCompleteResult] = useState<CompleteResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  const [expandedAgentResults, setExpandedAgentResults] = useState<Set<string>>(new Set());
+  const [isFinalDecisionExpanded, setIsFinalDecisionExpanded] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // View tab
@@ -163,6 +169,8 @@ export function DataSandboxTab() {
     setCompleteResult(null);
     setAgentResults(new Map());
     setRunError(null);
+    setExpandedAgentResults(new Set());
+    setIsFinalDecisionExpanded(false);
 
     try {
       const response = await fetch(`${API_BASE_URL}/hedge-fund/fetch-metrics`, {
@@ -198,6 +206,8 @@ export function DataSandboxTab() {
     setIsRunning(true);
     setRunError(null);
     setCompleteResult(null);
+    setExpandedAgentResults(new Set());
+    setIsFinalDecisionExpanded(false);
 
     // Init agent result map
     const initialResults = new Map<string, AgentResult>();
@@ -372,6 +382,18 @@ export function DataSandboxTab() {
   const handleStop = () => {
     abortControllerRef.current?.abort();
     setIsRunning(false);
+  };
+
+  const handleToggleAgentResult = (agentKey: string) => {
+    setExpandedAgentResults(prev => {
+      const next = new Set(prev);
+      if (next.has(agentKey)) next.delete(agentKey); else next.add(agentKey);
+      return next;
+    });
+  };
+
+  const handleToggleFinalDecision = () => {
+    setIsFinalDecisionExpanded(prev => !prev);
   };
 
   // ── Override helpers ─────────────────────────────────────────────────────
@@ -805,60 +827,89 @@ export function DataSandboxTab() {
                     )}
 
                     {/* Agent cards */}
-                    {Array.from(agentResults.values()).map(result => (
-                      <div key={result.agentKey} className="border rounded-lg p-3 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <Bot size={14} className={statusColor(result.status)} />
-                          <span className="text-sm font-medium">{result.agentName}</span>
-                          <span className={`ml-auto text-xs font-medium ${statusColor(result.status)}`}>
-                            {result.status === 'running' && (
-                              <Loader2 size={11} className="inline animate-spin mr-1" />
+                    {Array.from(agentResults.values()).map(result => {
+                      const isExpanded = expandedAgentResults.has(result.agentKey);
+                      return (
+                        <div key={result.agentKey} className="border rounded-lg p-3 space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAgentResult(result.agentKey)}
+                            className="flex w-full items-center gap-2 text-left"
+                            aria-expanded={isExpanded}
+                            title={t(isExpanded ? 'collapseDetails' : 'expandDetails', language)}
+                          >
+                            {isExpanded ? (
+                              <ChevronDown size={14} className="text-muted-foreground" />
+                            ) : (
+                              <ChevronRight size={14} className="text-muted-foreground" />
                             )}
-                            {statusLabel(result.status)}
-                          </span>
-                        </div>
-                        {result.signal && (
-                          <div className="flex gap-3 text-xs text-muted-foreground pl-5">
-                            <span className={`font-medium ${signalClass(result.signal)}`}>
-                              {result.signal}
+                            <Bot size={14} className={statusColor(result.status)} />
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium">{result.agentName}</span>
+                            <span className={`ml-auto text-xs font-medium ${statusColor(result.status)}`}>
+                              {result.status === 'running' && (
+                                <Loader2 size={11} className="inline animate-spin mr-1" />
+                              )}
+                              {statusLabel(result.status)}
                             </span>
-                            {result.confidence !== undefined && (
-                              <span>
-                                {t('confidence', language)}:{' '}
-                                {Math.round((result.confidence <= 1 ? result.confidence * 100 : result.confidence))}%
+                          </button>
+                          {result.signal && (
+                            <div className="flex gap-3 text-xs text-muted-foreground pl-10">
+                              <span className={`font-medium ${signalClass(result.signal)}`}>
+                                {result.signal}
                               </span>
-                            )}
-                          </div>
-                        )}
-                        {result.reasoning && (
-                          <p className="text-xs text-muted-foreground pl-5 line-clamp-3">
-                            {result.reasoning}
-                          </p>
-                        )}
-                      </div>
-                    ))}
+                              {result.confidence !== undefined && (
+                                <span>
+                                  {t('confidence', language)}:{' '}
+                                  {Math.round((result.confidence <= 1 ? result.confidence * 100 : result.confidence))}%
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {result.reasoning && (
+                            <p className={`text-xs text-muted-foreground pl-10 ${isExpanded ? 'whitespace-pre-wrap leading-relaxed' : ''}`}>
+                              {isExpanded ? result.reasoning : previewText(result.reasoning)}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
 
                     {/* Final Decision */}
                     {completeResult?.decisions && (
                       <div className="border border-green-500/30 rounded-lg p-4 bg-green-500/5">
-                        <h3 className="text-sm font-semibold text-green-600 dark:text-green-400 mb-3">
-                          {t('finalDecision', language)}
-                        </h3>
+                        <button
+                          type="button"
+                          onClick={handleToggleFinalDecision}
+                          className="mb-3 flex w-full items-center gap-2 text-left"
+                          aria-expanded={isFinalDecisionExpanded}
+                          title={t(isFinalDecisionExpanded ? 'collapseDetails' : 'expandDetails', language)}
+                        >
+                          {isFinalDecisionExpanded ? (
+                            <ChevronDown size={14} className="text-green-600 dark:text-green-400" />
+                          ) : (
+                            <ChevronRight size={14} className="text-green-600 dark:text-green-400" />
+                          )}
+                          <span className="text-sm font-semibold text-green-600 dark:text-green-400">
+                            {t('finalDecision', language)}
+                          </span>
+                        </button>
                         {Object.entries(completeResult.decisions).map(([tkr, decision]: [string, any]) => (
-                          <div key={tkr} className="flex items-center gap-3 text-sm">
-                            <span className="font-mono font-bold">{tkr}</span>
-                            <span className={`font-medium uppercase ${signalClass(decision.action)}`}>
-                              {decision.action}
-                            </span>
-                            {decision.confidence !== undefined && (
-                              <span className="text-muted-foreground text-xs">
-                                {Math.round((decision.confidence <= 1 ? decision.confidence * 100 : decision.confidence))}%
+                          <div key={tkr} className="border-t border-green-500/20 py-2 first:border-t-0 first:pt-0 last:pb-0">
+                            <div className="flex items-center gap-3 text-sm">
+                              <span className="font-mono font-bold">{tkr}</span>
+                              <span className={`font-medium uppercase ${signalClass(decision.action)}`}>
+                                {decision.action}
                               </span>
-                            )}
+                              {decision.confidence !== undefined && (
+                                <span className="text-muted-foreground text-xs">
+                                  {Math.round((decision.confidence <= 1 ? decision.confidence * 100 : decision.confidence))}%
+                                </span>
+                              )}
+                            </div>
                             {decision.reasoning && (
-                              <span className="text-xs text-muted-foreground flex-1 line-clamp-2">
-                                {decision.reasoning}
-                              </span>
+                              <p className={`mt-1 text-xs text-muted-foreground ${isFinalDecisionExpanded ? 'whitespace-pre-wrap leading-relaxed' : ''}`}>
+                                {isFinalDecisionExpanded ? decision.reasoning : previewText(decision.reasoning)}
+                              </p>
                             )}
                           </div>
                         ))}
