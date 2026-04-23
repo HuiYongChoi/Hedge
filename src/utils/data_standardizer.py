@@ -202,6 +202,15 @@ _VALUATION_RATIO_KEYS: tuple[str, ...] = (
 )
 
 
+def _yoy_growth(curr: Any, prev: Any) -> float | None:
+    """Compute YoY growth rate safely. Returns None if either is missing/zero."""
+    c = _safe_float(curr)
+    p = _safe_float(prev)
+    if c is None or p is None or p == 0:
+        return None
+    return (c - p) / abs(p)
+
+
 def enrich_metrics_from_line_items(
     metrics: dict[str, Any],
     line_items: list[dict[str, Any]] | None,
@@ -218,6 +227,23 @@ def enrich_metrics_from_line_items(
             if k not in _ENRICHMENT_SKIP_KEYS and v is not None and enriched.get(k) is None:
                 enriched[k] = v
 
+        # ── 성장률 파생: line_items[0] vs [1] ──────────────────────────
+        # FMP 등에서 성장률을 이미 채운 경우 덮어쓰지 않음.
+        if len(line_items) >= 2:
+            li1 = line_items[1]
+            _GROWTH_FIELDS: list[tuple[str, str]] = [
+                ("revenue_growth",             "revenue"),
+                ("earnings_growth",            "net_income"),
+                ("operating_income_growth",    "operating_income"),
+                ("ebitda_growth",              "ebitda"),
+                ("free_cash_flow_growth",      "free_cash_flow"),
+                ("book_value_growth",          "book_value_per_share"),
+                ("earnings_per_share_growth",  "earnings_per_share"),
+            ]
+            for growth_key, base_key in _GROWTH_FIELDS:
+                if enriched.get(growth_key) is None:
+                    enriched[growth_key] = _yoy_growth(li0.get(base_key), li1.get(base_key))
+
     if market_cap is not None:
         enriched["market_cap"] = market_cap
 
@@ -226,6 +252,7 @@ def enrich_metrics_from_line_items(
         enriched[ratio] = None
 
     return standardize_financial_metric_payload(enriched)
+
 
 
 def standardize_line_items(items: Iterable[Any], requested_fields: Iterable[str] | None = None) -> list[LineItem]:

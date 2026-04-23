@@ -208,6 +208,15 @@ def _fmp_get(endpoint: str, params: dict) -> list | dict | None:
     return None
 
 
+def _fmp_yoy_growth(curr, prev) -> float | None:
+    """YoY growth rate: (curr - prev) / abs(prev). Returns None if data missing."""
+    c = parse_float_safe(curr)
+    p = parse_float_safe(prev)
+    if c is None or p is None or p == 0:
+        return None
+    return (c - p) / abs(p)
+
+
 def _fetch_fmp_metrics(ticker: str) -> dict | None:
     """Fetch FinancialMetrics from FMP stable endpoints (US stocks only)."""
     if _is_korean_ticker(ticker):
@@ -215,19 +224,44 @@ def _fetch_fmp_metrics(ticker: str) -> dict | None:
     try:
         km = _fmp_get("key-metrics", {"symbol": ticker, "limit": 1})
         rt = _fmp_get("ratios", {"symbol": ticker, "limit": 1})
-        inc = _fmp_get("income-statement", {"symbol": ticker, "limit": 1}) or []
-        bal = _fmp_get("balance-sheet-statement", {"symbol": ticker, "limit": 1}) or []
-        cf = _fmp_get("cash-flow-statement", {"symbol": ticker, "limit": 1}) or []
+        # limit=2: 현재 연도 + 전년도 → YoY 성장률 계산 가능
+        inc = _fmp_get("income-statement", {"symbol": ticker, "limit": 2}) or []
+        bal = _fmp_get("balance-sheet-statement", {"symbol": ticker, "limit": 2}) or []
+        cf = _fmp_get("cash-flow-statement", {"symbol": ticker, "limit": 2}) or []
         profile = _fmp_get("profile", {"symbol": ticker}) or []
         if not km and not inc and not bal and not cf:
             return None
         m = km[0] if (km and isinstance(km, list) and km) else {}
         r = rt[0] if (rt and isinstance(rt, list) and rt) else {}
-        inc_row = inc[0] if isinstance(inc, list) and inc else {}
-        bal_row = bal[0] if isinstance(bal, list) and bal else {}
-        cf_row = cf[0] if isinstance(cf, list) and cf else {}
+        inc_row  = inc[0] if isinstance(inc, list) and len(inc) > 0 else {}
+        inc_prev = inc[1] if isinstance(inc, list) and len(inc) > 1 else {}
+        bal_row  = bal[0] if isinstance(bal, list) and len(bal) > 0 else {}
+        bal_prev = bal[1] if isinstance(bal, list) and len(bal) > 1 else {}
+        cf_row   = cf[0]  if isinstance(cf,  list) and len(cf)  > 0 else {}
+        cf_prev  = cf[1]  if isinstance(cf,  list) and len(cf)  > 1 else {}
         profile_row = profile[0] if isinstance(profile, list) and profile else {}
         report_date = m.get("date") or inc_row.get("date") or bal_row.get("date") or "TTM"
+
+        # ── YoY 성장률 계산 ─────────────────────────────────────────────
+        rev_growth    = _fmp_yoy_growth(inc_row.get("revenue"),         inc_prev.get("revenue"))
+        ni_growth     = _fmp_yoy_growth(inc_row.get("netIncome"),       inc_prev.get("netIncome"))
+        oi_growth     = _fmp_yoy_growth(inc_row.get("operatingIncome"), inc_prev.get("operatingIncome"))
+        ebitda_growth = _fmp_yoy_growth(inc_row.get("ebitda"),          inc_prev.get("ebitda"))
+        fcf_growth    = _fmp_yoy_growth(cf_row.get("freeCashFlow"),     cf_prev.get("freeCashFlow"))
+        # BPS 성장: balance sheet equity / shares (current vs prev)
+        eq_curr   = parse_float_safe(bal_row.get("totalStockholdersEquity"))
+        eq_prev   = parse_float_safe(bal_prev.get("totalStockholdersEquity"))
+        sh_curr   = parse_float_safe(inc_row.get("weightedAverageShsOutDil"))
+        sh_prev   = parse_float_safe(inc_prev.get("weightedAverageShsOutDil"))
+        bvps_curr = (eq_curr / sh_curr) if (eq_curr and sh_curr) else None
+        bvps_prev = (eq_prev / sh_prev) if (eq_prev and sh_prev) else None
+        bv_growth = _fmp_yoy_growth(bvps_curr, bvps_prev)
+        # EPS 성장: NI / shares (current vs prev)
+        eps_curr     = parse_float_safe(r.get("netIncomePerShare"))
+        ni_prev_val  = parse_float_safe(inc_prev.get("netIncome"))
+        eps_prev_val = (ni_prev_val / sh_prev) if (ni_prev_val is not None and sh_prev) else None
+        eps_growth   = _fmp_yoy_growth(eps_curr, eps_prev_val)
+
         return {
             "ticker": ticker,
             "source": "FMP",
@@ -263,6 +297,15 @@ def _fetch_fmp_metrics(ticker: str) -> dict | None:
             "earnings_per_share": parse_float_safe(r.get("netIncomePerShare")),
             "book_value_per_share": parse_float_safe(r.get("bookValuePerShare")),
             "free_cash_flow_per_share": parse_float_safe(r.get("freeCashFlowPerShare")),
+            # ── 성장률 (YoY) ──────────────────────────────────────────
+            "revenue_growth": rev_growth,
+            "earnings_growth": ni_growth,
+            "operating_income_growth": oi_growth,
+            "ebitda_growth": ebitda_growth,
+            "free_cash_flow_growth": fcf_growth,
+            "book_value_growth": bv_growth,
+            "earnings_per_share_growth": eps_growth,
+            # ── 손익계산서 ────────────────────────────────────────────
             "revenue": parse_float_safe(inc_row.get("revenue")),
             "gross_profit": parse_float_safe(inc_row.get("grossProfit")),
             "operating_income": parse_float_safe(inc_row.get("operatingIncome")),

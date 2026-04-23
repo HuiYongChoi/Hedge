@@ -330,6 +330,29 @@ export const translations = {
     tickerCodeLabel: '종목 코드',
     useDataSandboxOverrides: 'Data Sandbox 수정값 사용',
     volumeTrend: '거래량 추이',
+    // 성장률 필드
+    financialFieldRevenueGrowth: '매출 성장률',
+    financialFieldEarningsGrowth: '순이익 성장률',
+    financialFieldOperatingIncomeGrowth: '영업이익 성장률',
+    financialFieldEbitdaGrowth: 'EBITDA 성장률',
+    financialFieldFreeCashFlowGrowth: 'FCF 성장률',
+    financialFieldBookValueGrowth: '장부가치 성장률',
+    financialFieldEpsGrowth: 'EPS 성장률',
+    // 밸류에이션 필드
+    financialFieldEnterpriseValue: '기업가치 (EV)',
+    financialFieldEvToEbitda: 'EV/EBITDA',
+    financialFieldEvToRevenue: 'EV/매출',
+    financialFieldPegRatio: 'PEG',
+    financialFieldFcfYield: 'FCF 수익률',
+    // 재무안정성 필드
+    financialFieldCurrentRatio: '유동비율',
+    financialFieldQuickRatio: '당좌비율',
+    financialFieldInterestCoverage: '이자보상배율',
+    // 메트릭스 서브탭
+    metricsSubTabProfitability: '수익성',
+    metricsSubTabValuation: '밸류에이션',
+    metricsSubTabGrowth: '성장률',
+    metricsSubTabStability: '재무안정성',
   },
   en: {
     // Settings Navigation
@@ -626,6 +649,29 @@ export const translations = {
     tickerCodeLabel: 'Ticker',
     useDataSandboxOverrides: 'Use Data Sandbox overrides',
     volumeTrend: 'Volume',
+    // Growth rate fields
+    financialFieldRevenueGrowth: 'Revenue Growth',
+    financialFieldEarningsGrowth: 'Earnings Growth',
+    financialFieldOperatingIncomeGrowth: 'Operating Income Growth',
+    financialFieldEbitdaGrowth: 'EBITDA Growth',
+    financialFieldFreeCashFlowGrowth: 'FCF Growth',
+    financialFieldBookValueGrowth: 'Book Value Growth',
+    financialFieldEpsGrowth: 'EPS Growth',
+    // Valuation fields
+    financialFieldEnterpriseValue: 'Enterprise Value',
+    financialFieldEvToEbitda: 'EV/EBITDA',
+    financialFieldEvToRevenue: 'EV/Revenue',
+    financialFieldPegRatio: 'PEG Ratio',
+    financialFieldFcfYield: 'FCF Yield',
+    // Stability fields
+    financialFieldCurrentRatio: 'Current Ratio',
+    financialFieldQuickRatio: 'Quick Ratio',
+    financialFieldInterestCoverage: 'Interest Coverage',
+    // Metrics subtabs
+    metricsSubTabProfitability: 'Profitability',
+    metricsSubTabValuation: 'Valuation',
+    metricsSubTabGrowth: 'Growth',
+    metricsSubTabStability: 'Stability',
   }
 };
 
