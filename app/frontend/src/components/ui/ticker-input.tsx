@@ -93,20 +93,6 @@ function normalizeAutocompleteToken(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toUpperCase();
 }
 
-function isExactSuggestionMatch(term: string, suggestionList: TickerSuggestion[]): boolean {
-  const normalizedTerm = normalizeAutocompleteToken(term);
-  if (!normalizedTerm) return false;
-
-  return suggestionList.some(suggestion => {
-    const values = [getSuggestionInsertValue(suggestion), suggestion.ticker, suggestion.name];
-    return values.some(value => normalizeAutocompleteToken(value) === normalizedTerm);
-  });
-}
-
-function hasCompletedSuggestion(term: string, suggestionList: TickerSuggestion[]): boolean {
-  return isExactSuggestionMatch(term, suggestionList);
-}
-
 function MarketBadge({ market }: { market?: string }) {
   if (!market || market === 'GLOBAL') return null;
   const isKR = market === 'KR';
@@ -121,6 +107,14 @@ function MarketBadge({ market }: { market?: string }) {
   );
 }
 
+function getStaticSuggestions(term: string): TickerSuggestion[] {
+  const upper = term.toUpperCase();
+  return POPULAR_TICKERS.filter(t =>
+    t.ticker.toUpperCase().startsWith(upper) ||
+    t.name.toUpperCase().includes(upper)
+  ).slice(0, 5);
+}
+
 interface TickerInputProps {
   value: string;
   onChange: (value: string) => void;
@@ -131,84 +125,74 @@ interface TickerInputProps {
 
 export function TickerInput({ value, onChange, placeholder, className, onKeyDown }: TickerInputProps) {
   const [draftValue, setDraftValue] = useState(value);
-  const [open, setOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
   const [suggestions, setSuggestions] = useState<TickerSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
+  // 사용자가 명시적으로 닫은 term을 기억 → 같은 term에서 재오픈 방지
+  const [dismissedTerm, setDismissedTerm] = useState<string | null>(null);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const skipBlurRef = useRef(false);
   const isComposingRef = useRef(false);
-  // 선택 직후 다음 fetchSuggestions를 건너뛰기 위한 플래그
   const skipNextFetchRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentTerm = getTermFromValue(draftValue);
 
+  // suggestions 있고 term이 있고 사용자가 닫지 않은 경우에만 드롭다운 표시
+  const showDropdown = suggestions.length > 0 && currentTerm.length > 0 && currentTerm !== dismissedTerm;
+
   useEffect(() => {
     if (!isComposingRef.current) {
-      setDraftValue(value);
+      // Phase 2: 값이 실제로 다를 때만 setState → currentTerm 불필요한 재트리거 방지
+      setDraftValue(prev => prev === value ? prev : value);
     }
   }, [value]);
 
-  // 정적 fallback 필터 (API 응답 전 즉시 표시)
-  const getStaticSuggestions = (term: string): TickerSuggestion[] => {
-    const upper = term.toUpperCase();
-    return POPULAR_TICKERS.filter(t =>
-      t.ticker.toUpperCase().startsWith(upper) ||
-      t.name.toUpperCase().includes(upper)
-    ).slice(0, 5);
-  };
-
   const fetchSuggestions = (term: string) => {
-    if (abortRef.current) abortRef.current.abort();
-    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
 
     if (term.length < 1) {
       setSuggestions([]);
-      setOpen(false);
-      setActiveIdx(-1);
       return;
     }
 
     // 즉시 정적 결과 표시
     const staticResults = getStaticSuggestions(term);
-    if (hasCompletedSuggestion(term, staticResults)) {
-      setSuggestions([]);
-      setOpen(false);
-      setActiveIdx(-1);
-      return;
-    }
-
     setSuggestions(staticResults);
-    if (staticResults.length > 0) setOpen(true);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     debounceRef.current = setTimeout(async () => {
-      abortRef.current = new AbortController();
       setLoading(true);
       try {
         const res = await fetch(
           `${API_BASE_URL}/ticker-search?q=${encodeURIComponent(term)}`,
-          { signal: abortRef.current.signal }
+          { signal: controller.signal }
         );
         if (!res.ok) throw new Error('Search failed');
         const data: TickerSuggestion[] = await res.json();
         data.forEach(rememberKoreanTickerSuggestion);
-        const liveTerm = getTermFromValue(inputRef.current?.value ?? draftValue);
+
+        // 입력값이 바뀐 경우 무시
+        const liveTerm = getTermFromValue(inputRef.current?.value ?? '');
         if (normalizeAutocompleteToken(liveTerm) !== normalizeAutocompleteToken(term)) {
           return;
         }
-        if (hasCompletedSuggestion(term, data)) {
-          setSuggestions([]);
-          setOpen(false);
-          setActiveIdx(-1);
-          return;
-        }
+
+        // API 결과가 있으면 업데이트, 없으면 정적 결과 유지
         if (data.length > 0) {
           setSuggestions(data);
-          setOpen(true);
-        } else if (staticResults.length === 0) {
-          setOpen(false);
         }
       } catch (e: any) {
         if (e.name === 'AbortError') return;
@@ -221,53 +205,66 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
 
   // currentTerm 변경 시 검색 실행
   useEffect(() => {
-    if (isComposingRef.current) {
-      return;
-    }
-
-    // 선택 직후에는 드롭다운을 다시 열지 않음
+    if (isComposingRef.current) return;
     if (skipNextFetchRef.current) {
       skipNextFetchRef.current = false;
       return;
     }
 
+    // term이 바뀌면 dismissed 상태 초기화
+    setDismissedTerm(null);
+
     if (currentTerm.length >= 1) {
       fetchSuggestions(currentTerm);
     } else {
       setSuggestions([]);
-      setOpen(false);
     }
+
+    // Phase 1: StrictMode cleanup — mount→cleanup→remount 시 이전 실행 부작용 제거
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      if (abortRef.current) {
+        abortRef.current.abort();
+        abortRef.current = null;
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTerm]);
 
-  const showDropdown = open && suggestions.length > 0 && !isExactSuggestionMatch(currentTerm, suggestions);
+  const dismiss = () => {
+    setDismissedTerm(currentTerm);
+    setActiveIdx(-1);
+  };
 
-  /**
-   * 제안 선택 처리:
-   * - 한국 종목(market==='KR')은 기업명을 입력값으로 사용
-   * - 미국/기타 종목은 티커 코드를 사용
-   */
   const handleSelect = (suggestion: TickerSuggestion) => {
     skipBlurRef.current = true;
     skipNextFetchRef.current = true;
     rememberKoreanTickerSuggestion(suggestion);
 
-    if (abortRef.current) abortRef.current.abort();
-    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
 
     const insertValue = getSuggestionInsertValue(suggestion);
-
     const currentValue = inputRef.current?.value ?? value;
     const parts = currentValue.split(',');
     parts[parts.length - 1] = insertValue;
     const nextValue = parts.map(p => p.trim()).join(',');
+
     setDraftValue(nextValue);
     onChange(nextValue);
-    setOpen(false);
-    setActiveIdx(-1);
     setSuggestions([]);
+    setDismissedTerm(null);
+    setActiveIdx(-1);
+
     setTimeout(() => {
       skipBlurRef.current = false;
       inputRef.current?.focus();
@@ -279,18 +276,14 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
     const isInputComposing = isComposingRef.current || Boolean((e.nativeEvent as InputEvent).isComposing);
     setDraftValue(nextValue);
     setActiveIdx(-1);
-    if (isInputComposing) {
-      return;
-    }
+    if (isInputComposing) return;
     onChange(nextValue);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const isComposing = isComposingRef.current || e.nativeEvent.isComposing;
     if (isComposing) {
-      if (['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) {
-        return;
-      }
+      if (['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) return;
     }
 
     if (showDropdown) {
@@ -309,15 +302,14 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
         if (activeIdx >= 0) {
           handleSelect(suggestions[activeIdx]);
         } else {
-          // Close dropdown and confirm current value without requiring a second Enter
-          setOpen(false);
-          setActiveIdx(-1);
+          // 선택 없이 Enter → 드롭다운 닫고 즉시 fetch 실행
+          dismiss();
+          onKeyDown?.(e);
         }
         return;
       }
       if (e.key === 'Escape') {
-        setOpen(false);
-        setActiveIdx(-1);
+        dismiss();
         return;
       }
     }
@@ -339,14 +331,17 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
       fetchSuggestions(term);
     } else {
       setSuggestions([]);
-      setOpen(false);
-      setActiveIdx(-1);
     }
   };
 
   const handleBlur = () => {
     if (skipBlurRef.current) return;
-    setTimeout(() => setOpen(false), 150);
+    // Phase 3: 기존 타이머 취소 후 재설정 — 빠른 focus 복귀 시 이중 닫힘 방지
+    if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+    blurTimerRef.current = setTimeout(() => {
+      blurTimerRef.current = null;
+      dismiss();
+    }, 200);
   };
 
   return (
@@ -358,7 +353,17 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
         onKeyDown={handleKeyDown}
         onCompositionStart={handleCompositionStart}
         onCompositionEnd={handleCompositionEnd}
-        onFocus={() => {}}
+        onFocus={() => {
+          // Phase 3: blur 타이머가 살아있으면 취소 — 클릭→포커스 복귀 시 드롭다운 유지
+          if (blurTimerRef.current) {
+            clearTimeout(blurTimerRef.current);
+            blurTimerRef.current = null;
+          }
+          // 포커스 시 term이 있고 suggestions가 있으면 다시 표시
+          if (currentTerm.length >= 1 && suggestions.length > 0) {
+            setDismissedTerm(null);
+          }
+        }}
         onBlur={handleBlur}
         placeholder={placeholder}
         className={`${className || ''} ${draftValue ? 'pr-8' : ''}`}
@@ -373,9 +378,9 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
           onClick={() => {
             setDraftValue('');
             onChange('');
-            setOpen(false);
-            setActiveIdx(-1);
             setSuggestions([]);
+            setDismissedTerm(null);
+            setActiveIdx(-1);
             inputRef.current?.focus();
           }}
           className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
