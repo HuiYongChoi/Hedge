@@ -272,6 +272,28 @@ export const translations = {
     tradingDays: '거래일 수',
     mismatchBadgeTitle: 'metrics와 line_items[0] 값 불일치',
     mismatchBadgeTooltip: 'metrics와 line_items[0] 값이 다릅니다',
+    // i18n 6-B additions
+    analystsLabel: '분석가',
+    closePriceTrend: '종가 추이',
+    endDateLabel: '종료일',
+    exampleInvalidOverride: '예: 3.77B, 1200000',
+    exampleMetricOverride: '예: 3.77B',
+    exampleTicker: '예: AAPL',
+    fetchingData: '데이터를 가져오는 중...',
+    lineItemsDescription: '기간별 세부 재무 항목입니다. 셀을 직접 수정할 수 있습니다.',
+    loadingCharts: '차트 로딩 중...',
+    marketCapLabel: '시가총액',
+    metricsField: '항목',
+    modelLabel: '모델',
+    noPriceData: '가격 데이터가 없습니다.',
+    overrideCountLabel: '수정됨: {count}개 항목',
+    runAnalysisButton: '분석 실행',
+    selectAgentsAndRun: '에이전트를 선택하고 분석을 실행하세요.',
+    selectAllAgents: '모두 선택',
+    startDateLabel: '시작일',
+    stopButton: '중지',
+    tickerCodeLabel: '종목 코드',
+    volumeTrend: '거래량 추이',
   },
   en: {
     // Settings Navigation
@@ -510,9 +532,35 @@ export const translations = {
     tradingDays: 'Trading Days',
     mismatchBadgeTitle: 'metrics and line_items[0] value mismatch',
     mismatchBadgeTooltip: 'metrics and line_items[0] values differ',
+    // i18n 6-B additions
+    analystsLabel: 'Analysts',
+    closePriceTrend: 'Close Price',
+    endDateLabel: 'End',
+    exampleInvalidOverride: 'e.g. 3.77B, 1200000',
+    exampleMetricOverride: 'e.g. 3.77B',
+    exampleTicker: 'e.g. AAPL',
+    fetchingData: 'Fetching data...',
+    lineItemsDescription: 'Period-level financial line items. Edit cells directly.',
+    loadingCharts: 'Loading charts...',
+    marketCapLabel: 'Market Cap',
+    metricsField: 'Field',
+    modelLabel: 'Model',
+    noPriceData: 'No price data available.',
+    overrideCountLabel: '{count} field(s) overridden',
+    runAnalysisButton: 'Run Analysis',
+    selectAgentsAndRun: 'Select agents and run analysis.',
+    selectAllAgents: 'Select All',
+    startDateLabel: 'Start',
+    stopButton: 'Stop',
+    tickerCodeLabel: 'Ticker',
+    volumeTrend: 'Volume',
   }
 };
 
-export function t(key: keyof typeof translations.en, language: Language = getPreferredLanguage()): string {
-  return translations[language][key] || translations.en[key] || key;
+export type TranslationKey = keyof typeof translations.en;
+
+export function t(key: TranslationKey | string, language: Language = getPreferredLanguage()): string {
+  const langDict = translations[language] as Record<string, string>;
+  const enDict = translations.en as Record<string, string>;
+  return langDict[key] || enDict[key] || key;
 }

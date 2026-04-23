@@ -9,6 +9,7 @@ import {
   CartesianGrid,
   Tooltip,
 } from 'recharts';
+import { t } from '@/lib/language-preferences';
 
 interface PricePoint {
   time: string;
@@ -72,7 +73,7 @@ export function TrendCharts({ prices, ticker, language }: TrendChartsProps) {
   if (!prices || prices.length === 0) {
     return (
       <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-        {language === 'ko' ? '가격 데이터가 없습니다.' : 'No price data available.'}
+        {t('noPriceData', language)}
       </div>
     );
   }
@@ -98,23 +99,23 @@ export function TrendCharts({ prices, ticker, language }: TrendChartsProps) {
       {/* Summary row */}
       <div className="flex gap-4 text-sm border rounded-lg p-3 bg-muted/20">
         <div>
-          <p className="text-xs text-muted-foreground">{language === 'ko' ? '최근 종가' : 'Latest Close'}</p>
+          <p className="text-xs text-muted-foreground">{t('latestClose', language)}</p>
           <p className="font-mono font-medium">${latest?.close?.toFixed(2) ?? '—'}</p>
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">{language === 'ko' ? '기간 수익률' : 'Period Return'}</p>
+          <p className="text-xs text-muted-foreground">{t('periodReturn', language)}</p>
           <p className={`font-mono font-medium ${change !== null && change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
             {change !== null ? `${change >= 0 ? '+' : ''}${change.toFixed(2)}%` : '—'}
           </p>
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">{language === 'ko' ? '데이터 기간' : 'Data Range'}</p>
+          <p className="text-xs text-muted-foreground">{t('dataRange', language)}</p>
           <p className="font-mono text-xs text-muted-foreground">
             {oldest?.time?.slice(0, 10)} ~ {latest?.time?.slice(0, 10)}
           </p>
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">{language === 'ko' ? '거래일 수' : 'Trading Days'}</p>
+          <p className="text-xs text-muted-foreground">{t('tradingDays', language)}</p>
           <p className="font-mono">{sorted.length}</p>
         </div>
       </div>
@@ -122,7 +123,7 @@ export function TrendCharts({ prices, ticker, language }: TrendChartsProps) {
       {/* Close Price chart */}
       <div className="border rounded-lg p-3">
         <p className="text-xs text-muted-foreground mb-2 px-1">
-          {language === 'ko' ? `${ticker} 종가 추이` : `${ticker} Close Price`}
+          {ticker} {t('closePriceTrend', language)}
         </p>
         <ResponsiveContainer width="100%" height={180}>
           <LineChart data={closeData} margin={{ top: 8, right: 16, bottom: 40, left: 48 }}>
@@ -159,7 +160,7 @@ export function TrendCharts({ prices, ticker, language }: TrendChartsProps) {
       {volumeData.length > 0 && (
         <div className="border rounded-lg p-3">
           <p className="text-xs text-muted-foreground mb-2 px-1">
-            {language === 'ko' ? '거래량 추이' : 'Volume'}
+            {t('volumeTrend', language)}
           </p>
           <ResponsiveContainer width="100%" height={120}>
             <BarChart data={volumeData} margin={{ top: 8, right: 16, bottom: 40, left: 48 }}>

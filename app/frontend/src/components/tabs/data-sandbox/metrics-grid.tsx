@@ -1,4 +1,5 @@
 import { AlertCircle } from 'lucide-react';
+import { t } from '@/lib/language-preferences';
 
 interface MetricsGridProps {
   metrics: Record<string, any>;
@@ -137,13 +138,13 @@ export function MetricsGrid({ metrics, overrides, onOverrideChange, language, li
         <thead>
           <tr className="border-b">
             <th className="text-left py-2 px-3 font-medium text-muted-foreground w-48">
-              {language === 'ko' ? '항목' : 'Field'}
+              {t('metricsField', language)}
             </th>
             <th className="text-right py-2 px-3 font-medium text-muted-foreground w-44">
-              {language === 'ko' ? '원본값' : 'Original'}
+              {t('originalValue', language)}
             </th>
             <th className="text-right py-2 px-3 font-medium text-muted-foreground w-44">
-              {language === 'ko' ? '수정값 입력' : 'Override'}
+              {t('overrideValue', language)}
             </th>
           </tr>
         </thead>
@@ -169,7 +170,7 @@ export function MetricsGrid({ metrics, overrides, onOverrideChange, language, li
                       <AlertCircle
                         size={12}
                         className="text-yellow-500 flex-shrink-0"
-                        title={language === 'ko' ? 'metrics와 line_items[0] 값 불일치' : 'metrics and line_items[0] value mismatch'}
+                        title={t('mismatchBadgeTitle', language)}
                       />
                     )}
                   </span>
@@ -196,7 +197,7 @@ export function MetricsGrid({ metrics, overrides, onOverrideChange, language, li
                     onChange={e => onOverrideChange(key, e.target.value)}
                     placeholder={
                       short === '—'
-                        ? (language === 'ko' ? '예: 3.77B' : 'e.g. 3.77B')
+                        ? t('exampleMetricOverride', language)
                         : short
                     }
                     className={`w-36 text-right text-sm bg-transparent border rounded px-2 py-0.5 font-mono
@@ -211,7 +212,7 @@ export function MetricsGrid({ metrics, overrides, onOverrideChange, language, li
                   />
                   {isInvalid && (
                     <p className="text-[10px] text-red-400 mt-0.5 text-right">
-                      {language === 'ko' ? '예: 3.77B, 1200000' : 'e.g. 3.77B, 1200000'}
+                      {t('exampleInvalidOverride', language)}
                     </p>
                   )}
                 </td>

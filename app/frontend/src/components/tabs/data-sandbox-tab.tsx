@@ -8,6 +8,7 @@ import { useLanguage } from '@/contexts/language-context';
 import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
 import { extractBaseAgentKey } from '@/components/ui/agent-formula-tooltip';
+import { t } from '@/lib/language-preferences';
 import { MetricsGrid, parseOverrideInput, compareOverrideVsLineItem0 } from './data-sandbox/metrics-grid';
 import { AlertCircle, Database, Loader2, Play, RefreshCw, Square, Bot } from 'lucide-react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
@@ -417,11 +418,11 @@ export function DataSandboxTab() {
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  const VIEW_TABS: { key: ViewTab; labelKo: string; labelEn: string }[] = [
-    { key: 'metrics', labelKo: '재무 지표', labelEn: 'Metrics' },
-    { key: 'line-items', labelKo: '세부 항목', labelEn: 'Line Items' },
-    { key: 'trends', labelKo: '트렌드', labelEn: 'Trends' },
-    { key: 'results', labelKo: '분석 결과', labelEn: 'Results' },
+  const VIEW_TABS: { key: ViewTab; labelKey: string }[] = [
+    { key: 'metrics', labelKey: 'metricsTab' },
+    { key: 'line-items', labelKey: 'lineItemsTab' },
+    { key: 'trends', labelKey: 'trendsTab' },
+    { key: 'results', labelKey: 'resultsTab' },
   ];
 
   return (
@@ -431,13 +432,11 @@ export function DataSandboxTab() {
         <div className="flex items-center gap-2 mb-1">
           <Database size={18} className="text-blue-500" />
           <h1 className="text-lg font-semibold text-primary">
-            {language === 'ko' ? '데이터 샌드박스' : 'Data Sandbox'}
+            {t('dataSandbox', language)}
           </h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          {language === 'ko'
-            ? '실제 데이터를 가져와 수치를 수정한 후 에이전트 분석을 실행하세요.'
-            : 'Fetch real data, adjust values, then run agent analysis with your overrides.'}
+          {t('dataSandboxDesc', language)}
         </p>
       </div>
 
@@ -447,10 +446,10 @@ export function DataSandboxTab() {
           {/* Ticker */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium">
-              {language === 'ko' ? '종목 코드' : 'Ticker'}
+              {t('tickerCodeLabel', language)}
             </label>
             <TickerInput
-              placeholder={language === 'ko' ? '예: AAPL' : 'e.g. AAPL'}
+              placeholder={t('exampleTicker', language)}
               value={tickers}
               onChange={setTickers}
               onKeyDown={e => { if (e.key === 'Enter' && canFetch) handleFetch(); }}
@@ -461,13 +460,13 @@ export function DataSandboxTab() {
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">
-                {language === 'ko' ? '시작일' : 'Start'}
+                {t('startDateLabel', language)}
               </label>
               <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="text-xs" />
             </div>
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">
-                {language === 'ko' ? '종료일' : 'End'}
+                {t('endDateLabel', language)}
               </label>
               <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="text-xs" />
             </div>
@@ -481,10 +480,10 @@ export function DataSandboxTab() {
             disabled={!canFetch}
           >
             {isFetching
-              ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{language === 'ko' ? '가져오는 중...' : 'Fetching...'}</>
+              ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t('fetching', language)}</>
               : fetchedData
-                ? <><RefreshCw className="h-4 w-4 mr-2" />{language === 'ko' ? '다시 가져오기' : 'Re-fetch'}</>
-                : <><Database className="h-4 w-4 mr-2" />{language === 'ko' ? '데이터 가져오기' : 'Fetch Data'}</>
+                ? <><RefreshCw className="h-4 w-4 mr-2" />{t('reFetch', language)}</>
+                : <><Database className="h-4 w-4 mr-2" />{t('fetchData', language)}</>
             }
           </Button>
 
@@ -496,11 +495,11 @@ export function DataSandboxTab() {
             <div className="text-xs text-muted-foreground bg-muted/30 rounded p-2 space-y-0.5">
               <p><span className="font-medium">{fetchedData.ticker}</span></p>
               {fetchedData.market_cap && (
-                <p>{language === 'ko' ? '시가총액' : 'Market Cap'}: {fmtNumber(fetchedData.market_cap)}</p>
+                <p>{t('marketCapLabel', language)}: {fmtNumber(fetchedData.market_cap)}</p>
               )}
               {overrideCount > 0 && (
                 <p className="text-blue-400">
-                  {language === 'ko' ? `수정됨: ${overrideCount}개 항목` : `${overrideCount} field(s) overridden`}
+                  {t('overrideCountLabel', language).replace('{count}', String(overrideCount))}
                 </p>
               )}
             </div>
@@ -511,7 +510,7 @@ export function DataSandboxTab() {
               onClick={resetOverrides}
               className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
             >
-              {language === 'ko' ? '수정 초기화' : 'Reset overrides'}
+              {t('resetOverrides', language)}
             </button>
           )}
 
@@ -519,7 +518,7 @@ export function DataSandboxTab() {
             {/* Model */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium">
-                {language === 'ko' ? '모델' : 'Model'}
+                {t('modelLabel', language)}
               </label>
               <ModelSelector
                 models={models}
@@ -532,7 +531,7 @@ export function DataSandboxTab() {
             {/* Agents */}
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                {language === 'ko' ? '분석가' : 'Analysts'}
+                {t('analystsLabel', language)}
               </label>
 
               <div className="flex items-center gap-2 pb-1 border-b">
@@ -543,7 +542,7 @@ export function DataSandboxTab() {
                   onCheckedChange={handleSelectAll}
                 />
                 <label htmlFor="sb-select-all" className="text-sm cursor-pointer">
-                  {language === 'ko' ? '모두 선택' : 'Select All'}
+                  {t('selectAllAgents', language)}
                 </label>
                 <span className="ml-auto text-xs text-muted-foreground">{selectedAgents.size}/{agents.length}</span>
               </div>
@@ -591,10 +590,10 @@ export function DataSandboxTab() {
               variant={isRunning ? 'destructive' : 'default'}
             >
               {isRunning
-                ? <><Square className="h-4 w-4 mr-2" />{language === 'ko' ? '중지' : 'Stop'}</>
-                : <><Play className="h-4 w-4 mr-2" />{language === 'ko'
-                    ? overrideCount > 0 ? `수정값으로 분석 실행 (${overrideCount})` : '분석 실행'
-                    : overrideCount > 0 ? `Run with overrides (${overrideCount})` : 'Run Analysis'}</>
+                ? <><Square className="h-4 w-4 mr-2" />{t('stopButton', language)}</>
+                : <><Play className="h-4 w-4 mr-2" />{overrideCount > 0
+                    ? `${t('runWithOverrides', language)} (${overrideCount})`
+                    : t('runAnalysisButton', language)}</>
               }
             </Button>
           </div>
@@ -607,9 +606,7 @@ export function DataSandboxTab() {
               <div className="text-center space-y-3">
                 <Database size={48} className="mx-auto opacity-20" />
                 <p className="text-sm">
-                  {language === 'ko'
-                    ? '종목을 입력하고 "데이터 가져오기"를 클릭하세요.'
-                    : 'Enter a ticker and click "Fetch Data" to begin.'}
+                  {t('fetchFirst', language)}
                 </p>
               </div>
             </div>
@@ -620,7 +617,7 @@ export function DataSandboxTab() {
               <div className="text-center space-y-3">
                 <Loader2 size={36} className="mx-auto animate-spin opacity-40" />
                 <p className="text-sm">
-                  {language === 'ko' ? '데이터를 가져오는 중...' : 'Fetching data...'}
+                  {t('fetchingData', language)}
                 </p>
               </div>
             </div>
@@ -642,7 +639,7 @@ export function DataSandboxTab() {
                       ${tab.key === 'results' && agentResults.size === 0 && !isRunning ? 'opacity-40' : ''}
                     `}
                   >
-                    {language === 'ko' ? tab.labelKo : tab.labelEn}
+                    {t(tab.labelKey, language)}
                     {tab.key === 'metrics' && overrideCount > 0 && (
                       <span className="ml-1.5 text-[10px] bg-blue-500/20 text-blue-400 px-1 rounded">
                         {overrideCount}
@@ -683,13 +680,11 @@ export function DataSandboxTab() {
                 {viewTab === 'line-items' && (
                   <div className="p-4 overflow-x-auto">
                     <p className="text-xs text-muted-foreground mb-3">
-                      {language === 'ko'
-                        ? '기간별 세부 재무 항목입니다. 셀을 직접 수정할 수 있습니다.'
-                        : 'Period-level financial line items. Edit cells directly.'}
+                      {t('lineItemsDescription', language)}
                     </p>
                     {lineItemsOverrides.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
-                        {language === 'ko' ? '세부 항목 데이터가 없습니다.' : 'No line item data available.'}
+                        {t('noLineItems', language)}
                       </p>
                     ) : (
                       <table className="text-xs border-collapse w-full">
@@ -729,7 +724,7 @@ export function DataSandboxTab() {
                                         <AlertCircle
                                           size={12}
                                           className="text-yellow-500 flex-shrink-0"
-                                          title={language === 'ko' ? 'metrics와 line_items[0] 값 불일치' : 'metrics and line_items[0] value mismatch'}
+                                          title={t('mismatchBadgeTitle', language)}
                                         />
                                       )}
                                       <input
@@ -759,7 +754,7 @@ export function DataSandboxTab() {
                     <Suspense fallback={
                       <div className="h-64 flex items-center justify-center text-sm text-muted-foreground">
                         <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                        {language === 'ko' ? '차트 로딩 중...' : 'Loading charts...'}
+                        {t('loadingCharts', language)}
                       </div>
                     }>
                       <TrendCharts
@@ -785,9 +780,7 @@ export function DataSandboxTab() {
                         <div className="text-center space-y-2">
                           <Bot size={36} className="mx-auto opacity-20" />
                           <p className="text-sm">
-                            {language === 'ko'
-                              ? '에이전트를 선택하고 분석을 실행하세요.'
-                              : 'Select agents and run analysis.'}
+                            {t('selectAgentsAndRun', language)}
                           </p>
                         </div>
                       </div>
@@ -813,7 +806,7 @@ export function DataSandboxTab() {
                             </span>
                             {result.confidence !== undefined && (
                               <span>
-                                {language === 'ko' ? '신뢰도' : 'Confidence'}:{' '}
+                                {t('confidence', language)}:{' '}
                                 {Math.round((result.confidence <= 1 ? result.confidence * 100 : result.confidence))}%
                               </span>
                             )}
@@ -831,7 +824,7 @@ export function DataSandboxTab() {
                     {completeResult?.decisions && (
                       <div className="border border-green-500/30 rounded-lg p-4 bg-green-500/5">
                         <h3 className="text-sm font-semibold text-green-600 dark:text-green-400 mb-3">
-                          {language === 'ko' ? '최종 투자 결정' : 'Final Investment Decisions'}
+                          {t('finalDecision', language)}
                         </h3>
                         {Object.entries(completeResult.decisions).map(([tkr, decision]: [string, any]) => (
                           <div key={tkr} className="flex items-center gap-3 text-sm">

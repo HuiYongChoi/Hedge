@@ -11,7 +11,7 @@ type TranslationKey = keyof typeof translations.en;
 interface LanguageContextType {
   language: Language;
   setLanguage: (language: Language) => void;
-  t: (key: TranslationKey) => string;
+  t: (key: TranslationKey | string) => string;
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
