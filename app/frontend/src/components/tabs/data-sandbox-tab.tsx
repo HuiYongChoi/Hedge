@@ -73,7 +73,63 @@ function fmtNumber(v: any): string {
 }
 
 function previewText(value: string, maxLength = 180): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength).trimEnd()}...` : value;
+  // markdown 기호 제거 후 미리보기
+  const stripped = value
+    .replace(/^#{1,3}\s+/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/^[-*]\s+/gm, '• ')
+    .replace(/\n{2,}/g, ' ')
+    .replace(/\n/g, ' ')
+    .trim();
+  return stripped.length > maxLength ? `${stripped.slice(0, maxLength).trimEnd()}...` : stripped;
+}
+
+// LLM 출력 마크다운을 JSX로 렌더링
+function renderMarkdown(text: string): React.ReactNode {
+  const lines = text.split('\n');
+  const nodes: React.ReactNode[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^#{1,3}\s+/.test(line)) {
+      const content = line.replace(/^#{1,3}\s+/, '');
+      nodes.push(
+        <p key={i} className="font-semibold text-xs text-foreground mt-2 mb-0.5">
+          {renderInline(content)}
+        </p>
+      );
+    } else if (/^[-*]\s+/.test(line)) {
+      nodes.push(
+        <p key={i} className="text-xs text-muted-foreground ml-2">
+          {'• '}{renderInline(line.replace(/^[-*]\s+/, ''))}
+        </p>
+      );
+    } else if (line.trim() === '') {
+      nodes.push(<div key={i} className="h-1" />);
+    } else {
+      nodes.push(
+        <p key={i} className="text-xs text-muted-foreground">
+          {renderInline(line)}
+        </p>
+      );
+    }
+    i++;
+  }
+  return <div className="space-y-0.5">{nodes}</div>;
+}
+
+function renderInline(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
+  return parts.map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={idx} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('*') && part.endsWith('*')) {
+      return <em key={idx}>{part.slice(1, -1)}</em>;
+    }
+    return part;
+  });
 }
 
 // ── Line Items display fields ──────────────────────────────────────────────
@@ -846,44 +902,45 @@ export function DataSandboxTab() {
                     {Array.from(agentResults.values()).map(result => {
                       const isExpanded = expandedAgentResults.has(result.agentKey);
                       return (
-                        <div key={result.agentKey} className="border rounded-lg p-3 space-y-2">
+                        <div key={result.agentKey} className="border rounded-lg overflow-hidden">
                           <button
                             type="button"
                             onClick={() => handleToggleAgentResult(result.agentKey)}
-                            className="flex w-full items-center gap-2 text-left"
+                            className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-muted/40 transition-colors cursor-pointer"
                             aria-expanded={isExpanded}
-                            title={t(isExpanded ? 'collapseDetails' : 'expandDetails', language)}
                           >
                             {isExpanded ? (
-                              <ChevronDown size={14} className="text-muted-foreground" />
+                              <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
                             ) : (
-                              <ChevronRight size={14} className="text-muted-foreground" />
+                              <ChevronRight size={14} className="shrink-0 text-muted-foreground" />
                             )}
-                            <Bot size={14} className={statusColor(result.status)} />
+                            <Bot size={14} className={`shrink-0 ${statusColor(result.status)}`} />
                             <span className="min-w-0 flex-1 truncate text-sm font-medium">{result.agentName}</span>
-                            <span className={`ml-auto text-xs font-medium ${statusColor(result.status)}`}>
+                            {result.signal && (
+                              <span className={`shrink-0 text-xs font-semibold ${signalClass(result.signal)}`}>
+                                {result.signal}
+                              </span>
+                            )}
+                            {result.confidence !== undefined && (
+                              <span className="shrink-0 text-xs text-muted-foreground">
+                                {Math.round(result.confidence <= 1 ? result.confidence * 100 : result.confidence)}%
+                              </span>
+                            )}
+                            <span className={`shrink-0 text-xs font-medium ${statusColor(result.status)}`}>
                               {result.status === 'running' && (
                                 <Loader2 size={11} className="inline animate-spin mr-1" />
                               )}
                               {statusLabel(result.status)}
                             </span>
                           </button>
-                          {result.signal && (
-                            <div className="flex gap-3 text-xs text-muted-foreground pl-10">
-                              <span className={`font-medium ${signalClass(result.signal)}`}>
-                                {result.signal}
-                              </span>
-                              {result.confidence !== undefined && (
-                                <span>
-                                  {t('confidence', language)}:{' '}
-                                  {Math.round((result.confidence <= 1 ? result.confidence * 100 : result.confidence))}%
-                                </span>
-                              )}
+                          {isExpanded && result.reasoning && (
+                            <div className="px-3 pb-3 pt-1 border-t border-border/50 pl-9">
+                              {renderMarkdown(result.reasoning)}
                             </div>
                           )}
-                          {result.reasoning && (
-                            <p className={`text-xs text-muted-foreground pl-10 ${isExpanded ? 'whitespace-pre-wrap leading-relaxed' : ''}`}>
-                              {isExpanded ? result.reasoning : previewText(result.reasoning)}
+                          {!isExpanded && result.reasoning && (
+                            <p className="px-3 pb-2 text-xs text-muted-foreground pl-9">
+                              {previewText(result.reasoning)}
                             </p>
                           )}
                         </div>
@@ -892,43 +949,50 @@ export function DataSandboxTab() {
 
                     {/* Final Decision */}
                     {completeResult?.decisions && (
-                      <div className="border border-green-500/30 rounded-lg p-4 bg-green-500/5">
+                      <div className="border border-green-500/30 rounded-lg overflow-hidden bg-green-500/5">
                         <button
                           type="button"
                           onClick={handleToggleFinalDecision}
-                          className="mb-3 flex w-full items-center gap-2 text-left"
+                          className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-green-500/10 transition-colors cursor-pointer"
                           aria-expanded={isFinalDecisionExpanded}
-                          title={t(isFinalDecisionExpanded ? 'collapseDetails' : 'expandDetails', language)}
                         >
                           {isFinalDecisionExpanded ? (
-                            <ChevronDown size={14} className="text-green-600 dark:text-green-400" />
+                            <ChevronDown size={14} className="shrink-0 text-green-600 dark:text-green-400" />
                           ) : (
-                            <ChevronRight size={14} className="text-green-600 dark:text-green-400" />
+                            <ChevronRight size={14} className="shrink-0 text-green-600 dark:text-green-400" />
                           )}
                           <span className="text-sm font-semibold text-green-600 dark:text-green-400">
                             {t('finalDecision', language)}
                           </span>
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            {isFinalDecisionExpanded ? t('collapseDetails', language) : t('expandDetails', language)}
+                          </span>
                         </button>
-                        {Object.entries(completeResult.decisions).map(([tkr, decision]: [string, any]) => (
-                          <div key={tkr} className="border-t border-green-500/20 py-2 first:border-t-0 first:pt-0 last:pb-0">
-                            <div className="flex items-center gap-3 text-sm">
-                              <span className="font-mono font-bold">{tkr}</span>
-                              <span className={`font-medium uppercase ${signalClass(decision.action)}`}>
-                                {decision.action}
-                              </span>
-                              {decision.confidence !== undefined && (
-                                <span className="text-muted-foreground text-xs">
-                                  {Math.round((decision.confidence <= 1 ? decision.confidence * 100 : decision.confidence))}%
+                        <div className="px-4 pb-4 pt-1 border-t border-green-500/20">
+                          {Object.entries(completeResult.decisions).map(([tkr, decision]: [string, any]) => (
+                            <div key={tkr} className="py-2">
+                              <div className="flex items-center gap-3 text-sm">
+                                <span className="font-mono font-bold">{tkr}</span>
+                                <span className={`font-medium uppercase ${signalClass(decision.action)}`}>
+                                  {decision.action}
                                 </span>
+                                {decision.confidence !== undefined && (
+                                  <span className="text-muted-foreground text-xs">
+                                    {Math.round((decision.confidence <= 1 ? decision.confidence * 100 : decision.confidence))}%
+                                  </span>
+                                )}
+                              </div>
+                              {decision.reasoning && (
+                                <div className="mt-1">
+                                  {isFinalDecisionExpanded
+                                    ? renderMarkdown(decision.reasoning)
+                                    : <p className="text-xs text-muted-foreground">{previewText(decision.reasoning)}</p>
+                                  }
+                                </div>
                               )}
                             </div>
-                            {decision.reasoning && (
-                              <p className={`mt-1 text-xs text-muted-foreground ${isFinalDecisionExpanded ? 'whitespace-pre-wrap leading-relaxed' : ''}`}>
-                                {isFinalDecisionExpanded ? decision.reasoning : previewText(decision.reasoning)}
-                              </p>
-                            )}
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
