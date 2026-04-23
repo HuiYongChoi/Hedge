@@ -8,10 +8,13 @@ import { useLanguage } from '@/contexts/language-context';
 import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
 import { extractBaseAgentKey } from '@/components/ui/agent-formula-tooltip';
-import { MetricsGrid, parseOverrideInput } from './data-sandbox/metrics-grid';
-import { TrendCharts } from './data-sandbox/trend-charts';
-import { Database, Loader2, Play, RefreshCw, Square, Bot } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { MetricsGrid, parseOverrideInput, compareOverrideVsLineItem0 } from './data-sandbox/metrics-grid';
+import { AlertCircle, Database, Loader2, Play, RefreshCw, Square, Bot } from 'lucide-react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+
+const TrendCharts = lazy(() =>
+  import('./data-sandbox/trend-charts').then(m => ({ default: m.TrendCharts }))
+);
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' &&
@@ -670,6 +673,8 @@ export function DataSandboxTab() {
                       overrides={metricsOverrides}
                       onOverrideChange={handleMetricOverride}
                       language={language}
+                      lineItems={fetchedData.line_items || []}
+                      lineItemsOverrides={lineItemsOverrides}
                     />
                   </div>
                 )}
@@ -710,17 +715,33 @@ export function DataSandboxTab() {
                                 const originalVal = fetchedData.line_items[rowIdx]?.[field];
                                 const currentVal = row[field];
                                 const isChanged = currentVal !== originalVal;
+                                const { mismatch } = rowIdx === 0
+                                  ? compareOverrideVsLineItem0(
+                                      metricsOverrides[field] ?? '',
+                                      currentVal,
+                                      fetchedData.metrics?.[field],
+                                    )
+                                  : { mismatch: false };
                                 return (
                                   <td key={field} className="py-1 px-2 text-right">
-                                    <input
-                                      type="number"
-                                      step="any"
-                                      value={currentVal ?? ''}
-                                      onChange={e => handleLineItemOverride(rowIdx, field, e.target.value)}
-                                      className={`w-24 text-right text-xs bg-transparent border rounded px-1.5 py-0.5 font-mono
-                                        focus:outline-none focus:ring-1 focus:ring-blue-500
-                                        ${isChanged ? 'border-blue-500/60 text-blue-400' : 'border-border'}`}
-                                    />
+                                    <div className="flex items-center justify-end gap-1">
+                                      {rowIdx === 0 && mismatch && (
+                                        <AlertCircle
+                                          size={12}
+                                          className="text-yellow-500 flex-shrink-0"
+                                          title={language === 'ko' ? 'metrics와 line_items[0] 값 불일치' : 'metrics and line_items[0] value mismatch'}
+                                        />
+                                      )}
+                                      <input
+                                        type="number"
+                                        step="any"
+                                        value={currentVal ?? ''}
+                                        onChange={e => handleLineItemOverride(rowIdx, field, e.target.value)}
+                                        className={`w-24 text-right text-xs bg-transparent border rounded px-1.5 py-0.5 font-mono
+                                          focus:outline-none focus:ring-1 focus:ring-blue-500
+                                          ${isChanged ? 'border-blue-500/60 text-blue-400' : 'border-border'}`}
+                                      />
+                                    </div>
                                   </td>
                                 );
                               })}
@@ -735,11 +756,18 @@ export function DataSandboxTab() {
                 {/* TRENDS TAB */}
                 {viewTab === 'trends' && (
                   <div className="p-4">
-                    <TrendCharts
-                      prices={fetchedData.prices || []}
-                      ticker={fetchedData.ticker}
-                      language={language}
-                    />
+                    <Suspense fallback={
+                      <div className="h-64 flex items-center justify-center text-sm text-muted-foreground">
+                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                        {language === 'ko' ? '차트 로딩 중...' : 'Loading charts...'}
+                      </div>
+                    }>
+                      <TrendCharts
+                        prices={fetchedData.prices || []}
+                        ticker={fetchedData.ticker}
+                        language={language}
+                      />
+                    </Suspense>
                   </div>
                 )}
 
