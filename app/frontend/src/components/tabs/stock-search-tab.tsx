@@ -9,10 +9,17 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useLanguage } from '@/contexts/language-context';
 import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
+import {
+  DATA_SANDBOX_OVERRIDES_EVENT,
+  DATA_SANDBOX_OVERRIDES_STORAGE_KEY,
+  countSandboxOverrideFields,
+  getSandboxOverrideForTicker,
+  loadDataSandboxOverrideSnapshot,
+} from '@/lib/data-sandbox-overrides';
 import { t } from '@/lib/language-preferences';
 import { stockAnalysisRunService, StockAnalysisRunStatus } from '@/services/stock-analysis-run-service';
 import { Bot, ChevronDown, ChevronUp, Info, Loader2, Play, Search, Square } from 'lucide-react';
-import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { AgentFormulaTooltip, extractBaseAgentKey } from '@/components/ui/agent-formula-tooltip';
 
@@ -55,6 +62,7 @@ interface StockAnalysisSavedState {
   expandedAgentKeys: string[];
   selectedDetailReport: DetailReportState | null;
   errorMessage: string | null;
+  useDataSandboxOverrides: boolean;
 }
 
 function serializeStockAnalysisState(state: {
@@ -68,6 +76,7 @@ function serializeStockAnalysisState(state: {
   expandedAgents: Set<string>;
   selectedDetailReport: DetailReportState | null;
   errorMessage: string | null;
+  useDataSandboxOverrides: boolean;
 }): StockAnalysisSavedState {
   return {
     tickers: state.tickers,
@@ -80,6 +89,7 @@ function serializeStockAnalysisState(state: {
     expandedAgentKeys: Array.from(state.expandedAgents),
     selectedDetailReport: state.selectedDetailReport,
     errorMessage: state.errorMessage,
+    useDataSandboxOverrides: state.useDataSandboxOverrides,
   };
 }
 
@@ -114,6 +124,7 @@ function restoreStockAnalysisState(
     expandedAgents: new Set(state.expandedAgentKeys || []),
     selectedDetailReport: state.selectedDetailReport || null,
     errorMessage: state.errorMessage || null,
+    useDataSandboxOverrides: Boolean(state.useDataSandboxOverrides),
   };
 }
 
@@ -694,6 +705,8 @@ export function StockSearchTab() {
   const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
   const [selectedDetailReport, setSelectedDetailReport] = useState<DetailReportState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [useDataSandboxOverrides, setUseDataSandboxOverrides] = useState(false);
+  const [sandboxOverrideSnapshot, setSandboxOverrideSnapshot] = useState(() => loadDataSandboxOverrideSnapshot());
   const abortControllerRef = useRef<AbortController | null>(null);
   const savedRunIdRef = useRef<number | null>(null);
   const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -727,6 +740,7 @@ export function StockSearchTab() {
             setExpandedAgents(restoredState.expandedAgents);
             setSelectedDetailReport(restoredState.selectedDetailReport);
             setErrorMessage(restoredState.errorMessage);
+            setUseDataSandboxOverrides(restoredState.useDataSandboxOverrides);
             restored = true;
           }
         } catch (restoreError) {
@@ -747,6 +761,47 @@ export function StockSearchTab() {
     load();
   }, []);
 
+  const currentTicker = useMemo(() => {
+    const rawTicker = tickers.split(',')[0]?.trim();
+    return rawTicker ? resolveTickerValue(rawTicker).toUpperCase() : '';
+  }, [tickers]);
+
+  const sandboxOverrideForTicker = useMemo(() => (
+    currentTicker ? getSandboxOverrideForTicker(sandboxOverrideSnapshot, currentTicker) : null
+  ), [currentTicker, sandboxOverrideSnapshot]);
+
+  const sandboxOverrideFieldCount = countSandboxOverrideFields(sandboxOverrideForTicker);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const refreshSandboxOverrides = () => {
+      setSandboxOverrideSnapshot(loadDataSandboxOverrideSnapshot());
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === DATA_SANDBOX_OVERRIDES_STORAGE_KEY || event.key === null) {
+        refreshSandboxOverrides();
+      }
+    };
+
+    window.addEventListener(DATA_SANDBOX_OVERRIDES_EVENT, refreshSandboxOverrides);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', refreshSandboxOverrides);
+
+    return () => {
+      window.removeEventListener(DATA_SANDBOX_OVERRIDES_EVENT, refreshSandboxOverrides);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', refreshSandboxOverrides);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (useDataSandboxOverrides && !sandboxOverrideForTicker) {
+      setUseDataSandboxOverrides(false);
+    }
+  }, [sandboxOverrideForTicker, useDataSandboxOverrides]);
+
   const persistCurrentRun = useCallback(async () => {
     if (!hasRestoredSavedRun) return;
 
@@ -761,6 +816,7 @@ export function StockSearchTab() {
       expandedAgents,
       selectedDetailReport,
       errorMessage,
+      useDataSandboxOverrides,
     });
     const firstTicker = tickers.trim() ? resolveTickerValue(tickers.split(',')[0].trim()).toUpperCase() : null;
     const payload = {
@@ -773,6 +829,7 @@ export function StockSearchTab() {
         end_date: endDate,
         selected_agent_keys: Array.from(selectedAgents),
         selected_model: selectedModel,
+        use_data_sandbox_overrides: useDataSandboxOverrides,
       },
       result_data: {
         completeResult,
@@ -805,6 +862,7 @@ export function StockSearchTab() {
     selectedModel,
     startDate,
     tickers,
+    useDataSandboxOverrides,
   ]);
 
   useEffect(() => {
@@ -836,6 +894,7 @@ export function StockSearchTab() {
     selectedModel,
     startDate,
     tickers,
+    useDataSandboxOverrides,
   ]);
 
   const allSelected = agents.length > 0 && selectedAgents.size === agents.length;
@@ -876,6 +935,20 @@ export function StockSearchTab() {
     if (!singleTicker) return;
 
     setTickers(rawTicker);
+
+    const latestSandboxSnapshot = loadDataSandboxOverrideSnapshot() || sandboxOverrideSnapshot;
+    const sandboxMetricOverrides = useDataSandboxOverrides
+      ? getSandboxOverrideForTicker(latestSandboxSnapshot, singleTicker)
+      : null;
+
+    if (latestSandboxSnapshot !== sandboxOverrideSnapshot) {
+      setSandboxOverrideSnapshot(latestSandboxSnapshot);
+    }
+
+    if (useDataSandboxOverrides && !sandboxMetricOverrides) {
+      setErrorMessage(t('dataSandboxOverridesUnavailable', language));
+      return;
+    }
 
     setIsRunning(true);
     setErrorMessage(null);
@@ -934,7 +1007,7 @@ export function StockSearchTab() {
         { agent_id: pmId, model_name: selectedModel.model_name, model_provider: selectedModel.provider }]
       : [];
 
-    const body = {
+    const body: Record<string, any> = {
       tickers: tickerList,
       graph_nodes: graphNodes,
       graph_edges: graphEdges,
@@ -943,6 +1016,9 @@ export function StockSearchTab() {
       end_date: endDate,
       language: language,
     };
+    if (sandboxMetricOverrides) {
+      body.metric_overrides = { [singleTicker]: sandboxMetricOverrides };
+    }
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -1140,6 +1216,34 @@ export function StockSearchTab() {
             <div className="space-y-1">
               <label className="text-xs">{t('endDate', language)}</label>
               <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="text-xs" />
+            </div>
+          </div>
+
+          {/* Data Sandbox Overrides */}
+          <div className="rounded-md border bg-muted/20 p-3">
+            <div className="flex items-start gap-2">
+              <Checkbox
+                id="use-data-sandbox-overrides"
+                checked={useDataSandboxOverrides && Boolean(sandboxOverrideForTicker)}
+                disabled={!sandboxOverrideForTicker || isRunning}
+                onCheckedChange={checked => setUseDataSandboxOverrides(checked === true)}
+                className="mt-0.5"
+              />
+              <div className="min-w-0 space-y-1">
+                <label
+                  htmlFor="use-data-sandbox-overrides"
+                  className={`text-sm font-medium ${sandboxOverrideForTicker && !isRunning ? 'cursor-pointer' : 'text-muted-foreground'}`}
+                >
+                  {t('useDataSandboxOverrides', language)}
+                </label>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  {sandboxOverrideForTicker
+                    ? t('dataSandboxOverridesAvailable', language)
+                        .replace('{ticker}', currentTicker)
+                        .replace('{count}', String(sandboxOverrideFieldCount))
+                    : t('dataSandboxOverridesUnavailable', language)}
+                </p>
+              </div>
             </div>
           </div>
 

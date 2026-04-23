@@ -12,6 +12,7 @@ import { t } from '@/lib/language-preferences';
 import { MetricsGrid, parseOverrideInput, compareOverrideVsLineItem0, getFinancialFieldLabel } from './data-sandbox/metrics-grid';
 import { AlertCircle, ChevronDown, ChevronRight, Database, Loader2, Play, RefreshCw, Square, Bot } from 'lucide-react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { buildDataSandboxOverrideSnapshot, saveDataSandboxOverrideSnapshot } from '@/lib/data-sandbox-overrides';
 
 const TrendCharts = lazy(() =>
   import('./data-sandbox/trend-charts').then(m => ({ default: m.TrendCharts }))
@@ -416,6 +417,21 @@ export function DataSandboxTab() {
   };
 
   const overrideCount = Object.values(metricsOverrides).filter(v => v !== '').length;
+
+  useEffect(() => {
+    if (!fetchedData) return;
+
+    const snapshot = buildDataSandboxOverrideSnapshot({
+      ticker: fetchedData.ticker,
+      metricsOverrides,
+      lineItemsOverrides,
+      parseMetricOverride: parseOverrideInput,
+    });
+
+    if (snapshot) {
+      saveDataSandboxOverrideSnapshot(snapshot);
+    }
+  }, [fetchedData, lineItemsOverrides, metricsOverrides]);
 
   const canFetch = tickers.trim() !== '' && !isFetching && !isRunning;
   const canRun = !!fetchedData && selectedAgents.size > 0 && !isRunning && !isFetching;

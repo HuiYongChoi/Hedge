@@ -276,6 +276,8 @@ export const translations = {
     analystsLabel: '분석가',
     closePriceTrend: '종가 추이',
     collapseDetails: '상세 접기',
+    dataSandboxOverridesAvailable: '{ticker} · {count}개 수정값 준비됨',
+    dataSandboxOverridesUnavailable: '현재 종목에 저장된 Data Sandbox 수정값 없음',
     endDateLabel: '종료일',
     exampleInvalidOverride: '예: 3.77B, 1200000',
     exampleMetricOverride: '예: 3.77B',
@@ -326,6 +328,7 @@ export const translations = {
     startDateLabel: '시작일',
     stopButton: '중지',
     tickerCodeLabel: '종목 코드',
+    useDataSandboxOverrides: 'Data Sandbox 수정값 사용',
     volumeTrend: '거래량 추이',
   },
   en: {
@@ -569,6 +572,8 @@ export const translations = {
     analystsLabel: 'Analysts',
     closePriceTrend: 'Close Price',
     collapseDetails: 'Collapse details',
+    dataSandboxOverridesAvailable: '{ticker} · {count} override(s) ready',
+    dataSandboxOverridesUnavailable: 'No Data Sandbox overrides saved for this ticker',
     endDateLabel: 'End',
     exampleInvalidOverride: 'e.g. 3.77B, 1200000',
     exampleMetricOverride: 'e.g. 3.77B',
@@ -619,6 +624,7 @@ export const translations = {
     startDateLabel: 'Start',
     stopButton: 'Stop',
     tickerCodeLabel: 'Ticker',
+    useDataSandboxOverrides: 'Use Data Sandbox overrides',
     volumeTrend: 'Volume',
   }
 };

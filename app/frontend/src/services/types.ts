@@ -33,6 +33,11 @@ export interface PortfolioPosition {
   trade_price: number;
 }
 
+export interface MetricOverrideSet {
+  metrics?: Record<string, number>;
+  line_items?: Record<string, any>[];
+}
+
 // Base interface for shared fields between HedgeFundRequest and BacktestRequest
 export interface BaseHedgeFundRequest {
   tickers: string[];
@@ -43,6 +48,7 @@ export interface BaseHedgeFundRequest {
   model_provider?: ModelProvider;
   margin_requirement?: number;
   portfolio_positions?: PortfolioPosition[];
+  metric_overrides?: Record<string, MetricOverrideSet>;
 }
 
 export interface HedgeFundRequest extends BaseHedgeFundRequest {
@@ -80,4 +86,4 @@ export interface BacktestPerformanceMetrics {
   long_short_ratio?: number;
   gross_exposure?: number;
   net_exposure?: number;
-} 
+}
