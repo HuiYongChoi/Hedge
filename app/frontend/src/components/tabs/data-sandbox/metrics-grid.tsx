@@ -6,7 +6,6 @@ interface MetricsGridProps {
   overrides: Record<string, string>;
   onOverrideChange: (field: string, value: string) => void;
   language: 'ko' | 'en';
-  lineItems?: Record<string, any>[];
   lineItemsOverrides?: Record<string, any>[];
 }
 
@@ -142,7 +141,7 @@ function isValidInput(raw: string): boolean {
   return parseOverrideInput(raw) !== null;
 }
 
-export function MetricsGrid({ metrics, overrides, onOverrideChange, language, lineItems, lineItemsOverrides }: MetricsGridProps) {
+export function MetricsGrid({ metrics, overrides, onOverrideChange, language, lineItemsOverrides }: MetricsGridProps) {
   const hasMetrics = metrics && Object.keys(metrics).length > 0;
 
   if (!hasMetrics) {
@@ -197,11 +196,12 @@ export function MetricsGrid({ metrics, overrides, onOverrideChange, language, li
                     {getFinancialFieldLabel(key, language)}
                     <span className="text-[10px] text-muted-foreground/50">{key}</span>
                     {mismatch && (
-                      <AlertCircle
-                        size={12}
-                        className="text-yellow-500 flex-shrink-0"
-                        title={t('mismatchBadgeTitle', language)}
-                      />
+                      <span title={t('mismatchBadgeTitle', language)} className="inline-flex">
+                        <AlertCircle
+                          size={12}
+                          className="text-yellow-500 flex-shrink-0"
+                        />
+                      </span>
                     )}
                   </span>
                 </td>

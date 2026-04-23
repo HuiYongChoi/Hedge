@@ -677,7 +677,6 @@ export function DataSandboxTab() {
                       overrides={metricsOverrides}
                       onOverrideChange={handleMetricOverride}
                       language={language}
-                      lineItems={fetchedData.line_items || []}
                       lineItemsOverrides={lineItemsOverrides}
                     />
                   </div>
@@ -728,11 +727,12 @@ export function DataSandboxTab() {
                                   <td key={field} className="py-1 px-2 text-right">
                                     <div className="flex items-center justify-end gap-1">
                                       {rowIdx === 0 && mismatch && (
-                                        <AlertCircle
-                                          size={12}
-                                          className="text-yellow-500 flex-shrink-0"
-                                          title={t('mismatchBadgeTitle', language)}
-                                        />
+                                        <span title={t('mismatchBadgeTitle', language)} className="inline-flex">
+                                          <AlertCircle
+                                            size={12}
+                                            className="text-yellow-500 flex-shrink-0"
+                                          />
+                                        </span>
                                       )}
                                       <input
                                         type="number"
