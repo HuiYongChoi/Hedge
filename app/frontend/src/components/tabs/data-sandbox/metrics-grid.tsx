@@ -1,8 +1,12 @@
+import { AlertCircle } from 'lucide-react';
+
 interface MetricsGridProps {
   metrics: Record<string, any>;
   overrides: Record<string, string>;
   onOverrideChange: (field: string, value: string) => void;
   language: 'ko' | 'en';
+  lineItems?: Record<string, any>[];
+  lineItemsOverrides?: Record<string, any>[];
 }
 
 const METRICS_FIELDS = [
@@ -32,19 +36,45 @@ const METRICS_FIELDS = [
   { key: 'debt_to_equity', labelKo: '부채비율', labelEn: 'Debt to Equity', isPercent: false },
 ];
 
+function _safeNum(v: any): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** metrics override 값과 line_items[0] 값을 비교해 불일치 여부를 반환. */
+export function compareOverrideVsLineItem0(
+  overrideRaw: string,
+  lineItem0Val: number | null | undefined,
+  originalMetric: number | null | undefined,
+): { mismatch: boolean; effectiveMetric: number | null; effectiveLineItem: number | null } {
+  const parsedOverride = overrideRaw !== '' ? parseOverrideInput(overrideRaw) : null;
+  const effectiveMetric = parsedOverride !== null ? parsedOverride : _safeNum(originalMetric);
+  const effectiveLineItem = _safeNum(lineItem0Val);
+
+  let mismatch = false;
+  if (effectiveMetric !== null && effectiveLineItem !== null) {
+    const maxAbs = Math.max(Math.abs(effectiveMetric), Math.abs(effectiveLineItem));
+    mismatch = maxAbs > 0
+      ? Math.abs(effectiveMetric - effectiveLineItem) / maxAbs > 1e-6
+      : effectiveMetric !== effectiveLineItem;
+  }
+
+  return { mismatch, effectiveMetric, effectiveLineItem };
+}
+
 /** "3.77B", "1.2M", "500K", "0.35", "-2.1B" 등을 숫자로 파싱. 파싱 불가 시 null 반환. */
 export function parseOverrideInput(raw: string): number | null {
   if (!raw || raw.trim() === '') return null;
   const s = raw.trim().toUpperCase();
-  const match = s.match(/^(-?\d+\.?\d*)([BMKT]?)$/);
+  const match = s.match(/^(-?\d+\.?\d*)([BMK]?)$/);
   if (!match) return null;
   const num = parseFloat(match[1]);
   if (!Number.isFinite(num)) return null;
   switch (match[2]) {
     case 'B': return num * 1e9;
     case 'M': return num * 1e6;
-    case 'K':
-    case 'T': return num * 1e3; // T = Thousand (not Trillion here)
+    case 'K': return num * 1e3;
     default:  return num;
   }
 }
@@ -76,7 +106,7 @@ function isValidInput(raw: string): boolean {
   return parseOverrideInput(raw) !== null;
 }
 
-export function MetricsGrid({ metrics, overrides, onOverrideChange, language }: MetricsGridProps) {
+export function MetricsGrid({ metrics, overrides, onOverrideChange, language, lineItems, lineItemsOverrides }: MetricsGridProps) {
   const hasMetrics = metrics && Object.keys(metrics).length > 0;
 
   if (!hasMetrics) {
@@ -124,12 +154,25 @@ export function MetricsGrid({ metrics, overrides, onOverrideChange, language }: 
             const overrideVal = overrides[key] ?? '';
             const hasOverride = overrideVal !== '';
             const isInvalid = hasOverride && !isValidInput(overrideVal);
+            const li0Current = lineItemsOverrides?.[0]?.[key];
+            const { mismatch } = !isPercent
+              ? compareOverrideVsLineItem0(overrideVal, li0Current, originalVal)
+              : { mismatch: false };
 
             return (
               <tr key={key} className="border-b border-dashed hover:bg-muted/30 transition-colors">
                 <td className="py-1.5 px-3 text-foreground">
-                  {language === 'ko' ? labelKo : labelEn}
-                  <span className="ml-1 text-[10px] text-muted-foreground/50">{key}</span>
+                  <span className="inline-flex items-center gap-1">
+                    {language === 'ko' ? labelKo : labelEn}
+                    <span className="text-[10px] text-muted-foreground/50">{key}</span>
+                    {mismatch && (
+                      <AlertCircle
+                        size={12}
+                        className="text-yellow-500 flex-shrink-0"
+                        title={language === 'ko' ? 'metrics와 line_items[0] 값 불일치' : 'metrics and line_items[0] value mismatch'}
+                      />
+                    )}
+                  </span>
                 </td>
                 <td className="py-1.5 px-3 text-right">
                   {short === '—' ? (

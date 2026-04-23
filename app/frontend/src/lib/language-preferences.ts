@@ -270,6 +270,8 @@ export const translations = {
     periodReturn: '기간 수익률',
     dataRange: '데이터 기간',
     tradingDays: '거래일 수',
+    mismatchBadgeTitle: 'metrics와 line_items[0] 값 불일치',
+    mismatchBadgeTooltip: 'metrics와 line_items[0] 값이 다릅니다',
   },
   en: {
     // Settings Navigation
@@ -506,6 +508,8 @@ export const translations = {
     periodReturn: 'Period Return',
     dataRange: 'Data Range',
     tradingDays: 'Trading Days',
+    mismatchBadgeTitle: 'metrics and line_items[0] value mismatch',
+    mismatchBadgeTooltip: 'metrics and line_items[0] values differ',
   }
 };
 

@@ -168,9 +168,20 @@ async def run(request_data: HedgeFundRequest, request: Request, db: Session = De
             for _ticker, _overrides in request_data.metric_overrides.items():
                 _tkr = _ticker.upper()
 
-                # Financial metrics: merge user overrides, re-derive all valuation ratios,
-                # then write to every cached key that starts with this ticker prefix so
-                # agents calling get_financial_metrics with any period/limit see the overrides.
+                # Step 1: Apply line_items override FIRST so metrics enrichment reads updated data.
+                if "line_items" in _overrides:
+                    _li_data = _overrides["line_items"]
+                    if _li_data:
+                        # Filter out rows where all override values are None/""
+                        _li_clean = [
+                            {k: v for k, v in row.items() if v is not None and v != ""}
+                            for row in _li_data
+                        ]
+                        _li_clean = [row for row in _li_clean if row]
+                        if _li_clean:
+                            _run_cache._line_items_cache[_tkr] = _li_clean
+
+                # Step 2: Apply metrics override — now _li_source reads the already-updated line_items cache.
                 if "metrics" in _overrides:
                     _raw = _overrides["metrics"]
                     _clean = {k: v for k, v in _raw.items() if v is not None and v != ""}
@@ -192,19 +203,22 @@ async def run(request_data: HedgeFundRequest, request: Request, db: Session = De
                                 _updated_any = True
                         if not _updated_any:
                             _run_cache._financial_metrics_cache[_metrics_key] = [_base]
-
-                # Line items: force-set so search_line_items cache-check picks it up
-                if "line_items" in _overrides:
-                    _li_data = _overrides["line_items"]
-                    if _li_data:
-                        # Filter out rows where all override values are None/""
-                        _li_clean = [
-                            {k: v for k, v in row.items() if v is not None and v != ""}
-                            for row in _li_data
-                        ]
-                        _li_clean = [row for row in _li_clean if row]
-                        if _li_clean:
-                            _run_cache._line_items_cache[_tkr] = _li_clean
+                elif "line_items" in _overrides:
+                    # Step 3: line_items-only override — re-enrich metrics cache so derived
+                    # ratios (P/E, P/B, P/S, EV/EBITDA, EV/Rev) stay consistent.
+                    from src.utils.data_standardizer import enrich_metrics_from_line_items as _enrich
+                    _RATIO_KEYS = (
+                        "price_to_earnings_ratio", "price_to_book_ratio", "price_to_sales_ratio",
+                        "enterprise_value_to_ebitda_ratio", "enterprise_value_to_revenue_ratio",
+                    )
+                    _li_source = _run_cache._line_items_cache.get(_tkr) or []
+                    for _k in list(_run_cache._financial_metrics_cache.keys()):
+                        if _k.startswith(f"{_tkr}_") and _run_cache._financial_metrics_cache[_k]:
+                            _base = dict(_run_cache._financial_metrics_cache[_k][0])
+                            for _r in _RATIO_KEYS:
+                                _base[_r] = None
+                            _base = _enrich(_base, _li_source, _base.get("market_cap"))
+                            _run_cache._financial_metrics_cache[_k] = [_base]
 
         # Construct agent graph using the React Flow graph structure
         graph = create_graph(
