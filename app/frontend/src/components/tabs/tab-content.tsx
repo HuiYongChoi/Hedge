@@ -2,7 +2,8 @@ import { useLanguage } from '@/contexts/language-context';
 import { useTabsContext } from '@/contexts/tabs-context';
 import { cn } from '@/lib/utils';
 import { TabService } from '@/services/tab-service';
-import { BarChart3, Bot, Brain, ChevronDown, ChevronUp, Database, FileText, GitBranch, Search, ShieldCheck } from 'lucide-react';
+import { agentFormulas, llmPipelineStages, llmModelRoles } from '@/data/agent-formulas';
+import { BarChart3, Bot, Brain, ChevronDown, ChevronUp, Cpu, Database, FileText, FlaskConical, GitBranch, Layers, Search, ShieldCheck, Sigma, Sliders } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface TabContentProps {
@@ -401,6 +402,231 @@ const CATEGORY_LABELS: Record<string, { ko: string; en: string }> = {
   technical: { ko: '기술 및 분석', en: 'Technical & Analysis' },
 };
 
+/** Agent card with expandable formula details + LLM role info */
+function AgentCardWithDetails({ agent, isKo }: { agent: AgentScoringGuide; isKo: boolean }) {
+  const [showFormula, setShowFormula] = useState(false);
+  const [showLLM, setShowLLM] = useState(false);
+  const formula = agentFormulas[agent.nameEn];
+
+  return (
+    <article className="rounded-md border border-border/70 bg-background/70 p-4">
+      {/* --- Header --- */}
+      <div className="flex flex-col gap-2 border-b border-border/60 pb-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-primary">
+              {isKo ? agent.nameKo : agent.nameEn}
+            </h3>
+            <span className="rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              {isKo ? agent.styleKo : agent.styleEn}
+            </span>
+            {formula && (
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${formula.llmModelTier === 'tier1' ? 'text-purple-400 border-purple-500/30 bg-purple-500/10' : formula.llmModelTier === 'tier2' ? 'text-blue-400 border-blue-500/30 bg-blue-500/10' : 'text-cyan-400 border-cyan-500/30 bg-cyan-500/10'}`}>
+                {formula.llmModel}
+              </span>
+            )}
+          </div>
+          <p className="mt-2 text-xs leading-6 text-muted-foreground">
+            {isKo ? agent.summaryKo : agent.summaryEn}
+          </p>
+        </div>
+      </div>
+
+      {/* --- Weight tags --- */}
+      <div className="mt-4 flex flex-wrap gap-2">
+        {(isKo ? agent.weightsKo : agent.weightsEn).map((weight) => (
+          <span key={weight} className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+            {weight}
+          </span>
+        ))}
+      </div>
+
+      {/* --- Score / Buy / Sell grid --- */}
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <div className="rounded-md border border-border/70 bg-muted/10 p-3">
+          <p className="text-xs font-semibold text-primary">{isKo ? '점수 구조' : 'Score Structure'}</p>
+          <p className="mt-2 text-xs leading-6 text-muted-foreground">{isKo ? agent.buyRuleKo : agent.buyRuleEn}</p>
+          <p className="mt-2 text-xs leading-6 text-muted-foreground">{isKo ? agent.sellRuleKo : agent.sellRuleEn}</p>
+        </div>
+        <div className="rounded-md border border-blue-500/25 bg-blue-500/5 p-3">
+          <p className="text-xs font-semibold text-blue-500">{isKo ? 'Buy 기준이 되는 조건' : 'Buy-Side Signals'}</p>
+          <ul className="mt-2 space-y-1.5 text-xs leading-6 text-muted-foreground">
+            {(isKo ? agent.buySignalsKo : agent.buySignalsEn).map((item) => (<li key={item}>{item}</li>))}
+          </ul>
+        </div>
+        <div className="rounded-md border border-red-500/25 bg-red-500/5 p-3">
+          <p className="text-xs font-semibold text-red-400">{isKo ? 'Sell 기준이 되는 조건' : 'Sell-Side Signals'}</p>
+          <ul className="mt-2 space-y-1.5 text-xs leading-6 text-muted-foreground">
+            {(isKo ? agent.sellSignalsKo : agent.sellSignalsEn).map((item) => (<li key={item}>{item}</li>))}
+          </ul>
+        </div>
+      </div>
+
+      {/* --- Drill-down buttons --- */}
+      {formula && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" onClick={() => setShowFormula(v => !v)}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${showFormula ? 'border-amber-500 bg-amber-500/20 text-amber-400' : 'border-border bg-muted/20 text-muted-foreground hover:border-amber-500/50 hover:text-amber-400'}`}>
+            <Sigma className="h-3 w-3" /> {showFormula ? (isKo ? '공식 접기' : 'Hide Formulas') : (isKo ? '📐 공식 상세보기' : '📐 Formula Details')}
+          </button>
+          <button type="button" onClick={() => setShowLLM(v => !v)}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${showLLM ? 'border-purple-500 bg-purple-500/20 text-purple-400' : 'border-border bg-muted/20 text-muted-foreground hover:border-purple-500/50 hover:text-purple-400'}`}>
+            <Cpu className="h-3 w-3" /> {showLLM ? (isKo ? 'LLM 접기' : 'Hide LLM') : (isKo ? '🤖 LLM 역할' : '🤖 LLM Role')}
+          </button>
+        </div>
+      )}
+
+      {/* ────────── Formula Detail Panel ────────── */}
+      {showFormula && formula && (
+        <div className="mt-4 space-y-3 rounded-md border border-amber-500/25 bg-amber-500/5 p-4 animate-in fade-in-0 slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-2 border-b border-amber-500/20 pb-2">
+            <FlaskConical className="h-4 w-4 text-amber-400" />
+            <h4 className="text-xs font-bold text-amber-400">{isKo ? '정량 평가 공식 세부' : 'Quantitative Scoring Formula Details'}</h4>
+          </div>
+
+          {/* Axes table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead><tr className="border-b border-border/50">
+                <th className="py-1.5 pr-3 text-left font-semibold text-muted-foreground">{isKo ? '평가축' : 'Axis'}</th>
+                <th className="py-1.5 pr-3 text-left font-semibold text-muted-foreground">{isKo ? '배점' : 'Max'}</th>
+                <th className="py-1.5 text-left font-semibold text-muted-foreground">{isKo ? '판정 공식' : 'Formula'}</th>
+              </tr></thead>
+              <tbody>
+                {formula.axes.map((axis) => (
+                  <tr key={axis.nameEn} className="border-b border-border/30">
+                    <td className="py-2 pr-3 font-medium text-primary whitespace-nowrap">{isKo ? axis.nameKo : axis.nameEn}</td>
+                    <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">{axis.maxScore}</td>
+                    <td className="py-2 text-muted-foreground font-mono text-[11px] leading-5">{isKo ? axis.formulaKo : axis.formulaEn}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* DCF steps */}
+          {formula.dcf && (
+            <div className="rounded-md border border-border/50 bg-background/50 p-3">
+              <p className="text-xs font-bold text-primary mb-2">{isKo ? formula.dcf.titleKo : formula.dcf.titleEn}</p>
+              <ol className="list-decimal list-inside space-y-1">
+                {(isKo ? formula.dcf.stepsKo : formula.dcf.stepsEn).map((step, i) => (
+                  <li key={i} className="text-[11px] font-mono leading-5 text-muted-foreground">{step}</li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {/* Sector adjustments */}
+          {formula.sectorAdjustments.length > 0 && (
+            <div className="rounded-md border border-border/50 bg-background/50 p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Sliders className="h-3.5 w-3.5 text-amber-400" />
+                <p className="text-xs font-bold text-primary">{isKo ? '섹터별 보정' : 'Sector Calibration'}</p>
+              </div>
+              <div className="space-y-2">
+                {formula.sectorAdjustments.map((sa) => (
+                  <div key={sa.sector} className="rounded border border-border/40 bg-muted/10 p-2">
+                    <p className="text-[11px] font-semibold text-primary mb-1">{isKo ? sa.sectorKo : sa.sector}</p>
+                    <ul className="space-y-0.5">
+                      {(isKo ? sa.adjustmentsKo : sa.adjustmentsEn).map((adj, i) => (
+                        <li key={i} className="text-[11px] leading-5 text-muted-foreground">• {adj}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ────────── LLM Role Panel ────────── */}
+      {showLLM && formula && (
+        <div className="mt-4 space-y-3 rounded-md border border-purple-500/25 bg-purple-500/5 p-4 animate-in fade-in-0 slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-2 border-b border-purple-500/20 pb-2">
+            <Cpu className="h-4 w-4 text-purple-400" />
+            <h4 className="text-xs font-bold text-purple-400">{isKo ? 'LLM 모델 역할 배치' : 'LLM Model Role Assignment'}</h4>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded border border-border/40 bg-background/50 p-3">
+              <p className="text-[11px] font-semibold text-muted-foreground mb-1">{isKo ? '담당 모델' : 'Assigned Model'}</p>
+              <p className={`text-sm font-bold ${formula.llmModelTier === 'tier1' ? 'text-purple-400' : formula.llmModelTier === 'tier2' ? 'text-blue-400' : 'text-cyan-400'}`}>{formula.llmModel}</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">{isKo ? formula.llmReasonKo : formula.llmReasonEn}</p>
+            </div>
+            <div className="rounded border border-border/40 bg-background/50 p-3">
+              <p className="text-[11px] font-semibold text-muted-foreground mb-1">{isKo ? '파이프라인 위치' : 'Pipeline Stage'}</p>
+              <div className="flex items-center gap-1 mt-1">
+                {[1,2,3,4,5].map((s) => (
+                  <div key={s} className={`h-2 flex-1 rounded-full transition-all ${s === formula.pipelineStage ? (formula.llmModelTier === 'tier1' ? 'bg-purple-500' : formula.llmModelTier === 'tier2' ? 'bg-blue-500' : 'bg-cyan-500') : 'bg-muted/40'}`} />
+                ))}
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Stage {formula.pipelineStage}: {isKo ? llmPipelineStages[formula.pipelineStage - 1]?.titleKo : llmPipelineStages[formula.pipelineStage - 1]?.titleEn}
+              </p>
+            </div>
+          </div>
+          <div className="rounded border border-border/40 bg-background/50 p-3">
+            <p className="text-[11px] font-semibold text-muted-foreground mb-1">{isKo ? '프롬프트 구조 (미리보기)' : 'Prompt Structure (Preview)'}</p>
+            <p className="text-[11px] leading-5 text-muted-foreground italic">&ldquo;{isKo ? formula.promptPreviewKo : formula.promptPreviewEn}&rdquo;</p>
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
+/** LLM Architecture Overview section */
+function LLMArchitectureSection({ isKo }: { isKo: boolean }) {
+  return (
+    <section className="rounded-md border border-border/70 bg-muted/10 p-5">
+      <div className="flex items-center gap-3 border-b border-border/70 pb-4">
+        <Layers className="h-4 w-4 text-purple-500" />
+        <h2 className="text-base font-semibold text-primary">
+          {isKo ? 'LLM 모델 아키텍처 & 파이프라인' : 'LLM Model Architecture & Pipeline'}
+        </h2>
+      </div>
+      <p className="mt-3 text-sm leading-7 text-muted-foreground">
+        {isKo
+          ? '각 파이프라인 단계에 최적의 모델이 배치됩니다. Tier 1은 깊은 추론, Tier 2는 핵심 분석, Tier 3은 대량 경량 처리를 담당합니다.'
+          : 'Each pipeline stage is served by the optimal model. Tier 1 handles deep reasoning, Tier 2 core analysis, and Tier 3 high-volume lightweight processing.'}
+      </p>
+
+      {/* Pipeline stages */}
+      <div className="mt-5 grid gap-2">
+        {llmPipelineStages.map((stage) => (
+          <div key={stage.stage} className="flex items-start gap-3 rounded border border-border/40 bg-background/50 p-3">
+            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border border-purple-500/40 bg-purple-500/10 text-xs font-bold text-purple-400">
+              {stage.stage}
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-xs font-semibold text-primary">{isKo ? stage.titleKo : stage.titleEn}</p>
+                <span className="rounded-full border border-border/50 bg-muted/30 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">{stage.model}</span>
+              </div>
+              <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{isKo ? stage.descKo : stage.descEn}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Model roles */}
+      <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {llmModelRoles.map((role) => (
+          <div key={role.model} className={`rounded-md border p-3 ${role.colorClass}`}>
+            <p className="text-xs font-bold">{role.model}</p>
+            <p className="mt-0.5 text-[10px] font-medium opacity-80">{isKo ? role.tierKo : role.tierEn}</p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {role.agents.map((a) => (
+                <span key={a} className="rounded bg-background/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">{a}</span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function MainGuide({ language }: { language: 'ko' | 'en' }) {
   const isKo = language === 'ko';
   const [showAgentScoring, setShowAgentScoring] = useState(false);
@@ -575,69 +801,16 @@ function MainGuide({ language }: { language: 'ko' | 'en' }) {
                   );
                 }
                 return filtered.map((agent) => (
-                <article key={agent.nameEn} className="rounded-md border border-border/70 bg-background/70 p-4">
-                  <div className="flex flex-col gap-2 border-b border-border/60 pb-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm font-semibold text-primary">
-                          {isKo ? agent.nameKo : agent.nameEn}
-                        </h3>
-                        <span className="rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                          {isKo ? agent.styleKo : agent.styleEn}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-xs leading-6 text-muted-foreground">
-                        {isKo ? agent.summaryKo : agent.summaryEn}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {(isKo ? agent.weightsKo : agent.weightsEn).map((weight) => (
-                      <span key={weight} className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
-                        {weight}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="mt-4 grid gap-3 md:grid-cols-3">
-                    <div className="rounded-md border border-border/70 bg-muted/10 p-3">
-                      <p className="text-xs font-semibold text-primary">
-                        {isKo ? '점수 구조' : 'Score Structure'}
-                      </p>
-                      <p className="mt-2 text-xs leading-6 text-muted-foreground">
-                        {isKo ? agent.buyRuleKo : agent.buyRuleEn}
-                      </p>
-                      <p className="mt-2 text-xs leading-6 text-muted-foreground">
-                        {isKo ? agent.sellRuleKo : agent.sellRuleEn}
-                      </p>
-                    </div>
-                    <div className="rounded-md border border-blue-500/25 bg-blue-500/5 p-3">
-                      <p className="text-xs font-semibold text-blue-500">
-                        {isKo ? 'Buy 기준이 되는 조건' : 'Buy-Side Signals'}
-                      </p>
-                      <ul className="mt-2 space-y-1.5 text-xs leading-6 text-muted-foreground">
-                        {(isKo ? agent.buySignalsKo : agent.buySignalsEn).map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="rounded-md border border-red-500/25 bg-red-500/5 p-3">
-                      <p className="text-xs font-semibold text-red-400">
-                        {isKo ? 'Sell 기준이 되는 조건' : 'Sell-Side Signals'}
-                      </p>
-                      <ul className="mt-2 space-y-1.5 text-xs leading-6 text-muted-foreground">
-                        {(isKo ? agent.sellSignalsKo : agent.sellSignalsEn).map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                </article>
+                <AgentCardWithDetails key={agent.nameEn} agent={agent} isKo={isKo} />
                 ));
               })()}
             </div>
           </section>
+        )}
+
+        {/* LLM Model Architecture Overview Section */}
+        {showAgentScoring && (
+          <LLMArchitectureSection isKo={isKo} />
         )}
 
         <section className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
