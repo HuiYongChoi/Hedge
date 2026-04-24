@@ -359,3 +359,22 @@ class FetchMetricsResponse(BaseModel):
     prices: Optional[List[Dict[str, Any]]] = None
     line_items: Optional[List[Dict[str, Any]]] = None
     cache_key: str
+
+class SavedAnalysisCreateRequest(BaseModel):
+    source_tab: str
+    ticker: str
+    language: str = "ko"
+    request_data: Optional[Dict[str, Any]] = None
+    result_data: Optional[Dict[str, Any]] = None
+
+class SavedAnalysisResponse(BaseModel):
+    id: int
+    source_tab: str
+    ticker: str
+    language: str
+    request_data: Optional[Dict[str, Any]]
+    result_data: Optional[Dict[str, Any]]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

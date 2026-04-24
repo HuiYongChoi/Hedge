@@ -131,3 +131,17 @@ class ApiKey(Base):
 
 
 
+
+class SavedAnalysis(Base):
+    """Table to explicitly save completed analysis results from either tab"""
+    __tablename__ = "saved_analyses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    source_tab = Column(String(50), nullable=False)  # 'stock_analysis' or 'data_sandbox'
+    ticker = Column(String(50), nullable=False, index=True)
+    language = Column(String(10), nullable=False, default="ko")
+    
+    request_data = Column(JSON, nullable=True)  # What was requested
+    result_data = Column(JSON, nullable=True)   # The actual response results
