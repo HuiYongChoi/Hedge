@@ -36,29 +36,29 @@ export const agentFormulas: Record<string, AgentFormula> = {
   'Warren Buffett': {
     agentKey: 'warren_buffett',
     axes: [
-      { nameKo: '기초 체력 (펀더멘털)', nameEn: 'Fundamentals', maxScore: '7점', formulaKo: 'ROE(자기자본이익률)가 15% 이상, 빚(부채)이 적고 영업이익률이 15%를 넘어야 높은 점수를 받습니다.', formulaEn: 'Gets high scores if ROE is over 15%, debt is low, and Operating Margin is over 15%.' },
-      { nameKo: '이익의 꾸준함', nameEn: 'Consistency', maxScore: '3점', formulaKo: '최근 4번의 기간 동안 순이익이 계속 오르면 만점을 줍니다.', formulaEn: 'Full marks if net income has grown for 4 consecutive periods.' },
-      { nameKo: '경쟁력 (해자)', nameEn: 'Moat', maxScore: '5점', formulaKo: '수익성이 들쭉날쭉하지 않고 안정적인지, 자산을 잘 굴리는지 봅니다.', formulaEn: 'Checks if profitability is stable, margin is steady, and assets are used efficiently.' },
-      { nameKo: '경영진의 태도', nameEn: 'Management', maxScore: '2점', formulaKo: '회사가 주주들을 위해 자사주를 사 모으거나 배당금을 잘 주는지 봅니다.', formulaEn: 'Checks if the company buys back shares or pays consistent dividends.' },
-      { nameKo: '가격 결정력', nameEn: 'Pricing Power', maxScore: '5점', formulaKo: '원가를 빼고 남는 이익(총마진)이 계속 좋아지거나, 50% 이상으로 아주 높으면 만점을 줍니다.', formulaEn: 'Full marks if gross margin is improving or extremely high (over 50%).' },
-      { nameKo: '회사의 진짜 가치 성장', nameEn: 'Book Value Growth', maxScore: '5점', formulaKo: '회사의 순자산(장스가치)이 매년 꾸준히 그리고 빠르게 (15% 이상) 자라나고 있는지 봅니다.', formulaEn: 'Checks if the company\'s net assets (book value) are growing steadily and fast (15%+).' },
+      { nameKo: '기초 체력 (펀더멘털)', nameEn: 'Fundamentals', maxScore: '7점', formulaKo: 'ROE(자기자본이익률) 15% 이상, 부채비율 0.5 미만, 영업이익률 15% 이상 등 견고한 재무 구조를 충족해야 합니다.', formulaEn: 'Requires robust financials like ROE > 15%, Debt/Equity < 0.5, and Operating Margin > 15%.' },
+      { nameKo: '이익의 꾸준함', nameEn: 'Consistency', maxScore: '3점', formulaKo: '최근 4개 분기 이상 순이익이 연속으로 성장하며 꾸준한 수익 창출력을 증명해야 합니다.', formulaEn: 'Requires net income to have grown for at least 4 consecutive periods to prove earnings power.' },
+      { nameKo: '경쟁력 (해자)', nameEn: 'Moat', maxScore: '5점', formulaKo: '단순한 이익을 넘어, 변동성이 적은 수익성과 자본 효율성으로 확고한 경제적 해자를 보유했는지 평가합니다.', formulaEn: 'Evaluates if the company has a strong economic moat based on stable profitability and capital efficiency.' },
+      { nameKo: '경영진의 태도', nameEn: 'Management', maxScore: '2점', formulaKo: '잉여 현금을 활용해 자사주를 매입하거나 배당을 제대로 지급하여 주주 이익을 우선하는지 확인합니다.', formulaEn: 'Checks if management prioritizes shareholders by buying back stock or paying solid dividends.' },
+      { nameKo: '가격 결정력', nameEn: 'Pricing Power', maxScore: '5점', formulaKo: '원가 상승에도 이익을 남길 수 있도록 50% 이상의 총이익률(Gross Margin)을 달성하고 유지하는지 봅니다.', formulaEn: 'Looks for a sustained Gross Margin over 50% as evidence of strong pricing power against inflation.' },
+      { nameKo: '장부가치 성장', nameEn: 'Book Value Growth', maxScore: '5점', formulaKo: '회사의 순자산(장부가치)이 연평균 15% 이상의 속도로 복리 성장하며 꾸준히 팽창하는지 확인합니다.', formulaEn: 'Checks if the company\'s net asset (book value) is compounding steadily at over 15% annually.' },
     ],
     dcf: {
       titleKo: '내재가치 계산법 (DCF 방식)',
       titleEn: 'Intrinsic Value Calculation (DCF)',
       stepsKo: [
-        '1. 주주 목숨줄 이익(Owner Earnings)을 구합니다 (실제로 회사가 벌어들인 알짜 현금).',
-        '2. 처음 5년은 회사의 과거 성장률을 참고해 적절히 성장한다고 가정합니다.',
-        '3. 다음 5년은 성장 속도가 절반으로 줄어든다고 조심스럽게 가정합니다.',
-        '4. 미래에 벌어들일 돈의 진짜 가치가 지금 얼만지 10% 정도 깎아서(할인) 계산합니다.',
-        '5. 안전을 위해 최종 가치에서 15%를 더 깎은 가격보다 현재 주가가 싸면 "Buy"를 외칩니다.'
+        '주주환원에 실제 사용 가능한 현금흐름인 \'주주이익(Owner Earnings)\'을 산출합니다.',
+        '초기 5년: 과거 성장률 자료를 바탕으로 현실적인 매출과 이익 성장을 추정합니다.',
+        '후기 5년: 보수적인 관점에서, 기업이 성숙기에 접어들어 성장률이 이전의 절반으로 둔화된다고 가정합니다.',
+        '산출된 10년치 현금흐름에 기대수익률(10%)을 할인율로 적용해, 이를 현재 가치(Present Value)로 환산합니다.',
+        '계산된 내재가치 대비 주가가 15% 이상 저렴할 때 (안전마진 확보 시) 매수에 적합하다고 판별합니다.'
       ],
       stepsEn: [
-        '1. Calculate Owner Earnings (the actual usable cash the company creates).',
-        '2. Assume reasonable growth for the first 5 years based on past performance.',
-        '3. Assume growth slows down to half for the next 5 years to be safe.',
-        '4. Discount future money by 10% to find out what it\'s worth today.',
-        '5. Cut the final value by another 15% for a margin of safety. If the stock is cheaper than this, it\'s a "Buy".'
+        'Calculate Owner Earnings (the actual usable free cash flow left for shareholders).',
+        'Initial 5 Years: Project realistic growth based on the company\'s historical performance.',
+        'Next 5 Years: Conservatively assume that growth tapers off to half of the initial rate.',
+        'Apply a 10% discount rate (required return) to bring these future cash flows back to to their Present Value.',
+        'If the stock is trading at a 15% or deeper discount to this intrinsic value, it qualifies as a "Buy" (Margin of Safety).'
       ],
     },
     sectorAdjustments: [
@@ -83,24 +83,24 @@ export const agentFormulas: Record<string, AgentFormula> = {
   'Aswath Damodaran': {
     agentKey: 'aswath_damodaran',
     axes: [
-      { nameKo: '성장과 투자', nameEn: 'Growth/Reinvestment', maxScore: '4점', formulaKo: '매출이 꾸준히 성장 (가장 좋으면 8% 이상)하고 현금흐름이 크고 있는지 확인합니다.', formulaEn: 'Checking for steady revenue growth (ideally 8%+) and growing cash flow.' },
-      { nameKo: '위험 수준 파악', nameEn: 'Risk Profile', maxScore: '3점', formulaKo: '주식이 너무 들쭉날쭉(Beta<1.3)하지 않은지, 빚이 너무 많지 않은지, 이자를 갚을 능력이 3배 이상 되는지 봅니다.', formulaEn: 'Checking if stock is too volatile, has low debt, and can easily pay its interest.' },
-      { nameKo: '주변 주식과 비교', nameEn: 'Relative Value', maxScore: '1점', formulaKo: '이 회사 주식이 과거 5년 평균에 비해 지금 얼마나 평가받고 있는지(P/E 비율) 확인합니다.', formulaEn: 'Compares the current P/E to the stock\'s 5-year historical median.' },
+      { nameKo: '성장과 자본 재투자', nameEn: 'Growth/Reinvestment', maxScore: '4점', formulaKo: '연 8% 이상의 안정적인 매출 성장(CAGR)을 달성하며 잉여현금흐름(FCF)을 창출하는지 봅니다.', formulaEn: 'Requires an annual revenue growth (CAGR) over 8% alongside expanding free cash flow.' },
+      { nameKo: '하방 리스크(Risk Profile)', nameEn: 'Risk Profile', maxScore: '3점', formulaKo: '주가 변동성(Beta)이 1.3 미만으로 비교적 낮고, 이자보상배율이 높아 재무적 부도 위험이 통제되는지 평가합니다.', formulaEn: 'Evaluates if stock volatility (Beta) is under 1.3 and interest coverage is high, showing low default risk.' },
+      { nameKo: '역사적 상대가치', nameEn: 'Relative Value', maxScore: '1점', formulaKo: '해당 주식의 현재 P/E(주가수익비율)가 자사의 과거 5년 중앙값 대비 저평가된 구간인지 기술적으로 분석합니다.', formulaEn: 'Technically compares the current P/E to the stock\'s own 5-year historical median to find undervalued regions.' },
     ],
     dcf: {
       titleKo: '대학 교수님의 체계적인 컴퓨터 계산법 (FCFF DCF)',
       titleEn: 'Professor\'s Systematic Valuation (FCFF DCF)',
       stepsKo: [
-        '1. 이 회사가 주식시장에서 어느 정도의 위험을 띠는지 평가해 할인율(r)을 만듭니다.',
-        '2. 과거 5년 동안 얼마나 잘 컸는지를 바탕으로 앞으로의 성장률을 예상합니다.',
-        '3. 10년이 지나면 회사가 아주 평범하게 경제 성장률 수준(2.5%)으로만 큰다고 보수적으로 가정합니다.',
-        '4. 오늘 날짜로 계산한 최종 가치에 비해 현재 가격이 25% 이상 싸게 팔리면 "Buy"입니다.'
+        'CAPM 방법론을 활용하여, 주식시장의 리스크(변동성) 대비 기업이 감당해야 할 적정 할인율(자본비용)을 도출합니다.',
+        '최근 5년간의 매출 및 이익 성장 추세를 기반으로, 당분간 이어질 고속 성장기의 잉여현금흐름을 추정합니다.',
+        '10년 후에는 기업이 성숙기에 도달하여 거시경제 평균 수준인 2.5%의 영구 성장률(Terminal Growth)로 자연스럽게 수렴한다고 가정합니다.',
+        '과정들을 거쳐 산출된 내재가치보다 현재 주가가 25% 이상 깊게 할인되어 거래될 때만 강력한 매수 신호로 간주합니다.'
       ],
       stepsEn: [
-        '1. Assess stock market risk to create a discount rate.',
-        '2. Project future growth based on the past 5 years.',
-        '3. Assume growth slowly falls to a normal 2.5% inflation rate after 10 years.',
-        '4. Buy if the stock is priced 25% or more below the computed value.'
+        'Use the CAPM methodology to determine the appropriate discount rate (cost of equity) adjusted for market risk.',
+        'Project free cash flows for an initial high-growth phase based on the company\'s 5-year historical growth trend.',
+        'Assume that after year 10, the company matures and its growth tapers off to a permanent macroeconomic norm of 2.5%.',
+        'Consider it a strong "Buy" signal only if the current stock price trades at a 25% or greater discount to this calculated intrinsic value.'
       ],
     },
     sectorAdjustments: [
@@ -131,12 +131,12 @@ export const agentFormulas: Record<string, AgentFormula> = {
       titleKo: '그레이엄식 안전마진 공식',
       titleEn: 'Graham Number Formula',
       stepsKo: [
-        '1. 이익(EPS)과 순자산가치(BPS)에 22.5라는 안전한 고정 숫자를 곱해 적정가격을 구합니다.',
-        '2. 이 적정가격보다 지금 주가가 반값(50%) 이상 싸게 떨어졌을 때만 구매를 추천합니다.'
+        '이익(EPS)과 순자산가치(BPS)에 22.5라는 안전한 고정 숫자를 곱해 적정가격을 구합니다.',
+        '이 적정가격보다 지금 주가가 반값(50%) 이상 싸게 떨어졌을 때만 구매를 추천합니다.'
       ],
       stepsEn: [
-        '1. Multiply EPS and Book Value per share by a safe constant 22.5 to find a fair price.',
-        '2. Only recommend buying if the current stock price is less than half this fair price.'
+        'Multiply EPS and Book Value per share by a safe constant 22.5 to find a fair price.',
+        'Only recommend buying if the current stock price is less than half this fair price.'
       ],
     },
     sectorAdjustments: [
@@ -166,18 +166,18 @@ export const agentFormulas: Record<string, AgentFormula> = {
       titleKo: '밸류에이션 모델 - 실전 시나리오',
       titleEn: 'Valuation Analyst Scenario Approach',
       stepsKo: [
-        '1. 이 회사가 돈을 빌릴 수 있는 이자와 주주들이 원하는 수익률을 합쳐 평가 기준 허들을 만듭니다 (WACC).',
-        '2. 아주 나쁜 상황 (성장이 절반으로 꺾인 최악의 경우) : 확률 20%',
-        '3. 기본 예상 상황 (우리가 전망하는 대로 무난하게 성장) : 확률 60%',
-        '4. 아주 좋을 상황 (성장이 엄청나게 폭발하는 최고의 경우) : 확률 20%',
-        '5. 위 확률들로 구한 내재 가치가 주식 가격보다 15% 이상 높게 나오면 확실한 매수(Buy)! 를 외칩니다.'
+        '이 회사가 돈을 빌릴 수 있는 이자와 주주들이 원하는 수익률을 합쳐 평가 기준 허들을 만듭니다 (WACC).',
+        '아주 나쁜 상황 (성장이 절반으로 꺾인 최악의 경우) : 확률 20%',
+        '기본 예상 상황 (우리가 전망하는 대로 무난하게 성장) : 확률 60%',
+        '아주 좋을 상황 (성장이 엄청나게 폭발하는 최고의 경우) : 확률 20%',
+        '위 확률들로 구한 내재 가치가 주식 가격보다 15% 이상 높게 나오면 확실한 매수(Buy)! 를 외칩니다.'
       ],
       stepsEn: [
-        '1. Find the cost of capital based on debt and equity (WACC).',
-        '2. Bear Case (growth halves) : 20% probability.',
-        '3. Base Case (expected growth) : 60% probability.',
-        '4. Bull Case (explosive growth) : 20% probability.',
-        '5. Buy if the weighted intrinsic value is more than 15% above stock price.'
+        'Find the cost of capital based on debt and equity (WACC).',
+        'Bear Case (growth halves) : 20% probability.',
+        'Base Case (expected growth) : 60% probability.',
+        'Bull Case (explosive growth) : 20% probability.',
+        'Buy if the weighted intrinsic value is more than 15% above stock price.'
       ],
     },
     sectorAdjustments: [],
