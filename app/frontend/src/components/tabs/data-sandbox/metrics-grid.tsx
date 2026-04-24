@@ -60,12 +60,13 @@ export const FINANCIAL_FIELD_LABEL_KEYS: Record<string, string> = {
 };
 
 export function getFinancialFieldLabel(field: string, language: 'ko' | 'en'): string {
-  const labelKey = FINANCIAL_FIELD_LABEL_KEYS[field];
+  const baseField = field.replace(/_(yoy|qoq|ttm)$/, '');
+  const labelKey = FINANCIAL_FIELD_LABEL_KEYS[baseField];
   return labelKey ? t(labelKey, language) : field.replace(/_/g, ' ');
 }
 
 // ── 서브탭 정의 ──────────────────────────────────────────────────────────────
-type SubTab = 'profitability' | 'valuation' | 'growth' | 'stability';
+type SubTab = 'profitability' | 'valuation' | 'growth_yoy' | 'growth_ttm' | 'growth_qoq' | 'stability';
 
 const PROFITABILITY_FIELDS = [
   { key: 'revenue', isPercent: false },
@@ -99,14 +100,34 @@ const VALUATION_FIELDS = [
   { key: 'free_cash_flow_yield', isPercent: true },
 ];
 
-const GROWTH_FIELDS = [
-  { key: 'revenue_growth', isPercent: true },
-  { key: 'earnings_growth', isPercent: true },
-  { key: 'operating_income_growth', isPercent: true },
-  { key: 'ebitda_growth', isPercent: true },
-  { key: 'free_cash_flow_growth', isPercent: true },
-  { key: 'book_value_growth', isPercent: true },
-  { key: 'earnings_per_share_growth', isPercent: true },
+const GROWTH_YOY_FIELDS = [
+  { key: 'revenue_growth_yoy', isPercent: true },
+  { key: 'earnings_growth_yoy', isPercent: true },
+  { key: 'operating_income_growth_yoy', isPercent: true },
+  { key: 'ebitda_growth_yoy', isPercent: true },
+  { key: 'free_cash_flow_growth_yoy', isPercent: true },
+  { key: 'book_value_growth_yoy', isPercent: true },
+  { key: 'earnings_per_share_growth_yoy', isPercent: true },
+];
+
+const GROWTH_TTM_FIELDS = [
+  { key: 'revenue_growth_ttm', isPercent: true },
+  { key: 'earnings_growth_ttm', isPercent: true },
+  { key: 'operating_income_growth_ttm', isPercent: true },
+  { key: 'ebitda_growth_ttm', isPercent: true },
+  { key: 'free_cash_flow_growth_ttm', isPercent: true },
+  { key: 'book_value_growth_ttm', isPercent: true },
+  { key: 'earnings_per_share_growth_ttm', isPercent: true },
+];
+
+const GROWTH_QOQ_FIELDS = [
+  { key: 'revenue_growth_qoq', isPercent: true },
+  { key: 'earnings_growth_qoq', isPercent: true },
+  { key: 'operating_income_growth_qoq', isPercent: true },
+  { key: 'ebitda_growth_qoq', isPercent: true },
+  { key: 'free_cash_flow_growth_qoq', isPercent: true },
+  { key: 'book_value_growth_qoq', isPercent: true },
+  { key: 'earnings_per_share_growth_qoq', isPercent: true },
 ];
 
 const STABILITY_FIELDS = [
@@ -124,7 +145,9 @@ const STABILITY_FIELDS = [
 const SUB_TABS: { id: SubTab; labelKey: string; fields: { key: string; isPercent: boolean }[] }[] = [
   { id: 'profitability', labelKey: 'metricsSubTabProfitability', fields: PROFITABILITY_FIELDS },
   { id: 'valuation',    labelKey: 'metricsSubTabValuation',    fields: VALUATION_FIELDS },
-  { id: 'growth',       labelKey: 'metricsSubTabGrowth',       fields: GROWTH_FIELDS },
+  { id: 'growth_yoy',   labelKey: 'metricsSubTabGrowthYoy',    fields: GROWTH_YOY_FIELDS },
+  { id: 'growth_ttm',   labelKey: 'metricsSubTabGrowthTtm',    fields: GROWTH_TTM_FIELDS },
+  { id: 'growth_qoq',   labelKey: 'metricsSubTabGrowthQoq',    fields: GROWTH_QOQ_FIELDS },
   { id: 'stability',    labelKey: 'metricsSubTabStability',    fields: STABILITY_FIELDS },
 ];
 

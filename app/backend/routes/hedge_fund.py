@@ -122,11 +122,68 @@ async def fetch_metrics(request_data: FetchMetricsRequest, db: Session = Depends
         )
         prices_dicts = [p.model_dump() for p in prices_list]
 
-        # 4. Line items — full agents' union for the Data Sandbox display
+        # 4. Line items — full agents' union for the Data Sandbox display (TTM by default)
         line_items_list = await run_in_threadpool(
             search_line_items, ticker, COMMON_LINE_ITEMS_UNION, end_date, period, limit, fin_api_key
         )
         line_items_dicts = [li.model_dump() for li in line_items_list]
+
+        # 5. Compute extra growth tables (YoY, TTM YoY, QoQ) from Quarter data explicitly for Data Sandbox grid
+        if metrics_dict:
+            _GROWTH_BASE_FIELDS = [
+                ("revenue_growth", "revenue"),
+                ("earnings_growth", "net_income"),
+                ("operating_income_growth", "operating_income"),
+                ("ebitda_growth", "ebitda"),
+                ("free_cash_flow_growth", "free_cash_flow"),
+                ("book_value_growth", "book_value_per_share"),
+                ("earnings_per_share_growth", "earnings_per_share"),
+            ]
+            q_line_items_list = await run_in_threadpool(
+                search_line_items, ticker, COMMON_LINE_ITEMS_UNION, end_date, "quarter", 8, fin_api_key
+            )
+            li_q = [li.model_dump() for li in q_line_items_list]
+
+            def _get_float(d, k):
+                val = d.get(k)
+                if val is None:
+                    return None
+                try:
+                    return float(val)
+                except:
+                    return None
+
+            def _yoy(c, p):
+                if c is None or p is None or p == 0:
+                    return None
+                return (c - p) / abs(p)
+
+            for g_key, b_key in _GROWTH_BASE_FIELDS:
+                qoq = yoy = ttm_yoy = None
+                # QoQ (Quarter 0 vs Quarter 1)
+                if len(li_q) >= 2:
+                    c = _get_float(li_q[0], b_key)
+                    p = _get_float(li_q[1], b_key)
+                    qoq = _yoy(c, p)
+                # YoY (Quarter 0 vs Quarter 4)
+                if len(li_q) >= 5:
+                    c = _get_float(li_q[0], b_key)
+                    p = _get_float(li_q[4], b_key)
+                    yoy = _yoy(c, p)
+                # TTM YoY (Sum Q0..Q3 vs Sum Q4..Q7) - point checks for ratios
+                if len(li_q) >= 8:
+                    if b_key in ("book_value_per_share", "earnings_per_share"):
+                        # for per-share, just use the end-of-quarter or average, here we use Q0 vs Q4 simply
+                        ttm_yoy = yoy
+                    else:
+                        vals0 = [_get_float(li_q[i], b_key) for i in range(4)]
+                        vals4 = [_get_float(li_q[i], b_key) for i in range(4, 8)]
+                        if all(v is not None for v in vals0) and all(v is not None for v in vals4):
+                            ttm_yoy = _yoy(sum(vals0), sum(vals4))
+
+                metrics_dict[f"{g_key}_qoq"] = qoq
+                metrics_dict[f"{g_key}_yoy"] = yoy
+                metrics_dict[f"{g_key}_ttm"] = ttm_yoy
 
         return FetchMetricsResponse(
             ticker=ticker,

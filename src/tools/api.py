@@ -510,7 +510,7 @@ def _fetch_fmp_line_items(ticker: str, line_items: list[str], end_date: str, per
     if _is_korean_ticker(ticker):
         return []
     try:
-        fmp_period = "quarter" if period == "ttm" else "annual"
+        fmp_period = "quarter" if period in ("ttm", "quarter") else "annual"
         fetch_limit = max(limit * 4, 8) if period == "ttm" else limit
 
         inc_data = _fmp_get("income-statement", {"symbol": ticker, "limit": fetch_limit, "period": fmp_period}) or []
@@ -615,7 +615,7 @@ def _fetch_yfinance_line_items(ticker: str, line_items: list[str], end_date: str
             inc_df = t.quarterly_income_stmt
             bal_df = t.quarterly_balance_sheet
             cf_df = t.quarterly_cashflow
-            target_period = "ttm"
+            target_period = period
         else:
             inc_df = t.income_stmt
             bal_df = t.balance_sheet
@@ -668,7 +668,7 @@ def _fetch_yfinance_line_items(ticker: str, line_items: list[str], end_date: str
             results.append(LineItem(**row))
             return results
         else:
-            # Annual: one LineItem per fiscal year column
+            # Quarter or Annual: one LineItem per column
             results = []
             cols = []
             if inc_df is not None and not inc_df.empty:
@@ -943,7 +943,7 @@ def get_financial_metrics(
             _li_dicts = _ENRICHMENT_LINE_ITEMS_CACHE.get(_enrich_key)
             if _li_dicts is None:
                 _li_enrich = search_line_items(
-                    ticker, _ENRICHMENT_FIELDS, end_date, period="ttm", limit=1, api_key=api_key
+                    ticker, _ENRICHMENT_FIELDS, end_date, period=period, limit=5, api_key=api_key
                 )
                 _li_dicts = [item.model_dump() for item in _li_enrich]
                 _ENRICHMENT_LINE_ITEMS_CACHE[_enrich_key] = _li_dicts

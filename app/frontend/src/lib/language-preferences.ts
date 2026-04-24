@@ -351,7 +351,9 @@ export const translations = {
     // 메트릭스 서브탭
     metricsSubTabProfitability: '수익성',
     metricsSubTabValuation: '밸류에이션',
-    metricsSubTabGrowth: '성장률',
+    metricsSubTabGrowthYoy: '전년대비성장',
+    metricsSubTabGrowthTtm: 'TTM성장',
+    metricsSubTabGrowthQoq: '전분기대비성장',
     metricsSubTabStability: '재무안정성',
   },
   en: {
@@ -670,7 +672,9 @@ export const translations = {
     // Metrics subtabs
     metricsSubTabProfitability: 'Profitability',
     metricsSubTabValuation: 'Valuation',
-    metricsSubTabGrowth: 'Growth',
+    metricsSubTabGrowthYoy: 'Growth (YoY)',
+    metricsSubTabGrowthTtm: 'Growth (TTM)',
+    metricsSubTabGrowthQoq: 'Growth (QoQ)',
     metricsSubTabStability: 'Stability',
   }
 };
