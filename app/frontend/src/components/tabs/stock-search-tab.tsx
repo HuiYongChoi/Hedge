@@ -16,9 +16,11 @@ import {
   getSandboxOverrideForTicker,
   loadDataSandboxOverrideSnapshot,
 } from '@/lib/data-sandbox-overrides';
+import { useToastManager } from '@/hooks/use-toast-manager';
 import { t } from '@/lib/language-preferences';
+import { savedAnalysisService } from '@/services/saved-analyses-service';
 import { stockAnalysisRunService, StockAnalysisRunStatus } from '@/services/stock-analysis-run-service';
-import { Bot, ChevronDown, ChevronUp, Info, Loader2, Play, Search, Square } from 'lucide-react';
+import { Bot, ChevronDown, ChevronUp, Database, Info, Loader2, Play, Search, Square } from 'lucide-react';
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { AgentFormulaTooltip, extractBaseAgentKey } from '@/components/ui/agent-formula-tooltip';
@@ -688,6 +690,7 @@ function renderMarkdownBlocks(markdown: string): ReactNode {
 
 export function StockSearchTab() {
   const { language } = useLanguage();
+  const { success, error } = useToastManager();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [models, setModels] = useState<LanguageModel[]>([]);
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
@@ -705,6 +708,7 @@ export function StockSearchTab() {
   const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
   const [selectedDetailReport, setSelectedDetailReport] = useState<DetailReportState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSavingAnalysis, setIsSavingAnalysis] = useState(false);
   const [useDataSandboxOverrides, setUseDataSandboxOverrides] = useState(false);
   const [sandboxOverrideSnapshot, setSandboxOverrideSnapshot] = useState(() => loadDataSandboxOverrideSnapshot());
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -1146,6 +1150,50 @@ export function StockSearchTab() {
     setSelectedDetailReport(null);
   };
 
+  const handleSaveAnalysis = async () => {
+    if (isSavingAnalysis) return;
+
+    const agentResultList = Array.from(agentResults.values());
+    const savedTicker =
+      currentTicker
+      || Object.keys(completeResult?.decisions || {})[0]
+      || agentResultList.find(result => result.ticker)?.ticker
+      || '';
+
+    if (!savedTicker || (agentResultList.length === 0 && !completeResult)) return;
+
+    setIsSavingAnalysis(true);
+
+    try {
+      await savedAnalysisService.saveAnalysis(
+        'stock_analysis',
+        savedTicker,
+        language,
+        {
+          input_ticker: tickers,
+          ticker: savedTicker,
+          start_date: startDate,
+          end_date: endDate,
+          selected_model: selectedModel,
+          selected_agent_keys: Array.from(selectedAgents),
+          use_data_sandbox_overrides: useDataSandboxOverrides,
+          sandbox_override: useDataSandboxOverrides ? sandboxOverrideForTicker : null,
+        },
+        {
+          agent_results: agentResultList,
+          complete_result: completeResult,
+        },
+      );
+
+      success(t('savedToDbSuccess', language), 'stock-analysis-save-to-db');
+    } catch (saveError) {
+      console.error('Failed to save Stock Analysis result', saveError);
+      error(t('savedToDbError', language), 'stock-analysis-save-to-db-error');
+    } finally {
+      setIsSavingAnalysis(false);
+    }
+  };
+
   const statusColor = (status: AgentResult['status']) => {
     switch (status) {
       case 'complete': return 'text-green-500';
@@ -1165,6 +1213,8 @@ export function StockSearchTab() {
   };
 
   const canRun = tickers.trim() !== '' && selectedAgents.size > 0 && !isRunning;
+  const agentResultList = Array.from(agentResults.values());
+  const hasSavableResults = !isRunning && (agentResultList.length > 0 || !!completeResult);
 
   return (
     <>
@@ -1331,6 +1381,32 @@ export function StockSearchTab() {
 
         {/* Right: Results */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">
+                {language === 'ko' ? '분석 결과' : 'Analysis Results'}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {language === 'ko'
+                  ? '현재 결과를 데이터베이스에 별도로 저장할 수 있습니다.'
+                  : 'You can explicitly save the current results to the database.'}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleSaveAnalysis}
+              disabled={!hasSavableResults || isSavingAnalysis}
+            >
+              {isSavingAnalysis ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t('saveToDbButton', language)}</>
+              ) : (
+                <><Database className="mr-2 h-4 w-4" />{t('saveToDbButton', language)}</>
+              )}
+            </Button>
+          </div>
+
           {errorMessage && (
             <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-300">
               {errorMessage}
@@ -1351,7 +1427,7 @@ export function StockSearchTab() {
           )}
 
           {/* Agent cards */}
-          {Array.from(agentResults.values()).map(result => {
+          {agentResultList.map(result => {
             const isExpanded = expandedAgents.has(result.agentKey);
             return (
               <Card key={result.agentKey} className="overflow-hidden">

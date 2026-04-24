@@ -8,8 +8,10 @@ import { useLanguage } from '@/contexts/language-context';
 import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
 import { extractBaseAgentKey } from '@/components/ui/agent-formula-tooltip';
+import { useToastManager } from '@/hooks/use-toast-manager';
 import { t } from '@/lib/language-preferences';
 import { MetricsGrid, parseOverrideInput, compareOverrideVsLineItem0, getFinancialFieldLabel } from './data-sandbox/metrics-grid';
+import { savedAnalysisService } from '@/services/saved-analyses-service';
 import { AlertCircle, ChevronDown, ChevronRight, Database, Loader2, Play, RefreshCw, Square, Bot } from 'lucide-react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { buildDataSandboxOverrideSnapshot, saveDataSandboxOverrideSnapshot } from '@/lib/data-sandbox-overrides';
@@ -146,6 +148,7 @@ const LINE_ITEM_FIELDS = [
 
 export function DataSandboxTab() {
   const { language } = useLanguage();
+  const { success, error } = useToastManager();
 
   // Config state
   const [tickers, setTickers] = useState('');
@@ -174,6 +177,7 @@ export function DataSandboxTab() {
   const [agentResults, setAgentResults] = useState<Map<string, AgentResult>>(new Map());
   const [completeResult, setCompleteResult] = useState<CompleteResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  const [isSavingAnalysis, setIsSavingAnalysis] = useState(false);
   const [expandedAgentResults, setExpandedAgentResults] = useState<Set<string>>(new Set());
   const [isFinalDecisionExpanded, setIsFinalDecisionExpanded] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -255,6 +259,31 @@ export function DataSandboxTab() {
 
   // ── Run handler ──────────────────────────────────────────────────────────
 
+  const buildAppliedMetricOverrides = () => {
+    const cleanMetrics: Record<string, number> = {};
+    Object.entries(metricsOverrides).forEach(([key, value]) => {
+      if (value !== '') {
+        const parsedValue = parseOverrideInput(value);
+        if (parsedValue !== null) cleanMetrics[key] = parsedValue;
+      }
+    });
+
+    const cleanLineItems = lineItemsOverrides
+      .map(row => {
+        const cleanRow: Record<string, any> = {};
+        Object.entries(row).forEach(([key, value]) => {
+          if (value !== null && value !== undefined && value !== '') cleanRow[key] = value;
+        });
+        return cleanRow;
+      })
+      .filter(row => Object.keys(row).length > 0);
+
+    const appliedOverrides: Record<string, any> = {};
+    if (Object.keys(cleanMetrics).length > 0) appliedOverrides.metrics = cleanMetrics;
+    if (cleanLineItems.length > 0) appliedOverrides.line_items = cleanLineItems;
+    return appliedOverrides;
+  };
+
   const handleRun = async () => {
     if (!fetchedData || selectedAgents.size === 0) return;
 
@@ -308,27 +337,7 @@ export function DataSandboxTab() {
         ]
       : [];
 
-    // Build metric_overrides — supports shorthand like 3.77B, 1.2M, 500K
-    const cleanMetrics: Record<string, number> = {};
-    Object.entries(metricsOverrides).forEach(([k, v]) => {
-      if (v !== '') {
-        const n = parseOverrideInput(v);
-        if (n !== null) cleanMetrics[k] = n;
-      }
-    });
-    const cleanLineItems = lineItemsOverrides
-      .map(row => {
-        const clean: Record<string, any> = {};
-        Object.entries(row).forEach(([k, v]) => {
-          if (v !== null && v !== undefined && v !== '') clean[k] = v;
-        });
-        return clean;
-      })
-      .filter(row => Object.keys(row).length > 0);
-
-    const metricOverrides: Record<string, any> = {};
-    if (Object.keys(cleanMetrics).length > 0) metricOverrides.metrics = cleanMetrics;
-    if (cleanLineItems.length > 0) metricOverrides.line_items = cleanLineItems;
+    const metricOverrides = buildAppliedMetricOverrides();
 
     const body: Record<string, any> = {
       tickers: [ticker],
@@ -436,6 +445,50 @@ export function DataSandboxTab() {
     }
   };
 
+  const handleSaveAnalysis = async () => {
+    if (!fetchedData || isSavingAnalysis) return;
+
+    const agentResultList = Array.from(agentResults.values());
+    if (agentResultList.length === 0 && !completeResult) return;
+
+    setIsSavingAnalysis(true);
+
+    try {
+      const appliedOverrides = buildAppliedMetricOverrides();
+      const selectedAgentKeys = Array.from(selectedAgents);
+
+      await savedAnalysisService.saveAnalysis(
+        'data_sandbox',
+        fetchedData.ticker,
+        language,
+        {
+          input_tickers: tickers,
+          tickers: [fetchedData.ticker],
+          start_date: startDate,
+          end_date: endDate,
+          selected_model: selectedModel,
+          selected_agent_keys: selectedAgentKeys,
+          metricsOverrides,
+          lineItemsOverrides,
+          applied_overrides: Object.keys(appliedOverrides).length > 0
+            ? { [fetchedData.ticker]: appliedOverrides }
+            : {},
+        },
+        {
+          agent_results: agentResultList,
+          complete_result: completeResult,
+        },
+      );
+
+      success(t('savedToDbSuccess', language), 'data-sandbox-save-to-db');
+    } catch (saveError) {
+      console.error('Failed to save Data Sandbox analysis', saveError);
+      error(t('savedToDbError', language), 'data-sandbox-save-to-db-error');
+    } finally {
+      setIsSavingAnalysis(false);
+    }
+  };
+
   const handleStop = () => {
     abortControllerRef.current?.abort();
     setIsRunning(false);
@@ -491,6 +544,8 @@ export function DataSandboxTab() {
 
   const canFetch = tickers.trim() !== '' && !isFetching && !isRunning;
   const canRun = !!fetchedData && selectedAgents.size > 0 && !isRunning && !isFetching;
+  const agentResultList = Array.from(agentResults.values());
+  const hasSavableResults = !!fetchedData && !isRunning && (agentResultList.length > 0 || !!completeResult);
 
   // ── Status color helpers ─────────────────────────────────────────────────
 
@@ -881,6 +936,32 @@ export function DataSandboxTab() {
                 {/* RESULTS TAB */}
                 {viewTab === 'results' && (
                   <div className="p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h2 className="text-sm font-semibold text-foreground">
+                          {t('resultsTab', language)}
+                        </h2>
+                        <p className="text-xs text-muted-foreground">
+                          {language === 'ko'
+                            ? '현재 분석 결과를 데이터베이스에 명시적으로 저장할 수 있습니다.'
+                            : 'You can explicitly save the current analysis output to the database.'}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleSaveAnalysis}
+                        disabled={!hasSavableResults || isSavingAnalysis}
+                      >
+                        {isSavingAnalysis ? (
+                          <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t('saveToDbButton', language)}</>
+                        ) : (
+                          <><Database className="mr-2 h-4 w-4" />{t('saveToDbButton', language)}</>
+                        )}
+                      </Button>
+                    </div>
+
                     {runError && (
                       <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-300">
                         {runError}
@@ -899,7 +980,7 @@ export function DataSandboxTab() {
                     )}
 
                     {/* Agent cards */}
-                    {Array.from(agentResults.values()).map(result => {
+                    {agentResultList.map(result => {
                       const isExpanded = expandedAgentResults.has(result.agentKey);
                       return (
                         <div key={result.agentKey} className="border rounded-lg overflow-hidden">
