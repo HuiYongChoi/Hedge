@@ -93,6 +93,20 @@ function normalizeAutocompleteToken(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toUpperCase();
 }
 
+function isExactSuggestionMatch(term: string, suggestions: TickerSuggestion[]): boolean {
+  const normalizedTerm = normalizeAutocompleteToken(term);
+  if (!normalizedTerm) return false;
+
+  return suggestions.some(suggestion => {
+    const suggestionValue = normalizeAutocompleteToken(getSuggestionInsertValue(suggestion));
+    return suggestionValue === normalizedTerm;
+  });
+}
+
+function hasCompletedSuggestion(term: string, suggestions: TickerSuggestion[]): boolean {
+  return isExactSuggestionMatch(term, suggestions);
+}
+
 function MarketBadge({ market }: { market?: string }) {
   if (!market || market === 'GLOBAL') return null;
   const isKR = market === 'KR';
@@ -121,17 +135,27 @@ interface TickerInputProps {
   placeholder?: string;
   className?: string;
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  isActive?: boolean;
 }
 
-export function TickerInput({ value, onChange, placeholder, className, onKeyDown }: TickerInputProps) {
+export function TickerInput({
+  value,
+  onChange,
+  placeholder,
+  className,
+  onKeyDown,
+  isActive = true,
+}: TickerInputProps) {
   const [draftValue, setDraftValue] = useState(value);
   const [activeIdx, setActiveIdx] = useState(-1);
   const [suggestions, setSuggestions] = useState<TickerSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
+  const [autocompleteEnabled, setAutocompleteEnabled] = useState(false);
   // 사용자가 명시적으로 닫은 term을 기억 → 같은 term에서 재오픈 방지
   const [dismissedTerm, setDismissedTerm] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const hasMountedRef = useRef(false);
   const skipBlurRef = useRef(false);
   const isComposingRef = useRef(false);
   const skipNextFetchRef = useRef(false);
@@ -142,7 +166,12 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
   const currentTerm = getTermFromValue(draftValue);
 
   // suggestions 있고 term이 있고 사용자가 닫지 않은 경우에만 드롭다운 표시
-  const showDropdown = suggestions.length > 0 && currentTerm.length > 0 && currentTerm !== dismissedTerm;
+  const showDropdown = isActive
+    && autocompleteEnabled
+    && suggestions.length > 0
+    && currentTerm.length > 0
+    && currentTerm !== dismissedTerm
+    && !isExactSuggestionMatch(currentTerm, suggestions);
 
   useEffect(() => {
     if (!isComposingRef.current) {
@@ -150,6 +179,27 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
       setDraftValue(prev => prev === value ? prev : value);
     }
   }, [value]);
+
+  useEffect(() => {
+    if (!isActive) {
+      setAutocompleteEnabled(false);
+      if (blurTimerRef.current) {
+        clearTimeout(blurTimerRef.current);
+        blurTimerRef.current = null;
+      }
+      setDismissedTerm(currentTerm || null);
+      setActiveIdx(-1);
+      return;
+    }
+
+    if (hasMountedRef.current) {
+      setAutocompleteEnabled(true);
+      setDismissedTerm(null);
+      return;
+    }
+
+    hasMountedRef.current = true;
+  }, [currentTerm, isActive]);
 
   const fetchSuggestions = (term: string) => {
     if (abortRef.current) {
@@ -169,6 +219,9 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
     // 즉시 정적 결과 표시
     const staticResults = getStaticSuggestions(term);
     setSuggestions(staticResults);
+    if (hasCompletedSuggestion(term, staticResults)) {
+      return;
+    }
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -206,6 +259,9 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
   // currentTerm 변경 시 검색 실행
   useEffect(() => {
     if (isComposingRef.current) return;
+    if (!isActive || !autocompleteEnabled) {
+      return;
+    }
     if (skipNextFetchRef.current) {
       skipNextFetchRef.current = false;
       return;
@@ -232,7 +288,7 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTerm]);
+  }, [autocompleteEnabled, currentTerm, isActive]);
 
   const dismiss = () => {
     setDismissedTerm(currentTerm);
@@ -276,6 +332,9 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
     const isInputComposing = isComposingRef.current || Boolean((e.nativeEvent as InputEvent).isComposing);
     setDraftValue(nextValue);
     setActiveIdx(-1);
+    if (isActive && !autocompleteEnabled) {
+      setAutocompleteEnabled(true);
+    }
     if (isInputComposing) return;
     onChange(nextValue);
   };
@@ -324,10 +383,13 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
     isComposingRef.current = false;
     const nextValue = e.currentTarget.value;
     setDraftValue(nextValue);
+    if (isActive && !autocompleteEnabled) {
+      setAutocompleteEnabled(true);
+    }
     onChange(nextValue);
 
     const term = getTermFromValue(nextValue);
-    if (term.length >= 1) {
+    if (isActive && autocompleteEnabled && term.length >= 1) {
       fetchSuggestions(term);
     } else {
       setSuggestions([]);
@@ -359,6 +421,10 @@ export function TickerInput({ value, onChange, placeholder, className, onKeyDown
             clearTimeout(blurTimerRef.current);
             blurTimerRef.current = null;
           }
+          if (!isActive) {
+            return;
+          }
+          setAutocompleteEnabled(true);
           // 포커스 시 term이 있고 suggestions가 있으면 다시 표시
           if (currentTerm.length >= 1 && suggestions.length > 0) {
             setDismissedTerm(null);

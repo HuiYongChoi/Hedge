@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { TabService } from '@/services/tab-service';
 import { agentFormulas } from '@/data/agent-formulas';
 import { BarChart3, Bot, Brain, ChevronDown, ChevronUp, Database, FileText, FlaskConical, GitBranch, Search, ShieldCheck, Sigma, Sliders } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { cloneElement, isValidElement, useEffect, useState } from 'react';
 
 interface TabContentProps {
   className?: string;
@@ -817,15 +817,22 @@ export function TabContent({ className }: TabContentProps) {
     <div className={cn("h-full w-full bg-background overflow-hidden relative", className)}>
       {tabs.map(tab => {
         if (!tab.content) return null;
+        const isActive = tab.id === activeTabId;
+        const content = isValidElement(tab.content)
+          ? cloneElement(tab.content as React.ReactElement<any>, {
+              isTabActive: isActive,
+              tabId: tab.id,
+            })
+          : tab.content;
         return (
           <div
             key={tab.id}
             className={cn(
               "absolute inset-0 h-full w-full",
-              tab.id !== activeTabId && "hidden"
+              !isActive && "hidden"
             )}
           >
-            {tab.content}
+            {content}
           </div>
         );
       })}

@@ -54,6 +54,11 @@ interface CompleteResult {
 
 type ViewTab = 'metrics' | 'line-items' | 'trends' | 'results';
 
+interface DataSandboxTabProps {
+  isTabActive?: boolean;
+  tabId?: string;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function getAgentDisplayName(agent: Agent, language: 'ko' | 'en') {
@@ -146,7 +151,7 @@ const LINE_ITEM_FIELDS = [
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-export function DataSandboxTab() {
+export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
   const { language } = useLanguage();
   const { success, error } = useToastManager();
 
@@ -609,6 +614,7 @@ export function DataSandboxTab() {
             <TickerInput
               placeholder={t('exampleTicker', language)}
               value={tickers}
+              isActive={isTabActive}
               onChange={setTickers}
               onKeyDown={e => { if (e.key === 'Enter' && canFetch) handleFetch(); }}
             />

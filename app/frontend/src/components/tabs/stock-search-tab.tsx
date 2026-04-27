@@ -67,6 +67,11 @@ interface StockAnalysisSavedState {
   useDataSandboxOverrides: boolean;
 }
 
+interface StockSearchTabProps {
+  isTabActive?: boolean;
+  tabId?: string;
+}
+
 function serializeStockAnalysisState(state: {
   tickers: string;
   startDate: string;
@@ -688,7 +693,7 @@ function renderMarkdownBlocks(markdown: string): ReactNode {
   return <>{elements}</>;
 }
 
-export function StockSearchTab() {
+export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
   const { language } = useLanguage();
   const { success, error } = useToastManager();
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -1247,6 +1252,7 @@ export function StockSearchTab() {
             <TickerInput
               placeholder={language === 'ko' ? '단일 종목 입력 (예: AAPL)' : 'Enter single ticker (e.g. AAPL)'}
               value={tickers}
+              isActive={isTabActive}
               onChange={val => {
                  setTickers(val);
               }}
