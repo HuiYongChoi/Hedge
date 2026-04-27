@@ -18,10 +18,10 @@ def test_financial_language_normalizer_repairs_lost_ratio_decimals() -> None:
 
     normalized = normalize_financial_language(raw)
 
-    assert "Debt-To-Equity(부채비율) 0.47" in normalized
-    assert "Current Ratio 1.21x" in normalized
-    assert "Debt-To-Equity(부채비율) 0.12" in normalized
-    assert "그레이엄 넘버(212.35)" in normalized
+    assert "부채비율 (debt-to-equity) 0.47" in normalized
+    assert "유동비율 (current ratio) 1.21x" in normalized
+    assert "부채비율 (debt-to-equity) 0.12" in normalized
+    assert "그레이엄 넘버 (Graham Number) 212.35" in normalized
     assert "21235" not in normalized
 
 
@@ -37,7 +37,7 @@ def test_financial_language_normalizer_uses_formal_terms_and_korean_money_units(
 
     assert "잉여현금흐름(FCF) 창출력" in normalized
     assert "잉여현금흐름(FCF) 수익률" in normalized
-    assert "Debt-To-Equity(부채비율) 0.06 (낮음)" in normalized
+    assert "부채비율 (debt-to-equity) 0.06 (낮음)" in normalized
     assert "1,234억 원" in normalized
     assert "현금으로 돌아오는 힘" not in normalized
     assert "영업현금흐름(FCF)" not in normalized
@@ -52,6 +52,29 @@ def test_financial_language_normalizer_handles_decimal_korean_won_amounts() -> N
     assert ".34원" not in normalized
 
 
+def test_financial_language_normalizer_rewrites_machine_style_report_terms() -> None:
+    from src.utils.financial_formatting import normalize_financial_language
+
+    raw = (
+        "Margin Of Safety(안전마진), moat_strong=false, moat_score=4.44, "
+        "predictability_score=0, flags.predictable=false, valuation_score=3.0, "
+        "fcf_yield=0.0043, margin_of_safety_vs_fair_value=-0.936, reasonable_value=19593750000"
+    )
+
+    normalized = normalize_financial_language(raw)
+
+    assert "안전마진 (margin of safety)" in normalized
+    assert "moat_strong" not in normalized
+    assert "predictability_score" not in normalized
+    assert "valuation_score" not in normalized
+    assert "해자 점수 4.4점" in normalized
+    assert "예측가능성 낮음" in normalized
+    assert "밸류에이션 점수 3.0점" in normalized
+    assert "FCF 수익률 43%" in normalized
+    assert "적정가 대비 -93.6%" in normalized
+    assert "적정가 추정치" in normalized
+
+
 def test_llm_output_postprocessing_applies_financial_language_normalizer() -> None:
     source = LLM_SOURCE.read_text(encoding="utf-8")
 
@@ -61,6 +84,9 @@ def test_llm_output_postprocessing_applies_financial_language_normalizer() -> No
     assert "label the period and report period" in source
     assert "official financial terms" in source
     assert "조/억 원" in source
+    assert "Do not expose raw snake_case field names" in source
+    assert "Korean first with English in parentheses" in source
+    assert "Start with the conclusion in the first paragraph" in source
 
 
 def test_buffett_prompt_includes_formatted_evidence_period_and_valuation_fallback() -> None:
@@ -77,7 +103,7 @@ def test_buffett_prompt_includes_formatted_evidence_period_and_valuation_fallbac
     assert '"valuation_summary"' in source
     assert "fallback_owner_earnings" in source
     assert "Free Cash Flow fallback" in source
-    assert "Margin Of Safety(안전마진)" in source
+    assert "안전마진 (margin of safety)" in source
 
 
 def test_graham_output_keeps_decimal_graham_number_and_structured_metrics() -> None:
@@ -90,7 +116,7 @@ def test_graham_output_keeps_decimal_graham_number_and_structured_metrics() -> N
     assert '"source_note": _build_graham_source_note' in source
     assert "Current ratio = {current_ratio:.2f}x" in source
     assert "Copy Graham Number decimals exactly" in source
-    assert "Graham Number(그레이엄 넘버)" in source
+    assert "그레이엄 넘버 (Graham Number)" in source
 
 
 def test_agent_result_cards_expose_formula_tooltips_next_to_agent_name() -> None:
@@ -100,7 +126,7 @@ def test_agent_result_cards_expose_formula_tooltips_next_to_agent_name() -> None
     assert "from '@/components/ui/agent-formula-tooltip'" in source
     assert "export function AgentFormulaTooltip" in guide_source
     assert "getAgentFormulaGuide" in guide_source
-    assert "Owner Earnings(소유자 이익)" in guide_source
-    assert "Margin Of Safety(안전마진)" in guide_source
-    assert "Graham Number(그레이엄 넘버)" in guide_source
+    assert "소유자 이익 (owner earnings)" in guide_source
+    assert "안전마진 (margin of safety)" in guide_source
+    assert "그레이엄 넘버 (Graham Number)" in guide_source
     assert "<AgentFormulaTooltip agentKey={result.agentKey} language={language} />" in source

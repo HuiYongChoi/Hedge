@@ -408,7 +408,7 @@ def generate_graham_output(
             - Do not call liabilities-to-assets "D/E" or infer high interest-bearing debt from it alone.
             - Copy Graham Number decimals exactly from valuation_analysis.metrics. Never compress 212.35 into 21235.
             - Label quantitative evidence with period_note and source_note.
-            - In Korean output, important formula terms must be Title Case plus Korean translation in parentheses: Graham Number(그레이엄 넘버), Margin Of Safety(안전마진), Current Ratio(유동비율), Debt-To-Equity(부채비율).
+            - In Korean output, important formula terms must be Korean first with English in parentheses: 그레이엄 넘버 (Graham Number), 안전마진 (margin of safety), 유동비율 (current ratio), 부채비율 (debt-to-equity).
                         
             Return a rational recommendation: bullish, bearish, or neutral, with a confidence level (0-100) and thorough reasoning.
             """,

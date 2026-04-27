@@ -15,6 +15,20 @@ RATIO_LABEL_PATTERN = (
     r"Cash\s+Ratio|cash_ratio"
 )
 
+KOREAN_FIRST_TERM_REPLACEMENTS = [
+    (r"Margin\s+Of\s+Safety\s*\(\s*안전마진\s*\)", "안전마진 (margin of safety)"),
+    (r"Owner\s+Earnings\s*\(\s*소유자\s*이익\s*\)", "소유자 이익 (owner earnings)"),
+    (r"Graham\s+Number\s*\(\s*그레이엄\s*넘버\s*\)", "그레이엄 넘버 (Graham Number)"),
+    (r"Current\s+Ratio\s*\(\s*유동비율\s*\)", "유동비율 (current ratio)"),
+    (r"Quick\s+Ratio\s*\(\s*당좌비율\s*\)", "당좌비율 (quick ratio)"),
+    (r"Debt[-\s_/]*To[-\s_/]*Equity\s*\(\s*부채비율\s*\)", "부채비율 (debt-to-equity)"),
+    (r"Operating\s+Margin\s*\(\s*영업이익률\s*\)", "영업이익률 (operating margin)"),
+    (r"Return\s+On\s+Equity\s*\(\s*자기자본이익률\s*\)", "자기자본이익률 (return on equity)"),
+    (r"Market\s+Cap\s*\(\s*시가총액\s*\)", "시가총액 (market cap)"),
+    (r"Intrinsic\s+Value\s*\(\s*내재가치\s*\)", "내재가치 (intrinsic value)"),
+    (r"Free\s+Cash\s+Flow\s+Yield\s*\(\s*(?:잉여현금흐름수익률|FCF\s*수익률)\s*\)", "FCF 수익률 (free cash flow yield)"),
+]
+
 
 def _safe_float(value: Any) -> float | None:
     if value is None:
@@ -97,6 +111,36 @@ def format_period_note(period: Any, report_period: Any) -> str:
     period_text = str(period or "N/A").upper()
     report_text = str(report_period or "N/A")
     return f"{period_text}, Report Period {report_text}"
+
+
+def _format_score_text(value: Any) -> str:
+    number = _safe_float(value)
+    if number is None:
+        return "N/A"
+    return f"{number:.1f}점"
+
+
+def _format_user_friendly_percent(value: Any, emphasize_small_ratio: bool = False) -> str:
+    number = _safe_float(value)
+    if number is None:
+        return "N/A"
+
+    scaled = number * 100
+    if emphasize_small_ratio and abs(number) < 0.01:
+        scaled = number * 10_000
+
+    if math.isclose(scaled, round(scaled), abs_tol=0.05):
+        return f"{int(round(scaled))}%"
+    return f"{scaled:.1f}%"
+
+
+def _format_human_amount(value: Any) -> str:
+    number = _safe_float(value)
+    if number is None:
+        return "N/A"
+    if abs(number) >= 100_000_000:
+        return format_korean_won_amount(number)
+    return f"{number:,.0f}"
 
 
 def _restore_lost_ratio_decimal(match: re.Match[str]) -> str:
@@ -201,9 +245,35 @@ def _normalize_financial_term_text(text: str) -> str:
     return text
 
 
+def _normalize_korean_first_financial_terms(text: str) -> str:
+    normalized = text
+    for pattern, replacement in KOREAN_FIRST_TERM_REPLACEMENTS:
+        normalized = re.sub(pattern, replacement, normalized, flags=re.IGNORECASE)
+
+    normalized = re.sub(
+        r"\bGraham\s+Number\b\s*[:=]?\s*(\d+(?:\.\d+)?)",
+        r"그레이엄 넘버 (Graham Number) \1",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\bD/E\b\s*[:=]?\s*(\d+(?:\.\d+)?)\b",
+        r"부채비율 (debt-to-equity) \1",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\bCurrent\s+Ratio\b\s*[:=]?\s*(\d+(?:\.\d+)?)x\b",
+        r"유동비율 (current ratio) \1x",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    return normalized
+
+
 def _normalize_korean_market_cap_text(text: str) -> str:
     market_cap_pattern = re.compile(
-        r"(?P<label>시가\s*총액|시가총액|Market\s+Cap\(시가총액\))"
+        r"(?P<label>시가\s*총액|시가총액|Market\s+Cap\(시가총액\)|시가총액\s*\(market\s*cap\))"
         r"(?P<separator>\s*[:：]?\s*)"
         r"(?:₩|KRW\s*)?"
         r"(?P<number>(?:[0-9]{1,3}(?:,[0-9]{3}){2,}|[0-9]{9,})(?:\.\d+)?)"
@@ -223,6 +293,79 @@ def _normalize_korean_market_cap_text(text: str) -> str:
     return market_cap_pattern.sub(replace_market_cap, text)
 
 
+def _normalize_machine_report_text(text: str) -> str:
+    normalized = re.sub(
+        r"\bmoat_strong\s*=\s*(?P<flag>true|false)\s*,\s*moat_score\s*=\s*(?P<score>-?\d+(?:\.\d+)?)",
+        lambda match: (
+            f"해자 경쟁력 {'강함' if match.group('flag').lower() == 'true' else '약함'}, "
+            f"해자 점수 {_format_score_text(match.group('score'))}"
+        ),
+        text,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\bmoat_strong\s*=\s*(true|false)",
+        lambda match: f"해자 경쟁력 {'강함' if match.group(1).lower() == 'true' else '약함'}",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\bpredictability_score\s*=\s*(?P<score>-?\d+(?:\.\d+)?)\s*,\s*flags\.predictable\s*=\s*(?P<flag>true|false)",
+        lambda match: (
+            f"예측가능성 {'높음' if match.group('flag').lower() == 'true' else '낮음'}, "
+            f"예측가능성 점수 {_format_score_text(match.group('score'))}"
+        ),
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\bflags\.predictable\s*=\s*(true|false)",
+        lambda match: f"예측가능성 {'높음' if match.group(1).lower() == 'true' else '낮음'}",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\bmoat_score\s*=\s*(-?\d+(?:\.\d+)?)",
+        lambda match: f"해자 점수 {_format_score_text(match.group(1))}",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\bpredictability_score\s*=\s*(-?\d+(?:\.\d+)?)",
+        lambda match: f"예측가능성 점수 {_format_score_text(match.group(1))}",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\bvaluation_score\s*=\s*(-?\d+(?:\.\d+)?)",
+        lambda match: f"밸류에이션 점수 {_format_score_text(match.group(1))}",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\bfcf_yield\s*=\s*(-?\d+(?:\.\d+)?)",
+        lambda match: f"FCF 수익률 {_format_user_friendly_percent(match.group(1), emphasize_small_ratio=True)}",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\bmargin_of_safety_vs_fair_value\s*=\s*(-?\d+(?:\.\d+)?)",
+        lambda match: f"적정가 대비 {_format_user_friendly_percent(match.group(1))}",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\breasonable_value\s*=\s*(-?\d+(?:\.\d+)?)",
+        lambda match: f"적정가 추정치 {_format_human_amount(match.group(1))}",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(r"\s{2,}", " ", normalized)
+    normalized = re.sub(r"\s+,", ",", normalized)
+    normalized = re.sub(r",\s*,", ", ", normalized)
+    return normalized.strip(" ,")
+
+
 def normalize_financial_language(text: str) -> str:
     """Repair common LLM readability errors in financial ratio prose."""
     if not isinstance(text, str):
@@ -230,4 +373,6 @@ def normalize_financial_language(text: str) -> str:
     normalized = _normalize_ratio_text(text)
     normalized = _normalize_graham_number_text(normalized)
     normalized = _normalize_financial_term_text(normalized)
+    normalized = _normalize_korean_first_financial_terms(normalized)
+    normalized = _normalize_machine_report_text(normalized)
     return _normalize_korean_market_cap_text(normalized)

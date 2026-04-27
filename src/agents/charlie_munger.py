@@ -8,6 +8,7 @@ from typing_extensions import Literal
 from src.utils.progress import progress
 from src.utils.llm import call_llm
 from src.utils.api_key import get_api_key_from_state
+from src.utils.financial_formatting import format_korean_won_amount
 
 class CharlieMungerSignal(BaseModel):
     signal: Literal["bullish", "bearish", "neutral"]
@@ -724,6 +725,27 @@ def _r(x, n=3):
     except Exception:
         return None
 
+
+def _score_text(value: float | None) -> str:
+    if value is None:
+        return "N/A"
+    return f"{value:.1f}점"
+
+
+def _status_text(value: bool | None, positive: str, negative: str, unknown: str = "확인 필요") -> str:
+    if value is None:
+        return unknown
+    return positive if value else negative
+
+
+def _friendly_percent(value: float | None, emphasize_small_ratio: bool = False) -> str:
+    if value is None:
+        return "N/A"
+    scaled = value * 10000 if emphasize_small_ratio and abs(value) < 0.01 else value * 100
+    if abs(scaled - round(scaled)) < 0.05:
+        return f"{int(round(scaled))}%"
+    return f"{scaled:.1f}%"
+
 def make_munger_facts_bundle(analysis: dict[str, any]) -> dict[str, any]:
     moat = analysis.get("moat_analysis") or {}
     mgmt = analysis.get("management_analysis") or {}
@@ -737,41 +759,46 @@ def make_munger_facts_bundle(analysis: dict[str, any]) -> dict[str, any]:
     val_score  = _r(val.get("score"), 2) or 0
 
     # Simple mental-model flags (booleans/ints = cheap tokens, strong guidance)
-    flags = {
-        "moat_strong": moat_score >= 7,
-        "predictable": pred_score >= 7,
-        "owner_aligned": (mgmt_score >= 7) or ((mgmt.get("insider_buy_ratio") or 0) >= 0.6),
-        "low_leverage": (mgmt.get("recent_de_ratio") is not None and mgmt.get("recent_de_ratio") < 0.7),
-        "sensible_cash": (mgmt.get("cash_to_revenue") is not None and 0.1 <= mgmt.get("cash_to_revenue") <= 0.25),
-        "low_capex": None,  # inferred in moat score already; keep placeholder if you later expose a ratio
-        "mos_positive": (val.get("mos_to_reasonable") or 0) > 0.0,
-        "fcf_yield_ok": (val.get("fcf_yield") or 0) >= 0.05,
-        "share_count_friendly": (mgmt.get("share_count_trend") == "decreasing"),
-    }
+    moat_strong = moat_score >= 7
+    predictable = pred_score >= 7
+    owner_aligned = (mgmt_score >= 7) or ((mgmt.get("insider_buy_ratio") or 0) >= 0.6)
+    low_leverage = (mgmt.get("recent_de_ratio") is not None and mgmt.get("recent_de_ratio") < 0.7)
+    sensible_cash = (mgmt.get("cash_to_revenue") is not None and 0.1 <= mgmt.get("cash_to_revenue") <= 0.25)
+    mos_positive = (val.get("mos_to_reasonable") or 0) > 0.0
+    fcf_yield_ok = (val.get("fcf_yield") or 0) >= 0.05
+    share_count_friendly = (mgmt.get("share_count_trend") == "decreasing")
 
     return {
-        "pre_signal": analysis.get("signal"),
-        "score": _r(analysis.get("score"), 2),
-        "max_score": _r(analysis.get("max_score"), 2),
-        "moat_score": moat_score,
-        "mgmt_score": mgmt_score,
-        "predictability_score": pred_score,
-        "valuation_score": val_score,
-        "fcf_yield": _r(val.get("fcf_yield"), 4),
-        "normalized_fcf": _r(val.get("normalized_fcf"), 0),
-        "reasonable_value": _r(ivr.get("reasonable"), 0),
-        "margin_of_safety_vs_fair_value": _r(val.get("margin_of_safety_vs_fair_value"), 3),
-        "insider_buy_ratio": _r(mgmt.get("insider_buy_ratio"), 2),
-        "recent_de_ratio": _r(mgmt.get("recent_de_ratio"), 2),
-        "cash_to_revenue": _r(mgmt.get("cash_to_revenue"), 2),
-        "share_count_trend": mgmt.get("share_count_trend"),
-        "flags": flags,
-        # keep one-liners, very short
-        "notes": {
-            "moat": (moat.get("details") or "")[:120],
-            "mgmt": (mgmt.get("details") or "")[:120],
-            "predictability": (pred.get("details") or "")[:120],
-            "valuation": (val.get("details") or "")[:120],
+        "사전 신호": analysis.get("signal"),
+        "종합 점수": _score_text(_r(analysis.get("score"), 2)),
+        "최대 점수": _score_text(_r(analysis.get("max_score"), 2)),
+        "해자 점수": _score_text(moat_score),
+        "경영진 점수": _score_text(mgmt_score),
+        "예측가능성 점수": _score_text(pred_score),
+        "밸류에이션 점수": _score_text(val_score),
+        "FCF 수익률": _friendly_percent(_r(val.get("fcf_yield"), 4), emphasize_small_ratio=True),
+        "정규화 FCF": format_korean_won_amount(_r(val.get("normalized_fcf"), 0)),
+        "적정가 추정치": format_korean_won_amount(_r(ivr.get("reasonable"), 0)),
+        "안전마진": _friendly_percent(_r(val.get("margin_of_safety_vs_fair_value"), 3)),
+        "내부자 매수 비중": _friendly_percent(_r(mgmt.get("insider_buy_ratio"), 2)),
+        "최근 부채비율": f"{_r(mgmt.get('recent_de_ratio'), 2):.2f}" if _r(mgmt.get("recent_de_ratio"), 2) is not None else "N/A",
+        "매출 대비 현금": _friendly_percent(_r(mgmt.get("cash_to_revenue"), 2)),
+        "주식 수 추이": mgmt.get("share_count_trend") or "확인 필요",
+        "핵심 체크": {
+            "해자 경쟁력": _status_text(moat_strong, "강함", "약함"),
+            "예측가능성": _status_text(predictable, "높음", "낮음"),
+            "주주 정렬": _status_text(owner_aligned, "우호적", "보통"),
+            "레버리지 부담": _status_text(low_leverage, "낮음", "높음"),
+            "현금 여력": _status_text(sensible_cash, "무난함", "보수적 점검 필요"),
+            "안전마진 방향": _status_text(mos_positive, "플러스", "마이너스"),
+            "FCF 수익률 매력": _status_text(fcf_yield_ok, "양호", "아쉬움"),
+            "주식 수 흐름": _status_text(share_count_friendly, "주주 친화적", "희석 가능성 점검"),
+        },
+        "메모": {
+            "해자": (moat.get("details") or "")[:120],
+            "경영진": (mgmt.get("details") or "")[:120],
+            "예측가능성": (pred.get("details") or "")[:120],
+            "밸류에이션": (val.get("details") or "")[:120],
         },
     }
 

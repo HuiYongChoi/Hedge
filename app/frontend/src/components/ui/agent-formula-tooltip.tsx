@@ -14,13 +14,13 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
   warren_buffett: {
     ko: {
       title: '워런 버핏 정량 공식',
-      summary: '우량 사업, 보수적 재무구조, Owner Earnings(소유자 이익) 기반 내재가치와 Margin Of Safety(안전마진)를 함께 봅니다.',
+      summary: '우량 사업, 보수적 재무구조, 소유자 이익 (owner earnings) 기반 내재가치와 안전마진 (margin of safety)을 함께 봅니다.',
       formulas: [
-        'Owner Earnings(소유자 이익) = Net Income(순이익) + Depreciation And Amortization(감가상각비) - Maintenance CapEx(유지보수 자본지출) - Working Capital Change(운전자본 변동)',
-        'Margin Of Safety(안전마진) = (Intrinsic Value(내재가치) - Market Cap(시가총액)) / Market Cap(시가총액)',
-        'Debt-To-Equity(부채비율), Current Ratio(유동비율), ROE(자기자본이익률), Operating Margin(영업이익률)은 TTM 또는 Report Period(보고기간) 라벨과 함께 해석합니다.',
+        '소유자 이익 (owner earnings) = Net Income(순이익) + Depreciation And Amortization(감가상각비) - Maintenance CapEx(유지보수 자본지출) - Working Capital Change(운전자본 변동)',
+        '안전마진 (margin of safety) = (Intrinsic Value(내재가치) - Market Cap(시가총액)) / Market Cap(시가총액)',
+        '부채비율 (debt-to-equity), 유동비율 (current ratio), ROE(자기자본이익률), 영업이익률 (operating margin)은 TTM 또는 Report Period(보고기간) 라벨과 함께 해석합니다.',
       ],
-      thresholds: ['ROE 15% 이상 가점', 'Debt-To-Equity 0.50 미만 가점', 'Current Ratio 1.50x 초과 가점', 'Margin Of Safety 양수일 때 강세 근거 강화'],
+      thresholds: ['ROE 15% 이상 가점', '부채비율 0.50 미만 가점', '유동비율 1.50x 초과 가점', '안전마진이 양수일 때 강세 근거 강화'],
     },
     en: {
       title: 'Warren Buffett Quant Formula',
@@ -36,13 +36,13 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
   ben_graham: {
     ko: {
       title: '벤 그레이엄 정량 공식',
-      summary: 'Graham Number(그레이엄 넘버), NCAV(순유동자산가치), Current Ratio(유동비율), Debt-To-Equity(부채비율)로 보수적 안전마진을 확인합니다.',
+      summary: '그레이엄 넘버 (Graham Number), NCAV(순유동자산가치), 유동비율 (current ratio), 부채비율 (debt-to-equity)로 보수적 안전마진을 확인합니다.',
       formulas: [
-        'Graham Number(그레이엄 넘버) = sqrt(22.5 x EPS(주당순이익) x Book Value Per Share(주당순자산))',
-        'Margin Of Safety(안전마진) = (Graham Number(그레이엄 넘버) - Current Price(현재가)) / Current Price(현재가)',
+        '그레이엄 넘버 (Graham Number) = sqrt(22.5 x EPS(주당순이익) x Book Value Per Share(주당순자산))',
+        '안전마진 (margin of safety) = (그레이엄 넘버 (Graham Number) - Current Price(현재가)) / Current Price(현재가)',
         'NCAV(순유동자산가치) = Current Assets(유동자산) - Total Liabilities(총부채)',
       ],
-      thresholds: ['Current Ratio 2.00x 이상 선호', 'Debt-To-Equity 0.50 이하 가점', 'Graham Number 대비 20~50% 할인 시 가점', 'NCAV가 시가총액보다 높으면 강한 딥밸류 신호'],
+      thresholds: ['유동비율 2.00x 이상 선호', '부채비율 0.50 이하 가점', '그레이엄 넘버 대비 20~50% 할인 시 가점', 'NCAV가 시가총액보다 높으면 강한 딥밸류 신호'],
     },
     en: {
       title: 'Ben Graham Quant Formula',

@@ -17,6 +17,10 @@ def test_call_llm_injects_report_quality_requirement() -> None:
     assert "### 핵심 근거" in source
     assert "### 리스크와 반대 근거" in source
     assert "### 검토 필요 항목" in source
+    assert "첫 문단에서 결론" in source
+    assert "한국어 먼저 (영문)" in source
+    assert "snake_case" in source
+    assert "moat_score=4.4" in source
     assert "REPORT_QUALITY_REQUIREMENT" in source[source.index("def _make_system_message") :]
     assert "REPORT_QUALITY_REQUIREMENT" in source[source.index("def _append_korean_requirement_to_text") :]
     assert "DEBT_QUALITY_REQUIREMENT" in source[source.index("def _make_system_message") :]

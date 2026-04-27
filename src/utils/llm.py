@@ -24,8 +24,11 @@ RATIO_SCALE_REQUIREMENT = (
     "Only convert a ratio to a percentage when explicitly labeling it as a percentage, and never confuse debt_to_equity with liabilities_to_assets. "
     "Always label the period and report period for quantitative evidence, for example TTM, Report Period 2026-02-28 or Annual, Report Period FY2025. "
     "When writing Korean output, use official financial terms first and add plain-language explanation only after the term. "
-    "Do not use colloquial phrases such as '현금으로 돌아오는 힘'; write Free Cash Flow(잉여현금흐름), Free Cash Flow Yield(FCF 수익률), Cash Conversion(현금전환율), or Cash Flow Generation(현금흐름 창출력). "
-    "Introduce important English financial terms in Title Case with Korean translation in parentheses, for example Margin Of Safety(안전마진), Current Ratio(유동비율), and Debt-To-Equity(부채비율). "
+    "Korean first with English in parentheses is required. 한국어 먼저 (영문) 형식으로 쓰십시오. "
+    "Do not use colloquial phrases such as '현금으로 돌아오는 힘'; write 잉여현금흐름 (free cash flow), FCF 수익률 (free cash flow yield), 현금전환율 (cash conversion), or 현금흐름 창출력 (cash flow generation). "
+    "Use Korean first with English in parentheses for important terms, for example 안전마진 (margin of safety), 유동비율 (current ratio), and 부채비율 (debt-to-equity). "
+    "Do not expose raw snake_case field names, JSON keys, or machine-style key=value text such as moat_score=4.4, moat_strong=false, predictability_score=0, or fcf_yield=0.0043. "
+    "Rewrite them as natural Korean phrases such as 해자 점수 4.4점, 해자 경쟁력 약함, 예측가능성 낮음, and FCF 수익률 43%. "
     "For Korean-company KRW values such as Market Cap(시가총액), use 조/억 원 units instead of long raw numbers."
 )
 DEBT_QUALITY_REQUIREMENT = """[추가 지시사항: 부채의 질적 평가]
@@ -52,14 +55,20 @@ CROSS_CHECK_GUIDE_REQUIREMENT = """[추가 지시사항: 원문 대조 가이드
 """
 REPORT_QUALITY_REQUIREMENT = """[추가 지시사항: 결과 보고 품질]
 reasoning, summary, details, explanation, analysis 필드가 있다면 짧은 결론 한 문장으로 끝내지 말고, 사용자가 에이전트 간 결과를 비교할 수 있는 구조화된 보고서로 작성하십시오. 이 요구사항은 기존의 짧은 글자 수 제한보다 우선합니다.
+첫 문단에서 결론을 먼저 말하십시오. Start with the conclusion in the first paragraph.
+보고서 문단은 짧고 직관적으로 유지하고, 핵심 수치 3~4개만 우선 사용하십시오.
+변수명, snake_case, JSON 키, key=value 덤프는 금지합니다. 예: moat_score=4.4, moat_strong=false.
+용어는 한국어 먼저 (영문) 형식으로 쓰십시오. 예: 안전마진 (margin of safety), 해자 (moat), 예측가능성 (predictability).
 
 권장 구성:
 ### 핵심 판단
-- 최종 신호와 신뢰도를 한 문단으로 설명.
+- 최종 신호와 신뢰도를 첫 문단 한두 문장 안에 설명.
+- 맨 앞에 매수/관망/매도 또는 강세/중립/약세 결론이 바로 드러나야 합니다.
 
 ### 핵심 근거
 - 제공된 전처리 수치, 점수, 섹션별 details 중 중요한 근거 3~5개를 연결.
 - 수치가 N/A이면 N/A라고 밝히고, 사용 가능한 대체 지표와 정성 맥락으로 불확실성을 설명.
+- raw 필드명 대신 자연어를 사용하십시오. 예: moat_score=4.4 → 해자 점수 4.4점.
 
 ### 리스크와 반대 근거
 - 현재 판단을 약화시킬 수 있는 반대 증거, 데이터 공백, 밸류에이션/재무/사업 리스크를 분리해 설명.
