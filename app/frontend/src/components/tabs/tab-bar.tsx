@@ -32,6 +32,7 @@ export function TabBar({ className }: TabBarProps) {
   const getTabTitle = (tab: { type: string; title: string }): string => {
     if (tab.type === 'settings') return t('settings', language);
     if (tab.type === 'stock-search') return t('stockAnalysis', language);
+    if (tab.type === 'data-sandbox') return t('dataSandbox', language);
     return tab.title;
   };
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
