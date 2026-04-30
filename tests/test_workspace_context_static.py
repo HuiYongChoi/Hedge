@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_CONTEXT = ROOT / "app/frontend/src/contexts/workspace-context.tsx"
 WORKSPACE_STORAGE = ROOT / "app/frontend/src/services/workspace-storage.ts"
 LAYOUT = ROOT / "app/frontend/src/components/Layout.tsx"
+STOCK_SEARCH_TAB = ROOT / "app/frontend/src/components/tabs/stock-search-tab.tsx"
 
 
 def test_workspace_context_and_storage_files_exist() -> None:
@@ -41,3 +42,29 @@ def test_layout_mounts_workspace_provider() -> None:
     assert "WorkspaceProvider" in source
     assert "<WorkspaceProvider>" in source
     assert "</WorkspaceProvider>" in source
+
+
+def test_stock_search_tab_reads_input_state_from_workspace_context() -> None:
+    source = STOCK_SEARCH_TAB.read_text(encoding="utf-8")
+
+    assert "useWorkspace" in source
+    assert "const { workspace" in source
+    assert "const [selectedAgents, setSelectedAgents] = useState" not in source
+    assert "const [selectedModel, setSelectedModel] = useState" not in source
+    assert "const [tickers, setTickers] = useState" not in source
+    assert "const [startDate, setStartDate] = useState" not in source
+    assert "const [endDate, setEndDate] = useState" not in source
+    assert "const [useDataSandboxOverrides, setUseDataSandboxOverrides] = useState" not in source
+
+
+def test_stock_search_tab_persists_inputs_in_request_data_not_ui_state() -> None:
+    source = STOCK_SEARCH_TAB.read_text(encoding="utf-8")
+    serialize_source = source[source.index("function serializeStockAnalysisState") : source.index("function restoreStockAnalysisState")]
+
+    assert "tickers:" not in serialize_source
+    assert "startDate:" not in serialize_source
+    assert "endDate:" not in serialize_source
+    assert "selectedAgentKeys" not in serialize_source
+    assert "selectedModel:" not in serialize_source
+    assert "useDataSandboxOverrides" not in serialize_source
+    assert "latestRun.request_data" in source

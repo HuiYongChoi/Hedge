@@ -7,6 +7,7 @@ import { ModelSelector } from '@/components/ui/llm-selector';
 import { resolveTickerValue, TickerInput } from '@/components/ui/ticker-input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useLanguage } from '@/contexts/language-context';
+import { useWorkspace, type Workspace } from '@/contexts/workspace-context';
 import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
 import {
@@ -54,17 +55,11 @@ interface DetailReportState {
 }
 
 interface StockAnalysisSavedState {
-  tickers: string;
-  startDate: string;
-  endDate: string;
-  selectedModel: LanguageModel | null;
-  selectedAgentKeys: string[];
   agentResults: AgentResult[];
   completeResult: CompleteResult | null;
   expandedAgentKeys: string[];
   selectedDetailReport: DetailReportState | null;
   errorMessage: string | null;
-  useDataSandboxOverrides: boolean;
 }
 
 interface StockSearchTabProps {
@@ -72,67 +67,120 @@ interface StockSearchTabProps {
   tabId?: string;
 }
 
+interface SavedStockAnalysisInputState {
+  tickers?: string | string[];
+  input_ticker?: string;
+  startDate?: string;
+  endDate?: string;
+  start_date?: string;
+  end_date?: string;
+  selectedModel?: LanguageModel | null;
+  selected_model?: LanguageModel | null;
+  selectedAgentKeys?: string[];
+  selected_agent_keys?: string[];
+  useDataSandboxOverrides?: boolean;
+  use_data_sandbox_overrides?: boolean;
+}
+
 function serializeStockAnalysisState(state: {
-  tickers: string;
-  startDate: string;
-  endDate: string;
-  selectedModel: LanguageModel | null;
-  selectedAgents: Set<string>;
   agentResults: Map<string, AgentResult>;
   completeResult: CompleteResult | null;
   expandedAgents: Set<string>;
   selectedDetailReport: DetailReportState | null;
   errorMessage: string | null;
-  useDataSandboxOverrides: boolean;
 }): StockAnalysisSavedState {
   return {
-    tickers: state.tickers,
-    startDate: state.startDate,
-    endDate: state.endDate,
-    selectedModel: state.selectedModel,
-    selectedAgentKeys: Array.from(state.selectedAgents),
     agentResults: Array.from(state.agentResults.values()),
     completeResult: state.completeResult,
     expandedAgentKeys: Array.from(state.expandedAgents),
     selectedDetailReport: state.selectedDetailReport,
     errorMessage: state.errorMessage,
-    useDataSandboxOverrides: state.useDataSandboxOverrides,
   };
 }
 
 function restoreStockAnalysisState(
   savedState: Record<string, any> | null | undefined,
-  availableAgents: Agent[],
-  availableModels: LanguageModel[],
-  defaultModel: LanguageModel | null,
 ) {
   const state = (savedState || {}) as Partial<StockAnalysisSavedState>;
-  const availableAgentKeys = new Set(availableAgents.map(agent => agent.key));
-  const selectedAgentKeys = (state.selectedAgentKeys || []).filter(key => availableAgentKeys.has(key));
-  const restoredModel = state.selectedModel
-    ? availableModels.find(model =>
-        model.model_name === state.selectedModel?.model_name &&
-        model.provider === state.selectedModel?.provider
-      ) || state.selectedModel
-    : defaultModel;
 
   return {
-    tickers: state.tickers || '',
-    startDate: state.startDate || (() => {
-      const d = new Date();
-      d.setMonth(d.getMonth() - 3);
-      return d.toISOString().split('T')[0];
-    })(),
-    endDate: state.endDate || new Date().toISOString().split('T')[0],
-    selectedModel: restoredModel,
-    selectedAgents: new Set(selectedAgentKeys),
     agentResults: new Map((state.agentResults || []).map(result => [result.agentKey, result])),
     completeResult: state.completeResult || null,
     expandedAgents: new Set(state.expandedAgentKeys || []),
     selectedDetailReport: state.selectedDetailReport || null,
     errorMessage: state.errorMessage || null,
-    useDataSandboxOverrides: Boolean(state.useDataSandboxOverrides),
   };
+}
+
+function resolveRestoredModel(
+  savedModel: LanguageModel | null | undefined,
+  availableModels: LanguageModel[],
+  defaultModel: LanguageModel | null,
+  fallbackModel: LanguageModel | null,
+) {
+  if (!savedModel) {
+    return defaultModel ?? fallbackModel;
+  }
+
+  return availableModels.find(model =>
+    model.model_name === savedModel.model_name &&
+    model.provider === savedModel.provider,
+  ) || savedModel;
+}
+
+function restoreWorkspaceFromSavedInput(
+  savedInput: SavedStockAnalysisInputState | null | undefined,
+  availableAgents: Agent[],
+  availableModels: LanguageModel[],
+  defaultModel: LanguageModel | null,
+  fallbackWorkspace: Workspace,
+): Partial<Workspace> {
+  const state = (savedInput || {}) as SavedStockAnalysisInputState;
+  const availableAgentKeys = new Set(availableAgents.map(agent => agent.key));
+  const rawTickers = Array.isArray(state.tickers)
+    ? state.tickers.join(', ')
+    : typeof state.tickers === 'string'
+      ? state.tickers
+      : typeof state.input_ticker === 'string'
+        ? state.input_ticker
+        : fallbackWorkspace.tickers;
+  const selectedAgentKeys = (
+    Array.isArray(state.selected_agent_keys)
+      ? state.selected_agent_keys
+      : Array.isArray(state.selectedAgentKeys)
+        ? state.selectedAgentKeys
+        : Array.from(fallbackWorkspace.selectedAgents)
+  ).filter(key => availableAgentKeys.has(key));
+
+  return {
+    tickers: rawTickers,
+    startDate:
+      (typeof state.start_date === 'string' ? state.start_date : state.startDate) || fallbackWorkspace.startDate,
+    endDate:
+      (typeof state.end_date === 'string' ? state.end_date : state.endDate) || fallbackWorkspace.endDate,
+    selectedModel: resolveRestoredModel(
+      state.selected_model ?? state.selectedModel,
+      availableModels,
+      defaultModel,
+      fallbackWorkspace.selectedModel,
+    ),
+    selectedAgents: new Set(selectedAgentKeys),
+    useDataSandboxOverrides:
+      typeof state.use_data_sandbox_overrides === 'boolean'
+        ? state.use_data_sandbox_overrides
+        : typeof state.useDataSandboxOverrides === 'boolean'
+          ? state.useDataSandboxOverrides
+          : fallbackWorkspace.useDataSandboxOverrides,
+  };
+}
+
+function hasWorkspaceInput(workspace: Workspace) {
+  return Boolean(
+    workspace.tickers.trim() ||
+    workspace.selectedAgents.size > 0 ||
+    workspace.selectedModel ||
+    workspace.useDataSandboxOverrides,
+  );
 }
 
 function getStockAnalysisStatus(
@@ -695,18 +743,18 @@ function renderMarkdownBlocks(markdown: string): ReactNode {
 
 export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
   const { language } = useLanguage();
+  const { workspace, setTickers, setDateRange, setSelectedModel, toggleAgent, setSelectedAgents, setUseDataSandboxOverrides, patchWorkspace } = useWorkspace();
+  const {
+    tickers,
+    startDate,
+    endDate,
+    selectedModel,
+    selectedAgents,
+    useDataSandboxOverrides,
+  } = workspace;
   const { success, error } = useToastManager();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [models, setModels] = useState<LanguageModel[]>([]);
-  const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
-  const [selectedModel, setSelectedModel] = useState<LanguageModel | null>(null);
-  const [tickers, setTickers] = useState('');
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [startDate, setStartDate] = useState(() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - 3);
-    return d.toISOString().split('T')[0];
-  });
   const [isRunning, setIsRunning] = useState(false);
   const [agentResults, setAgentResults] = useState<Map<string, AgentResult>>(new Map());
   const [completeResult, setCompleteResult] = useState<CompleteResult | null>(null);
@@ -714,13 +762,13 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
   const [selectedDetailReport, setSelectedDetailReport] = useState<DetailReportState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSavingAnalysis, setIsSavingAnalysis] = useState(false);
-  const [useDataSandboxOverrides, setUseDataSandboxOverrides] = useState(false);
   const [sandboxOverrideSnapshot, setSandboxOverrideSnapshot] = useState(() => loadDataSandboxOverrideSnapshot());
   const abortControllerRef = useRef<AbortController | null>(null);
   const savedRunIdRef = useRef<number | null>(null);
   const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastPersistedPayloadRef = useRef<string>('');
   const [hasRestoredSavedRun, setHasRestoredSavedRun] = useState(false);
+  const initialWorkspaceRef = useRef(workspace);
 
   useEffect(() => {
     const load = async () => {
@@ -734,32 +782,40 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
         setModels(modelList);
 
         let restored = false;
+        let restoredWorkspaceInputs = false;
         try {
           const latestRun = await stockAnalysisRunService.getLatestRun();
-          if (latestRun?.ui_state) {
-            const restoredState = restoreStockAnalysisState(latestRun.ui_state, agentList, modelList, defaultModel);
+          if (latestRun) {
             savedRunIdRef.current = latestRun.id;
-            setTickers(restoredState.tickers);
-            setStartDate(restoredState.startDate);
-            setEndDate(restoredState.endDate);
-            setSelectedModel(restoredState.selectedModel);
-            setSelectedAgents(restoredState.selectedAgents);
+            if (!hasWorkspaceInput(initialWorkspaceRef.current)) {
+              restoredWorkspaceInputs = true;
+              patchWorkspace(
+                restoreWorkspaceFromSavedInput(
+                  latestRun.request_data || latestRun.ui_state,
+                  agentList,
+                  modelList,
+                  defaultModel,
+                  initialWorkspaceRef.current,
+                ),
+              );
+            }
+          }
+
+          if (latestRun?.ui_state) {
+            const restoredState = restoreStockAnalysisState(latestRun.ui_state);
             setAgentResults(restoredState.agentResults);
             setCompleteResult(restoredState.completeResult);
             setExpandedAgents(restoredState.expandedAgents);
             setSelectedDetailReport(restoredState.selectedDetailReport);
             setErrorMessage(restoredState.errorMessage);
-            setUseDataSandboxOverrides(restoredState.useDataSandboxOverrides);
             restored = true;
           }
         } catch (restoreError) {
           console.warn('Failed to restore latest Stock Analysis run', restoreError);
         }
 
-        if (!restored) {
+        if (!restored && !restoredWorkspaceInputs && !initialWorkspaceRef.current.selectedModel) {
           setSelectedModel(defaultModel);
-          // Select nothing by default
-          setSelectedAgents(new Set());
         }
       } catch (err) {
         console.error('Failed to load agents/models', err);
@@ -815,17 +871,11 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
     if (!hasRestoredSavedRun) return;
 
     const uiState = serializeStockAnalysisState({
-      tickers,
-      startDate,
-      endDate,
-      selectedModel,
-      selectedAgents,
       agentResults,
       completeResult,
       expandedAgents,
       selectedDetailReport,
       errorMessage,
-      useDataSandboxOverrides,
     });
     const firstTicker = tickers.trim() ? resolveTickerValue(tickers.split(',')[0].trim()).toUpperCase() : null;
     const payload = {
@@ -918,15 +968,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
   };
 
   const handleToggleAgent = (key: string) => {
-    setSelectedAgents(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
+    toggleAgent(key);
   };
 
   const handleStop = () => {
@@ -1267,11 +1309,21 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <label className="text-xs">{t('startDate', language)}</label>
-              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="text-xs" />
+              <Input
+                type="date"
+                value={startDate}
+                onChange={e => setDateRange(e.target.value, endDate)}
+                className="text-xs"
+              />
             </div>
             <div className="space-y-1">
               <label className="text-xs">{t('endDate', language)}</label>
-              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="text-xs" />
+              <Input
+                type="date"
+                value={endDate}
+                onChange={e => setDateRange(startDate, e.target.value)}
+                className="text-xs"
+              />
             </div>
           </div>
 
