@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_CONTEXT = ROOT / "app/frontend/src/contexts/workspace-context.tsx"
 WORKSPACE_STORAGE = ROOT / "app/frontend/src/services/workspace-storage.ts"
+LAYOUT = ROOT / "app/frontend/src/components/Layout.tsx"
 
 
 def test_workspace_context_and_storage_files_exist() -> None:
@@ -32,3 +33,11 @@ def test_workspace_context_exposes_patch_and_reset_actions() -> None:
     assert "setSelectedModel" in source
     assert "setSelectedAgents" in source
     assert "setUseDataSandboxOverrides" in source
+
+
+def test_layout_mounts_workspace_provider() -> None:
+    source = LAYOUT.read_text(encoding="utf-8")
+
+    assert "WorkspaceProvider" in source
+    assert "<WorkspaceProvider>" in source
+    assert "</WorkspaceProvider>" in source

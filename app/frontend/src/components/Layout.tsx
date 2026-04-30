@@ -7,6 +7,7 @@ import { SidebarProvider } from '@/components/ui/sidebar';
 import { FlowProvider, useFlowContext } from '@/contexts/flow-context';
 import { LayoutProvider, useLayoutContext } from '@/contexts/layout-context';
 import { TabsProvider, useTabsContext } from '@/contexts/tabs-context';
+import { WorkspaceProvider } from '@/contexts/workspace-context';
 import { useLayoutKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { cn } from '@/lib/utils';
 import { SidebarStorageService } from '@/services/sidebar-storage';
@@ -178,9 +179,11 @@ export function Layout() {
       <ReactFlowProvider>
         <FlowProvider>
           <TabsProvider>
-            <LayoutProvider>
-              <LayoutContent />
-            </LayoutProvider>
+            <WorkspaceProvider>
+              <LayoutProvider>
+                <LayoutContent />
+              </LayoutProvider>
+            </WorkspaceProvider>
           </TabsProvider>
         </FlowProvider>
       </ReactFlowProvider>
