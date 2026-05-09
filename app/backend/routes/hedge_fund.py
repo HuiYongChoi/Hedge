@@ -17,6 +17,7 @@ from app.backend.services.api_key_service import ApiKeyService
 from src.utils.progress import progress
 from src.utils.analysts import get_agents_list
 from src.tools.api import get_financial_metrics, get_market_cap, get_prices, search_line_items
+from src.tools.forward_metrics import get_forward_metrics
 
 router = APIRouter(prefix="/hedge-fund")
 
@@ -107,6 +108,11 @@ async def fetch_metrics(request_data: FetchMetricsRequest, db: Session = Depends
         )
         metrics_dict = metrics_list[0].model_dump() if metrics_list else None
 
+        forward_metrics = await run_in_threadpool(
+            get_forward_metrics, ticker, end_date, fin_api_key
+        )
+        forward_metrics_dict = forward_metrics.model_dump(mode="json") if forward_metrics else None
+
         # 2. Market cap (cached after first call)
         market_cap = await run_in_threadpool(
             get_market_cap, ticker, end_date, fin_api_key
@@ -188,6 +194,7 @@ async def fetch_metrics(request_data: FetchMetricsRequest, db: Session = Depends
         return FetchMetricsResponse(
             ticker=ticker,
             metrics=metrics_dict,
+            forward_metrics=forward_metrics_dict,
             market_cap=market_cap,
             prices=prices_dicts,
             line_items=line_items_dicts,
@@ -613,4 +620,3 @@ async def get_agents():
         return {"agents": get_agents_list()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve agents: {str(e)}")
-

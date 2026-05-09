@@ -28,9 +28,31 @@ const API_BASE_URL = import.meta.env.VITE_API_URL ||
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+interface QuarterlyEPS {
+  period: string;
+  fiscal_period_end: string;
+  eps: number;
+  source: string;
+  provider?: string | null;
+  as_of?: string | null;
+  analyst_count?: number | null;
+}
+
+interface ForwardMetrics {
+  ticker: string;
+  as_of_date: string;
+  current_price: number | null;
+  forward_eps_ttm: number | null;
+  forward_pe: number | null;
+  composition: QuarterlyEPS[];
+  confidence: string;
+  notes: string[];
+}
+
 interface FetchedData {
   ticker: string;
   metrics: Record<string, any>;
+  forward_metrics: ForwardMetrics | null;
   market_cap: number | null;
   prices: { time: string; open: number; high: number; low: number; close: number; volume: number }[];
   line_items: Record<string, any>[];
@@ -77,6 +99,40 @@ function fmtNumber(v: any): string {
   if (Math.abs(n) >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
   if (Math.abs(n) >= 1e3) return `${(n / 1e3).toFixed(2)}K`;
   return n.toFixed(4);
+}
+
+function fmtRatio(v: any): string {
+  if (v === null || v === undefined) return '—';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  return `${n.toFixed(2)}x`;
+}
+
+function fmtDate(v: any): string {
+  if (!v) return '—';
+  return String(v).slice(0, 10);
+}
+
+function confidenceBadgeClass(confidence?: string): string {
+  switch ((confidence || '').toLowerCase()) {
+    case 'high':
+      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500';
+    case 'medium':
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-500';
+    default:
+      return 'border-slate-500/30 bg-slate-500/10 text-slate-400';
+  }
+}
+
+function sourceBadgeClass(source?: string): string {
+  switch ((source || '').toLowerCase()) {
+    case 'actual':
+      return 'bg-blue-500/10 text-blue-500';
+    case 'consensus':
+      return 'bg-emerald-500/10 text-emerald-500';
+    default:
+      return 'bg-muted text-muted-foreground';
+  }
 }
 
 function previewText(value: string, maxLength = 180): string {
@@ -137,6 +193,131 @@ function renderInline(text: string): React.ReactNode {
     }
     return part;
   });
+}
+
+function ForwardMetricsCard({
+  forwardMetrics,
+  language,
+}: {
+  forwardMetrics: ForwardMetrics | null | undefined;
+  language: string;
+}) {
+  const isKo = language === 'ko';
+
+  if (!forwardMetrics) {
+    return (
+      <section className="rounded-xl border border-dashed bg-muted/20 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-foreground">Forward PER</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {isKo
+                ? '컨센서스 EPS를 만들 수 없어서 이번 조회에는 forward 지표가 비어 있습니다.'
+                : 'Forward metrics are not available for this fetch.'}
+            </p>
+          </div>
+          <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
+            unavailable
+          </span>
+        </div>
+      </section>
+    );
+  }
+
+  const actualCount = forwardMetrics.composition.filter(q => q.source === 'actual').length;
+  const consensusCount = forwardMetrics.composition.filter(q => q.source === 'consensus').length;
+
+  return (
+    <section className="rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 via-background to-cyan-500/5 p-4 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold text-foreground">Forward PER</p>
+            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${confidenceBadgeClass(forwardMetrics.confidence)}`}>
+              {forwardMetrics.confidence || 'low'} confidence
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {isKo
+              ? `최근 실제 EPS ${actualCount}개와 컨센서스 ${consensusCount}개를 합성한 forward TTM입니다.`
+              : `Forward TTM splices ${actualCount} actual EPS quarter(s) with ${consensusCount} consensus quarter(s).`}
+          </p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {isKo ? '기준일' : 'As of'} {fmtDate(forwardMetrics.as_of_date)}
+        </p>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border bg-background/70 p-3">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            {isKo ? '현재가' : 'Current Price'}
+          </p>
+          <p className="mt-1 font-mono text-sm font-semibold text-foreground">
+            {fmtNumber(forwardMetrics.current_price)}
+          </p>
+        </div>
+        <div className="rounded-lg border bg-background/70 p-3">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            Forward TTM EPS
+          </p>
+          <p className="mt-1 font-mono text-sm font-semibold text-foreground">
+            {fmtNumber(forwardMetrics.forward_eps_ttm)}
+          </p>
+        </div>
+        <div className="rounded-lg border bg-background/70 p-3">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            Forward PER
+          </p>
+          <p className="mt-1 font-mono text-sm font-semibold text-foreground">
+            {fmtRatio(forwardMetrics.forward_pe)}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <p className="mb-2 text-xs font-medium text-muted-foreground">Composition</p>
+        <div className="overflow-hidden rounded-lg border bg-background/70">
+          <div className="grid grid-cols-[1fr_1fr_1fr_1.2fr] border-b bg-muted/20 px-3 py-2 text-[11px] font-medium text-muted-foreground">
+            <span>{isKo ? '분기' : 'Quarter'}</span>
+            <span>{isKo ? '종료일' : 'Period End'}</span>
+            <span>EPS</span>
+            <span>{isKo ? '출처' : 'Source'}</span>
+          </div>
+          {forwardMetrics.composition.map((quarter, idx) => (
+            <div
+              key={`${quarter.period}-${quarter.fiscal_period_end}-${idx}`}
+              className="grid grid-cols-[1fr_1fr_1fr_1.2fr] items-center border-b px-3 py-2 text-xs last:border-b-0"
+            >
+              <span className="font-mono text-foreground">{quarter.period}</span>
+              <span className="font-mono text-muted-foreground">{fmtDate(quarter.fiscal_period_end)}</span>
+              <span className="font-mono text-foreground">{fmtNumber(quarter.eps)}</span>
+              <span>
+                <span className={`rounded px-1.5 py-0.5 text-[11px] ${sourceBadgeClass(quarter.source)}`}>
+                  {quarter.source}
+                </span>
+                {quarter.provider && (
+                  <span className="ml-1 text-[11px] text-muted-foreground">
+                    {quarter.provider}
+                  </span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {forwardMetrics.notes.length > 0 && (
+        <div className="mt-3 space-y-1">
+          {forwardMetrics.notes.map((note, idx) => (
+            <p key={idx} className="text-[11px] leading-relaxed text-muted-foreground">
+              {note}
+            </p>
+          ))}
+        </div>
+      )}
+    </section>
+  );
 }
 
 // ── Line Items display fields ──────────────────────────────────────────────
@@ -661,6 +842,9 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
               {fetchedData.market_cap && (
                 <p>{t('marketCapLabel', language)}: {fmtNumber(fetchedData.market_cap)}</p>
               )}
+              {fetchedData.forward_metrics && (
+                <p>Forward PER: {fmtRatio(fetchedData.forward_metrics.forward_pe)}</p>
+              )}
               {overrideCount > 0 && (
                 <p className="text-blue-400">
                   {t('overrideCountLabel', language).replace('{count}', String(overrideCount))}
@@ -823,8 +1007,12 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
 
                 {/* METRICS TAB */}
                 {viewTab === 'metrics' && (
-                  <div className="p-4">
-                    <p className="text-xs text-muted-foreground mb-3">
+                  <div className="space-y-4 p-4">
+                    <ForwardMetricsCard
+                      forwardMetrics={fetchedData.forward_metrics}
+                      language={language}
+                    />
+                    <p className="text-xs text-muted-foreground">
                       {t('overrideInstruction', language)}
                     </p>
                     <MetricsGrid

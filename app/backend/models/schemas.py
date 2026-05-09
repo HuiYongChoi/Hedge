@@ -355,6 +355,7 @@ class LineItemSnapshot(BaseModel):
 class FetchMetricsResponse(BaseModel):
     ticker: str
     metrics: Optional[Dict[str, Any]] = None
+    forward_metrics: Optional[Dict[str, Any]] = None
     market_cap: Optional[float] = None
     prices: Optional[List[Dict[str, Any]]] = None
     line_items: Optional[List[Dict[str, Any]]] = None
