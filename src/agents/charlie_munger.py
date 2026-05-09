@@ -8,7 +8,9 @@ from typing_extensions import Literal
 from src.utils.progress import progress
 from src.utils.llm import call_llm
 from src.utils.api_key import get_api_key_from_state
-from src.utils.financial_formatting import format_korean_won_amount
+from src.utils.financial_formatting import format_debt_ratio_percent, format_korean_won_amount
+
+MIN_PREDICTABILITY_PERIODS = 4
 
 class CharlieMungerSignal(BaseModel):
     signal: Literal["bullish", "bearish", "neutral"]
@@ -474,18 +476,25 @@ def analyze_predictability(financial_line_items: list) -> dict:
     """
     score = 0
     details = []
+    usable_line_items = [
+        item for item in financial_line_items
+        if any(
+            getattr(item, field, None) is not None
+            for field in ("revenue", "operating_income", "operating_margin", "free_cash_flow")
+        )
+    ]
     
-    if not financial_line_items or len(financial_line_items) < 5:
+    if not usable_line_items or len(usable_line_items) < MIN_PREDICTABILITY_PERIODS:
         return {
             "score": 0,
-            "details": "Insufficient data to analyze business predictability (need 5+ years)"
+            "details": "Insufficient data to analyze business predictability (need 4+ usable years)"
         }
     
     # 1. Revenue stability and growth
-    revenues = [item.revenue for item in financial_line_items 
+    revenues = [item.revenue for item in usable_line_items 
                if hasattr(item, 'revenue') and item.revenue is not None]
     
-    if revenues and len(revenues) >= 5:
+    if revenues and len(revenues) >= MIN_PREDICTABILITY_PERIODS:
         # Calculate year-over-year growth rates, handling zero division
         growth_rates = []
         for i in range(len(revenues)-1):
@@ -517,10 +526,10 @@ def analyze_predictability(financial_line_items: list) -> dict:
         details.append("Insufficient revenue history for predictability analysis")
     
     # 2. Operating income stability
-    op_income = [item.operating_income for item in financial_line_items 
+    op_income = [item.operating_income for item in usable_line_items 
                 if hasattr(item, 'operating_income') and item.operating_income is not None]
     
-    if op_income and len(op_income) >= 5:
+    if op_income and len(op_income) >= MIN_PREDICTABILITY_PERIODS:
         # Count positive operating income periods
         positive_periods = sum(1 for income in op_income if income > 0)
         
@@ -542,10 +551,10 @@ def analyze_predictability(financial_line_items: list) -> dict:
         details.append("Insufficient operating income history")
     
     # 3. Margin consistency - Munger values stable margins
-    op_margins = [item.operating_margin for item in financial_line_items 
+    op_margins = [item.operating_margin for item in usable_line_items 
                  if hasattr(item, 'operating_margin') and item.operating_margin is not None]
     
-    if op_margins and len(op_margins) >= 5:
+    if op_margins and len(op_margins) >= MIN_PREDICTABILITY_PERIODS:
         # Calculate margin volatility
         avg_margin = sum(op_margins) / len(op_margins)
         margin_volatility = sum(abs(m - avg_margin) for m in op_margins) / len(op_margins)
@@ -562,10 +571,10 @@ def analyze_predictability(financial_line_items: list) -> dict:
         details.append("Insufficient margin history")
     
     # 4. Cash generation reliability
-    fcf_values = [item.free_cash_flow for item in financial_line_items 
+    fcf_values = [item.free_cash_flow for item in usable_line_items 
                  if hasattr(item, 'free_cash_flow') and item.free_cash_flow is not None]
     
-    if fcf_values and len(fcf_values) >= 5:
+    if fcf_values and len(fcf_values) >= MIN_PREDICTABILITY_PERIODS:
         # Count positive FCF periods
         positive_fcf_periods = sum(1 for fcf in fcf_values if fcf > 0)
         
@@ -781,7 +790,7 @@ def make_munger_facts_bundle(analysis: dict[str, any]) -> dict[str, any]:
         "적정가 추정치": format_korean_won_amount(_r(ivr.get("reasonable"), 0)),
         "안전마진": _friendly_percent(_r(val.get("margin_of_safety_vs_fair_value"), 3)),
         "내부자 매수 비중": _friendly_percent(_r(mgmt.get("insider_buy_ratio"), 2)),
-        "최근 부채비율": f"{_r(mgmt.get('recent_de_ratio'), 2):.2f}" if _r(mgmt.get("recent_de_ratio"), 2) is not None else "N/A",
+        "최근 부채비율": format_debt_ratio_percent(_r(mgmt.get("recent_de_ratio"), 4)),
         "매출 대비 현금": _friendly_percent(_r(mgmt.get("cash_to_revenue"), 2)),
         "주식 수 추이": mgmt.get("share_count_trend") or "확인 필요",
         "핵심 체크": {

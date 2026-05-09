@@ -163,6 +163,8 @@ class YFinanceEstimateProvider:
 
 
 class KrFnGuideProvider:
+    # Deprecated: replaced by kr_consensus package providers in default_provider_chain.
+    # Kept for import compatibility.
     name = "KrFnGuide"
 
     def fetch_quarterly_eps_estimates(
@@ -171,7 +173,7 @@ class KrFnGuideProvider:
         as_of_date: date,
         num_quarters: int = 4,
     ) -> list[QuarterlyEPS]:
-        logger.info("KrFnGuideProvider not implemented; falling through for %s", ticker)
+        logger.info("KrFnGuideProvider deprecated; falling through for %s", ticker)
         return []
 
 
@@ -196,7 +198,22 @@ def default_provider_chain(ticker: str) -> list[EstimateProvider]:
         _is_korean_ticker = lambda value: value.endswith((".KS", ".KQ"))
 
     if _is_korean_ticker(ticker):
-        return [KrFnGuideProvider(), LLMEstimateProvider()]
+        try:
+            from src.tools.kr_consensus import (
+                HankyungMetaProvider,
+                NaverConsensusProvider,
+                WiseReportProvider,
+            )
+            return [
+                NaverConsensusProvider(),
+                WiseReportProvider(),
+                HankyungMetaProvider(),
+                LLMEstimateProvider(),
+            ]
+        except ImportError:
+            logger.warning("kr_consensus package unavailable; falling back to stub")
+            return [KrFnGuideProvider(), LLMEstimateProvider()]
+
     return [FMPEstimateProvider(), YFinanceEstimateProvider(), LLMEstimateProvider()]
 
 

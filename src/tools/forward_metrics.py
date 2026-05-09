@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from src.data.models_forward import ForwardMetrics, QuarterlyEPS
-from src.tools.api import get_financial_metrics, get_prices
+from src.tools.api import _is_korean_ticker, get_financial_metrics, get_prices
 from src.tools.estimates_api import EstimateProvider, default_provider_chain
 
 
@@ -36,6 +36,20 @@ def get_forward_metrics(
         return _FORWARD_CACHE[cache_key]
 
     actuals = _load_trailing_quarterly_eps(ticker, as_of, api_key)
+
+    # Detect staleness: most recent actual > 6 months before as_of
+    staleness_notes: list[str] = []
+    staleness_confidence_downgrade = False
+    if actuals:
+        most_recent_actual = actuals[-1].fiscal_period_end
+        stale_days = (as_of - most_recent_actual).days
+        if stale_days > 180:
+            staleness_notes.append(f"actual data stale by {stale_days}d (latest: {most_recent_actual})")
+            staleness_confidence_downgrade = True
+
+    # Detect missing quarters
+    gap_notes = _detect_missing_quarters(actuals, as_of)
+
     if len(actuals) < 3:
         result = _trailing_only_fallback(
             ticker,
@@ -43,6 +57,8 @@ def get_forward_metrics(
             actuals,
             reason="insufficient actual quarters",
         )
+        if result is not None:
+            result.notes.extend(staleness_notes + gap_notes)
         _FORWARD_CACHE[cache_key] = result
         return result
 
@@ -86,7 +102,18 @@ def get_forward_metrics(
         _FORWARD_CACHE[cache_key] = None
         return None
 
-    notes = ["EPS splice mixes reported EPS with consensus EPS; normalization is not adjusted in v1."]
+    # Currency guard: verify price and EPS are in the same currency
+    ticker_currency = _detect_ticker_currency(ticker)
+    currency_note = _check_currency_consistency(ticker, ticker_currency, composition)
+    if currency_note == "MISMATCH":
+        logger.warning("currency mismatch detected for %s; forward_pe unreliable", ticker)
+
+    notes: list[str] = ["EPS splice mixes reported EPS with consensus EPS; normalization is not adjusted in v1."]
+    notes.extend(staleness_notes)
+    notes.extend(gap_notes)
+    if currency_note and currency_note != "MISMATCH":
+        notes.append(currency_note)
+
     if forward_eps_ttm <= 0:
         forward_pe: float | None = None
         notes.append(f"forward_eps_ttm={forward_eps_ttm:.2f}; forward_pe undefined")
@@ -99,6 +126,12 @@ def get_forward_metrics(
         if confidence == "high":
             confidence = "medium"
 
+    if staleness_confidence_downgrade:
+        confidence = _downgrade_confidence(confidence)
+
+    if currency_note == "MISMATCH":
+        notes.append("currency mismatch between price and EPS; forward_pe may be unreliable")
+
     result = ForwardMetrics(
         ticker=ticker,
         as_of_date=as_of,
@@ -108,6 +141,7 @@ def get_forward_metrics(
         composition=composition,
         confidence=confidence,
         notes=notes,
+        currency=ticker_currency or "USD",
     )
     _FORWARD_CACHE[cache_key] = result
     return result
@@ -126,7 +160,12 @@ def _load_trailing_quarterly_eps(
     as_of: date,
     api_key: str | None,
 ) -> list[QuarterlyEPS]:
-    """Load quarterly actual EPS sorted ascending by fiscal period end."""
+    """Load quarterly actual EPS sorted ascending by fiscal period end.
+
+    For Korean tickers, merges yfinance data with DART quarterly series.
+    DART data takes precedence on duplicate fiscal_period_end (official source).
+    Also annotates staleness and missing quarters for use by the caller.
+    """
     try:
         metrics = get_financial_metrics(
             ticker=ticker,
@@ -137,23 +176,20 @@ def _load_trailing_quarterly_eps(
         )
     except Exception as exc:
         logger.warning("failed to load quarterly financial metrics for %s: %s", ticker, exc)
-        return []
+        metrics = []
 
-    actuals: list[QuarterlyEPS] = []
+    primary: list[QuarterlyEPS] = []
     for metric in metrics:
         metric_period = str(getattr(metric, "period", "") or "").lower()
         if metric_period not in ("quarter", "quarterly"):
             continue
-
         fiscal_end = _parse_report_period(getattr(metric, "report_period", None))
         if fiscal_end is None or fiscal_end > as_of:
             continue
-
         eps = _metric_eps(metric)
         if eps is None:
             continue
-
-        actuals.append(
+        primary.append(
             QuarterlyEPS(
                 period=_period_label(fiscal_end),
                 fiscal_period_end=fiscal_end,
@@ -164,14 +200,62 @@ def _load_trailing_quarterly_eps(
             )
         )
 
-    actuals = sorted(actuals, key=lambda q: q.fiscal_period_end)
-    if len(actuals) >= 3:
-        return actuals
+    yf_actuals = _load_yfinance_quarterly_eps(ticker, as_of)
+    combined = _merge_quarterly_eps(primary, yf_actuals)
 
-    yfinance_actuals = _load_yfinance_quarterly_eps(ticker, as_of)
-    if len(yfinance_actuals) > len(actuals):
-        return yfinance_actuals
-    return actuals
+    if _is_korean_ticker(ticker):
+        dart_actuals = _load_dart_quarterly_eps(ticker, as_of)
+        combined = _merge_quarterly_eps(combined, dart_actuals, prefer_new=True)
+
+    combined.sort(key=lambda q: q.fiscal_period_end)
+    return combined
+
+
+def _load_dart_quarterly_eps(ticker: str, as_of: date) -> list[QuarterlyEPS]:
+    """Load DART quarterly EPS series for a Korean ticker."""
+    try:
+        from src.tools.dart_api import fetch_quarterly_eps_series
+        return fetch_quarterly_eps_series(ticker, as_of.isoformat(), num_quarters=8)
+    except Exception as exc:
+        logger.warning("DART quarterly EPS load failed for %s: %s", ticker, exc)
+        return []
+
+
+def _merge_quarterly_eps(
+    base: list[QuarterlyEPS],
+    overlay: list[QuarterlyEPS],
+    prefer_new: bool = False,
+) -> list[QuarterlyEPS]:
+    """Merge two lists deduplicated by fiscal_period_end.
+
+    When prefer_new=True, overlay wins on collision (used for DART over yfinance).
+    When prefer_new=False, base wins (yfinance over primary API when primary is sparse).
+    """
+    result: dict[date, QuarterlyEPS] = {}
+    for q in base:
+        result[q.fiscal_period_end] = q
+    for q in overlay:
+        if prefer_new or q.fiscal_period_end not in result:
+            result[q.fiscal_period_end] = q
+    return list(result.values())
+
+
+def _detect_missing_quarters(actuals: list[QuarterlyEPS], as_of: date) -> list[str]:
+    """Return list of note strings for missing expected quarters in the last 18 months."""
+    if len(actuals) < 2:
+        return []
+
+    notes: list[str] = []
+    ends = sorted(q.fiscal_period_end for q in actuals)
+    # Check contiguity — expected quarters are approx 3 months apart
+    for i in range(1, len(ends)):
+        gap_months = (ends[i].year - ends[i - 1].year) * 12 + (ends[i].month - ends[i - 1].month)
+        if gap_months > 4:
+            # There's a gap; estimate which quarters are missing
+            mid = date(ends[i - 1].year + (ends[i - 1].month + 3) // 12,
+                       ((ends[i - 1].month + 2) % 12) + 1, 28)
+            notes.append(f"gap in quarterly series: {ends[i-1]} → {ends[i]} (≈{gap_months}mo)")
+    return notes
 
 
 def _load_yfinance_quarterly_eps(ticker: str, as_of: date) -> list[QuarterlyEPS]:
@@ -367,3 +451,56 @@ def _parse_report_period(value: Any) -> date | None:
 def _period_label(fiscal_end: date) -> str:
     quarter = ((fiscal_end.month - 1) // 3) + 1
     return f"{fiscal_end.year}Q{quarter}"
+
+
+def _detect_ticker_currency(ticker: str) -> str | None:
+    """Return the currency for a ticker using yfinance fast_info when available."""
+    try:
+        if _is_korean_ticker(ticker):
+            return "KRW"
+        import yfinance as yf
+        info = yf.Ticker(ticker).fast_info
+        return getattr(info, "currency", None) or info.get("currency")
+    except Exception:
+        return None
+
+
+def _check_currency_consistency(
+    ticker: str,
+    ticker_currency: str | None,
+    composition: list[QuarterlyEPS],
+) -> str:
+    """Return 'MISMATCH', a warning note string, or empty string.
+
+    Logic: if the ticker is Korean (KRW price) but providers report USD EPS (or vice-versa),
+    flag a mismatch. In practice, Korean providers (DART / NaverFinance) always report in KRW,
+    so this check is mainly a guard for cross-provider contamination.
+    """
+    if ticker_currency is None:
+        return ""
+    if not composition:
+        return ""
+
+    providers_used = {q.provider for q in composition if q.source != "consensus"}
+    # DART and NaverFinance always provide KRW
+    kr_providers = {"DART", "NaverFinance", "WiseReport", "HankyungConsensus"}
+    us_providers = {"FMP", "YFinance", "FinancialDatasets"}
+
+    has_kr_provider = bool(providers_used & kr_providers)
+    has_us_provider = bool(providers_used & us_providers)
+
+    if has_kr_provider and has_us_provider:
+        return "MISMATCH"
+    if ticker_currency == "KRW" and has_us_provider and not has_kr_provider:
+        return "MISMATCH"
+    if ticker_currency == "USD" and has_kr_provider and not has_us_provider:
+        return "MISMATCH"
+    return ""
+
+
+def _downgrade_confidence(confidence: str) -> str:
+    if confidence == "high":
+        return "medium"
+    if confidence == "medium":
+        return "low"
+    return "low"

@@ -402,6 +402,94 @@ def fetch_dart_line_items(
     return results
 
 
+def fetch_quarterly_eps_series(
+    ticker: str,
+    end_date: str,
+    num_quarters: int = 8,
+) -> list:
+    """
+    DART 공시 분기/반기/사업보고서에서 분기별 EPS를 역산해 반환한다.
+
+    각 보고서의 누적 EPS를 차분해 단일 분기 EPS를 구한다:
+      Q1  = Q1보고서 EPS
+      Q2  = 반기보고서 EPS - Q1 EPS
+      Q3  = 3분기보고서 EPS - 반기보고서 EPS
+      Q4  = 사업보고서 EPS - 3분기보고서 EPS
+
+    Args:
+        ticker:       한국 티커 ('000660.KS' 등)
+        end_date:     기준일 (YYYY-MM-DD) — 이 날짜 이후 분기는 제외
+        num_quarters: 최대 반환 분기 수 (최신 순으로 자름)
+
+    Returns:
+        QuarterlyEPS 리스트 (fiscal_period_end 오름차순)
+    """
+    from src.data.models_forward import QuarterlyEPS
+
+    if not (ticker.endswith(".KS") or ticker.endswith(".KQ")):
+        return []
+
+    stock_code = ticker.split(".")[0]
+    corp_code = _get_corp_code(stock_code)
+    if not corp_code:
+        logger.debug("DART corp_code 조회 실패 (quarterly eps): %s", ticker)
+        return []
+
+    end_date_obj = datetime.date.fromisoformat(end_date[:10])
+    end_year = end_date_obj.year
+
+    def _report_eps(year: int, reprt_code: str) -> Optional[float]:
+        df = _fetch_dart_fs(corp_code, year, reprt_code)
+        if df is None:
+            return None
+        is_df = df[df["sj_div"].isin(["IS", "CIS"])]
+        return _find_account(is_df, IS_ACCOUNT_MAP["earnings_per_share"])
+
+    def _quarter_end(year: int, quarter: int) -> datetime.date:
+        month = quarter * 3
+        day = 31 if month in (3, 12) else 30
+        return datetime.date(year, month, day)
+
+    eps_map: dict[tuple[int, int], float] = {}
+
+    for year in range(end_year - 1, end_year + 1):
+        try:
+            q1_cum = _report_eps(year, REPRT_Q1)
+            h1_cum = _report_eps(year, REPRT_H1)
+            q3_cum = _report_eps(year, REPRT_Q3)
+            annual = _report_eps(year, REPRT_ANNUAL)
+
+            if q1_cum is not None:
+                eps_map[(year, 1)] = q1_cum
+            if h1_cum is not None and q1_cum is not None:
+                eps_map[(year, 2)] = h1_cum - q1_cum
+            if q3_cum is not None and h1_cum is not None:
+                eps_map[(year, 3)] = q3_cum - h1_cum
+            if annual is not None and q3_cum is not None:
+                eps_map[(year, 4)] = annual - q3_cum
+        except Exception as exc:
+            logger.warning("DART quarterly EPS series failed for %s year=%s: %s", ticker, year, exc)
+
+    result: list[QuarterlyEPS] = []
+    for (year, quarter), eps in eps_map.items():
+        fiscal_end = _quarter_end(year, quarter)
+        if fiscal_end > end_date_obj:
+            continue
+        result.append(
+            QuarterlyEPS(
+                period=f"{year}Q{quarter}",
+                fiscal_period_end=fiscal_end,
+                eps=eps,
+                source="actual",
+                provider="DART",
+                as_of=end_date_obj,
+            )
+        )
+
+    result.sort(key=lambda q: q.fiscal_period_end)
+    return result[-num_quarters:]
+
+
 def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
     """
     DART 재무제표 + yfinance 시장정보를 결합해

@@ -1,5 +1,5 @@
 import { useReactFlow, type NodeProps } from '@xyflow/react';
-import { ChartLine, ChevronDown, Play, Square } from 'lucide-react';
+import { ChartLine, ChevronDown, Link2, Play, Square, Unlink2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { resolveTickerValue, TickerInput } from '@/components/ui/ticker-input';
 
@@ -27,6 +27,7 @@ import { useNodeContext } from '@/contexts/node-context';
 import { useFlowConnection } from '@/hooks/use-flow-connection';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { useNodeState } from '@/hooks/use-node-state';
+import { useWorkspaceSync } from '@/hooks/use-workspace-sync';
 import { t } from '@/lib/language-preferences';
 import { cn, formatKeyboardShortcut } from '@/lib/utils';
 import { type StockAnalyzerNode } from '../types';
@@ -48,6 +49,7 @@ export function StockAnalyzerNode({
   threeMonthsAgo.setMonth(today.getMonth() - 3);
   
   const { language } = useLanguage();
+  const { getNodes, getEdges } = useReactFlow();
 
   // Use persistent state hooks
   const [tickers, setTickers] = useNodeState(id, 'tickers', '');
@@ -55,14 +57,26 @@ export function StockAnalyzerNode({
   const [initialCash, setInitialCash] = useNodeState(id, 'initialCash', '100000');
   const [startDate, setStartDate] = useNodeState(id, 'startDate', threeMonthsAgo.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useNodeState(id, 'endDate', today.toISOString().split('T')[0]);
+  const [bindToWorkspace, setBindToWorkspace] = useNodeState(id, 'bindToWorkspace', true);
   const [open, setOpen] = useState(false);
   
   const { currentFlowId } = useFlowContext();
   const nodeContext = useNodeContext();
   const { getAllAgentModels } = nodeContext;
-  const { getNodes, getEdges } = useReactFlow();
   const { expandBottomPanel, setBottomPanelTab } = useLayoutContext();
-  
+
+  const isWorkspaceBound = bindToWorkspace;
+
+  useWorkspaceSync({
+    enabled: isWorkspaceBound,
+    nodeTickers: tickers,
+    nodeStartDate: startDate,
+    nodeEndDate: endDate,
+    setNodeTickers: setTickers,
+    setNodeStartDate: setStartDate,
+    setNodeEndDate: setEndDate,
+  });
+
   // Use the new flow connection hook
   const flowId = currentFlowId?.toString() || null;
   const {
@@ -251,13 +265,32 @@ export function StockAnalyzerNode({
           <div className="border-t border-border p-3">
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
-                <div className="text-subtitle text-primary flex items-center gap-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-subtitle text-primary flex items-center gap-1">
+                    <Tooltip delayDuration={200}>
+                      <TooltipTrigger asChild>
+                        <span>{t('tickers', language)}</span>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">
+                        {t('tickersTooltip', language)}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                   <Tooltip delayDuration={200}>
                     <TooltipTrigger asChild>
-                      <span>{t('tickers', language)}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-[11px]"
+                        onClick={() => setBindToWorkspace(previous => !previous)}
+                      >
+                        {isWorkspaceBound ? <Link2 className="h-3.5 w-3.5" /> : <Unlink2 className="h-3.5 w-3.5" />}
+                        <span>{isWorkspaceBound ? t('workspaceSyncOn', language) : t('workspaceSyncOff', language)}</span>
+                      </Button>
                     </TooltipTrigger>
-                    <TooltipContent side="right">
-                      {t('tickersTooltip', language)}
+                    <TooltipContent side="left">
+                      {t('workspaceSync', language)}
                     </TooltipContent>
                   </Tooltip>
                 </div>

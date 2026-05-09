@@ -41,8 +41,9 @@ def test_llm_prompts_preserve_decimal_ratio_scale() -> None:
     source = LLM.read_text(encoding="utf-8")
 
     assert "RATIO_SCALE_REQUIREMENT" in source
-    assert "0.11 means 0.11x" in source
     assert "Do NOT rewrite 0.80 as 080" in source
+    assert "Current ratio, quick ratio, debt_to_assets, and liabilities_to_assets are x-ratios" in source
+    assert "부채비율 14%" in source
     assert "RATIO_SCALE_REQUIREMENT" in source[source.index("def _make_system_message") :]
     assert "RATIO_SCALE_REQUIREMENT" in source[source.index("def _append_korean_requirement_to_text") :]
 

@@ -284,3 +284,292 @@ def test_ac7_korean_ticker_without_provider_data_returns_clear_low_confidence(mo
     assert result.forward_eps_ttm == pytest.approx(4200.0)
     assert result.forward_pe == pytest.approx(70000.0 / 4200.0)
     assert result.notes == ["no consensus estimate available"]
+
+
+# ---------------------------------------------------------------------------
+# v2 tests — SK하이닉스 회귀, DART backfill, staleness, currency guard
+# ---------------------------------------------------------------------------
+
+def _kr_metric(report_period: str, eps: float, ticker: str = "000660.KS"):
+    return FinancialMetrics(
+        ticker=ticker,
+        report_period=report_period,
+        period="quarter",
+        currency="KRW",
+        earnings_per_share=eps,
+        source="fixture",
+    )
+
+
+def _kr_consensus(period_end: date, eps: float):
+    from src.data.models_forward import QuarterlyEPS
+    return QuarterlyEPS(
+        period=f"{period_end.year}Q{((period_end.month - 1) // 3) + 1}",
+        fiscal_period_end=period_end,
+        eps=eps,
+        source="consensus",
+        provider="NaverFinance",
+        as_of=date(2026, 5, 9),
+        analyst_count=8,
+    )
+
+
+def _dart_actual(period_end: date, eps: float, ticker: str = "000660.KS"):
+    from src.data.models_forward import QuarterlyEPS
+    return QuarterlyEPS(
+        period=f"{period_end.year}Q{((period_end.month - 1) // 3) + 1}",
+        fiscal_period_end=period_end,
+        eps=eps,
+        source="actual",
+        provider="DART",
+        as_of=date(2026, 5, 9),
+    )
+
+
+def test_v2_sk_hynix_regression_consensus_spliced(monkeypatch):
+    """SK하이닉스 회귀: DART로 2025Q4/2026Q1 보충 + NaverFinance 컨센서스 합성.
+
+    Acceptance Criteria §7 items 1 & 2:
+      - composition[-1].source in {consensus, consensus_split_from_annual}
+      - composition[2].fiscal_period_end >= 2025-12-31
+    """
+    from src.tools import forward_metrics
+    from src.tools.forward_metrics import get_forward_metrics
+
+    # Primary API returns stale/sparse quarters (mirrors current broken state)
+    sparse_metrics = [
+        _kr_metric("2024-09-30", 7_920),
+        _kr_metric("2025-03-31", 11_410),
+        _kr_metric("2025-06-30", 9_580),
+        _kr_metric("2025-09-30", 17_850),
+    ]
+    monkeypatch.setattr(forward_metrics, "get_financial_metrics", lambda **kw: sparse_metrics)
+    monkeypatch.setattr(
+        forward_metrics,
+        "get_prices",
+        lambda **kw: [Price(open=169000, close=169000, high=170000, low=168000, volume=1_000_000, time="2026-05-09T00:00:00")],
+    )
+    # DART backfills the missing quarters
+    dart_actuals = [
+        _dart_actual(date(2025, 9, 30), 17_854),
+        _dart_actual(date(2025, 12, 31), 18_500),  # 2025Q4
+        _dart_actual(date(2026, 3, 31), 19_200),   # 2026Q1
+    ]
+    monkeypatch.setattr(forward_metrics, "_load_dart_quarterly_eps", lambda t, d: dart_actuals)
+
+    # NaverFinance consensus for 2026Q2
+    naver_estimate = _kr_consensus(date(2026, 6, 30), 12_500)
+    result = get_forward_metrics(
+        "000660.KS",
+        as_of_date="2026-05-09",
+        providers=[FakeEstimateProvider([naver_estimate])],
+    )
+
+    assert result is not None, "should return ForwardMetrics for KR ticker with consensus"
+    # AC §7 item 1: last composition entry is consensus
+    assert result.composition[-1].source in {"consensus", "consensus_split_from_annual"}
+    # AC §7 item 2: 3rd composition entry (index 2) ends >= 2025-12-31
+    assert result.composition[2].fiscal_period_end >= date(2025, 12, 31)
+    # Should not be low confidence when we have fresh consensus
+    assert result.confidence in {"high", "medium"}
+
+
+def test_v2_sk_hynix_dart_backfill_replaces_yfinance_gaps(monkeypatch):
+    """DART actuals should fill in the gaps left by yfinance."""
+    from src.tools import forward_metrics
+    from src.tools.forward_metrics import get_forward_metrics
+
+    monkeypatch.setattr(forward_metrics, "get_financial_metrics", lambda **kw: [])
+    monkeypatch.setattr(
+        forward_metrics,
+        "get_prices",
+        lambda **kw: [Price(open=169000, close=169000, high=170000, low=168000, volume=1, time="2026-05-09T00:00:00")],
+    )
+
+    dart_actuals = [
+        _dart_actual(date(2025, 6, 30), 9_580),
+        _dart_actual(date(2025, 9, 30), 17_854),
+        _dart_actual(date(2025, 12, 31), 18_500),
+        _dart_actual(date(2026, 3, 31), 19_200),
+    ]
+    monkeypatch.setattr(forward_metrics, "_load_dart_quarterly_eps", lambda t, d: dart_actuals)
+    # yfinance also has sparse data
+    monkeypatch.setattr(forward_metrics, "_load_yfinance_quarterly_eps", lambda t, d: [])
+
+    consensus = _kr_consensus(date(2026, 6, 30), 12_500)
+    result = get_forward_metrics(
+        "000660.KS",
+        as_of_date="2026-05-09",
+        providers=[FakeEstimateProvider([consensus])],
+    )
+
+    assert result is not None
+    dart_providers = [q.provider for q in result.composition if q.source == "actual"]
+    assert all(p == "DART" for p in dart_providers)
+
+
+def test_v2_staleness_note_added_when_latest_actual_stale(monkeypatch):
+    """If most recent actual is >6 months old, notes should include staleness warning."""
+    from src.tools import forward_metrics
+    from src.tools.forward_metrics import get_forward_metrics
+
+    old_metrics = [
+        _kr_metric("2024-09-30", 7_920),
+        _kr_metric("2024-06-30", 5_000),
+        _kr_metric("2024-03-31", 4_500),
+        _kr_metric("2023-12-31", 4_000),
+    ]
+    monkeypatch.setattr(forward_metrics, "get_financial_metrics", lambda **kw: old_metrics)
+    monkeypatch.setattr(forward_metrics, "_load_dart_quarterly_eps", lambda t, d: [])
+    monkeypatch.setattr(forward_metrics, "_load_yfinance_quarterly_eps", lambda t, d: [])
+    monkeypatch.setattr(
+        forward_metrics,
+        "get_prices",
+        lambda **kw: [Price(open=169000, close=169000, high=169000, low=169000, volume=1, time="2026-05-09T00:00:00")],
+    )
+
+    consensus = _kr_consensus(date(2026, 6, 30), 12_500)
+    result = get_forward_metrics(
+        "000660.KS",
+        as_of_date="2026-05-09",
+        providers=[FakeEstimateProvider([consensus])],
+    )
+
+    assert result is not None
+    # Should have staleness note
+    stale_notes = [n for n in result.notes if "stale" in n.lower()]
+    assert len(stale_notes) >= 1
+    # Confidence should be downgraded due to staleness
+    assert result.confidence in {"medium", "low"}
+
+
+def test_v2_currency_field_set_to_krw_for_korean_ticker(monkeypatch):
+    """ForwardMetrics.currency should be 'KRW' for Korean tickers."""
+    from src.tools import forward_metrics
+    from src.tools.forward_metrics import get_forward_metrics
+
+    metrics = [
+        _kr_metric("2025-09-30", 17_854),
+        _kr_metric("2025-12-31", 18_500),
+        _kr_metric("2026-03-31", 19_200),
+    ]
+    monkeypatch.setattr(forward_metrics, "get_financial_metrics", lambda **kw: metrics)
+    monkeypatch.setattr(forward_metrics, "_load_dart_quarterly_eps", lambda t, d: [])
+    monkeypatch.setattr(forward_metrics, "_load_yfinance_quarterly_eps", lambda t, d: [])
+    monkeypatch.setattr(
+        forward_metrics,
+        "get_prices",
+        lambda **kw: [Price(open=169000, close=169000, high=169000, low=169000, volume=1, time="2026-05-09T00:00:00")],
+    )
+    monkeypatch.setattr(forward_metrics, "_detect_ticker_currency", lambda t: "KRW")
+
+    consensus = _kr_consensus(date(2026, 6, 30), 12_500)
+    result = get_forward_metrics(
+        "000660.KS",
+        as_of_date="2026-05-09",
+        providers=[FakeEstimateProvider([consensus])],
+    )
+
+    assert result is not None
+    assert result.currency == "KRW"
+
+
+def test_v2_us_ticker_regression_unaffected(monkeypatch):
+    """AAPL (US ticker) should behave exactly as v1 — no DART call, no KR routing."""
+    from src.tools import forward_metrics
+    from src.tools.forward_metrics import get_forward_metrics
+
+    dart_called = {"called": False}
+
+    def _no_dart(t, d):
+        dart_called["called"] = True
+        return []
+
+    monkeypatch.setattr(forward_metrics, "_load_dart_quarterly_eps", _no_dart)
+
+    us_metrics = [
+        FinancialMetrics(ticker="AAPL", report_period="2025-09-30", period="quarter", currency="USD", earnings_per_share=1.5),
+        FinancialMetrics(ticker="AAPL", report_period="2025-12-31", period="quarter", currency="USD", earnings_per_share=1.6),
+        FinancialMetrics(ticker="AAPL", report_period="2026-03-31", period="quarter", currency="USD", earnings_per_share=1.7),
+    ]
+    monkeypatch.setattr(forward_metrics, "get_financial_metrics", lambda **kw: us_metrics)
+    monkeypatch.setattr(
+        forward_metrics,
+        "get_prices",
+        lambda **kw: [Price(open=200.0, close=200.0, high=200.0, low=200.0, volume=1, time="2026-05-09T00:00:00")],
+    )
+
+    from src.data.models_forward import QuarterlyEPS
+    us_consensus = QuarterlyEPS(
+        period="2026Q2", fiscal_period_end=date(2026, 6, 30),
+        eps=1.8, source="consensus", provider="FMP",
+        as_of=date(2026, 5, 9), analyst_count=10,
+    )
+    result = get_forward_metrics(
+        "AAPL",
+        as_of_date="2026-05-09",
+        providers=[FakeEstimateProvider([us_consensus])],
+    )
+
+    assert result is not None
+    # DART should NOT have been called for US ticker
+    assert not dart_called["called"]
+    assert result.composition[-1].source == "consensus"
+    assert result.forward_eps_ttm == pytest.approx(1.5 + 1.6 + 1.7 + 1.8)
+
+
+def test_v2_merge_quarterly_eps_dart_wins_on_collision():
+    """DART entries should overwrite yfinance entries on same fiscal_period_end."""
+    from src.data.models_forward import QuarterlyEPS
+    from src.tools.forward_metrics import _merge_quarterly_eps
+
+    yf_q = QuarterlyEPS(
+        period="2025Q4", fiscal_period_end=date(2025, 12, 31),
+        eps=15_000, source="actual", provider="YFinance", as_of=date(2026, 5, 9),
+    )
+    dart_q = QuarterlyEPS(
+        period="2025Q4", fiscal_period_end=date(2025, 12, 31),
+        eps=18_500, source="actual", provider="DART", as_of=date(2026, 5, 9),
+    )
+
+    merged = _merge_quarterly_eps([yf_q], [dart_q], prefer_new=True)
+    assert len(merged) == 1
+    assert merged[0].provider == "DART"
+    assert merged[0].eps == pytest.approx(18_500)
+
+
+def test_v2_models_forward_source_enum_includes_consensus_split():
+    """consensus_split_from_annual must be a valid SourceKind."""
+    from src.data.models_forward import QuarterlyEPS
+
+    q = QuarterlyEPS(
+        period="2026Q2",
+        fiscal_period_end=date(2026, 6, 30),
+        eps=12_000.0,
+        source="consensus_split_from_annual",
+        provider="NaverFinance",
+        as_of=date(2026, 5, 9),
+    )
+    assert q.source == "consensus_split_from_annual"
+
+
+def test_v2_forward_metrics_currency_field_defaults_to_usd():
+    """ForwardMetrics.currency defaults to 'USD' for backward compat."""
+    from src.data.models_forward import ForwardMetrics, QuarterlyEPS
+
+    composition = [
+        QuarterlyEPS(period="2025Q3", fiscal_period_end=date(2025, 9, 30), eps=1.0, source="actual", provider="FMP", as_of=date(2026, 5, 9)),
+        QuarterlyEPS(period="2025Q4", fiscal_period_end=date(2025, 12, 31), eps=1.1, source="actual", provider="FMP", as_of=date(2026, 5, 9)),
+        QuarterlyEPS(period="2026Q1", fiscal_period_end=date(2026, 3, 31), eps=1.2, source="actual", provider="FMP", as_of=date(2026, 5, 9)),
+        QuarterlyEPS(period="2026Q2", fiscal_period_end=date(2026, 6, 30), eps=1.3, source="consensus", provider="FMP", as_of=date(2026, 5, 9)),
+    ]
+    fm = ForwardMetrics(
+        ticker="AAPL",
+        as_of_date=date(2026, 5, 9),
+        current_price=200.0,
+        forward_eps_ttm=4.6,
+        forward_pe=200.0 / 4.6,
+        composition=composition,
+        confidence="high",
+    )
+    assert fm.currency == "USD"

@@ -1,5 +1,6 @@
 import type { LanguageModel } from '@/data/models';
 import {
+  useCallback,
   createContext,
   type ReactNode,
   useContext,
@@ -14,7 +15,7 @@ import {
   type WorkspaceState,
 } from '@/services/workspace-storage';
 
-export interface Workspace extends WorkspaceState {}
+export type Workspace = WorkspaceState;
 
 interface WorkspaceContextType {
   workspace: Workspace;
@@ -63,42 +64,68 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
   }, [workspace]);
 
+  const setTickers = useCallback((value: string) => {
+    setWorkspace(prev => ({ ...prev, tickers: value }));
+  }, []);
+
+  const setDateRange = useCallback((startDate: string, endDate: string) => {
+    setWorkspace(prev => ({ ...prev, startDate, endDate }));
+  }, []);
+
+  const setSelectedModel = useCallback((model: LanguageModel | null) => {
+    setWorkspace(prev => ({ ...prev, selectedModel: model }));
+  }, []);
+
+  const toggleAgent = useCallback((key: string) => {
+    setWorkspace(prev => {
+      const selectedAgents = new Set(prev.selectedAgents);
+      if (selectedAgents.has(key)) {
+        selectedAgents.delete(key);
+      } else {
+        selectedAgents.add(key);
+      }
+      return { ...prev, selectedAgents };
+    });
+  }, []);
+
+  const setSelectedAgents = useCallback((agents: Set<string>) => {
+    setWorkspace(prev => ({ ...prev, selectedAgents: new Set(agents) }));
+  }, []);
+
+  const setUseDataSandboxOverrides = useCallback((value: boolean) => {
+    setWorkspace(prev => ({ ...prev, useDataSandboxOverrides: value }));
+  }, []);
+
+  const resetWorkspace = useCallback(() => {
+    setWorkspace(createDefaultWorkspace());
+    WorkspaceStorageService.clearWorkspace();
+  }, []);
+
+  const patchWorkspace = useCallback((patch: Partial<Workspace>) => {
+    setWorkspace(prev => ({ ...prev, ...cloneWorkspacePatch(patch) }));
+  }, []);
+
   const value = useMemo<WorkspaceContextType>(() => ({
     workspace,
-    setTickers: (value: string) => {
-      setWorkspace(prev => ({ ...prev, tickers: value }));
-    },
-    setDateRange: (startDate: string, endDate: string) => {
-      setWorkspace(prev => ({ ...prev, startDate, endDate }));
-    },
-    setSelectedModel: (model: LanguageModel | null) => {
-      setWorkspace(prev => ({ ...prev, selectedModel: model }));
-    },
-    toggleAgent: (key: string) => {
-      setWorkspace(prev => {
-        const selectedAgents = new Set(prev.selectedAgents);
-        if (selectedAgents.has(key)) {
-          selectedAgents.delete(key);
-        } else {
-          selectedAgents.add(key);
-        }
-        return { ...prev, selectedAgents };
-      });
-    },
-    setSelectedAgents: (agents: Set<string>) => {
-      setWorkspace(prev => ({ ...prev, selectedAgents: new Set(agents) }));
-    },
-    setUseDataSandboxOverrides: (value: boolean) => {
-      setWorkspace(prev => ({ ...prev, useDataSandboxOverrides: value }));
-    },
-    resetWorkspace: () => {
-      setWorkspace(createDefaultWorkspace());
-      WorkspaceStorageService.clearWorkspace();
-    },
-    patchWorkspace: (patch: Partial<Workspace>) => {
-      setWorkspace(prev => ({ ...prev, ...cloneWorkspacePatch(patch) }));
-    },
-  }), [workspace]);
+    setTickers,
+    setDateRange,
+    setSelectedModel,
+    toggleAgent,
+    setSelectedAgents,
+    setUseDataSandboxOverrides,
+    resetWorkspace,
+    patchWorkspace,
+  }), [
+    patchWorkspace,
+    resetWorkspace,
+    setDateRange,
+    setSelectedAgents,
+    setSelectedModel,
+    setTickers,
+    setUseDataSandboxOverrides,
+    toggleAgent,
+    workspace,
+  ]);
 
   return (
     <WorkspaceContext.Provider value={value}>

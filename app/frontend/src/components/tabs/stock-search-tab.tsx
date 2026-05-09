@@ -178,7 +178,6 @@ function hasWorkspaceInput(workspace: Workspace) {
   return Boolean(
     workspace.tickers.trim() ||
     workspace.selectedAgents.size > 0 ||
-    workspace.selectedModel ||
     workspace.useDataSandboxOverrides,
   );
 }

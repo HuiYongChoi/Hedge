@@ -12,7 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
-SourceKind = Literal["actual", "consensus", "guidance", "llm_extracted"]
+SourceKind = Literal["actual", "consensus", "consensus_split_from_annual", "guidance", "llm_extracted"]
 ConfidenceKind = Literal["high", "medium", "low"]
 
 
@@ -58,6 +58,7 @@ class ForwardMetrics(BaseModel):
     composition: list[QuarterlyEPS] = Field(default_factory=list)
     confidence: ConfidenceKind
     notes: list[str] = Field(default_factory=list)
+    currency: str = "USD"
 
     model_config = {"extra": "allow"}
 

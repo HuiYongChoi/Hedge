@@ -90,6 +90,15 @@ def _has_usable_line_item_fields(items: list[LineItem], requested_fields: list[s
     return False
 
 
+def _filter_usable_line_items(items: list[LineItem], requested_fields: list[str]) -> list[LineItem]:
+    if not items:
+        return []
+    return [
+        item for item in items
+        if any(getattr(item, field, None) is not None for field in requested_fields)
+    ]
+
+
 def _make_api_request(url: str, headers: dict, method: str = "GET", json_data: dict = None, max_retries: int = 3) -> requests.Response:
     """
     Make an API request with rate limiting handling and moderate backoff.
@@ -974,7 +983,7 @@ def search_line_items(
     """Fetch line items from API."""
     # Check for pre-injected sandbox/override data first (set by run handler before graph execution)
     if cached_data := _cache.get_line_items(ticker):
-        return standardize_line_items(cached_data[:limit], line_items)
+        return _filter_usable_line_items(standardize_line_items(cached_data[:limit], line_items), line_items)[:limit]
 
     fetch_line_items = _expand_line_items(line_items)
     # If not in cache or insufficient data, fetch from API
@@ -1002,7 +1011,7 @@ def search_line_items(
         except Exception as e:
             logger.warning("Failed to parse line items response for %s: %s", ticker, e)
 
-    if search_results and not _has_usable_line_item_fields(standardize_line_items(search_results[:limit], line_items), line_items):
+    if search_results and not _has_usable_line_item_fields(_filter_usable_line_items(standardize_line_items(search_results, line_items), line_items), line_items):
         search_results = []
 
     if not search_results and _is_korean_ticker(ticker):
@@ -1012,13 +1021,13 @@ def search_line_items(
             search_results = fetch_dart_line_items(ticker, fetch_line_items, end_date, period, limit)
         except Exception as e:
             logger.debug("DART line items fetch failed for %s: %s", ticker, e)
-        if search_results and not _has_usable_line_item_fields(standardize_line_items(search_results[:limit], line_items), line_items):
+        if search_results and not _has_usable_line_item_fields(_filter_usable_line_items(standardize_line_items(search_results, line_items), line_items), line_items):
             search_results = []
 
     if not search_results:
         # Fallback 2: FMP stable financial statements (US stocks)
         search_results = _fetch_fmp_line_items(ticker, fetch_line_items, end_date, period, limit)
-        if search_results and not _has_usable_line_item_fields(standardize_line_items(search_results[:limit], line_items), line_items):
+        if search_results and not _has_usable_line_item_fields(_filter_usable_line_items(standardize_line_items(search_results, line_items), line_items), line_items):
             search_results = []
 
     if not search_results:
@@ -1028,7 +1037,11 @@ def search_line_items(
     if not search_results:
         return []
 
-    return standardize_line_items(search_results[:limit], line_items)
+    search_results = _filter_usable_line_items(search_results, line_items)
+    return standardize_line_items(
+        search_results[:limit],
+        line_items,
+    )
 
 
 def get_insider_trades(

@@ -60,6 +60,13 @@ def format_leverage_ratio(value: Any, decimals: int = 2) -> str:
     return f"{number:.{decimals}f}"
 
 
+def format_debt_ratio_percent(value: Any) -> str:
+    number = _safe_float(value)
+    if number is None:
+        return "N/A"
+    return f"{int(round(number * 100))}%"
+
+
 def format_percent(value: Any, decimals: int = 1) -> str:
     number = _safe_float(value)
     if number is None:
@@ -271,6 +278,24 @@ def _normalize_korean_first_financial_terms(text: str) -> str:
     return normalized
 
 
+def _normalize_debt_ratio_percent_text(text: str) -> str:
+    def _replace(match: re.Match[str]) -> str:
+        raw_label = match.group("label") or ""
+        label = "부채비율 "
+        if "최근" in raw_label:
+            label = "최근 부채비율 "
+        return f"{label}{format_debt_ratio_percent(match.group('number'))}"
+
+    return re.sub(
+        r"(?P<label>(?:부채비율\s*\(debt-to-equity\)|Debt-To-Equity\(부채비율\)|부채비율)\s*[:=]?\s*)"
+        r"(?P<number>-?\d+(?:\.\d+)?)(?!\s*%)"
+        r"(?P<suffix>\s*\([^)]+\))?",
+        _replace,
+        text,
+        flags=re.IGNORECASE,
+    )
+
+
 def _normalize_korean_market_cap_text(text: str) -> str:
     market_cap_pattern = re.compile(
         r"(?P<label>시가\s*총액|시가총액|Market\s+Cap\(시가총액\)|시가총액\s*\(market\s*cap\))"
@@ -375,4 +400,5 @@ def normalize_financial_language(text: str) -> str:
     normalized = _normalize_financial_term_text(normalized)
     normalized = _normalize_korean_first_financial_terms(normalized)
     normalized = _normalize_machine_report_text(normalized)
+    normalized = _normalize_debt_ratio_percent_text(normalized)
     return _normalize_korean_market_cap_text(normalized)

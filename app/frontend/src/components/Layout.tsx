@@ -1,3 +1,4 @@
+import { WorkspacePill } from '@/components/layout/workspace-pill';
 import { BottomPanel } from '@/components/panels/bottom/bottom-panel';
 import { LeftSidebar } from '@/components/panels/left/left-sidebar';
 import { RightSidebar } from '@/components/panels/right/right-sidebar';
@@ -108,10 +109,13 @@ function LayoutContent() {
 
       {/* Tab Bar - positioned absolutely like bottom panel */}
       <div 
-        className="absolute top-0 z-10 transition-all duration-200"
+        className="absolute top-0 z-10 flex items-stretch gap-2 border-b bg-panel pr-2 transition-all duration-200"
         style={getSidebarBasedStyle()}
       >
-        <TabBar />
+        <TabBar className="min-w-0 flex-1 border-b-0" />
+        <div className="flex shrink-0 items-center py-1">
+          <WorkspacePill />
+        </div>
       </div>
 
       {/* Main content area */}
@@ -177,15 +181,15 @@ export function Layout() {
   return (
     <SidebarProvider defaultOpen={true}>
       <ReactFlowProvider>
-        <FlowProvider>
-          <TabsProvider>
-            <WorkspaceProvider>
+        <WorkspaceProvider>
+          <FlowProvider>
+            <TabsProvider>
               <LayoutProvider>
                 <LayoutContent />
               </LayoutProvider>
-            </WorkspaceProvider>
-          </TabsProvider>
-        </FlowProvider>
+            </TabsProvider>
+          </FlowProvider>
+        </WorkspaceProvider>
       </ReactFlowProvider>
     </SidebarProvider>
   );
