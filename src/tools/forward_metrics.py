@@ -343,8 +343,19 @@ def _metric_eps(metric: Any) -> float | None:
 
 
 def _parse_report_period(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
     if isinstance(value, date):
         return value
+    if hasattr(value, "date"):
+        try:
+            converted = value.date()
+            if isinstance(converted, datetime):
+                return converted.date()
+            if isinstance(converted, date):
+                return converted
+        except Exception:
+            pass
     if not value:
         return None
     try:

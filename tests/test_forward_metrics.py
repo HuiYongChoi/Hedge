@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -232,6 +232,12 @@ def test_forward_metrics_falls_back_to_yfinance_quarterly_actuals(monkeypatch):
     assert [q.provider for q in result.composition[:3]] == ["YFinance", "YFinance", "YFinance"]
     assert result.forward_eps_ttm == pytest.approx(4.6)
     assert result.forward_pe == pytest.approx(100.0 / 4.6)
+
+
+def test_parse_report_period_converts_datetime_to_plain_date():
+    from src.tools.forward_metrics import _parse_report_period
+
+    assert _parse_report_period(datetime(2026, 3, 31, 12, 30)) == date(2026, 3, 31)
 
 
 def test_ac5_valuation_and_fundamentals_reasoning_expose_trailing_and_forward_pe():
