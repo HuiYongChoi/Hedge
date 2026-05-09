@@ -179,6 +179,61 @@ def test_ac4_non_positive_forward_eps_returns_undefined_pe_without_exception(mon
     assert any("forward_pe undefined" in note for note in result.notes)
 
 
+def test_forward_metrics_falls_back_to_yfinance_quarterly_actuals(monkeypatch):
+    from src.data.models_forward import QuarterlyEPS
+    from src.tools import forward_metrics
+    from src.tools.forward_metrics import get_forward_metrics
+
+    monkeypatch.setattr(forward_metrics, "get_financial_metrics", lambda **kwargs: [])
+    monkeypatch.setattr(
+        forward_metrics,
+        "_load_yfinance_quarterly_eps",
+        lambda ticker, as_of: [
+            QuarterlyEPS(
+                period="2025Q2",
+                fiscal_period_end=date(2025, 6, 30),
+                eps=1.0,
+                source="actual",
+                provider="YFinance",
+                as_of=as_of,
+            ),
+            QuarterlyEPS(
+                period="2025Q3",
+                fiscal_period_end=date(2025, 9, 30),
+                eps=1.1,
+                source="actual",
+                provider="YFinance",
+                as_of=as_of,
+            ),
+            QuarterlyEPS(
+                period="2025Q4",
+                fiscal_period_end=date(2025, 12, 31),
+                eps=1.2,
+                source="actual",
+                provider="YFinance",
+                as_of=as_of,
+            ),
+        ],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        forward_metrics,
+        "get_prices",
+        lambda **kwargs: [Price(open=100.0, close=100.0, high=100.0, low=100.0, volume=1, time="2026-01-15T00:00:00")],
+    )
+
+    result = get_forward_metrics(
+        "AAPL",
+        as_of_date="2026-01-15",
+        providers=[FakeEstimateProvider([_consensus(date(2026, 3, 31), 1.3)])],
+    )
+
+    assert result is not None
+    assert [q.provider for q in result.composition[:3]] == ["YFinance", "YFinance", "YFinance"]
+    assert result.forward_eps_ttm == pytest.approx(4.6)
+    assert result.forward_pe == pytest.approx(100.0 / 4.6)
+
+
 def test_ac5_valuation_and_fundamentals_reasoning_expose_trailing_and_forward_pe():
     valuation_source = VALUATION_AGENT.read_text(encoding="utf-8")
     fundamentals_source = FUNDAMENTALS_AGENT.read_text(encoding="utf-8")

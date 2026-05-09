@@ -141,6 +141,10 @@ def _load_trailing_quarterly_eps(
 
     actuals: list[QuarterlyEPS] = []
     for metric in metrics:
+        metric_period = str(getattr(metric, "period", "") or "").lower()
+        if metric_period not in ("quarter", "quarterly"):
+            continue
+
         fiscal_end = _parse_report_period(getattr(metric, "report_period", None))
         if fiscal_end is None or fiscal_end > as_of:
             continue
@@ -160,7 +164,102 @@ def _load_trailing_quarterly_eps(
             )
         )
 
-    return sorted(actuals, key=lambda q: q.fiscal_period_end)
+    actuals = sorted(actuals, key=lambda q: q.fiscal_period_end)
+    if len(actuals) >= 3:
+        return actuals
+
+    yfinance_actuals = _load_yfinance_quarterly_eps(ticker, as_of)
+    if len(yfinance_actuals) > len(actuals):
+        return yfinance_actuals
+    return actuals
+
+
+def _load_yfinance_quarterly_eps(ticker: str, as_of: date) -> list[QuarterlyEPS]:
+    """Load quarterly actual EPS from yfinance when primary metrics lack quarters."""
+    try:
+        import yfinance as yf
+
+        ticker_obj = yf.Ticker(ticker)
+        statement = getattr(ticker_obj, "quarterly_income_stmt", None)
+        if statement is None or getattr(statement, "empty", True):
+            statement = getattr(ticker_obj, "quarterly_financials", None)
+        if (statement is None or getattr(statement, "empty", True)) and hasattr(ticker_obj, "get_income_stmt"):
+            statement = ticker_obj.get_income_stmt(freq="quarterly")
+        if statement is None or getattr(statement, "empty", True):
+            return []
+
+        dated_columns: list[tuple[date, Any]] = []
+        for column in statement.columns:
+            fiscal_end = _parse_report_period(column)
+            if fiscal_end is not None and fiscal_end <= as_of:
+                dated_columns.append((fiscal_end, column))
+
+        actuals: list[QuarterlyEPS] = []
+        for fiscal_end, column in sorted(dated_columns, key=lambda item: item[0], reverse=True)[:8]:
+            eps = _statement_value(
+                statement,
+                column,
+                ("Diluted EPS", "DilutedEPS", "Basic EPS", "BasicEPS"),
+            )
+            if eps is None:
+                net_income = _statement_value(
+                    statement,
+                    column,
+                    (
+                        "Net Income",
+                        "NetIncome",
+                        "Net Income Common Stockholders",
+                        "NetIncomeCommonStockholders",
+                    ),
+                )
+                shares = _statement_value(
+                    statement,
+                    column,
+                    ("Diluted Average Shares", "DilutedAverageShares", "Basic Average Shares", "BasicAverageShares"),
+                )
+                if net_income is not None and shares:
+                    eps = net_income / shares
+            if eps is None:
+                continue
+
+            actuals.append(
+                QuarterlyEPS(
+                    period=_period_label(fiscal_end),
+                    fiscal_period_end=fiscal_end,
+                    eps=eps,
+                    source="actual",
+                    provider="YFinance",
+                    as_of=as_of,
+                )
+            )
+
+        return sorted(actuals, key=lambda q: q.fiscal_period_end)
+    except Exception as exc:
+        logger.warning("failed to load yfinance quarterly EPS for %s: %s", ticker, exc)
+        return []
+
+
+def _statement_value(statement: Any, column: Any, labels: tuple[str, ...]) -> float | None:
+    label_lookup = {_normalize_statement_label(index): index for index in getattr(statement, "index", [])}
+    for label in labels:
+        actual_label = label_lookup.get(_normalize_statement_label(label))
+        if actual_label is None:
+            continue
+        try:
+            value = statement.loc[actual_label, column]
+            if value is None:
+                return None
+            number = float(value)
+            if number != number:
+                return None
+            return number
+        except Exception:
+            return None
+    return None
+
+
+def _normalize_statement_label(value: Any) -> str:
+    return "".join(ch for ch in str(value).lower() if ch.isalnum())
 
 
 def _latest_close(ticker: str, as_of: date) -> float | None:
