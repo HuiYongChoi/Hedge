@@ -24,10 +24,12 @@ import { useFlowContext } from '@/contexts/flow-context';
 import { useLanguage } from '@/contexts/language-context';
 import { useLayoutContext } from '@/contexts/layout-context';
 import { useNodeContext } from '@/contexts/node-context';
+import { useWorkspace } from '@/contexts/workspace-context';
 import { useFlowConnection } from '@/hooks/use-flow-connection';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { useNodeState } from '@/hooks/use-node-state';
 import { useWorkspaceSync } from '@/hooks/use-workspace-sync';
+import { getSandboxOverridesForTickers, loadDataSandboxOverrideSnapshot } from '@/lib/data-sandbox-overrides';
 import { t } from '@/lib/language-preferences';
 import { cn, formatKeyboardShortcut } from '@/lib/utils';
 import { type StockAnalyzerNode } from '../types';
@@ -49,6 +51,7 @@ export function StockAnalyzerNode({
   threeMonthsAgo.setMonth(today.getMonth() - 3);
   
   const { language } = useLanguage();
+  const { workspace } = useWorkspace();
   const { getNodes, getEdges } = useReactFlow();
 
   // Use persistent state hooks
@@ -203,6 +206,9 @@ export function StockAnalyzerNode({
     
     // Convert tickers to array (한국 기업명은 티커 코드로 변환)
     const tickerList = tickers.split(',').map(t => resolveTickerValue(t.trim()));
+    const sandboxMetricOverrides = workspace.useDataSandboxOverrides
+      ? getSandboxOverridesForTickers(loadDataSandboxOverrideSnapshot(), tickerList)
+      : null;
     
     // Check if we're in backtest mode
     if (runMode === 'backtest') {
@@ -224,6 +230,7 @@ export function StockAnalyzerNode({
         margin_requirement: 0.0, // Default margin requirement
         model_name: undefined,
         model_provider: undefined,
+        metric_overrides: sandboxMetricOverrides || undefined,
       });
     } else {
       // Use the regular hedge fund API for single run
@@ -243,6 +250,7 @@ export function StockAnalyzerNode({
         model_provider: undefined,
         start_date: startDate,
         end_date: endDate,
+        metric_overrides: sandboxMetricOverrides || undefined,
       });
     }
   };

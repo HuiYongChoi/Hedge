@@ -113,6 +113,13 @@ function fmtDate(v: any): string {
   return String(v).slice(0, 10);
 }
 
+function fmtInputNumber(v: any): string {
+  if (v === null || v === undefined) return '';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '';
+  return n.toFixed(2);
+}
+
 function confidenceBadgeClass(confidence?: string): string {
   switch ((confidence || '').toLowerCase()) {
     case 'high':
@@ -198,9 +205,17 @@ function renderInline(text: string): React.ReactNode {
 function ForwardMetricsCard({
   forwardMetrics,
   language,
+  forwardPeOverride,
+  isForwardPeOverridden,
+  onForwardPeOverrideChange,
+  onForwardPeOverrideReset,
 }: {
   forwardMetrics: ForwardMetrics | null | undefined;
   language: string;
+  forwardPeOverride: string;
+  isForwardPeOverridden: boolean;
+  onForwardPeOverrideChange: (value: string) => void;
+  onForwardPeOverrideReset: () => void;
 }) {
   const isKo = language === 'ko';
 
@@ -269,8 +284,29 @@ function ForwardMetricsCard({
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
             Forward PER
           </p>
-          <p className="mt-1 font-mono text-sm font-semibold text-foreground">
-            {fmtRatio(forwardMetrics.forward_pe)}
+          <div className="mt-2 flex items-center gap-2">
+            <Input
+              value={forwardPeOverride}
+              onChange={event => onForwardPeOverrideChange(event.target.value)}
+              inputMode="decimal"
+              className="h-8 font-mono text-sm"
+              placeholder={fmtInputNumber(forwardMetrics.forward_pe)}
+            />
+            {isForwardPeOverridden && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-[11px]"
+                onClick={onForwardPeOverrideReset}
+              >
+                Reset
+              </Button>
+            )}
+          </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {isKo ? '원본' : 'Original'} {fmtRatio(forwardMetrics.forward_pe)}
+            {isForwardPeOverridden ? ` · ${isKo ? '수동 수정됨' : 'manual override'}` : ''}
           </p>
         </div>
       </div>
@@ -357,6 +393,8 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
   // Override state (input values as strings for controlled inputs)
   const [metricsOverrides, setMetricsOverrides] = useState<Record<string, string>>({});
   const [lineItemsOverrides, setLineItemsOverrides] = useState<Record<string, any>[]>([]);
+  const [forwardPeOverride, setForwardPeOverride] = useState('');
+  const [isForwardPeOverrideDirty, setIsForwardPeOverrideDirty] = useState(false);
 
   // Run state
   const [isRunning, setIsRunning] = useState(false);
@@ -413,6 +451,8 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
     setFetchError(null);
     setFetchedData(null);
     setMetricsOverrides({});
+    setForwardPeOverride('');
+    setIsForwardPeOverrideDirty(false);
     setCompleteResult(null);
     setAgentResults(new Map());
     setRunError(null);
@@ -435,6 +475,8 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
       const data: FetchedData = await response.json();
       setFetchedData(data);
       setLineItemsOverrides(data.line_items ? data.line_items.map(row => ({ ...row })) : []);
+      setForwardPeOverride(fmtInputNumber(data.forward_metrics?.forward_pe));
+      setIsForwardPeOverrideDirty(false);
       setViewTab('metrics');
     } catch (err: any) {
       setFetchError(err.message || 'Fetch failed');
@@ -444,6 +486,29 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
   };
 
   // ── Run handler ──────────────────────────────────────────────────────────
+
+  const buildForwardMetricsOverride = () => {
+    const baseForwardMetrics = fetchedData?.forward_metrics;
+    if (!baseForwardMetrics || !isForwardPeOverrideDirty) return null;
+
+    const parsedForwardPe = parseOverrideInput(forwardPeOverride);
+    if (parsedForwardPe === null || parsedForwardPe <= 0) return null;
+
+    const originalForwardPe = Number(baseForwardMetrics.forward_pe);
+    if (Number.isFinite(originalForwardPe) && Math.abs(parsedForwardPe - originalForwardPe) < 1e-9) {
+      return null;
+    }
+
+    return {
+      ...baseForwardMetrics,
+      forward_pe: parsedForwardPe,
+      confidence: 'high',
+      notes: [
+        ...(baseForwardMetrics.notes || []),
+        'user override: forward_pe manually set via Data Sandbox',
+      ],
+    };
+  };
 
   const buildAppliedMetricOverrides = () => {
     const cleanMetrics: Record<string, number> = {};
@@ -465,8 +530,11 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
       .filter(row => Object.keys(row).length > 0);
 
     const appliedOverrides: Record<string, any> = {};
+    const forwardMetricsOverride = buildForwardMetricsOverride();
+
     if (Object.keys(cleanMetrics).length > 0) appliedOverrides.metrics = cleanMetrics;
     if (cleanLineItems.length > 0) appliedOverrides.line_items = cleanLineItems;
+    if (forwardMetricsOverride) appliedOverrides.forward_metrics = forwardMetricsOverride;
     return appliedOverrides;
   };
 
@@ -656,6 +724,7 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
           selected_agent_keys: selectedAgentKeys,
           metricsOverrides,
           lineItemsOverrides,
+          forwardPeOverride,
           applied_overrides: Object.keys(appliedOverrides).length > 0
             ? { [fetchedData.ticker]: appliedOverrides }
             : {},
@@ -698,6 +767,16 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
     setMetricsOverrides(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleForwardPeOverrideChange = (value: string) => {
+    setForwardPeOverride(value);
+    setIsForwardPeOverrideDirty(true);
+  };
+
+  const resetForwardPeOverride = () => {
+    setForwardPeOverride(fmtInputNumber(fetchedData?.forward_metrics?.forward_pe));
+    setIsForwardPeOverrideDirty(false);
+  };
+
   const handleLineItemOverride = (rowIdx: number, field: string, value: string) => {
     setLineItemsOverrides(prev => {
       const next = [...prev];
@@ -709,9 +788,19 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
   const resetOverrides = () => {
     setMetricsOverrides({});
     if (fetchedData) setLineItemsOverrides(fetchedData.line_items.map(row => ({ ...row })));
+    resetForwardPeOverride();
   };
 
-  const overrideCount = Object.values(metricsOverrides).filter(v => v !== '').length;
+  const parsedForwardPeOverride = parseOverrideInput(forwardPeOverride);
+  const originalForwardPe = Number(fetchedData?.forward_metrics?.forward_pe);
+  const hasForwardPeOverride = Boolean(
+    fetchedData?.forward_metrics &&
+    isForwardPeOverrideDirty &&
+    parsedForwardPeOverride !== null &&
+    parsedForwardPeOverride > 0 &&
+    (!Number.isFinite(originalForwardPe) || Math.abs(parsedForwardPeOverride - originalForwardPe) >= 1e-9),
+  );
+  const overrideCount = Object.values(metricsOverrides).filter(v => v !== '').length + (hasForwardPeOverride ? 1 : 0);
 
   useEffect(() => {
     if (!fetchedData) return;
@@ -720,13 +809,14 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
       ticker: fetchedData.ticker,
       metricsOverrides,
       lineItemsOverrides,
+      forwardMetricsOverride: buildForwardMetricsOverride(),
       parseMetricOverride: parseOverrideInput,
     });
 
     if (snapshot) {
       saveDataSandboxOverrideSnapshot(snapshot);
     }
-  }, [fetchedData, lineItemsOverrides, metricsOverrides]);
+  }, [fetchedData, forwardPeOverride, isForwardPeOverrideDirty, lineItemsOverrides, metricsOverrides]);
 
   const canFetch = tickers.trim() !== '' && !isFetching && !isRunning;
   const canRun = !!fetchedData && selectedAgents.size > 0 && !isRunning && !isFetching;
@@ -1011,6 +1101,10 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
                     <ForwardMetricsCard
                       forwardMetrics={fetchedData.forward_metrics}
                       language={language}
+                      forwardPeOverride={forwardPeOverride}
+                      isForwardPeOverridden={hasForwardPeOverride}
+                      onForwardPeOverrideChange={handleForwardPeOverrideChange}
+                      onForwardPeOverrideReset={resetForwardPeOverride}
                     />
                     <p className="text-xs text-muted-foreground">
                       {t('overrideInstruction', language)}

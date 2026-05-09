@@ -1,6 +1,7 @@
 export interface SandboxTickerOverrides {
   metrics?: Record<string, number>;
   line_items?: Record<string, unknown>[];
+  forward_metrics?: Record<string, unknown>;
 }
 
 export interface DataSandboxOverrideSnapshot {
@@ -13,6 +14,7 @@ interface BuildDataSandboxOverrideSnapshotArgs {
   ticker: string;
   metricsOverrides: Record<string, string>;
   lineItemsOverrides: Record<string, unknown>[];
+  forwardMetricsOverride?: Record<string, unknown> | null;
   parseMetricOverride: (value: string) => number | null;
   now?: () => Date;
 }
@@ -61,10 +63,25 @@ function buildCleanLineItems(lineItemsOverrides: Record<string, unknown>[]): Rec
     .filter(row => Object.keys(row).length > 0);
 }
 
+function buildCleanForwardMetrics(forwardMetricsOverride?: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!isRecord(forwardMetricsOverride)) return null;
+
+  const forwardPe = forwardMetricsOverride.forward_pe;
+  if (typeof forwardPe !== 'number' || !Number.isFinite(forwardPe) || forwardPe <= 0) return null;
+
+  const cleanForwardMetrics: Record<string, unknown> = {};
+  Object.entries(forwardMetricsOverride).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') cleanForwardMetrics[key] = value;
+  });
+
+  return cleanForwardMetrics;
+}
+
 export function buildDataSandboxOverrideSnapshot({
   ticker,
   metricsOverrides,
   lineItemsOverrides,
+  forwardMetricsOverride,
   parseMetricOverride,
   now = () => new Date(),
 }: BuildDataSandboxOverrideSnapshotArgs): DataSandboxOverrideSnapshot | null {
@@ -73,11 +90,13 @@ export function buildDataSandboxOverrideSnapshot({
 
   const cleanMetrics = buildCleanMetrics(metricsOverrides, parseMetricOverride);
   const cleanLineItems = buildCleanLineItems(lineItemsOverrides);
+  const cleanForwardMetrics = buildCleanForwardMetrics(forwardMetricsOverride);
   const overrides: SandboxTickerOverrides = {};
 
   if (Object.keys(cleanMetrics).length > 0) overrides.metrics = cleanMetrics;
   if (cleanLineItems.length > 0) overrides.line_items = cleanLineItems;
-  if (!overrides.metrics && !overrides.line_items) return null;
+  if (cleanForwardMetrics) overrides.forward_metrics = cleanForwardMetrics;
+  if (!overrides.metrics && !overrides.line_items && !overrides.forward_metrics) return null;
 
   return {
     ticker: normalizedTicker,
@@ -97,6 +116,22 @@ export function getSandboxOverrideForTicker(
   return snapshot.metric_overrides[normalizedTicker] || null;
 }
 
+export function getSandboxOverridesForTickers(
+  snapshot: DataSandboxOverrideSnapshot | null,
+  tickers: string[],
+): Record<string, SandboxTickerOverrides> | null {
+  if (!snapshot) return null;
+
+  const overrides: Record<string, SandboxTickerOverrides> = {};
+  tickers.forEach(ticker => {
+    const normalizedTicker = normalizeTicker(ticker);
+    const tickerOverrides = getSandboxOverrideForTicker(snapshot, normalizedTicker);
+    if (tickerOverrides) overrides[normalizedTicker] = tickerOverrides;
+  });
+
+  return Object.keys(overrides).length > 0 ? overrides : null;
+}
+
 export function countSandboxOverrideFields(overrides: SandboxTickerOverrides | null): number {
   if (!overrides) return 0;
 
@@ -104,8 +139,9 @@ export function countSandboxOverrideFields(overrides: SandboxTickerOverrides | n
   const lineItemCount = (overrides.line_items || []).reduce((count, row) => (
     count + Object.keys(row).filter(key => key !== 'report_period').length
   ), 0);
+  const forwardMetricCount = overrides.forward_metrics?.forward_pe ? 1 : 0;
 
-  return metricCount + lineItemCount;
+  return metricCount + lineItemCount + forwardMetricCount;
 }
 
 function isDataSandboxOverrideSnapshot(value: unknown): value is DataSandboxOverrideSnapshot {

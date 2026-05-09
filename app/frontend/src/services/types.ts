@@ -36,6 +36,7 @@ export interface PortfolioPosition {
 export interface MetricOverrideSet {
   metrics?: Record<string, number>;
   line_items?: Record<string, any>[];
+  forward_metrics?: Record<string, any>;
 }
 
 // Base interface for shared fields between HedgeFundRequest and BacktestRequest

@@ -22,9 +22,11 @@ import { useFlowContext } from '@/contexts/flow-context';
 import { useLanguage } from '@/contexts/language-context';
 import { useLayoutContext } from '@/contexts/layout-context';
 import { useNodeContext } from '@/contexts/node-context';
+import { useWorkspace } from '@/contexts/workspace-context';
 import { useFlowConnection } from '@/hooks/use-flow-connection';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { useNodeState } from '@/hooks/use-node-state';
+import { getSandboxOverridesForTickers, loadDataSandboxOverrideSnapshot } from '@/lib/data-sandbox-overrides';
 import { t } from '@/lib/language-preferences';
 import { cn, formatKeyboardShortcut } from '@/lib/utils';
 import { type PortfolioStartNode } from '../types';
@@ -61,6 +63,7 @@ export function PortfolioStartNode({
   const [endDate, setEndDate] = useNodeState(id, 'endDate', today.toISOString().split('T')[0]);
   const [open, setOpen] = useState(false);
   const { language } = useLanguage();
+  const { workspace } = useWorkspace();
 
   const { currentFlowId } = useFlowContext();
   const nodeContext = useNodeContext();
@@ -208,6 +211,9 @@ export function PortfolioStartNode({
     
     // For now, extract tickers for current API compatibility
     const tickerList = positions.map(pos => pos.ticker.trim()).filter(ticker => ticker !== '');
+    const sandboxMetricOverrides = workspace.useDataSandboxOverrides
+      ? getSandboxOverridesForTickers(loadDataSandboxOverrideSnapshot(), tickerList)
+      : null;
     
     // Check if we're in backtest mode
     if (runMode === 'backtest') {
@@ -231,6 +237,7 @@ export function PortfolioStartNode({
         model_provider: undefined,
         // Pass portfolio positions to backend
         portfolio_positions: portfolioPositions,
+        metric_overrides: sandboxMetricOverrides || undefined,
       });
     } else {
       // Use the regular hedge fund API for single run
@@ -253,6 +260,7 @@ export function PortfolioStartNode({
         initial_cash: parseFloat(initialCash) || 100000,
         // Pass portfolio positions to backend
         portfolio_positions: portfolioPositions,
+        metric_overrides: sandboxMetricOverrides || undefined,
       });
     }
   };

@@ -62,3 +62,12 @@ def test_workspace_sync_hook_patches_workspace_and_updates_node_fields() -> None
     assert "setNodeTickers" in source
     assert "setNodeStartDate" in source
     assert "setNodeEndDate" in source
+
+
+def test_workspace_pill_exposes_data_sandbox_override_toggle() -> None:
+    source = WORKSPACE_PILL.read_text(encoding="utf-8")
+
+    assert "setUseDataSandboxOverrides" in source
+    assert "loadDataSandboxOverrideSnapshot" in source
+    assert "DATA_SANDBOX_OVERRIDES_EVENT" in source
+    assert "dataSandboxOverridesAvailable" in source

@@ -17,7 +17,12 @@ from app.backend.services.api_key_service import ApiKeyService
 from src.utils.progress import progress
 from src.utils.analysts import get_agents_list
 from src.tools.api import get_financial_metrics, get_market_cap, get_prices, search_line_items
-from src.tools.forward_metrics import get_forward_metrics
+from src.tools.forward_metrics import (
+    build_forward_metrics_override,
+    clear_forward_metrics_override,
+    get_forward_metrics,
+    set_forward_metrics_override,
+)
 
 router = APIRouter(prefix="/hedge-fund")
 
@@ -229,6 +234,7 @@ async def run(request_data: HedgeFundRequest, request: Request, db: Session = De
             _run_cache = _get_cache()
             from datetime import datetime as _dt
             _end_date = request_data.end_date or _dt.now().strftime("%Y-%m-%d")
+            _forward_api_key = request_data.api_keys.get("FINANCIAL_DATASETS_API_KEY") if request_data.api_keys else None
             for _ticker, _overrides in request_data.metric_overrides.items():
                 _tkr = _ticker.upper()
 
@@ -283,6 +289,16 @@ async def run(request_data: HedgeFundRequest, request: Request, db: Session = De
                                 _base[_r] = None
                             _base = _enrich(_base, _li_source, _base.get("market_cap"))
                             _run_cache._financial_metrics_cache[_k] = [_base]
+
+                if "forward_metrics" in _overrides:
+                    _forward_override = build_forward_metrics_override(
+                        _tkr,
+                        _end_date,
+                        _overrides["forward_metrics"],
+                        api_key=_forward_api_key,
+                    )
+                    if _forward_override is not None:
+                        set_forward_metrics_override(_forward_override)
 
         # Construct agent graph using the React Flow graph structure
         graph = create_graph(
@@ -407,6 +423,7 @@ async def run(request_data: HedgeFundRequest, request: Request, db: Session = De
                     for _ticker in request_data.metric_overrides:
                         _tkr_clean = _ticker.upper()
                         _cleanup_cache._line_items_cache.pop(_tkr_clean, None)
+                        clear_forward_metrics_override(_tkr_clean, request_data.end_date)
                         # Also remove injected financial_metrics keys (all period/limit variants)
                         for _ck in list(_cleanup_cache._financial_metrics_cache.keys()):
                             if _ck.startswith(f"{_tkr_clean}_"):

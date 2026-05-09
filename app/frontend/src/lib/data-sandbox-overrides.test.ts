@@ -23,6 +23,11 @@ test('builds a ticker-keyed sandbox override snapshot from edited metrics and li
         ignored_empty: '',
       },
     ],
+    forwardMetricsOverride: {
+      ticker: 'AAPL',
+      forward_pe: 18.5,
+      confidence: 'high',
+    },
     parseMetricOverride: value => (value === '3.77B' ? 3770000000 : null),
     now: () => new Date('2026-04-23T00:00:00.000Z'),
   });
@@ -41,13 +46,18 @@ test('builds a ticker-keyed sandbox override snapshot from edited metrics and li
             revenue: 435617000000,
           },
         ],
+        forward_metrics: {
+          ticker: 'AAPL',
+          forward_pe: 18.5,
+          confidence: 'high',
+        },
       },
     },
   });
 
   const overrides = getSandboxOverrideForTicker(snapshot, 'aapl');
   assert.deepEqual(overrides, snapshot?.metric_overrides.AAPL);
-  assert.equal(countSandboxOverrideFields(overrides), 2);
+  assert.equal(countSandboxOverrideFields(overrides), 3);
 });
 
 test('returns null when there are no usable sandbox overrides', () => {

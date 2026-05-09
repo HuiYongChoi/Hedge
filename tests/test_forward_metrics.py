@@ -35,10 +35,13 @@ class EmptyEstimateProvider:
 @pytest.fixture(autouse=True)
 def clear_forward_cache():
     from src.tools import forward_metrics
+    from src.data.cache import get_cache
 
     forward_metrics._FORWARD_CACHE.clear()
+    get_cache()._forward_metrics_cache.clear()
     yield
     forward_metrics._FORWARD_CACHE.clear()
+    get_cache()._forward_metrics_cache.clear()
 
 
 def _metric(report_period: str, eps: float | None, *, net_income: float | None = None, shares: float | None = None):
@@ -238,6 +241,43 @@ def test_parse_report_period_converts_datetime_to_plain_date():
     from src.tools.forward_metrics import _parse_report_period
 
     assert _parse_report_period(datetime(2026, 3, 31, 12, 30)) == date(2026, 3, 31)
+
+
+def test_forward_metrics_override_takes_precedence_and_can_be_cleared(monkeypatch):
+    from src.data.cache import get_cache
+    from src.data.models_forward import ForwardMetrics, QuarterlyEPS
+    from src.tools import forward_metrics
+    from src.tools.forward_metrics import clear_forward_metrics_override, get_forward_metrics, set_forward_metrics_override
+
+    as_of = date(2026, 5, 9)
+    composition = [
+        QuarterlyEPS(period="2025Q3", fiscal_period_end=date(2025, 9, 30), eps=1.0, source="actual", provider="YFinance", as_of=as_of),
+        QuarterlyEPS(period="2025Q4", fiscal_period_end=date(2025, 12, 31), eps=1.1, source="actual", provider="YFinance", as_of=as_of),
+        QuarterlyEPS(period="2026Q1", fiscal_period_end=date(2026, 3, 31), eps=1.2, source="actual", provider="YFinance", as_of=as_of),
+        QuarterlyEPS(period="2026Q2", fiscal_period_end=date(2026, 6, 30), eps=1.3, source="consensus", provider="YFinance", as_of=as_of),
+    ]
+    override = ForwardMetrics(
+        ticker="AAPL",
+        as_of_date=as_of,
+        current_price=100.0,
+        forward_eps_ttm=4.6,
+        forward_pe=18.5,
+        composition=composition,
+        confidence="high",
+        notes=["user override: forward_pe manually set via Data Sandbox"],
+    )
+
+    set_forward_metrics_override(override)
+
+    assert get_forward_metrics("AAPL", as_of_date="2026-05-09") is override
+    assert get_cache().get_forward_metrics("AAPL_2026-05-09") is override
+
+    clear_forward_metrics_override("AAPL", "2026-05-09")
+    monkeypatch.setattr(forward_metrics, "get_financial_metrics", lambda **kwargs: [])
+    monkeypatch.setattr(forward_metrics, "_load_yfinance_quarterly_eps", lambda ticker, date: [])
+
+    assert get_cache().get_forward_metrics("AAPL_2026-05-09") is None
+    assert get_forward_metrics("AAPL", as_of_date="2026-05-09", providers=[EmptyEstimateProvider()]) is None
 
 
 def test_ac5_valuation_and_fundamentals_reasoning_expose_trailing_and_forward_pe():

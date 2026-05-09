@@ -17,6 +17,97 @@ logger = logging.getLogger(__name__)
 _FORWARD_CACHE: dict[tuple[str, str], ForwardMetrics | None] = {}
 
 
+def _forward_cache_key(ticker: str, as_of: date) -> tuple[str, str]:
+    return (ticker.upper(), as_of.isoformat())
+
+
+def _shared_forward_cache_key(ticker: str, as_of: date) -> str:
+    return f"{ticker.upper()}_{as_of.isoformat()}"
+
+
+def _get_forward_metrics_override(ticker: str, as_of: date) -> ForwardMetrics | None:
+    try:
+        from src.data.cache import get_cache
+
+        return get_cache().get_forward_metrics(_shared_forward_cache_key(ticker, as_of))
+    except Exception:
+        return None
+
+
+def set_forward_metrics_override(forward_metrics: ForwardMetrics) -> None:
+    """Inject a run-scoped forward metrics override into both forward caches."""
+    as_of = _coerce_date(forward_metrics.as_of_date)
+    ticker = forward_metrics.ticker.upper()
+
+    from src.data.cache import get_cache
+
+    get_cache().set_forward_metrics(_shared_forward_cache_key(ticker, as_of), forward_metrics)
+    _FORWARD_CACHE[_forward_cache_key(ticker, as_of)] = forward_metrics
+
+
+def clear_forward_metrics_override(ticker: str, as_of_date: str | date | None) -> None:
+    """Remove a run-scoped forward metrics override so later runs recompute data."""
+    as_of = _coerce_date(as_of_date)
+    normalized_ticker = ticker.upper()
+
+    try:
+        from src.data.cache import get_cache
+
+        get_cache()._forward_metrics_cache.pop(_shared_forward_cache_key(normalized_ticker, as_of), None)
+    except Exception:
+        pass
+
+    _FORWARD_CACHE.pop(_forward_cache_key(normalized_ticker, as_of), None)
+
+
+def build_forward_metrics_override(
+    ticker: str,
+    as_of_date: str | date | None,
+    payload: dict[str, Any],
+    api_key: str | None = None,
+) -> ForwardMetrics | None:
+    """Build a trusted run-scoped ForwardMetrics object from a user override payload."""
+    if not isinstance(payload, dict) or "forward_pe" not in payload:
+        return None
+
+    try:
+        forward_pe = float(payload["forward_pe"])
+    except (TypeError, ValueError):
+        return None
+    if forward_pe <= 0:
+        return None
+
+    as_of = _coerce_date(as_of_date)
+    if {"current_price", "forward_eps_ttm", "composition"}.issubset(payload.keys()):
+        data = dict(payload)
+    else:
+        baseline = get_forward_metrics(ticker, as_of_date=as_of, api_key=api_key)
+        if baseline is None:
+            return None
+        data = baseline.model_dump()
+        data.update(payload)
+
+    data["ticker"] = ticker.upper()
+    data["as_of_date"] = as_of
+    data["forward_pe"] = forward_pe
+    if data.get("confidence") not in ("high", "medium", "low"):
+        data["confidence"] = "high"
+    if payload.get("forward_pe") is not None:
+        data["confidence"] = "high"
+
+    notes = list(data.get("notes") or [])
+    override_note = "user override: forward_pe manually set via Data Sandbox"
+    if override_note not in notes:
+        notes.append(override_note)
+    data["notes"] = notes
+
+    try:
+        return ForwardMetrics(**data)
+    except Exception as exc:
+        logger.warning("invalid forward metrics override for %s: %s", ticker, exc)
+        return None
+
+
 def get_forward_metrics(
     ticker: str,
     as_of_date: str | date | None = None,
@@ -31,7 +122,10 @@ def get_forward_metrics(
     are available.
     """
     as_of = _coerce_date(as_of_date)
-    cache_key = (ticker, as_of.isoformat())
+    if override := _get_forward_metrics_override(ticker, as_of):
+        return override
+
+    cache_key = _forward_cache_key(ticker, as_of)
     if cache_key in _FORWARD_CACHE:
         return _FORWARD_CACHE[cache_key]
 

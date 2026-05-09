@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { ModelSelector } from '@/components/ui/llm-selector';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -7,8 +8,14 @@ import { useLanguage } from '@/contexts/language-context';
 import { useWorkspace } from '@/contexts/workspace-context';
 import { Agent, getAgents } from '@/data/agents';
 import { getModels, LanguageModel } from '@/data/models';
+import {
+  DATA_SANDBOX_OVERRIDES_EVENT,
+  countSandboxOverrideFields,
+  getSandboxOverrideForTicker,
+  loadDataSandboxOverrideSnapshot,
+} from '@/lib/data-sandbox-overrides';
 import { t } from '@/lib/language-preferences';
-import { CalendarDays, Cpu, Search, Users } from 'lucide-react';
+import { CalendarDays, Cpu, Database, Search, Users } from 'lucide-react';
 import { forwardRef, type ReactNode, useEffect, useMemo, useState } from 'react';
 
 const PERIOD_PRESETS = [
@@ -60,9 +67,10 @@ PillButton.displayName = 'PillButton';
 
 export function WorkspacePill() {
   const { language } = useLanguage();
-  const { workspace, setTickers, setDateRange, setSelectedModel } = useWorkspace();
+  const { workspace, setTickers, setDateRange, setSelectedModel, setUseDataSandboxOverrides } = useWorkspace();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [models, setModels] = useState<LanguageModel[]>([]);
+  const [sandboxSnapshot, setSandboxSnapshot] = useState(() => loadDataSandboxOverrideSnapshot());
 
   useEffect(() => {
     let active = true;
@@ -79,6 +87,17 @@ export function WorkspacePill() {
 
     return () => {
       active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshSnapshot = () => setSandboxSnapshot(loadDataSandboxOverrideSnapshot());
+
+    window.addEventListener(DATA_SANDBOX_OVERRIDES_EVENT, refreshSnapshot as EventListener);
+    window.addEventListener('storage', refreshSnapshot);
+    return () => {
+      window.removeEventListener(DATA_SANDBOX_OVERRIDES_EVENT, refreshSnapshot as EventListener);
+      window.removeEventListener('storage', refreshSnapshot);
     };
   }, []);
 
@@ -107,6 +126,26 @@ export function WorkspacePill() {
       .filter(Boolean)
       .join(', ');
   }, [language, workspace.tickers]);
+
+  const primaryTicker = useMemo(() => {
+    return workspace.tickers
+      .split(',')
+      .map(value => resolveTickerValue(value.trim()).toUpperCase())
+      .find(Boolean) || '';
+  }, [workspace.tickers]);
+
+  const sandboxOverrideForTicker = useMemo(() => (
+    primaryTicker ? getSandboxOverrideForTicker(sandboxSnapshot, primaryTicker) : null
+  ), [primaryTicker, sandboxSnapshot]);
+
+  const sandboxOverrideCount = countSandboxOverrideFields(sandboxOverrideForTicker);
+  const sandboxLabel = workspace.useDataSandboxOverrides && sandboxOverrideCount > 0
+    ? language === 'ko'
+      ? `사용 중 ${sandboxOverrideCount}`
+      : `On ${sandboxOverrideCount}`
+    : language === 'ko'
+      ? '미사용'
+      : 'Off';
 
   const agentCountLabel = workspace.selectedAgents.size > 0
     ? language === 'ko'
@@ -243,6 +282,41 @@ export function WorkspacePill() {
               />
             </div>
           </div>
+        </PopoverContent>
+      </Popover>
+
+      <Popover>
+        <PopoverTrigger asChild>
+          <PillButton
+            icon={<Database className="h-3.5 w-3.5" />}
+            label={t('useDataSandboxOverrides', language)}
+            value={sandboxLabel}
+          />
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-[340px] space-y-3 p-3">
+          <div className="space-y-1">
+            <div className="text-xs font-semibold text-primary">{t('useDataSandboxOverrides', language)}</div>
+            <div className="text-[11px] leading-relaxed text-muted-foreground">
+              {sandboxOverrideForTicker && primaryTicker
+                ? t('dataSandboxOverridesAvailable', language)
+                    .replace('{ticker}', primaryTicker)
+                    .replace('{count}', String(sandboxOverrideCount))
+                : t('dataSandboxOverridesUnavailable', language)}
+            </div>
+          </div>
+          <label className="flex items-start gap-2 rounded-md border bg-muted/20 p-3 text-sm">
+            <Checkbox
+              checked={workspace.useDataSandboxOverrides && Boolean(sandboxOverrideForTicker)}
+              disabled={!sandboxOverrideForTicker}
+              onCheckedChange={checked => setUseDataSandboxOverrides(checked === true)}
+              className="mt-0.5"
+            />
+            <span className={!sandboxOverrideForTicker ? 'text-muted-foreground' : ''}>
+              {language === 'ko'
+                ? '다음 분석 요청에 Data Sandbox 수정값을 적용합니다.'
+                : 'Apply Data Sandbox overrides to the next analysis run.'}
+            </span>
+          </label>
         </PopoverContent>
       </Popover>
     </div>
