@@ -5,6 +5,24 @@ from src.utils.progress import progress
 import json
 
 from src.tools.api import get_financial_metrics
+from src.tools.forward_metrics import get_forward_metrics
+
+
+def _format_ratio(value: float | None) -> str:
+    return f"{value:.2f}" if value is not None else "N/A"
+
+
+def _blend_trailing_forward_pe(trailing_pe: float | None, forward_metrics) -> tuple[float | None, float | None, float, float, str | None]:
+    forward_pe = getattr(forward_metrics, "forward_pe", None)
+    confidence = getattr(forward_metrics, "confidence", None)
+
+    if forward_metrics is None or forward_pe is None or confidence == "low":
+        return trailing_pe, forward_pe, 1.0 if trailing_pe is not None else 0.0, 0.0, confidence
+
+    if trailing_pe is None:
+        return forward_pe, forward_pe, 0.0, 1.0, confidence
+
+    return (trailing_pe * 0.5) + (forward_pe * 0.5), forward_pe, 0.5, 0.5, confidence
 
 
 ##### Fundamental Agent #####
@@ -35,6 +53,12 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
 
         # Pull the most recent financial metrics
         metrics = financial_metrics[0]
+
+        progress.update_status(agent_id, ticker, "Fetching forward metrics")
+        try:
+            forward_metrics = get_forward_metrics(ticker, as_of_date=end_date, api_key=api_key)
+        except Exception:
+            forward_metrics = None
 
         # Initialize signals list for different fundamental aspects
         signals = []
@@ -101,7 +125,11 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
 
         progress.update_status(agent_id, ticker, "Analyzing valuation ratios")
         # 4. Price to X ratios
-        pe_ratio = metrics.price_to_earnings_ratio
+        trailing_pe = metrics.price_to_earnings_ratio
+        pe_ratio, forward_pe, trailing_weight, forward_weight, forward_confidence = _blend_trailing_forward_pe(
+            trailing_pe,
+            forward_metrics,
+        )
         pb_ratio = metrics.price_to_book_ratio
         ps_ratio = metrics.price_to_sales_ratio
 
@@ -115,7 +143,20 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
         signals.append("bearish" if price_ratio_score >= 2 else "bullish" if price_ratio_score == 0 else "neutral")
         reasoning["price_ratios_signal"] = {
             "signal": signals[3],
-            "details": (f"P/E: {pe_ratio:.2f}" if pe_ratio else "P/E: N/A") + ", " + (f"P/B: {pb_ratio:.2f}" if pb_ratio else "P/B: N/A") + ", " + (f"P/S: {ps_ratio:.2f}" if ps_ratio else "P/S: N/A"),
+            "details": (
+                f"Trailing P/E: {_format_ratio(trailing_pe)}, "
+                f"Forward P/E: {_format_ratio(forward_pe)}, "
+                f"Blended P/E: {_format_ratio(pe_ratio)}, "
+                f"Forward confidence: {forward_confidence or 'N/A'}, "
+                f"Weights: trailing {trailing_weight:.0%} / forward {forward_weight:.0%}, "
+                f"P/B: {_format_ratio(pb_ratio)}, P/S: {_format_ratio(ps_ratio)}"
+            ),
+            "trailing_pe": trailing_pe,
+            "forward_pe": forward_pe,
+            "blended_pe": pe_ratio,
+            "trailing_weight": trailing_weight,
+            "forward_weight": forward_weight,
+            "forward_confidence": forward_confidence,
         }
 
         progress.update_status(agent_id, ticker, "Calculating final signal")

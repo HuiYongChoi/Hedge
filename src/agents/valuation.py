@@ -17,6 +17,25 @@ from src.tools.api import (
     get_market_cap,
     search_line_items,
 )
+from src.tools.forward_metrics import get_forward_metrics
+
+
+def _format_ratio(value: float | None) -> str:
+    return f"{value:.2f}" if value is not None else "N/A"
+
+
+def _blend_trailing_forward_pe(trailing_pe: float | None, forward_metrics) -> tuple[float | None, float | None, float, float, str | None]:
+    forward_pe = getattr(forward_metrics, "forward_pe", None)
+    confidence = getattr(forward_metrics, "confidence", None)
+
+    if forward_metrics is None or forward_pe is None or confidence == "low":
+        return trailing_pe, forward_pe, 1.0 if trailing_pe is not None else 0.0, 0.0, confidence
+
+    if trailing_pe is None:
+        return forward_pe, forward_pe, 0.0, 1.0, confidence
+
+    return (trailing_pe * 0.5) + (forward_pe * 0.5), forward_pe, 0.5, 0.5, confidence
+
 
 def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analyst_agent"):
     """Run valuation across tickers and write signals back to `state`."""
@@ -42,6 +61,12 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             progress.update_status(agent_id, ticker, "Failed: No financial metrics found")
             continue
         most_recent_metrics = financial_metrics[0]
+
+        progress.update_status(agent_id, ticker, "Fetching forward metrics")
+        try:
+            forward_metrics = get_forward_metrics(ticker, as_of_date=end_date, api_key=api_key)
+        except Exception:
+            forward_metrics = None
 
         # --- Enhanced line‑items ---
         progress.update_status(agent_id, ticker, "Gathering comprehensive line items")
@@ -199,6 +224,37 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                 "wacc_used": f"{wacc:.1%}",
                 "fcf_periods_analyzed": len(fcf_history)
             }
+
+        trailing_pe = most_recent_metrics.price_to_earnings_ratio
+        blended_pe, forward_pe, trailing_weight, forward_weight, forward_confidence = _blend_trailing_forward_pe(
+            trailing_pe,
+            forward_metrics,
+        )
+        if blended_pe is None:
+            pe_signal = "neutral"
+        elif blended_pe < 15:
+            pe_signal = "bullish"
+        elif blended_pe > 30:
+            pe_signal = "bearish"
+        else:
+            pe_signal = "neutral"
+
+        reasoning["forward_per_analysis"] = {
+            "signal": pe_signal,
+            "details": (
+                f"Trailing P/E: {_format_ratio(trailing_pe)}, "
+                f"Forward P/E: {_format_ratio(forward_pe)}, "
+                f"Blended P/E: {_format_ratio(blended_pe)}, "
+                f"Forward confidence: {forward_confidence or 'N/A'}, "
+                f"Weights: trailing {trailing_weight:.0%} / forward {forward_weight:.0%}"
+            ),
+            "trailing_pe": trailing_pe,
+            "forward_pe": forward_pe,
+            "blended_pe": blended_pe,
+            "trailing_weight": trailing_weight,
+            "forward_weight": forward_weight,
+            "forward_confidence": forward_confidence,
+        }
 
         valuation_analysis[ticker] = {
             "signal": signal,

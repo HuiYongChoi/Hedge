@@ -1,3 +1,6 @@
+from src.data.models_forward import ForwardMetrics
+
+
 class Cache:
     """In-memory cache for API responses."""
 
@@ -7,6 +10,7 @@ class Cache:
         self._line_items_cache: dict[str, list[dict[str, any]]] = {}
         self._insider_trades_cache: dict[str, list[dict[str, any]]] = {}
         self._company_news_cache: dict[str, list[dict[str, any]]] = {}
+        self._forward_metrics_cache: dict[str, ForwardMetrics] = {}
 
     def _merge_data(self, existing: list[dict] | None, new_data: list[dict], key_field: str) -> list[dict]:
         """Merge existing and new data, avoiding duplicates based on a key field."""
@@ -60,6 +64,14 @@ class Cache:
     def set_company_news(self, ticker: str, data: list[dict[str, any]]):
         """Append new company news to cache."""
         self._company_news_cache[ticker] = self._merge_data(self._company_news_cache.get(ticker), data, key_field="date")
+
+    def get_forward_metrics(self, key: str) -> ForwardMetrics | None:
+        """Get cached forward metrics snapshot if available."""
+        return self._forward_metrics_cache.get(key)
+
+    def set_forward_metrics(self, key: str, data: ForwardMetrics):
+        """Set forward metrics snapshot for a ticker/date key."""
+        self._forward_metrics_cache[key] = data
 
 
 # Global cache instance
