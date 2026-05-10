@@ -6,7 +6,8 @@ from pydantic import BaseModel
 import json
 from typing_extensions import Literal
 from src.utils.progress import progress
-from src.utils.llm import call_llm
+from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.tools.company_name import resolve_company_name
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
     FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
@@ -109,6 +110,8 @@ def mohnish_pabrai_agent(state: AgentState, agent_id: str = "mohnish_pabrai_agen
             "market_cap": market_cap,
             "forward_outlook": forward_outlook,
         }
+        company_name = resolve_company_name(ticker)
+        analysis_data[ticker]["company_name"] = company_name
 
         progress.update_status(agent_id, ticker, "Generating Pabrai analysis")
         pabrai_output = generate_pabrai_output(
@@ -336,11 +339,16 @@ def generate_pabrai_output(
 
             Provide candid, checklist-driven reasoning, with emphasis on capital preservation and expected mispricing.
             {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
+
+            {COMPANY_IDENTITY_REQUIREMENT}
+
+            {SENTIMENT_MARKER_REQUIREMENT}
             """,
         ),
         (
           "human",
           """Analyze {ticker} using the provided data.
+          Company name: {company_name}
 
           DATA:
           {analysis_data}
@@ -358,6 +366,7 @@ def generate_pabrai_output(
     prompt = template.invoke({
         "analysis_data": json.dumps(analysis_data, indent=2),
         "ticker": ticker,
+        "company_name": analysis_data.get(ticker, {}).get("company_name", ticker),
     })
 
     def create_default_pabrai_signal():

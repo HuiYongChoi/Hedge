@@ -80,5 +80,5 @@ def test_stock_analysis_agent_reasoning_renders_markdown_blocks() -> None:
     source = STOCK_SEARCH_TAB.read_text(encoding="utf-8")
     agent_summary_source = source[source.index("function AgentReportSummary") :]
 
-    assert "{renderMarkdownBlocks(formatDecisionReasoning(entry.reasoning))}" in agent_summary_source
+    assert "renderMarkdownBlocks(" in agent_summary_source and "formatDecisionReasoning(entry.reasoning)" in agent_summary_source
     assert "{String(entry.reasoning)}" not in agent_summary_source

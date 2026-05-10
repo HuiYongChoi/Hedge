@@ -5,7 +5,8 @@ from pydantic import BaseModel, Field
 import json
 from typing_extensions import Literal
 from src.tools.api import get_financial_metrics, get_market_cap, search_line_items
-from src.utils.llm import call_llm
+from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.tools.company_name import resolve_company_name
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
@@ -140,6 +141,8 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
             "margin_of_safety": margin_of_safety,
             "forward_outlook": forward_outlook,
         }
+        company_name = resolve_company_name(ticker)
+        analysis_data[ticker]["company_name"] = company_name
 
         progress.update_status(agent_id, ticker, "Generating Warren Buffett analysis")
         buffett_output = generate_buffett_output(
@@ -838,6 +841,7 @@ def generate_buffett_output(
         "margin_of_safety": analysis_data.get("margin_of_safety"),
         "valuation_summary": evidence_summary["valuation_summary"],
         "forward_outlook": analysis_data.get("forward_outlook"),
+        "company_name": analysis_data.get("company_name", ticker),
     }
 
     template = ChatPromptTemplate.from_messages(
@@ -872,11 +876,14 @@ def generate_buffett_output(
                 "Label each quantitative fact with period_note and source_note. "
                 "Ground the report in the provided facts, discuss moat/management/valuation tradeoffs, "
                 f"{FORWARD_OUTLOOK_SYSTEM_INSTRUCTION} "
+                f"{COMPANY_IDENTITY_REQUIREMENT} "
+                f"{SENTIMENT_MARKER_REQUIREMENT} "
                 "and do not invent data. Return JSON only."
             ),
             (
                 "human",
                 "Ticker: {ticker}\n"
+                "Company name: {company_name}\n"
                 "Facts:\n{facts}\n\n"
                 "Return exactly:\n"
                 "{{\n"
@@ -891,6 +898,7 @@ def generate_buffett_output(
     prompt = template.invoke({
         "facts": json.dumps(facts, separators=(",", ":"), ensure_ascii=False),
         "ticker": ticker,
+        "company_name": analysis_data.get("company_name", ticker),
     })
 
     # Default fallback uses int confidence to match schema and avoid parse retries

@@ -641,6 +641,75 @@ function getDetailReportMarkdown(result: AgentResult) {
     || buildFallbackCrossCheckGuide(result);
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Sentiment tone helpers
+// ──────────────────────────────────────────────────────────────────────────
+
+type SentimentTone = 'positive' | 'negative' | 'neutral' | 'unknown' | null;
+
+const SENTIMENT_PATTERN = /^\[([+\-~?])\]\s*/;
+
+function parseSentimentMarker(text: string): { tone: SentimentTone; rest: string } {
+  const m = text.match(SENTIMENT_PATTERN);
+  if (!m) return { tone: null, rest: text };
+  const tone: SentimentTone =
+    m[1] === '+' ? 'positive' :
+    m[1] === '-' ? 'negative' :
+    m[1] === '~' ? 'neutral' :
+    'unknown';
+  return { tone, rest: text.slice(m[0].length) };
+}
+
+const TONE_STYLES: Record<NonNullable<SentimentTone>, {
+  border: string; bg: string; icon: string; iconClass: string;
+}> = {
+  positive: { border: 'border-l-green-500',  bg: 'bg-green-500/5',  icon: '✓', iconClass: 'text-green-500' },
+  negative: { border: 'border-l-red-500',    bg: 'bg-red-500/5',    icon: '✗', iconClass: 'text-red-500' },
+  neutral:  { border: 'border-l-amber-500',  bg: 'bg-amber-500/5',  icon: '–', iconClass: 'text-amber-500' },
+  unknown:  { border: 'border-l-zinc-500',   bg: 'bg-zinc-500/5',   icon: '?', iconClass: 'text-zinc-400' },
+};
+
+function renderTonedContent(text: string): ReactNode {
+  const { tone, rest } = parseSentimentMarker(text);
+  if (!tone) return renderInlineMarkdown(text);
+  const s = TONE_STYLES[tone];
+  return (
+    <span className={`flex items-start gap-2 border-l-2 pl-2 py-0.5 rounded-sm ${s.border} ${s.bg}`}>
+      <span className={`mt-0.5 flex-shrink-0 font-mono text-xs ${s.iconClass}`} aria-label={tone}>{s.icon}</span>
+      <span className="flex-1">{renderInlineMarkdown(rest)}</span>
+    </span>
+  );
+}
+
+function ensureParagraphBreaks(markdown: string): string {
+  return markdown
+    .replace(/([.다])\s+(\[[+\-~?]\])/g, '$1\n\n$2')
+    .replace(/([^\n])\n(#{2,3}\s)/g, '$1\n\n$2')
+    .replace(/([^\n])\n(\d+[.)]\s|-\s|\*\s)/g, '$1\n\n$2');
+}
+
+function ToneLegend({ language }: { language: 'ko' | 'en' }) {
+  const items: Array<{ icon: string; cls: string; label: string }> = [
+    { icon: '✓', cls: 'text-green-500', label: language === 'ko' ? '긍정' : 'Positive' },
+    { icon: '✗', cls: 'text-red-500',   label: language === 'ko' ? '부정' : 'Negative' },
+    { icon: '–', cls: 'text-amber-500', label: language === 'ko' ? '보합/중립' : 'Neutral' },
+    { icon: '?', cls: 'text-zinc-400',  label: language === 'ko' ? '데이터 공백' : 'Unknown' },
+  ];
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+      <span className="font-medium uppercase tracking-wider">
+        {language === 'ko' ? '톤 표시' : 'Tone'}:
+      </span>
+      {items.map(({ icon, cls, label }) => (
+        <span key={label} className="inline-flex items-center gap-1">
+          <span className={`font-mono ${cls}`}>{icon}</span>
+          {label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function renderInlineMarkdown(text: string) {
   return text.split(/(\*\*[^*]+?\*\*)/g).map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**')) {
@@ -667,7 +736,7 @@ function renderMarkdownBlocks(markdown: string): ReactNode {
         <ol key={`ol-${elements.length}`} className="my-5 list-decimal space-y-3 pl-6">
           {items.map((item, index) => (
             <li key={index} className="pl-1 leading-relaxed text-zinc-300">
-              {renderInlineMarkdown(item)}
+              {renderTonedContent(item)}
             </li>
           ))}
         </ol>,
@@ -681,7 +750,7 @@ function renderMarkdownBlocks(markdown: string): ReactNode {
         <ul key={`ul-${elements.length}`} className="my-5 list-disc space-y-2 pl-6">
           {items.map((item, index) => (
             <li key={index} className="pl-1 leading-relaxed text-zinc-300">
-              {renderInlineMarkdown(item)}
+              {renderTonedContent(item)}
             </li>
           ))}
         </ul>,
@@ -731,7 +800,7 @@ function renderMarkdownBlocks(markdown: string): ReactNode {
     flushLists();
     elements.push(
       <p key={`p-${index}`} className="my-4 whitespace-pre-wrap leading-relaxed text-zinc-300">
-        {renderInlineMarkdown(trimmed)}
+        {renderTonedContent(trimmed)}
       </p>,
     );
   });
@@ -1601,7 +1670,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
                                 {language === 'ko' ? '상세 근거' : 'Detailed Rationale'}
                               </div>
                               <div className="text-xs leading-relaxed text-muted-foreground [&_h2]:mb-2 [&_h2]:mt-1 [&_h2]:text-sm [&_h3]:mb-2 [&_h3]:mt-1 [&_h3]:text-sm [&_li]:text-muted-foreground [&_ol]:my-2 [&_p]:my-2 [&_p]:text-muted-foreground [&_ul]:my-2">
-                                {renderMarkdownBlocks(formatDecisionReasoning(decision.reasoning))}
+                                {renderMarkdownBlocks(ensureParagraphBreaks(formatDecisionReasoning(decision.reasoning)))}
                               </div>
                             </div>
                           )}
@@ -1650,7 +1719,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
 
           <main className="mx-auto max-w-4xl px-6 py-8">
             <article className="rounded-md border border-border/70 bg-muted/10 p-7 text-sm leading-relaxed text-zinc-300 shadow-sm sm:p-9">
-              {renderMarkdownBlocks(selectedDetailReport.markdown)}
+              {renderMarkdownBlocks(ensureParagraphBreaks(selectedDetailReport.markdown))}
             </article>
           </main>
         </div>
@@ -1667,7 +1736,7 @@ function AnalysisDisplay({ analysis, language }: { analysis: any; agentKey?: str
   if (typeof analysis === 'string') {
     return (
       <div className="text-sm leading-relaxed text-foreground [&_h2]:mb-2 [&_h2]:mt-1 [&_h2]:text-sm [&_h3]:mb-2 [&_h3]:mt-1 [&_h3]:text-sm [&_li]:text-muted-foreground [&_ol]:my-2 [&_p]:my-2 [&_p]:text-muted-foreground [&_ul]:my-2">
-        {renderMarkdownBlocks(formatDecisionReasoning(analysis))}
+        {renderMarkdownBlocks(ensureParagraphBreaks(formatDecisionReasoning(analysis)))}
       </div>
     );
   }
@@ -1701,6 +1770,7 @@ function AgentReportSummary({ analysis, language }: { analysis: any; language: '
       const report = value as Record<string, any>;
       return {
         ticker,
+        companyName: report.company_name || report.companyName || null,
         signal: report.signal,
         confidence: formatConfidence(report.confidence),
         reasoning: report.reasoning || report.details || report.explanation,
@@ -1720,7 +1790,13 @@ function AgentReportSummary({ analysis, language }: { analysis: any; language: '
         {entries.map((entry) => (
           <div key={entry.ticker} className="rounded-md border border-border bg-background/40 p-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-xs font-semibold text-primary">{entry.ticker}</span>
+              <span className="font-mono text-xs font-semibold text-primary">
+                {entry.companyName ? (
+                  <>{entry.companyName} <span className="font-normal text-muted-foreground">({entry.ticker})</span></>
+                ) : (
+                  entry.ticker
+                )}
+              </span>
               <Badge variant="outline" className={getSignalClass(entry.signal)}>
                 {getSignalLabel(entry.signal, language)}
               </Badge>
@@ -1732,7 +1808,8 @@ function AgentReportSummary({ analysis, language }: { analysis: any; language: '
             </div>
             {entry.reasoning && (
               <div className="mt-2 text-xs leading-relaxed text-muted-foreground [&_h2]:mb-2 [&_h2]:mt-1 [&_h2]:text-sm [&_h3]:mb-2 [&_h3]:mt-1 [&_h3]:text-sm [&_li]:text-muted-foreground [&_ol]:my-2 [&_p]:my-2 [&_p]:text-muted-foreground [&_ul]:my-2">
-                {renderMarkdownBlocks(formatDecisionReasoning(entry.reasoning))}
+                <ToneLegend language={language} />
+                {renderMarkdownBlocks(ensureParagraphBreaks(formatDecisionReasoning(entry.reasoning)))}
               </div>
             )}
           </div>

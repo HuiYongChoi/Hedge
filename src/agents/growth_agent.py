@@ -20,6 +20,7 @@ from src.tools.api import (
     get_financial_metrics,
     get_insider_trades,
 )
+from src.tools.company_name import resolve_company_name
 
 def growth_analyst_agent(state: AgentState, agent_id: str = "growth_analyst_agent"):
     """Run growth analysis across tickers and write signals back to `state`."""
@@ -131,6 +132,8 @@ def growth_analyst_agent(state: AgentState, agent_id: str = "growth_analyst_agen
             "forward_outlook_instruction": FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
             "reasoning": reasoning,
         }
+        company_name = resolve_company_name(ticker)
+        growth_analysis[ticker]["company_name"] = company_name
         progress.update_status(agent_id, ticker, "Done", analysis=json.dumps(reasoning, indent=4))
 
     # ---- Emit message (for LLM tool chain) ----

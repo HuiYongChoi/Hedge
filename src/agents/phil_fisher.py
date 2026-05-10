@@ -11,7 +11,8 @@ from pydantic import BaseModel
 import json
 from typing_extensions import Literal
 from src.utils.progress import progress
-from src.utils.llm import call_llm
+from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.tools.company_name import resolve_company_name
 import statistics
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
@@ -146,6 +147,8 @@ def phil_fisher_agent(state: AgentState, agent_id: str = "phil_fisher_agent"):
             "sentiment_analysis": sentiment_analysis,
             "forward_outlook": forward_outlook,
         }
+        company_name = resolve_company_name(ticker)
+        analysis_data[ticker]["company_name"] = company_name
 
         progress.update_status(agent_id, ticker, "Generating Phil Fisher-style analysis")
         fisher_output = generate_fisher_output(
@@ -578,6 +581,10 @@ def generate_fisher_output(
                 - "confidence": a float between 0 and 100
                 - "reasoning": a detailed explanation
               {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
+
+              {COMPANY_IDENTITY_REQUIREMENT}
+
+              {SENTIMENT_MARKER_REQUIREMENT}
               """,
             ),
             (
@@ -585,6 +592,7 @@ def generate_fisher_output(
               """Based on the following analysis, create a Phil Fisher-style investment signal.
 
               Analysis Data for {ticker}:
+              Company name: {company_name}
               {analysis_data}
 
               Return the trading signal in this JSON format:
@@ -598,7 +606,11 @@ def generate_fisher_output(
         ]
     )
 
-    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker})
+    prompt = template.invoke({
+        "analysis_data": json.dumps(analysis_data, indent=2),
+        "ticker": ticker,
+        "company_name": analysis_data.get(ticker, {}).get("company_name", ticker),
+    })
 
     def create_default_signal():
         return PhilFisherSignal(

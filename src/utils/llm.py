@@ -33,6 +33,32 @@ RATIO_SCALE_REQUIREMENT = (
     "Rewrite them as natural Korean phrases such as 해자 점수 4.4점, 해자 경쟁력 약함, 예측가능성 낮음, and FCF 수익률 43%. "
     "For Korean-company KRW values such as Market Cap(시가총액), use 조/억 원 units instead of long raw numbers."
 )
+COMPANY_IDENTITY_REQUIREMENT = (
+    "COMPANY IDENTITY REQUIREMENT: Refer to the company by the company_name "
+    "provided in the human message. Do NOT invent, translate, or paraphrase "
+    "the company name under any circumstance. If you don't know the Korean "
+    "translation of an English company name, use the English name as-is. "
+    "Never call a company by a translated brand name unless company_name "
+    "explicitly contains it."
+)
+
+SENTIMENT_MARKER_REQUIREMENT = (
+    "TONE MARKER REQUIREMENT: Prefix every bullet point, numbered item, and "
+    "standalone paragraph in the reasoning output with one of these markers:\n"
+    "  [+]  positive / bullish / supportive evidence\n"
+    "  [-]  negative / bearish / risk evidence\n"
+    "  [~]  neutral / mixed / sideways\n"
+    "  [?]  unknown / N/A / data gap\n"
+    "Place the marker at the very start of the line, followed by a single "
+    "space and then the sentence. Use exactly one marker per line; do not "
+    "combine markers. Markers are required even inside ordered lists "
+    "(e.g. '1. [+] Revenue CAGR 12%'). For headings (### / ##), do NOT add a "
+    "marker — only content lines get marked.\n\n"
+    "PARAGRAPH SEPARATION REQUIREMENT: Insert a blank line between "
+    "paragraphs and between major topical shifts. Do not concatenate distinct "
+    "ideas into one wall of text."
+)
+
 DEBT_QUALITY_REQUIREMENT = """[추가 지시사항: 부채의 질적 평가]
 재무 건전성을 평가할 때 Debt-To-Equity(부채비율)의 절대값만으로 결론을 내리지 마십시오. 제공된 지표가 있을 때만 부채를 착한 부채 또는 나쁜 부채로 분류하고, 근거가 부족하면 단정하지 말고 ### 검토 필요 항목에 남기십시오.
 

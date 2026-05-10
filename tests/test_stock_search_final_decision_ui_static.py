@@ -33,7 +33,8 @@ class StockSearchFinalDecisionUiStaticTests(unittest.TestCase):
 
         self.assertIn("function formatDecisionReasoning", source)
         self.assertIn("function normalizeCrossCheckGuideHeading", source)
-        self.assertIn("{renderMarkdownBlocks(formatDecisionReasoning(decision.reasoning))}", final_decision_source)
+        self.assertIn("renderMarkdownBlocks(", final_decision_source)
+        self.assertIn("formatDecisionReasoning(decision.reasoning)", final_decision_source)
         self.assertNotIn("{String(decision.reasoning)}", final_decision_source)
 
     def test_cross_check_heading_is_generic_in_fallback_guides(self):

@@ -18,7 +18,8 @@ from src.tools.api import (
     prices_to_df,
     search_line_items,
 )
-from src.utils.llm import call_llm
+from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.tools.company_name import resolve_company_name
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
@@ -147,6 +148,8 @@ def nassim_taleb_agent(state: AgentState, agent_id: str = "nassim_taleb_agent"):
             "market_cap": market_cap,
             "forward_outlook": forward_outlook,
         }
+        company_name = resolve_company_name(ticker)
+        analysis_data[ticker]["company_name"] = company_name
 
         progress.update_status(agent_id, ticker, "Generating Nassim Taleb analysis")
         taleb_output = generate_taleb_output(
@@ -711,6 +714,7 @@ def generate_taleb_output(
         "black_swan": analysis_data.get("black_swan_analysis", {}).get("details"),
         "market_cap": analysis_data.get("market_cap"),
         "forward_outlook": analysis_data.get("forward_outlook"),
+        "company_name": analysis_data.get("company_name", ticker),
     }
 
     template = ChatPromptTemplate.from_messages(
@@ -744,11 +748,14 @@ def generate_taleb_output(
                 "### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거. "
                 "Ground the report in the provided fragility, tail risk, convexity, and volatility facts. "
                 f"{FORWARD_OUTLOOK_SYSTEM_INSTRUCTION} "
+                f"{COMPANY_IDENTITY_REQUIREMENT} "
+                f"{SENTIMENT_MARKER_REQUIREMENT} "
                 "Do not invent data. Return JSON only.",
             ),
             (
                 "human",
                 "Ticker: {ticker}\n"
+                "Company name: {company_name}\n"
                 "Facts:\n{facts}\n\n"
                 "Return exactly:\n"
                 "{{\n"
@@ -763,6 +770,7 @@ def generate_taleb_output(
     prompt = template.invoke({
         "facts": json.dumps(facts, separators=(",", ":"), ensure_ascii=False),
         "ticker": ticker,
+        "company_name": analysis_data.get("company_name", ticker),
     })
 
     def create_default_nassim_taleb_signal():

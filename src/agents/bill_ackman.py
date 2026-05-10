@@ -6,7 +6,8 @@ from pydantic import BaseModel
 import json
 from typing_extensions import Literal
 from src.utils.progress import progress
-from src.utils.llm import call_llm
+from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.tools.company_name import resolve_company_name
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
     FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
@@ -107,7 +108,9 @@ def bill_ackman_agent(state: AgentState, agent_id: str = "bill_ackman_agent"):
             "valuation_analysis": valuation_analysis,
             "forward_outlook": forward_outlook,
         }
-        
+        company_name = resolve_company_name(ticker)
+        analysis_data[ticker]["company_name"] = company_name
+
         progress.update_status(agent_id, ticker, "Generating Bill Ackman analysis")
         ackman_output = generate_ackman_output(
             ticker=ticker, 
@@ -440,6 +443,10 @@ def generate_ackman_output(
 
             Return your final recommendation (signal: bullish, neutral, or bearish) with a 0-100 confidence and a thorough reasoning section.
             {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
+
+            {COMPANY_IDENTITY_REQUIREMENT}
+
+            {SENTIMENT_MARKER_REQUIREMENT}
             """
         ),
         (
@@ -447,6 +454,7 @@ def generate_ackman_output(
             """Based on the following analysis, create an Ackman-style investment signal.
 
             Analysis Data for {ticker}:
+            Company name: {company_name}
             {analysis_data}
 
             Return your output in strictly valid JSON:
@@ -461,7 +469,8 @@ def generate_ackman_output(
 
     prompt = template.invoke({
         "analysis_data": json.dumps(analysis_data, indent=2),
-        "ticker": ticker
+        "ticker": ticker,
+        "company_name": analysis_data.get(ticker, {}).get("company_name", ticker),
     })
 
     def create_default_bill_ackman_signal():

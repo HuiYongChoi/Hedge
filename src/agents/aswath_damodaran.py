@@ -19,7 +19,8 @@ from src.utils.forward_outlook import (
     build_forward_outlook_block,
     get_cached_forward_metrics,
 )
-from src.utils.llm import call_llm
+from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.tools.company_name import resolve_company_name
 from src.utils.progress import progress
 
 
@@ -126,6 +127,8 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             "market_cap": market_cap,
             "forward_outlook": forward_outlook,
         }
+        company_name = resolve_company_name(ticker)
+        analysis_data[ticker]["company_name"] = company_name
 
         # ─── LLM: craft Damodaran-style narrative ──────────────────────────────
         progress.update_status(agent_id, ticker, "Generating Damodaran analysis")
@@ -422,11 +425,17 @@ def generate_damodaran_output(
                   ◦ Conclude with value: your FCFF DCF estimate, margin of safety, and relative valuation sanity checks
                   ◦ Highlight major uncertainties and how they affect value
                 {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
+
+                {COMPANY_IDENTITY_REQUIREMENT}
+
+                {SENTIMENT_MARKER_REQUIREMENT}
+
                 Return ONLY the JSON specified below.""",
             ),
             (
                 "human",
                 """Ticker: {ticker}
+                Company name: {company_name}
 
                 Analysis data:
                 {analysis_data}
@@ -441,7 +450,11 @@ def generate_damodaran_output(
         ]
     )
 
-    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker})
+    prompt = template.invoke({
+        "analysis_data": json.dumps(analysis_data, indent=2),
+        "ticker": ticker,
+        "company_name": analysis_data.get(ticker, {}).get("company_name", ticker),
+    })
 
     def default_signal():
         return AswathDamodaranSignal(

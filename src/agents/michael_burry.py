@@ -16,7 +16,8 @@ from src.tools.api import (
     get_market_cap,
     search_line_items,
 )
-from src.utils.llm import call_llm
+from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.tools.company_name import resolve_company_name
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
@@ -137,6 +138,8 @@ def michael_burry_agent(state: AgentState, agent_id: str = "michael_burry_agent"
             "market_cap": market_cap,
             "forward_outlook": forward_outlook,
         }
+        company_name = resolve_company_name(ticker)
+        analysis_data[ticker]["company_name"] = company_name
 
         progress.update_status(agent_id, ticker, "Generating LLM output")
         burry_output = _generate_burry_output(
@@ -353,6 +356,10 @@ def _generate_burry_output(
                 For example, if bullish: "FCF yield 12.8%. EV/EBIT 6.2. Debt-to-equity 0.4. Net insider buying 25k shares. Market missing value due to overreaction to recent litigation. Strong buy."
                 For example, if bearish: "FCF yield only 2.1%. Debt-to-equity concerning at 2.3. Management diluting shareholders. Pass."
                 {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
+
+                {COMPANY_IDENTITY_REQUIREMENT}
+
+                {SENTIMENT_MARKER_REQUIREMENT}
                 """,
             ),
             (
@@ -360,6 +367,7 @@ def _generate_burry_output(
                 """Based on the following data, create the investment signal as Michael Burry would:
 
                 Analysis Data for {ticker}:
+                Company name: {company_name}
                 {analysis_data}
 
                 Return the trading signal in the following JSON format exactly:
@@ -373,7 +381,11 @@ def _generate_burry_output(
         ]
     )
 
-    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker})
+    prompt = template.invoke({
+        "analysis_data": json.dumps(analysis_data, indent=2),
+        "ticker": ticker,
+        "company_name": analysis_data.get(ticker, {}).get("company_name", ticker),
+    })
 
     # Default fallback signal in case parsing fails
     def create_default_michael_burry_signal():

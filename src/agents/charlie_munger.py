@@ -6,7 +6,8 @@ from pydantic import BaseModel
 import json
 from typing_extensions import Literal
 from src.utils.progress import progress
-from src.utils.llm import call_llm
+from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.tools.company_name import resolve_company_name
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
     FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
@@ -133,7 +134,9 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
             # Include some qualitative assessment from news
             "news_sentiment": analyze_news_sentiment(company_news) if company_news else "No news data available"
         }
-        
+        company_name = resolve_company_name(ticker)
+        analysis_data[ticker]["company_name"] = company_name
+
         progress.update_status(agent_id, ticker, "Generating Charlie Munger analysis")
         munger_output = generate_munger_output(
             ticker=ticker, 
@@ -876,10 +879,13 @@ def generate_munger_output(
          "### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거. "
          "Ground the report in moat strength, management quality, predictability, valuation, "
          f"{FORWARD_OUTLOOK_SYSTEM_INSTRUCTION} "
+         f"{COMPANY_IDENTITY_REQUIREMENT} "
+         f"{SENTIMENT_MARKER_REQUIREMENT} "
          "and the provided facts. Return JSON only. "
          "Use the provided confidence exactly; do not change it."),
         ("human",
          "Ticker: {ticker}\n"
+         "Company name: {company_name}\n"
          "Facts:\n{facts}\n"
          "Confidence: {confidence}\n"
          "Return exactly:\n"
@@ -894,6 +900,7 @@ def generate_munger_output(
         "ticker": ticker,
         "facts": json.dumps(facts_bundle, separators=(",", ":"), ensure_ascii=False),
         "confidence": confidence_hint,
+        "company_name": analysis_data.get("company_name", ticker),
     })
 
     def _default():

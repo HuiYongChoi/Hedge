@@ -5,7 +5,8 @@ from pydantic import BaseModel
 import json
 from typing_extensions import Literal
 from src.tools.api import get_financial_metrics, get_market_cap, search_line_items
-from src.utils.llm import call_llm
+from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.tools.company_name import resolve_company_name
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
@@ -144,6 +145,8 @@ def rakesh_jhunjhunwala_agent(state: AgentState, agent_id: str = "rakesh_jhunjhu
             "market_cap": market_cap,
             "forward_outlook": forward_outlook,
         }
+        company_name = resolve_company_name(ticker)
+        analysis_data[ticker]["company_name"] = company_name
 
         # ─── LLM: craft Jhunjhunwala‑style narrative ──────────────────────────────
         progress.update_status(agent_id, ticker, "Generating Jhunjhunwala analysis")
@@ -692,6 +695,10 @@ def generate_jhunjhunwala_output(
 
                 Follow these guidelines strictly.
                 {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
+
+                {COMPANY_IDENTITY_REQUIREMENT}
+
+                {SENTIMENT_MARKER_REQUIREMENT}
                 """,
             ),
             (
@@ -699,6 +706,7 @@ def generate_jhunjhunwala_output(
                 """Based on the following data, create the investment signal as Rakesh Jhunjhunwala would:
 
                 Analysis Data for {ticker}:
+                Company name: {company_name}
                 {analysis_data}
 
                 Return the trading signal in the following JSON format exactly:
@@ -712,7 +720,11 @@ def generate_jhunjhunwala_output(
         ]
     )
 
-    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker})
+    prompt = template.invoke({
+        "analysis_data": json.dumps(analysis_data, indent=2),
+        "ticker": ticker,
+        "company_name": analysis_data.get("company_name", ticker),
+    })
 
     # Default fallback signal in case parsing fails
     def create_default_rakesh_jhunjhunwala_signal():

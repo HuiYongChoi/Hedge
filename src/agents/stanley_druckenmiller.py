@@ -13,7 +13,8 @@ from pydantic import BaseModel
 import json
 from typing_extensions import Literal
 from src.utils.progress import progress
-from src.utils.llm import call_llm
+from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.tools.company_name import resolve_company_name
 import statistics
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
@@ -144,6 +145,8 @@ def stanley_druckenmiller_agent(state: AgentState, agent_id: str = "stanley_druc
             "valuation_analysis": valuation_analysis,
             "forward_outlook": forward_outlook,
         }
+        company_name = resolve_company_name(ticker)
+        analysis_data[ticker]["company_name"] = company_name
 
         progress.update_status(agent_id, ticker, "Generating Stanley Druckenmiller analysis")
         druck_output = generate_druckenmiller_output(
@@ -576,6 +579,10 @@ def generate_druckenmiller_output(
               For example, if bullish: "The company shows exceptional momentum with revenue accelerating from 22% to 35% YoY and the stock up 28% over the past three months. Risk-reward is highly asymmetric with 70% upside potential based on FCF multiple expansion and only 15% downside risk given the strong balance sheet with 3x cash-to-debt. Insider buying and positive market sentiment provide additional tailwinds..."
               For example, if bearish: "Despite recent stock momentum, revenue growth has decelerated from 30% to 12% YoY, and operating margins are contracting. The risk-reward proposition is unfavorable with limited 10% upside potential against 40% downside risk. The competitive landscape is intensifying, and insider selling suggests waning confidence. I'm seeing better opportunities elsewhere with more favorable setups..."
               {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
+
+              {COMPANY_IDENTITY_REQUIREMENT}
+
+              {SENTIMENT_MARKER_REQUIREMENT}
               """,
             ),
             (
@@ -583,6 +590,7 @@ def generate_druckenmiller_output(
               """Based on the following analysis, create a Druckenmiller-style investment signal.
 
               Analysis Data for {ticker}:
+              Company name: {company_name}
               {analysis_data}
 
               Return the trading signal in this JSON format:
@@ -596,7 +604,11 @@ def generate_druckenmiller_output(
         ]
     )
 
-    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker})
+    prompt = template.invoke({
+        "analysis_data": json.dumps(analysis_data, indent=2),
+        "ticker": ticker,
+        "company_name": analysis_data.get(ticker, {}).get("company_name", ticker),
+    })
 
     def create_default_signal():
         return StanleyDruckenmillerSignal(
