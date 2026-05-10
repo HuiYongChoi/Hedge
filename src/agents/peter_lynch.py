@@ -13,6 +13,11 @@ from typing_extensions import Literal
 from src.utils.progress import progress
 from src.utils.llm import call_llm
 from src.utils.api_key import get_api_key_from_state
+from src.utils.forward_outlook import (
+    FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
+    build_forward_outlook_block,
+    get_cached_forward_metrics,
+)
 
 
 class PeterLynchSignal(BaseModel):
@@ -90,6 +95,12 @@ def peter_lynch_agent(state: AgentState, agent_id: str = "peter_lynch_agent"):
         progress.update_status(agent_id, ticker, "Analyzing valuation (focus on PEG)")
         valuation_analysis = analyze_lynch_valuation(financial_line_items, market_cap)
 
+        progress.update_status(agent_id, ticker, "Preparing forward outlook")
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
+        latest_net_income = next((item.net_income for item in financial_line_items if item.net_income), None)
+        trailing_pe = market_cap / latest_net_income if market_cap and latest_net_income and latest_net_income > 0 else None
+        forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
+
         progress.update_status(agent_id, ticker, "Analyzing sentiment")
         sentiment_analysis = analyze_sentiment(company_news)
 
@@ -126,6 +137,7 @@ def peter_lynch_agent(state: AgentState, agent_id: str = "peter_lynch_agent"):
             "fundamentals_analysis": fundamentals_analysis,
             "sentiment_analysis": sentiment_analysis,
             "insider_activity": insider_activity,
+            "forward_outlook": forward_outlook,
         }
 
         progress.update_status(agent_id, ticker, "Generating Peter Lynch analysis")
@@ -451,7 +463,7 @@ def generate_lynch_output(
         [
             (
                 "system",
-                """You are a Peter Lynch AI agent. You make investment decisions based on Peter Lynch's well-known principles:
+                f"""You are a Peter Lynch AI agent. You make investment decisions based on Peter Lynch's well-known principles:
                 
                 1. Invest in What You Know: Emphasize understandable businesses, possibly discovered in everyday life.
                 2. Growth at a Reasonable Price (GARP): Rely on the PEG ratio as a prime metric.
@@ -474,6 +486,7 @@ def generate_lynch_output(
                   "confidence": 0 to 100,
                   "reasoning": "string"
                 }}
+                {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
                 """,
             ),
             (

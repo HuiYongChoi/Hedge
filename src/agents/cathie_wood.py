@@ -8,6 +8,11 @@ from typing_extensions import Literal
 from src.utils.progress import progress
 from src.utils.llm import call_llm
 from src.utils.api_key import get_api_key_from_state
+from src.utils.forward_outlook import (
+    FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
+    build_forward_outlook_block,
+    get_cached_forward_metrics,
+)
 
 
 class CathieWoodSignal(BaseModel):
@@ -71,6 +76,11 @@ def cathie_wood_agent(state: AgentState, agent_id: str = "cathie_wood_agent"):
         progress.update_status(agent_id, ticker, "Calculating valuation & high-growth scenario")
         valuation_analysis = analyze_cathie_wood_valuation(financial_line_items, market_cap)
 
+        progress.update_status(agent_id, ticker, "Preparing forward outlook")
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
+        trailing_pe = getattr(metrics[0], "price_to_earnings_ratio", None) if metrics else None
+        forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
+
         # Combine partial scores or signals
         total_score = disruptive_analysis["score"] + innovation_analysis["score"] + valuation_analysis["score"]
         max_possible_score = 15  # Adjust weighting as desired
@@ -82,7 +92,7 @@ def cathie_wood_agent(state: AgentState, agent_id: str = "cathie_wood_agent"):
         else:
             signal = "neutral"
 
-        analysis_data[ticker] = {"signal": signal, "score": total_score, "max_score": max_possible_score, "disruptive_analysis": disruptive_analysis, "innovation_analysis": innovation_analysis, "valuation_analysis": valuation_analysis}
+        analysis_data[ticker] = {"signal": signal, "score": total_score, "max_score": max_possible_score, "disruptive_analysis": disruptive_analysis, "innovation_analysis": innovation_analysis, "valuation_analysis": valuation_analysis, "forward_outlook": forward_outlook}
 
         progress.update_status(agent_id, ticker, "Generating Cathie Wood analysis")
         cw_output = generate_cathie_wood_output(
@@ -373,7 +383,7 @@ def generate_cathie_wood_output(
         [
             (
                 "system",
-                """You are a Cathie Wood AI agent, making investment decisions using her principles:
+                f"""You are a Cathie Wood AI agent, making investment decisions using her principles:
 
             1. Seek companies leveraging disruptive innovation.
             2. Emphasize exponential growth potential, large TAM.
@@ -399,6 +409,7 @@ def generate_cathie_wood_output(
             
             For example, if bullish: "The company's AI-driven platform is transforming the $500B healthcare analytics market, with evidence of platform adoption accelerating from 40% to 65% YoY. Their R&D investments of 22% of revenue are creating a technological moat that positions them to capture a significant share of this expanding market. The current valuation doesn't reflect the exponential growth trajectory we expect as..."
             For example, if bearish: "While operating in the genomics space, the company lacks truly disruptive technology and is merely incrementally improving existing techniques. R&D spending at only 8% of revenue signals insufficient investment in breakthrough innovation. With revenue growth slowing from 45% to 20% YoY, there's limited evidence of the exponential adoption curve we look for in transformative companies..."
+            {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
             """,
             ),
             (

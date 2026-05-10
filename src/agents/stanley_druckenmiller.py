@@ -16,6 +16,11 @@ from src.utils.progress import progress
 from src.utils.llm import call_llm
 import statistics
 from src.utils.api_key import get_api_key_from_state
+from src.utils.forward_outlook import (
+    FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
+    build_forward_outlook_block,
+    get_cached_forward_metrics,
+)
 
 class StanleyDruckenmillerSignal(BaseModel):
     signal: Literal["bullish", "bearish", "neutral"]
@@ -102,6 +107,11 @@ def stanley_druckenmiller_agent(state: AgentState, agent_id: str = "stanley_druc
         progress.update_status(agent_id, ticker, "Performing Druckenmiller-style valuation")
         valuation_analysis = analyze_druckenmiller_valuation(financial_line_items, market_cap)
 
+        progress.update_status(agent_id, ticker, "Preparing forward outlook")
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
+        trailing_pe = getattr(metrics[0], "price_to_earnings_ratio", None) if metrics else None
+        forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
+
         # Combine partial scores with weights typical for Druckenmiller:
         #   35% Growth/Momentum, 20% Risk/Reward, 20% Valuation,
         #   15% Sentiment, 10% Insider Activity = 100%
@@ -132,6 +142,7 @@ def stanley_druckenmiller_agent(state: AgentState, agent_id: str = "stanley_druc
             "insider_activity": insider_activity,
             "risk_reward_analysis": risk_reward_analysis,
             "valuation_analysis": valuation_analysis,
+            "forward_outlook": forward_outlook,
         }
 
         progress.update_status(agent_id, ticker, "Generating Stanley Druckenmiller analysis")
@@ -539,7 +550,7 @@ def generate_druckenmiller_output(
         [
             (
               "system",
-              """You are a Stanley Druckenmiller AI agent, making investment decisions using his principles:
+              f"""You are a Stanley Druckenmiller AI agent, making investment decisions using his principles:
             
               1. Seek asymmetric risk-reward opportunities (large upside, limited downside).
               2. Emphasize growth, momentum, and market sentiment.
@@ -564,6 +575,7 @@ def generate_druckenmiller_output(
               
               For example, if bullish: "The company shows exceptional momentum with revenue accelerating from 22% to 35% YoY and the stock up 28% over the past three months. Risk-reward is highly asymmetric with 70% upside potential based on FCF multiple expansion and only 15% downside risk given the strong balance sheet with 3x cash-to-debt. Insider buying and positive market sentiment provide additional tailwinds..."
               For example, if bearish: "Despite recent stock momentum, revenue growth has decelerated from 30% to 12% YoY, and operating margins are contracting. The risk-reward proposition is unfavorable with limited 10% upside potential against 40% downside risk. The competitive landscape is intensifying, and insider selling suggests waning confidence. I'm seeing better opportunities elsewhere with more favorable setups..."
+              {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
               """,
             ),
             (

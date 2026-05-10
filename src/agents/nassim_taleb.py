@@ -21,6 +21,11 @@ from src.tools.api import (
 from src.utils.llm import call_llm
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
+from src.utils.forward_outlook import (
+    FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
+    build_forward_outlook_block,
+    get_cached_forward_metrics,
+)
 
 
 class NassimTalebSignal(BaseModel):
@@ -103,6 +108,11 @@ def nassim_taleb_agent(state: AgentState, agent_id: str = "nassim_taleb_agent"):
         progress.update_status(agent_id, ticker, "Scanning for black swan signals")
         black_swan_analysis = analyze_black_swan_sentinel(news, prices_df)
 
+        progress.update_status(agent_id, ticker, "Preparing forward outlook")
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
+        trailing_pe = getattr(metrics[0], "price_to_earnings_ratio", None) if metrics else None
+        forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
+
         # Aggregate scores (raw addition — max_scores create implicit weighting)
         total_score = (
             tail_risk_analysis["score"]
@@ -135,6 +145,7 @@ def nassim_taleb_agent(state: AgentState, agent_id: str = "nassim_taleb_agent"):
             "volatility_regime_analysis": volatility_regime_analysis,
             "black_swan_analysis": black_swan_analysis,
             "market_cap": market_cap,
+            "forward_outlook": forward_outlook,
         }
 
         progress.update_status(agent_id, ticker, "Generating Nassim Taleb analysis")
@@ -699,6 +710,7 @@ def generate_taleb_output(
         "volatility_regime": analysis_data.get("volatility_regime_analysis", {}).get("details"),
         "black_swan": analysis_data.get("black_swan_analysis", {}).get("details"),
         "market_cap": analysis_data.get("market_cap"),
+        "forward_outlook": analysis_data.get("forward_outlook"),
     }
 
     template = ChatPromptTemplate.from_messages(
@@ -731,6 +743,7 @@ def generate_taleb_output(
                 "Write structured, decision-grade reasoning in Korean using these sections: "
                 "### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거. "
                 "Ground the report in the provided fragility, tail risk, convexity, and volatility facts. "
+                f"{FORWARD_OUTLOOK_SYSTEM_INSTRUCTION} "
                 "Do not invent data. Return JSON only.",
             ),
             (

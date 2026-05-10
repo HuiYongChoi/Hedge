@@ -14,6 +14,11 @@ from src.tools.api import (
     search_line_items,
 )
 from src.utils.api_key import get_api_key_from_state
+from src.utils.forward_outlook import (
+    FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
+    build_forward_outlook_block,
+    get_cached_forward_metrics,
+)
 from src.utils.llm import call_llm
 from src.utils.progress import progress
 
@@ -83,6 +88,11 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         progress.update_status(agent_id, ticker, "Assessing relative valuation")
         relative_val_analysis = analyze_relative_valuation(metrics)
 
+        progress.update_status(agent_id, ticker, "Preparing forward outlook")
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
+        trailing_pe = getattr(metrics[0], "price_to_earnings_ratio", None) if metrics else None
+        forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
+
         # ─── Score & margin of safety ──────────────────────────────────────────
         total_score = (
             growth_analysis["score"]
@@ -114,6 +124,7 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             "relative_val_analysis": relative_val_analysis,
             "intrinsic_val_analysis": intrinsic_val_analysis,
             "market_cap": market_cap,
+            "forward_outlook": forward_outlook,
         }
 
         # ─── LLM: craft Damodaran-style narrative ──────────────────────────────
@@ -402,7 +413,7 @@ def generate_damodaran_output(
         [
             (
                 "system",
-                """You are Aswath Damodaran, Professor of Finance at NYU Stern.
+                f"""You are Aswath Damodaran, Professor of Finance at NYU Stern.
                 Use your valuation framework to issue trading signals on US equities.
 
                 Speak with your usual clear, data-driven tone:
@@ -410,6 +421,7 @@ def generate_damodaran_output(
                   ◦ Connect that story to key numerical drivers: revenue growth, margins, reinvestment, risk
                   ◦ Conclude with value: your FCFF DCF estimate, margin of safety, and relative valuation sanity checks
                   ◦ Highlight major uncertainties and how they affect value
+                {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
                 Return ONLY the JSON specified below.""",
             ),
             (

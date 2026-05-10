@@ -10,6 +10,11 @@ from src.utils.llm import call_llm
 from src.utils.financial_formatting import format_period_note
 import math
 from src.utils.api_key import get_api_key_from_state
+from src.utils.forward_outlook import (
+    FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
+    build_forward_outlook_block,
+    get_cached_forward_metrics,
+)
 
 
 class BenGrahamSignal(BaseModel):
@@ -76,6 +81,11 @@ def ben_graham_agent(state: AgentState, agent_id: str = "ben_graham_agent"):
         progress.update_status(agent_id, ticker, "Analyzing Graham valuation")
         valuation_analysis = analyze_valuation_graham(financial_line_items, market_cap)
 
+        progress.update_status(agent_id, ticker, "Preparing forward outlook")
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
+        trailing_pe = getattr(metrics[0], "price_to_earnings_ratio", None) if metrics else None
+        forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
+
         # Aggregate scoring
         total_score = earnings_analysis["score"] + strength_analysis["score"] + valuation_analysis["score"]
         max_possible_score = 15  # total possible from the three analysis functions
@@ -97,6 +107,7 @@ def ben_graham_agent(state: AgentState, agent_id: str = "ben_graham_agent"):
             "earnings_analysis": earnings_analysis,
             "strength_analysis": strength_analysis,
             "valuation_analysis": valuation_analysis,
+            "forward_outlook": forward_outlook,
             "metric_scale_notes": (
                 "Financial ratios use the source decimal exactly as provided. "
                 "Debt-To-Equity is a proportion, so render it without the 'x' suffix (e.g., 0.11). "
@@ -381,7 +392,7 @@ def generate_graham_output(
         [
             (
                 "system",
-                """You are a Benjamin Graham AI agent, making investment decisions using his principles:
+                f"""You are a Benjamin Graham AI agent, making investment decisions using his principles:
             1. Insist on a margin of safety by buying below intrinsic value (e.g., using Graham Number, net-net).
             2. Emphasize the company's financial strength (low leverage, ample current assets).
             3. Prefer stable earnings over multiple years.
@@ -411,6 +422,7 @@ def generate_graham_output(
             - In Korean output, important formula terms must be Korean first with English in parentheses: 그레이엄 넘버 (Graham Number), 안전마진 (margin of safety), 유동비율 (current ratio). For debt-to-equity, keep the visible label short as 부채비율 11%.
                         
             Return a rational recommendation: bullish, bearish, or neutral, with a confidence level (0-100) and thorough reasoning.
+            {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
             """,
             ),
             (

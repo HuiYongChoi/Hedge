@@ -19,6 +19,11 @@ from src.tools.api import (
 from src.utils.llm import call_llm
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
+from src.utils.forward_outlook import (
+    FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
+    build_forward_outlook_block,
+    get_cached_forward_metrics,
+)
 
 
 class MichaelBurrySignal(BaseModel):
@@ -90,6 +95,11 @@ def michael_burry_agent(state: AgentState, agent_id: str = "michael_burry_agent"
         progress.update_status(agent_id, ticker, "Analyzing contrarian sentiment")
         contrarian_analysis = _analyze_contrarian_sentiment(news)
 
+        progress.update_status(agent_id, ticker, "Preparing forward outlook")
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
+        trailing_pe = getattr(metrics[0], "price_to_earnings_ratio", None) if metrics else None
+        forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
+
         # ------------------------------------------------------------------
         # Aggregate score & derive preliminary signal
         # ------------------------------------------------------------------
@@ -125,6 +135,7 @@ def michael_burry_agent(state: AgentState, agent_id: str = "michael_burry_agent"
             "insider_analysis": insider_analysis,
             "contrarian_analysis": contrarian_analysis,
             "market_cap": market_cap,
+            "forward_outlook": forward_outlook,
         }
 
         progress.update_status(agent_id, ticker, "Generating LLM output")
@@ -325,7 +336,7 @@ def _generate_burry_output(
         [
             (
                 "system",
-                """You are an AI agent emulating Dr. Michael J. Burry. Your mandate:
+                f"""You are an AI agent emulating Dr. Michael J. Burry. Your mandate:
                 - Hunt for deep value in US equities using hard numbers (free cash flow, EV/EBIT, balance sheet)
                 - Be contrarian: hatred in the press can be your friend if fundamentals are solid
                 - Focus on downside first – avoid leveraged balance sheets
@@ -341,6 +352,7 @@ def _generate_burry_output(
                 
                 For example, if bullish: "FCF yield 12.8%. EV/EBIT 6.2. Debt-to-equity 0.4. Net insider buying 25k shares. Market missing value due to overreaction to recent litigation. Strong buy."
                 For example, if bearish: "FCF yield only 2.1%. Debt-to-equity concerning at 2.3. Management diluting shareholders. Pass."
+                {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
                 """,
             ),
             (

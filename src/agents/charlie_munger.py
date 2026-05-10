@@ -8,6 +8,11 @@ from typing_extensions import Literal
 from src.utils.progress import progress
 from src.utils.llm import call_llm
 from src.utils.api_key import get_api_key_from_state
+from src.utils.forward_outlook import (
+    FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
+    build_forward_outlook_block,
+    get_cached_forward_metrics,
+)
 from src.utils.financial_formatting import format_debt_ratio_percent, format_korean_won_amount
 
 MIN_PREDICTABILITY_PERIODS = 4
@@ -91,6 +96,11 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
         
         progress.update_status(agent_id, ticker, "Calculating Munger-style valuation")
         valuation_analysis = calculate_munger_valuation(financial_line_items, market_cap)
+
+        progress.update_status(agent_id, ticker, "Preparing forward outlook")
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
+        trailing_pe = getattr(metrics[0], "price_to_earnings_ratio", None) if metrics else None
+        forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
         
         # Combine partial scores with Munger's weighting preferences
         # Munger weights quality and predictability higher than current valuation
@@ -119,6 +129,7 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
             "management_analysis": management_analysis,
             "predictability_analysis": predictability_analysis,
             "valuation_analysis": valuation_analysis,
+            "forward_outlook": forward_outlook,
             # Include some qualitative assessment from news
             "news_sentiment": analyze_news_sentiment(company_news) if company_news else "No news data available"
         }
@@ -793,6 +804,7 @@ def make_munger_facts_bundle(analysis: dict[str, any]) -> dict[str, any]:
         "최근 부채비율": format_debt_ratio_percent(_r(mgmt.get("recent_de_ratio"), 4)),
         "매출 대비 현금": _friendly_percent(_r(mgmt.get("cash_to_revenue"), 2)),
         "주식 수 추이": mgmt.get("share_count_trend") or "확인 필요",
+        "forward_outlook": analysis.get("forward_outlook"),
         "핵심 체크": {
             "해자 경쟁력": _status_text(moat_strong, "강함", "약함"),
             "예측가능성": _status_text(predictable, "높음", "낮음"),
@@ -863,6 +875,7 @@ def generate_munger_output(
          "Write structured, decision-grade reasoning in Korean using these sections: "
          "### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거. "
          "Ground the report in moat strength, management quality, predictability, valuation, "
+         f"{FORWARD_OUTLOOK_SYSTEM_INSTRUCTION} "
          "and the provided facts. Return JSON only. "
          "Use the provided confidence exactly; do not change it."),
         ("human",

@@ -11,6 +11,11 @@ from langchain_core.messages import HumanMessage
 from src.graph.state import AgentState, show_agent_reasoning
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
+from src.utils.forward_outlook import (
+    FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
+    build_forward_outlook_block,
+    get_cached_forward_metrics,
+)
 from src.tools.api import (
     get_financial_metrics,
     get_insider_trades,
@@ -69,6 +74,11 @@ def growth_analyst_agent(state: AgentState, agent_id: str = "growth_analyst_agen
         # 5. Financial Health Check
         financial_health = check_financial_health(most_recent_metrics)
 
+        progress.update_status(agent_id, ticker, "Preparing forward outlook")
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
+        trailing_pe = getattr(most_recent_metrics, "price_to_earnings_ratio", None)
+        forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
+
         # ------------------------------------------------------------------
         # Aggregate & signal
         # ------------------------------------------------------------------
@@ -105,6 +115,8 @@ def growth_analyst_agent(state: AgentState, agent_id: str = "growth_analyst_agen
             "margin_expansion": margin_trends,
             "insider_conviction": insider_conviction,
             "financial_health": financial_health,
+            "forward_outlook": forward_outlook,
+            "forward_outlook_instruction": FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
             "final_analysis": {
                 "signal": signal,
                 "confidence": confidence,
@@ -115,6 +127,8 @@ def growth_analyst_agent(state: AgentState, agent_id: str = "growth_analyst_agen
         growth_analysis[ticker] = {
             "signal": signal,
             "confidence": confidence,
+            "forward_outlook": forward_outlook,
+            "forward_outlook_instruction": FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
             "reasoning": reasoning,
         }
         progress.update_status(agent_id, ticker, "Done", analysis=json.dumps(reasoning, indent=4))

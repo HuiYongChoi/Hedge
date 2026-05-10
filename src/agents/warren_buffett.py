@@ -8,6 +8,11 @@ from src.tools.api import get_financial_metrics, get_market_cap, search_line_ite
 from src.utils.llm import call_llm
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
+from src.utils.forward_outlook import (
+    FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
+    build_forward_outlook_block,
+    get_cached_forward_metrics,
+)
 from src.utils.financial_formatting import format_debt_ratio_percent, format_money, format_percent, format_period_note, format_x_ratio
 
 
@@ -114,6 +119,11 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
         if intrinsic_value and market_cap:
             margin_of_safety = (intrinsic_value - market_cap) / market_cap
 
+        progress.update_status(agent_id, ticker, "Preparing forward outlook")
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
+        trailing_pe = getattr(metrics[0], "price_to_earnings_ratio", None) if metrics else None
+        forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
+
         # Combine all analysis results for LLM evaluation
         analysis_data[ticker] = {
             "ticker": ticker,
@@ -128,6 +138,7 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
             "intrinsic_value_analysis": intrinsic_value_analysis,
             "market_cap": market_cap,
             "margin_of_safety": margin_of_safety,
+            "forward_outlook": forward_outlook,
         }
 
         progress.update_status(agent_id, ticker, "Generating Warren Buffett analysis")
@@ -826,6 +837,7 @@ def generate_buffett_output(
         "market_cap": analysis_data.get("market_cap"),
         "margin_of_safety": analysis_data.get("margin_of_safety"),
         "valuation_summary": evidence_summary["valuation_summary"],
+        "forward_outlook": analysis_data.get("forward_outlook"),
     }
 
     template = ChatPromptTemplate.from_messages(
@@ -859,6 +871,7 @@ def generate_buffett_output(
                 "Use the formatted_evidence and valuation_summary values exactly when discussing numbers. "
                 "Label each quantitative fact with period_note and source_note. "
                 "Ground the report in the provided facts, discuss moat/management/valuation tradeoffs, "
+                f"{FORWARD_OUTLOOK_SYSTEM_INSTRUCTION} "
                 "and do not invent data. Return JSON only."
             ),
             (

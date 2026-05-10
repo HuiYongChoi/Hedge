@@ -8,6 +8,11 @@ from typing_extensions import Literal
 from src.utils.progress import progress
 from src.utils.llm import call_llm
 from src.utils.api_key import get_api_key_from_state
+from src.utils.forward_outlook import (
+    FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
+    build_forward_outlook_block,
+    get_cached_forward_metrics,
+)
 
 
 class MohnishPabraiSignal(BaseModel):
@@ -74,6 +79,11 @@ def mohnish_pabrai_agent(state: AgentState, agent_id: str = "mohnish_pabrai_agen
         progress.update_status(agent_id, ticker, "Assessing potential to double")
         double_potential = analyze_double_potential(line_items, market_cap)
 
+        progress.update_status(agent_id, ticker, "Preparing forward outlook")
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
+        trailing_pe = getattr(metrics[0], "price_to_earnings_ratio", None) if metrics else None
+        forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
+
         # Combine to an overall score in spirit of Pabrai: heavily weight downside and cash yield
         total_score = (
             downside["score"] * 0.45
@@ -97,6 +107,7 @@ def mohnish_pabrai_agent(state: AgentState, agent_id: str = "mohnish_pabrai_agen
             "valuation": valuation,
             "double_potential": double_potential,
             "market_cap": market_cap,
+            "forward_outlook": forward_outlook,
         }
 
         progress.update_status(agent_id, ticker, "Generating Pabrai analysis")
@@ -313,7 +324,7 @@ def generate_pabrai_output(
     template = ChatPromptTemplate.from_messages([
         (
           "system",
-          """You are Mohnish Pabrai. Apply my value investing philosophy:
+          f"""You are Mohnish Pabrai. Apply my value investing philosophy:
 
           - Heads I win; tails I don't lose much: prioritize downside protection first.
           - Buy businesses with simple, understandable models and durable moats.
@@ -324,6 +335,7 @@ def generate_pabrai_output(
           - Avoid leverage, complexity, and fragile balance sheets.
 
             Provide candid, checklist-driven reasoning, with emphasis on capital preservation and expected mispricing.
+            {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
             """,
         ),
         (
@@ -357,4 +369,4 @@ def generate_pabrai_output(
         pydantic_model=MohnishPabraiSignal,
         agent_name=agent_id,
         default_factory=create_default_pabrai_signal,
-    ) 
+    )

@@ -285,7 +285,7 @@ def test_ac5_valuation_and_fundamentals_reasoning_expose_trailing_and_forward_pe
     fundamentals_source = FUNDAMENTALS_AGENT.read_text(encoding="utf-8")
 
     for source in (valuation_source, fundamentals_source):
-        assert "get_forward_metrics" in source
+        assert "get_cached_forward_metrics" in source
         assert '"trailing_pe"' in source
         assert '"forward_pe"' in source
         assert '"forward_weight"' in source

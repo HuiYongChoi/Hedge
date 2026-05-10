@@ -8,6 +8,11 @@ from typing_extensions import Literal
 from src.utils.progress import progress
 from src.utils.llm import call_llm
 from src.utils.api_key import get_api_key_from_state
+from src.utils.forward_outlook import (
+    FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
+    build_forward_outlook_block,
+    get_cached_forward_metrics,
+)
 
 
 class BillAckmanSignal(BaseModel):
@@ -69,6 +74,11 @@ def bill_ackman_agent(state: AgentState, agent_id: str = "bill_ackman_agent"):
         
         progress.update_status(agent_id, ticker, "Calculating intrinsic value & margin of safety")
         valuation_analysis = analyze_valuation(financial_line_items, market_cap)
+
+        progress.update_status(agent_id, ticker, "Preparing forward outlook")
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
+        trailing_pe = getattr(metrics[0], "price_to_earnings_ratio", None) if metrics else None
+        forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
         
         # Combine partial scores or signals
         total_score = (
@@ -94,7 +104,8 @@ def bill_ackman_agent(state: AgentState, agent_id: str = "bill_ackman_agent"):
             "quality_analysis": quality_analysis,
             "balance_sheet_analysis": balance_sheet_analysis,
             "activism_analysis": activism_analysis,
-            "valuation_analysis": valuation_analysis
+            "valuation_analysis": valuation_analysis,
+            "forward_outlook": forward_outlook,
         }
         
         progress.update_status(agent_id, ticker, "Generating Bill Ackman analysis")
@@ -410,7 +421,7 @@ def generate_ackman_output(
     template = ChatPromptTemplate.from_messages([
         (
             "system",
-            """You are a Bill Ackman AI agent, making investment decisions using his principles:
+            f"""You are a Bill Ackman AI agent, making investment decisions using his principles:
 
             1. Seek high-quality businesses with durable competitive advantages (moats), often in well-known consumer or service brands.
             2. Prioritize consistent free cash flow and growth potential over the long term.
@@ -428,6 +439,7 @@ def generate_ackman_output(
             - Use a confident, analytic, and sometimes confrontational tone when discussing weaknesses or opportunities.
 
             Return your final recommendation (signal: bullish, neutral, or bearish) with a 0-100 confidence and a thorough reasoning section.
+            {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
             """
         ),
         (

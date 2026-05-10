@@ -17,7 +17,7 @@ from src.tools.api import (
     get_market_cap,
     search_line_items,
 )
-from src.tools.forward_metrics import get_forward_metrics
+from src.utils.forward_outlook import get_cached_forward_metrics
 
 
 def _format_ratio(value: float | None) -> str:
@@ -63,10 +63,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         most_recent_metrics = financial_metrics[0]
 
         progress.update_status(agent_id, ticker, "Fetching forward metrics")
-        try:
-            forward_metrics = get_forward_metrics(ticker, as_of_date=end_date, api_key=api_key)
-        except Exception:
-            forward_metrics = None
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
 
         # --- Enhanced line‑items ---
         progress.update_status(agent_id, ticker, "Gathering comprehensive line items")

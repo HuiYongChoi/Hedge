@@ -8,6 +8,11 @@ from src.tools.api import get_financial_metrics, get_market_cap, search_line_ite
 from src.utils.llm import call_llm
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
+from src.utils.forward_outlook import (
+    FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
+    build_forward_outlook_block,
+    get_cached_forward_metrics,
+)
 
 class RakeshJhunjhunwalaSignal(BaseModel):
     signal: Literal["bullish", "bearish", "neutral"]
@@ -119,6 +124,11 @@ def rakesh_jhunjhunwala_agent(state: AgentState, agent_id: str = "rakesh_jhunjhu
             current_price=market_cap
         )
 
+        progress.update_status(agent_id, ticker, "Preparing forward outlook")
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
+        trailing_pe = getattr(metrics[0], "price_to_earnings_ratio", None) if metrics else None
+        forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
+
         analysis_data[ticker] = {
             "signal": signal,
             "score": total_score,
@@ -132,6 +142,7 @@ def rakesh_jhunjhunwala_agent(state: AgentState, agent_id: str = "rakesh_jhunjhu
             "intrinsic_value_analysis": intrinsic_value_analysis,
             "intrinsic_value": intrinsic_value,
             "market_cap": market_cap,
+            "forward_outlook": forward_outlook,
         }
 
         # ─── LLM: craft Jhunjhunwala‑style narrative ──────────────────────────────
@@ -659,7 +670,7 @@ def generate_jhunjhunwala_output(
         [
             (
                 "system",
-                """You are a Rakesh Jhunjhunwala AI agent. Decide on investment signals based on Rakesh Jhunjhunwala's principles:
+                f"""You are a Rakesh Jhunjhunwala AI agent. Decide on investment signals based on Rakesh Jhunjhunwala's principles:
                 - Circle of Competence: Only invest in businesses you understand
                 - Margin of Safety (> 30%): Buy at a significant discount to intrinsic value
                 - Economic Moat: Look for durable competitive advantages
@@ -680,6 +691,7 @@ def generate_jhunjhunwala_output(
                 For example, if bearish: "The deteriorating margins and high debt levels concern me - this doesn't fit the profile of companies that build lasting value..."
 
                 Follow these guidelines strictly.
+                {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
                 """,
             ),
             (

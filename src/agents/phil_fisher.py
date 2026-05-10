@@ -14,6 +14,11 @@ from src.utils.progress import progress
 from src.utils.llm import call_llm
 import statistics
 from src.utils.api_key import get_api_key_from_state
+from src.utils.forward_outlook import (
+    FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
+    build_forward_outlook_block,
+    get_cached_forward_metrics,
+)
 
 class PhilFisherSignal(BaseModel):
     signal: Literal["bullish", "bearish", "neutral"]
@@ -91,6 +96,12 @@ def phil_fisher_agent(state: AgentState, agent_id: str = "phil_fisher_agent"):
         progress.update_status(agent_id, ticker, "Analyzing valuation (Fisher style)")
         fisher_valuation = analyze_fisher_valuation(financial_line_items, market_cap)
 
+        progress.update_status(agent_id, ticker, "Preparing forward outlook")
+        forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
+        latest_net_income = next((item.net_income for item in financial_line_items if item.net_income), None)
+        trailing_pe = market_cap / latest_net_income if market_cap and latest_net_income and latest_net_income > 0 else None
+        forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
+
         progress.update_status(agent_id, ticker, "Analyzing insider activity")
         insider_activity = analyze_insider_activity(insider_trades)
 
@@ -133,6 +144,7 @@ def phil_fisher_agent(state: AgentState, agent_id: str = "phil_fisher_agent"):
             "valuation_analysis": fisher_valuation,
             "insider_activity": insider_activity,
             "sentiment_analysis": sentiment_analysis,
+            "forward_outlook": forward_outlook,
         }
 
         progress.update_status(agent_id, ticker, "Generating Phil Fisher-style analysis")
@@ -541,7 +553,7 @@ def generate_fisher_output(
         [
             (
               "system",
-              """You are a Phil Fisher AI agent, making investment decisions using his principles:
+              f"""You are a Phil Fisher AI agent, making investment decisions using his principles:
   
               1. Emphasize long-term growth potential and quality of management.
               2. Focus on companies investing in R&D for future products/services.
@@ -565,6 +577,7 @@ def generate_fisher_output(
                 - "signal": "bullish" or "bearish" or "neutral"
                 - "confidence": a float between 0 and 100
                 - "reasoning": a detailed explanation
+              {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
               """,
             ),
             (
