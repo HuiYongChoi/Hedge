@@ -1,13 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { ModelSelector } from '@/components/ui/llm-selector';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { resolveTickerValue, TickerInput } from '@/components/ui/ticker-input';
 import { useLanguage } from '@/contexts/language-context';
 import { useWorkspace } from '@/contexts/workspace-context';
-import { Agent, getAgents } from '@/data/agents';
-import { getModels, LanguageModel } from '@/data/models';
 import {
   DATA_SANDBOX_OVERRIDES_EVENT,
   countSandboxOverrideFields,
@@ -15,7 +12,7 @@ import {
   loadDataSandboxOverrideSnapshot,
 } from '@/lib/data-sandbox-overrides';
 import { t } from '@/lib/language-preferences';
-import { CalendarDays, Cpu, Database, Search, Users } from 'lucide-react';
+import { CalendarDays, Database, Search } from 'lucide-react';
 import { forwardRef, type ReactNode, useEffect, useMemo, useState } from 'react';
 
 const PERIOD_PRESETS = [
@@ -48,12 +45,13 @@ function getPeriodLabel(startDate: string, endDate: string, language: 'ko' | 'en
   return `${startDate.slice(2).replace(/-/g, '.')} ~ ${endDate.slice(2).replace(/-/g, '.')}`;
 }
 
-const PillButton = forwardRef<HTMLButtonElement, { icon: ReactNode; label: string; value: string }>(
-  function PillButton({ icon, label, value }, ref) {
+const PillButton = forwardRef<HTMLButtonElement, { icon: ReactNode; label: string; value: string; title?: string }>(
+  function PillButton({ icon, label, value, title }, ref) {
     return (
       <Button
         ref={ref}
         variant="outline"
+        title={title}
         className="h-8 max-w-[220px] gap-1.5 rounded-full border-border/80 bg-background/70 px-3 text-xs font-medium shadow-sm"
       >
         <span className="text-muted-foreground">{icon}</span>
@@ -67,28 +65,8 @@ PillButton.displayName = 'PillButton';
 
 export function WorkspacePill() {
   const { language } = useLanguage();
-  const { workspace, setTickers, setDateRange, setSelectedModel, setUseDataSandboxOverrides } = useWorkspace();
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [models, setModels] = useState<LanguageModel[]>([]);
+  const { workspace, setTickers, setDateRange, setUseDataSandboxOverrides } = useWorkspace();
   const [sandboxSnapshot, setSandboxSnapshot] = useState(() => loadDataSandboxOverrideSnapshot());
-
-  useEffect(() => {
-    let active = true;
-
-    Promise.all([getAgents(), getModels()])
-      .then(([nextAgents, nextModels]) => {
-        if (!active) return;
-        setAgents(nextAgents);
-        setModels(nextModels);
-      })
-      .catch((error) => {
-        console.warn('Failed to load workspace pill data', error);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   useEffect(() => {
     const refreshSnapshot = () => setSandboxSnapshot(loadDataSandboxOverrideSnapshot());
@@ -100,21 +78,6 @@ export function WorkspacePill() {
       window.removeEventListener('storage', refreshSnapshot);
     };
   }, []);
-
-  const selectedAgentNames = useMemo(() => {
-    const names = agents
-      .filter(agent => workspace.selectedAgents.has(agent.key))
-      .map(agent => language === 'ko' && agent.display_name_ko ? agent.display_name_ko : agent.display_name);
-
-    if (names.length === workspace.selectedAgents.size) {
-      return names;
-    }
-
-    const missingKeys = Array.from(workspace.selectedAgents)
-      .filter(key => !agents.some(agent => agent.key === key));
-
-    return [...names, ...missingKeys];
-  }, [agents, language, workspace.selectedAgents]);
 
   const tickerLabel = useMemo(() => {
     if (!workspace.tickers.trim()) {
@@ -147,23 +110,27 @@ export function WorkspacePill() {
       ? '미사용'
       : 'Off';
 
-  const agentCountLabel = workspace.selectedAgents.size > 0
-    ? language === 'ko'
-      ? `${workspace.selectedAgents.size}명`
-      : `${workspace.selectedAgents.size}`
-    : t('noAgentsSelected', language);
-
-  const modelLabel = workspace.selectedModel?.display_name || 'Auto';
   const periodLabel = getPeriodLabel(workspace.startDate, workspace.endDate, language);
+  const stockAnalysisScopeTitle = language === 'ko'
+    ? '종목 분석 탭과 플로우 노드(워크스페이스 동기화 ON)에 적용됩니다'
+    : 'Applies to Stock analysis and flow nodes with workspace sync ON';
+  const sandboxScopeTitle = language === 'ko'
+    ? '종목 분석 / 플로우 실행 시 Data Sandbox 수정값을 함께 보냅니다'
+    : 'Sends Data Sandbox overrides with Stock analysis and flow runs';
 
   return (
     <div className="flex items-center gap-2">
+      <span className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground lg:inline">
+        {language === 'ko' ? '종목 분석' : 'Stock analysis'}
+      </span>
+
       <Popover>
         <PopoverTrigger asChild>
           <PillButton
             icon={<Search className="h-3.5 w-3.5" />}
             label={t('activeTicker', language)}
             value={tickerLabel}
+            title={stockAnalysisScopeTitle}
           />
         </PopoverTrigger>
         <PopoverContent align="end" className="w-[320px] space-y-3 p-3">
@@ -185,63 +152,10 @@ export function WorkspacePill() {
       <Popover>
         <PopoverTrigger asChild>
           <PillButton
-            icon={<Users className="h-3.5 w-3.5" />}
-            label={t('agentsSelected', language)}
-            value={agentCountLabel}
-          />
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-[320px] space-y-3 p-3">
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-primary">{t('agentsSelected', language)}</div>
-            <div className="text-[11px] text-muted-foreground">{t('selectAgentsInStockSearch', language)}</div>
-          </div>
-          {selectedAgentNames.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {selectedAgentNames.map(name => (
-                <span
-                  key={name}
-                  className="rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[11px] font-medium text-primary"
-                >
-                  {name}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <div className="text-xs text-muted-foreground">{t('noAgentsSelected', language)}</div>
-          )}
-        </PopoverContent>
-      </Popover>
-
-      <Popover>
-        <PopoverTrigger asChild>
-          <PillButton
-            icon={<Cpu className="h-3.5 w-3.5" />}
-            label={t('workspaceModel', language)}
-            value={modelLabel}
-          />
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-[380px] space-y-3 p-3">
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-primary">{t('workspaceModel', language)}</div>
-            <div className="text-[11px] text-muted-foreground">
-              {language === 'ko' ? '종목 분석 워크스페이스에서 기본으로 사용할 모델입니다.' : 'Choose the default model for the stock analysis workspace.'}
-            </div>
-          </div>
-          <ModelSelector
-            models={models}
-            value={workspace.selectedModel?.model_name || ''}
-            onChange={setSelectedModel}
-            placeholder="Auto"
-          />
-        </PopoverContent>
-      </Popover>
-
-      <Popover>
-        <PopoverTrigger asChild>
-          <PillButton
             icon={<CalendarDays className="h-3.5 w-3.5" />}
             label={t('period', language)}
             value={periodLabel}
+            title={stockAnalysisScopeTitle}
           />
         </PopoverTrigger>
         <PopoverContent align="end" className="w-[340px] space-y-3 p-3">
@@ -291,6 +205,7 @@ export function WorkspacePill() {
             icon={<Database className="h-3.5 w-3.5" />}
             label={t('useDataSandboxOverrides', language)}
             value={sandboxLabel}
+            title={sandboxScopeTitle}
           />
         </PopoverTrigger>
         <PopoverContent align="end" className="w-[340px] space-y-3 p-3">

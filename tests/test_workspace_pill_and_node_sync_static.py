@@ -28,14 +28,20 @@ def test_language_preferences_include_workspace_pill_labels() -> None:
 
     for key in [
         "activeTicker",
-        "agentsSelected",
         "period",
-        "workspaceModel",
         "workspaceSync",
         "workspaceSyncOn",
         "workspaceSyncOff",
     ]:
         assert f"{key}:" in source
+
+    for removed_key in [
+        "agentsSelected",
+        "workspaceModel",
+        "noAgentsSelected",
+        "selectAgentsInStockSearch",
+    ]:
+        assert f"{removed_key}:" not in source
 
 
 def test_workspace_context_stabilizes_actions_with_usecallback() -> None:

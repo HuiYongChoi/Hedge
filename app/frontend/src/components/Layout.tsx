@@ -20,8 +20,9 @@ import { TopBar } from './layout/top-bar';
 // Create a LayoutContent component to access the FlowContext, TabsContext, and LayoutContext
 function LayoutContent() {
   const { reactFlowInstance } = useFlowContext();
-  const { openTab } = useTabsContext();
+  const { openTab, activeTabType } = useTabsContext();
   const { isBottomCollapsed, expandBottomPanel, collapseBottomPanel, toggleBottomPanel } = useLayoutContext();
+  const isFlowTab = activeTabType === 'flow';
   
   // Initialize sidebar states from storage service
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(() => 
@@ -31,6 +32,11 @@ function LayoutContent() {
   const [isRightCollapsed, setIsRightCollapsed] = useState(() => 
     SidebarStorageService.loadRightSidebarState(false)
   );
+  const [savedFlowPanelState, setSavedFlowPanelState] = useState<{
+    left: boolean;
+    right: boolean;
+    bottom: boolean;
+  } | null>(null);
 
   // Track actual sidebar widths for dynamic positioning
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(280);
@@ -54,15 +60,44 @@ function LayoutContent() {
 
   // Add keyboard shortcuts for toggling sidebars and fit view
   useLayoutKeyboardShortcuts(
-    () => setIsRightCollapsed(!isRightCollapsed), // Cmd+I for right sidebar
-    () => setIsLeftCollapsed(!isLeftCollapsed),   // Cmd+B for left sidebar
+    () => { if (isFlowTab) setIsRightCollapsed(!isRightCollapsed); }, // Cmd+I for right sidebar
+    () => { if (isFlowTab) setIsLeftCollapsed(!isLeftCollapsed); },   // Cmd+B for left sidebar
     () => reactFlowInstance.fitView({ padding: 0.1, duration: 500 }), // Cmd+O for fit view
     // Note: undo/redo will be handled directly in the Flow component for now
     undefined, // undo
     undefined, // redo
-    toggleBottomPanel, // Cmd+J for bottom panel
+    () => { if (isFlowTab) toggleBottomPanel(); }, // Cmd+J for bottom panel
     handleSettingsClick, // Shift+Cmd+J for settings
   );
+
+  useEffect(() => {
+    if (activeTabType === null) return;
+
+    if (activeTabType === 'flow') {
+      if (savedFlowPanelState) {
+        setIsLeftCollapsed(savedFlowPanelState.left);
+        setIsRightCollapsed(savedFlowPanelState.right);
+        if (savedFlowPanelState.bottom) {
+          collapseBottomPanel();
+        } else {
+          expandBottomPanel();
+        }
+        setSavedFlowPanelState(null);
+      }
+      return;
+    }
+
+    setSavedFlowPanelState(prev => prev ?? {
+      left: isLeftCollapsed,
+      right: isRightCollapsed,
+      bottom: isBottomCollapsed,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabType]);
+
+  const effectiveIsLeftCollapsed = isFlowTab ? isLeftCollapsed : true;
+  const effectiveIsRightCollapsed = isFlowTab ? isRightCollapsed : true;
+  const effectiveIsBottomCollapsed = isFlowTab ? isBottomCollapsed : true;
 
   // Save sidebar states whenever they change
   useEffect(() => {
@@ -78,11 +113,11 @@ function LayoutContent() {
     let left = 0;
     let right = 0;
     
-    if (!isLeftCollapsed) {
+    if (!effectiveIsLeftCollapsed) {
       left = leftSidebarWidth;
     }
     
-    if (!isRightCollapsed) {
+    if (!effectiveIsRightCollapsed) {
       right = rightSidebarWidth;
     }
     
@@ -96,9 +131,10 @@ function LayoutContent() {
     <div className="flex h-screen w-screen overflow-hidden relative bg-background">
       {/* VSCode-style Top Bar */}
       <TopBar
-        isLeftCollapsed={isLeftCollapsed}
-        isRightCollapsed={isRightCollapsed}
-        isBottomCollapsed={isBottomCollapsed}
+        isFlowTab={isFlowTab}
+        isLeftCollapsed={effectiveIsLeftCollapsed}
+        isRightCollapsed={effectiveIsRightCollapsed}
+        isBottomCollapsed={effectiveIsBottomCollapsed}
         onToggleLeft={() => setIsLeftCollapsed(!isLeftCollapsed)}
         onToggleRight={() => setIsRightCollapsed(!isRightCollapsed)}
         onToggleBottom={toggleBottomPanel}
@@ -122,10 +158,10 @@ function LayoutContent() {
       <main 
         className="absolute inset-0 overflow-hidden" 
         style={{
-          left: !isLeftCollapsed ? `${leftSidebarWidth}px` : '0px',
-          right: !isRightCollapsed ? `${rightSidebarWidth}px` : '0px',
+          left: !effectiveIsLeftCollapsed ? `${leftSidebarWidth}px` : '0px',
+          right: !effectiveIsRightCollapsed ? `${rightSidebarWidth}px` : '0px',
           top: '40px', // Tab bar height
-          bottom: !isBottomCollapsed ? `${bottomPanelHeight}px` : '0px',
+          bottom: !effectiveIsBottomCollapsed ? `${bottomPanelHeight}px` : '0px',
         }}
       >
         <TabContent className="h-full w-full" />
@@ -134,10 +170,10 @@ function LayoutContent() {
       {/* Floating left sidebar */}
       <div className={cn(
         "absolute top-0 left-0 z-30 h-full transition-transform",
-        isLeftCollapsed && "transform -translate-x-full opacity-0"
+        effectiveIsLeftCollapsed && "transform -translate-x-full opacity-0"
       )}>
         <LeftSidebar
-          isCollapsed={isLeftCollapsed}
+          isCollapsed={effectiveIsLeftCollapsed}
           onCollapse={() => setIsLeftCollapsed(true)}
           onExpand={() => setIsLeftCollapsed(false)}
           onWidthChange={setLeftSidebarWidth}
@@ -147,10 +183,10 @@ function LayoutContent() {
       {/* Floating right sidebar */}
       <div className={cn(
         "absolute top-0 right-0 z-30 h-full transition-transform",
-        isRightCollapsed && "transform translate-x-full opacity-0"
+        effectiveIsRightCollapsed && "transform translate-x-full opacity-0"
       )}>
         <RightSidebar
-          isCollapsed={isRightCollapsed}
+          isCollapsed={effectiveIsRightCollapsed}
           onCollapse={() => setIsRightCollapsed(true)}
           onExpand={() => setIsRightCollapsed(false)}
           onWidthChange={setRightSidebarWidth}
@@ -161,12 +197,12 @@ function LayoutContent() {
       <div 
         className={cn(
           "absolute bottom-0 z-20 transition-transform",
-          isBottomCollapsed && "transform translate-y-full opacity-0"
+          effectiveIsBottomCollapsed && "transform translate-y-full opacity-0"
         )}
         style={getSidebarBasedStyle()}
       >
         <BottomPanel
-          isCollapsed={isBottomCollapsed}
+          isCollapsed={effectiveIsBottomCollapsed}
           onCollapse={collapseBottomPanel}
           onExpand={expandBottomPanel}
           onToggleCollapse={toggleBottomPanel}

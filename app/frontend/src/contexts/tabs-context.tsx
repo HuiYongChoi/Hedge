@@ -27,6 +27,8 @@ interface SerializableTab {
 interface TabsContextType {
   tabs: Tab[];
   activeTabId: string | null;
+  activeTab: Tab | null;
+  activeTabType: TabType | null;
   openTab: (tab: Omit<Tab, 'id'> & { id?: string }) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
@@ -60,6 +62,8 @@ export function TabsProvider({ children }: TabsProviderProps) {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const activeTab = activeTabId ? tabs.find(tab => tab.id === activeTabId) ?? null : null;
+  const activeTabType = activeTab?.type ?? null;
 
   // Generate unique tab ID
   const generateTabId = useCallback((type: TabType, identifier?: string): string => {
@@ -255,6 +259,8 @@ export function TabsProvider({ children }: TabsProviderProps) {
   const value = {
     tabs,
     activeTabId,
+    activeTab,
+    activeTabType,
     openTab,
     closeTab,
     setActiveTab,
@@ -271,4 +277,4 @@ export function TabsProvider({ children }: TabsProviderProps) {
       {children}
     </TabsContext.Provider>
   );
-} 
+}
