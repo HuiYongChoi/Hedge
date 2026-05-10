@@ -7,11 +7,12 @@ TICKER_INPUT = ROOT / "app/frontend/src/components/ui/ticker-input.tsx"
 
 
 class TickerInputAutocompleteStaticTests(unittest.TestCase):
-    def test_completed_suggestion_hides_dropdown(self):
+    def test_exact_symbol_suggestion_still_shows_dropdown(self):
         source = TICKER_INPUT.read_text(encoding="utf-8")
 
         self.assertIn("function isExactSuggestionMatch", source)
-        self.assertIn("!isExactSuggestionMatch(currentTerm, suggestions)", source)
+        self.assertNotIn("!isExactSuggestionMatch(currentTerm, suggestions)", source)
+        self.assertIn("currentTerm !== dismissedTerm", source)
         self.assertIn("if (hasCompletedSuggestion(term, staticResults))", source)
 
     def test_keyboard_selection_ignores_ime_composition(self):

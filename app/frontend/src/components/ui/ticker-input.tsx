@@ -170,8 +170,7 @@ export function TickerInput({
     && autocompleteEnabled
     && suggestions.length > 0
     && currentTerm.length > 0
-    && currentTerm !== dismissedTerm
-    && !isExactSuggestionMatch(currentTerm, suggestions);
+    && currentTerm !== dismissedTerm;
 
   useEffect(() => {
     if (!isComposingRef.current) {
