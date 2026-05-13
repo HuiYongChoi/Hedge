@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Database, PanelBottom, PanelLeft, PanelRight, Search, Settings } from 'lucide-react';
+import { Database, PanelBottom, PanelLeft, PanelRight, Search, Settings, Workflow } from 'lucide-react';
 
 interface TopBarProps {
   isFlowTab: boolean;
@@ -13,6 +13,9 @@ interface TopBarProps {
   onSettingsClick: () => void;
   onSearchClick: () => void;
   onDataSandboxClick: () => void;
+  hasFlowTab: boolean;
+  isFlowTabActive: boolean;
+  onFlowClick: () => void;
 }
 
 export function TopBar({
@@ -26,6 +29,9 @@ export function TopBar({
   onSettingsClick,
   onSearchClick,
   onDataSandboxClick,
+  hasFlowTab,
+  isFlowTabActive,
+  onFlowClick,
 }: TopBarProps) {
   return (
     <div className="absolute top-0 right-0 z-40 flex items-center gap-0 py-1 px-2 bg-panel/80">
@@ -80,6 +86,22 @@ export function TopBar({
           <div className="w-px h-5 bg-ramp-grey-700 mx-1" />
         </>
       )}
+
+      {/* Flow Tab */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onFlowClick}
+        disabled={!hasFlowTab || isFlowTabActive}
+        className={cn(
+          "h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-ramp-grey-700 transition-colors",
+          isFlowTabActive && "text-foreground"
+        )}
+        aria-label="Focus flow tab"
+        title={hasFlowTab ? 'Flow 탭으로 이동' : '열린 Flow 탭이 없습니다'}
+      >
+        <Workflow size={16} />
+      </Button>
 
       {/* Data Sandbox */}
       <Button

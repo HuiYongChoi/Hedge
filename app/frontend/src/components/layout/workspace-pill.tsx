@@ -52,11 +52,11 @@ const PillButton = forwardRef<HTMLButtonElement, { icon: ReactNode; label: strin
         ref={ref}
         variant="outline"
         title={title}
-        className="h-8 max-w-[220px] gap-1.5 rounded-full border-border/80 bg-background/70 px-3 text-xs font-medium shadow-sm"
+        className="h-8 gap-1.5 rounded-full border-border/80 bg-background/70 px-3 text-xs font-medium shadow-sm whitespace-nowrap"
       >
         <span className="text-muted-foreground">{icon}</span>
         <span className="hidden text-muted-foreground xl:inline">{label}</span>
-        <span className="truncate text-primary">{value}</span>
+        <span className="text-primary">{value}</span>
       </Button>
     );
   },
@@ -102,7 +102,7 @@ export function WorkspacePill() {
   ), [primaryTicker, sandboxSnapshot]);
 
   const sandboxOverrideCount = countSandboxOverrideFields(sandboxOverrideForTicker);
-  const sandboxLabel = workspace.useDataSandboxOverrides && sandboxOverrideCount > 0
+  const sandboxValueLabel = workspace.useDataSandboxOverrides && sandboxOverrideCount > 0
     ? language === 'ko'
       ? `사용 중 ${sandboxOverrideCount}`
       : `On ${sandboxOverrideCount}`
@@ -119,11 +119,11 @@ export function WorkspacePill() {
     : 'Sends Data Sandbox overrides with Stock analysis and flow runs';
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground lg:inline">
-        {language === 'ko' ? '종목 분석' : 'Stock analysis'}
-      </span>
-
+    <div
+      className="flex items-center gap-1.5 rounded-full border border-border/40 bg-background/40 px-2 py-1"
+      role="group"
+      aria-label={language === 'ko' ? '종목 분석 컨텍스트' : 'Stock analysis context'}
+    >
       <Popover>
         <PopoverTrigger asChild>
           <PillButton
@@ -203,8 +203,8 @@ export function WorkspacePill() {
         <PopoverTrigger asChild>
           <PillButton
             icon={<Database className="h-3.5 w-3.5" />}
-            label={t('useDataSandboxOverrides', language)}
-            value={sandboxLabel}
+            label={t('sandboxLabel', language)}
+            value={sandboxValueLabel}
             title={sandboxScopeTitle}
           />
         </PopoverTrigger>

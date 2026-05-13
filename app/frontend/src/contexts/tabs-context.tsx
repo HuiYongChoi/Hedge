@@ -29,6 +29,7 @@ interface TabsContextType {
   activeTabId: string | null;
   activeTab: Tab | null;
   activeTabType: TabType | null;
+  flowTabs: Tab[];
   openTab: (tab: Omit<Tab, 'id'> & { id?: string }) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
@@ -38,6 +39,7 @@ interface TabsContextType {
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   updateTabTitle: (tabId: string, newTitle: string) => void;
   updateFlowTabTitle: (flowId: number, newTitle: string) => void;
+  focusFirstFlowTab: () => void;
 }
 
 const TabsContext = createContext<TabsContextType | null>(null);
@@ -64,6 +66,7 @@ export function TabsProvider({ children }: TabsProviderProps) {
   const [isInitialized, setIsInitialized] = useState(false);
   const activeTab = activeTabId ? tabs.find(tab => tab.id === activeTabId) ?? null : null;
   const activeTabType = activeTab?.type ?? null;
+  const flowTabs = tabs.filter(tab => tab.type === 'flow');
 
   // Generate unique tab ID
   const generateTabId = useCallback((type: TabType, identifier?: string): string => {
@@ -238,6 +241,14 @@ export function TabsProvider({ children }: TabsProviderProps) {
     });
   }, []);
 
+  // Focus the first (or already active) flow tab
+  const focusFirstFlowTab = useCallback(() => {
+    const currentFlowTabs = tabs.filter(tab => tab.type === 'flow');
+    if (currentFlowTabs.length === 0) return;
+    const target = currentFlowTabs.find(tab => tab.id === activeTabId) ?? currentFlowTabs[0];
+    setActiveTabId(target.id);
+  }, [tabs, activeTabId]);
+
   // Update flow tab title
   const updateFlowTabTitle = useCallback((flowId: number, newTitle: string) => {
     setTabs(prevTabs => {
@@ -261,6 +272,7 @@ export function TabsProvider({ children }: TabsProviderProps) {
     activeTabId,
     activeTab,
     activeTabType,
+    flowTabs,
     openTab,
     closeTab,
     setActiveTab,
@@ -270,6 +282,7 @@ export function TabsProvider({ children }: TabsProviderProps) {
     reorderTabs,
     updateTabTitle,
     updateFlowTabTitle,
+    focusFirstFlowTab,
   };
 
   return (

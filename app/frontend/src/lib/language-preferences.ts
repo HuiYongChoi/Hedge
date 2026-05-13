@@ -340,6 +340,7 @@ export const translations = {
     stopButton: '중지',
     tickerCodeLabel: '종목 코드',
     useDataSandboxOverrides: 'Data Sandbox 수정값 사용',
+    sandboxLabel: '샌드박스',
     volumeTrend: '거래량 추이',
     // 성장률 필드
     financialFieldRevenueGrowth: '매출 성장률',
@@ -672,6 +673,7 @@ export const translations = {
     stopButton: 'Stop',
     tickerCodeLabel: 'Ticker',
     useDataSandboxOverrides: 'Use Data Sandbox overrides',
+    sandboxLabel: 'Sandbox',
     volumeTrend: 'Volume',
     // Growth rate fields
     financialFieldRevenueGrowth: 'Revenue Growth',

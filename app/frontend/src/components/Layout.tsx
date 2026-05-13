@@ -20,9 +20,10 @@ import { TopBar } from './layout/top-bar';
 // Create a LayoutContent component to access the FlowContext, TabsContext, and LayoutContext
 function LayoutContent() {
   const { reactFlowInstance } = useFlowContext();
-  const { openTab, activeTabType } = useTabsContext();
+  const { openTab, activeTabType, flowTabs, focusFirstFlowTab } = useTabsContext();
   const { isBottomCollapsed, expandBottomPanel, collapseBottomPanel, toggleBottomPanel } = useLayoutContext();
   const isFlowTab = activeTabType === 'flow';
+  const hasFlowTab = flowTabs.length > 0;
   
   // Initialize sidebar states from storage service
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(() => 
@@ -141,6 +142,9 @@ function LayoutContent() {
         onSettingsClick={handleSettingsClick}
         onSearchClick={handleSearchClick}
         onDataSandboxClick={handleDataSandboxClick}
+        hasFlowTab={hasFlowTab}
+        isFlowTabActive={isFlowTab}
+        onFlowClick={focusFirstFlowTab}
       />
 
       {/* Tab Bar - positioned absolutely like bottom panel */}
