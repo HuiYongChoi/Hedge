@@ -1,6 +1,7 @@
 import type { Citation, ReportLanguage, ReportTone, SectionId } from './types';
 import { annotateTextWithCitations, splitTextIntoDataTokenParts, toneToClasses } from './helpers';
 import { CitationChip, findCitation } from './citation-chip';
+import { normalizeFinancialDisplayText } from '@/lib/financial-text-normalizer';
 
 export function InlineDataChip({ value, tone }: { value: string; tone: ReportTone }) {
   const classes = toneToClasses(tone);
@@ -43,10 +44,11 @@ export function TextWithDataChips({
   onCitationClick,
 }: TextWithDataChipsProps) {
   void language;
-  if (!sectionId) return <TokenizedSentence sentence={text} tone={tone} />;
+  const normalizedText = normalizeFinancialDisplayText(text);
+  if (!sectionId) return <TokenizedSentence sentence={normalizedText} tone={tone} />;
 
-  const annotated = annotateTextWithCitations(text, sectionId);
-  if (annotated.length === 0) return <TokenizedSentence sentence={text} tone={tone} />;
+  const annotated = annotateTextWithCitations(normalizedText, sectionId);
+  if (annotated.length === 0) return <TokenizedSentence sentence={normalizedText} tone={tone} />;
 
   return (
     <>

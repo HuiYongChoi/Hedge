@@ -19,6 +19,7 @@ import type {
   SentenceClassification,
   TargetTile,
 } from './types';
+import { normalizeFinancialDisplayText } from '@/lib/financial-text-normalizer';
 
 export const SECTION_DEFS: SectionDef[] = [
   { id: 'section-01', number: '01', titleKo: '결론 요약', titleEn: 'Conclusion' },
@@ -339,6 +340,80 @@ function splitByMarkdownHeadings(reasoning: string): NormalizedReport | null {
   return report;
 }
 
+function stripMarkdownNoise(text: string) {
+  return text
+    .replace(/^#{1,6}\s+.*$/gm, ' ')
+    .replace(/\[[+\-~?]\]/g, ' ')
+    .replace(/\*\*/g, '')
+    .replace(/`/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isWeakConclusion(text: string | null | undefined) {
+  const clean = stripMarkdownNoise(String(text || ''));
+  const withoutLabels = clean
+    .replace(/핵심\s*판단|핵심\s*결론|결론\s*요약|key\s*judg(e)?ment|conclusion/gi, '')
+    .trim();
+  return withoutLabels.length < 14 || /^(없음|none|n\/a|na|[-–—]+)$/i.test(withoutLabels);
+}
+
+function truncateSummary(text: string, maxLength = 320) {
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).replace(/\s+\S*$/u, '').trim()}…`;
+}
+
+function selectMeaningfulSentence(
+  sources: Array<string | null | undefined>,
+  preferredPattern?: RegExp,
+) {
+  const candidates = sources
+    .flatMap(source => splitSentences(stripMarkdownNoise(String(source || ''))))
+    .map(sentence => sentence.replace(/^[\d.)\s-]+/u, '').trim())
+    .filter(sentence => !isWeakConclusion(sentence));
+  const preferred = preferredPattern
+    ? candidates.find(sentence => preferredPattern.test(sentence))
+    : null;
+  return preferred || candidates[0] || '';
+}
+
+function buildConciseConclusion(
+  report: AgentReport,
+  sections: NormalizedReport,
+  reasoning: string,
+  language: ReportLanguage,
+) {
+  const parts: string[] = [];
+  const conf = normalizeConfidence(report.confidence);
+  if (report.signal) {
+    parts.push(
+      `${signalToVerdict(String(report.signal), language)}${conf !== null ? ` (${language === 'ko' ? '신뢰도' : 'confidence'} ${conf}%)` : ''}`,
+    );
+  }
+
+  const existingConclusion = selectMeaningfulSentence([sections.conclusion]);
+  const valuation = selectMeaningfulSentence(
+    [sections.valuationDcf, reasoning],
+    /DCF|FCFF|내재가치|안전마진|margin|WACC|valuation|fair value/i,
+  );
+  const multiples = selectMeaningfulSentence(
+    [sections.multiples, reasoning],
+    /forward|EPS|P\/?E|이익|멀티플|consensus|컨센/i,
+  );
+  const risks = selectMeaningfulSentence(
+    [sections.risks, reasoning],
+    /risk|리스크|약세|bear|downside|고평가|위험|취약/i,
+  );
+
+  [existingConclusion, valuation, multiples, risks].forEach(sentence => {
+    if (sentence && !parts.some(part => part.includes(sentence) || sentence.includes(part))) {
+      parts.push(sentence);
+    }
+  });
+
+  return truncateSummary(parts.slice(0, 3).join(' · '));
+}
+
 function keywordMatches(sentence: string, keywords: string[]) {
   const lower = sentence.toLowerCase();
   return keywords.filter(keyword => lower.includes(keyword.toLowerCase()));
@@ -373,18 +448,28 @@ export function normalizeAgentReport(
   if (!report) return normalizedEmpty();
 
   const structured = mapStructuredView(report);
-  if (structured) return { ...structured, sources: structured.sources || buildSourceTrackingText(report) };
+  if (structured) {
+  const reasoningText = normalizeFinancialDisplayText(extractReasoningText(report.reasoning || report)).trim();
+    return {
+      ...structured,
+      conclusion: buildConciseConclusion(report, structured, reasoningText, language)
+        || stripMarkdownNoise(structured.conclusion),
+      sources: structured.sources || buildSourceTrackingText(report),
+    };
+  }
 
-  const reasoning = extractReasoningText(report.reasoning || report).trim();
+  const reasoning = normalizeFinancialDisplayText(extractReasoningText(report.reasoning || report)).trim();
   if (!reasoning) return normalizedEmpty();
   if (reasoning.length < 60) {
-    return { ...normalizedEmpty(), conclusion: reasoning, sources: buildSourceTrackingText(report) };
+    return { ...normalizedEmpty(), conclusion: stripMarkdownNoise(reasoning), sources: buildSourceTrackingText(report) };
   }
 
   const headed = splitByMarkdownHeadings(reasoning);
   if (headed) {
     return {
       ...headed,
+      conclusion: buildConciseConclusion(report, headed, reasoning, language)
+        || stripMarkdownNoise(headed.conclusion),
       crossCheck: extractCrossCheckGuideText(report) || headed.crossCheck,
       sources: buildSourceTrackingText(report),
     };
@@ -401,7 +486,13 @@ export function normalizeAgentReport(
 
   const anyMatched = classified.some(item => item.confidence !== 'low');
   if (!anyMatched) {
-    return { ...normalizedEmpty(), conclusion: reasoning, sources: buildSourceTrackingText(report) };
+    const fallbackSections = { ...normalizedEmpty(), conclusion: reasoning };
+    return {
+      ...normalizedEmpty(),
+      conclusion: buildConciseConclusion(report, fallbackSections, reasoning, language)
+        || truncateSummary(stripMarkdownNoise(reasoning)),
+      sources: buildSourceTrackingText(report),
+    };
   }
 
   const sections: Record<SectionId, string[]> = {
@@ -422,13 +513,18 @@ export function normalizeAgentReport(
     sections['section-01'] = [prefix, ...sentences.slice(0, 2)].filter(Boolean);
   }
 
-  return {
+  const normalized = {
     conclusion: sections['section-01'].join(' '),
     valuationDcf: sections['section-02'].join(' '),
     multiples: sections['section-03'].join(' '),
     risks: sections['section-04'].join(' '),
     crossCheck: extractCrossCheckGuideText(report) || sections['section-05'].join(' ') || buildFallbackCrossCheckGuideFromReport(report),
     sources: buildSourceTrackingText(report),
+  };
+  return {
+    ...normalized,
+    conclusion: buildConciseConclusion(report, normalized, reasoning, language)
+      || stripMarkdownNoise(normalized.conclusion),
   };
 }
 
@@ -484,7 +580,7 @@ export function buildSourceTrackingText(report: AgentReport | null | undefined) 
 }
 
 export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
-  const normalized = sectionText.trim();
+  const normalized = normalizeFinancialDisplayText(sectionText).trim();
   if (!normalized) return [];
 
   const blocks = normalized

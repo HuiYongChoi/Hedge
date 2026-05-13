@@ -5,6 +5,7 @@ import {
   sortReportSentimentLines,
   type ReportSentimentTone,
 } from '@/components/reports/report-sentiment-dashboard';
+import { normalizeFinancialDisplayText } from '@/lib/financial-text-normalizer';
 import type { ReactNode } from 'react';
 
 type SentimentTone = ReportSentimentTone;
@@ -26,7 +27,7 @@ export function normalizeCrossCheckGuideHeading(markdown: string) {
 export function formatDecisionReasoning(value: unknown) {
   if (!value) return '';
 
-  return normalizeCrossCheckGuideHeading(String(value))
+  return normalizeCrossCheckGuideHeading(normalizeFinancialDisplayText(String(value)))
     .replace(/\r\n?/g, '\n')
     .replace(/([^\n])\s*(###\s*🔍\s*원문 대조 체크리스트)/gu, '$1\n\n$2')
     .replace(/(###\s*🔍\s*원문 대조 체크리스트)\s*/gu, '$1\n\n')
@@ -38,7 +39,7 @@ export function formatDecisionReasoning(value: unknown) {
 }
 
 export function ensureParagraphBreaks(markdown: string): string {
-  return markdown
+  return normalizeFinancialDisplayText(markdown)
     .replace(/([.다])\s+(\[[+\-~?]\])/g, '$1\n\n$2')
     .replace(/([^\n])\n(#{2,3}\s)/g, '$1\n\n$2')
     .replace(/([^\n])\n(\d+[.)]\s|-\s|\*\s)/g, '$1\n\n$2');
@@ -73,6 +74,7 @@ export function renderMarkdownBlocks(markdown: string): ReactNode {
   const elements: ReactNode[] = [];
   let orderedItems: string[] = [];
   let unorderedItems: string[] = [];
+  const normalizedMarkdown = normalizeFinancialDisplayText(markdown);
 
   const flushLists = () => {
     if (orderedItems.length > 0) {
@@ -104,7 +106,7 @@ export function renderMarkdownBlocks(markdown: string): ReactNode {
     }
   };
 
-  normalizeReportOrderedMarkers(sortReportSentimentLines(markdown)).split('\n').forEach((line, index) => {
+  normalizeReportOrderedMarkers(sortReportSentimentLines(normalizedMarkdown)).split('\n').forEach((line, index) => {
     const trimmed = line.trim();
     if (!trimmed) {
       flushLists();
