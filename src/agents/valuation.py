@@ -264,6 +264,26 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             "fy1_fiscal_year": fy1_est.fiscal_year if fy1_est else None,
         }
 
+        base_growth = most_recent_metrics.revenue_growth
+        sensitivity_matrix = _build_sensitivity_matrix(
+            lambda wacc, growth: calculate_enhanced_dcf_value(
+                fcf_history=fcf_history,
+                growth_metrics={
+                    'revenue_growth': most_recent_metrics.revenue_growth,
+                    'fcf_growth': most_recent_metrics.free_cash_flow_growth,
+                    'earnings_growth': most_recent_metrics.earnings_growth,
+                },
+                wacc=wacc,
+                market_cap=market_cap,
+                revenue_growth=growth,
+            ),
+            base_wacc=wacc,
+            base_growth=base_growth,
+            current_price=market_cap,
+        )
+        if sensitivity_matrix:
+            reasoning["sensitivity_matrix"] = sensitivity_matrix
+
         valuation_analysis[ticker] = {
             "signal": signal,
             "confidence": confidence,
@@ -510,6 +530,52 @@ def calculate_enhanced_dcf_value(
     quality_factor = max(0.7, 1 - (fcf_volatility * 0.5))
     
     return (pv + pv_terminal) * quality_factor
+
+
+def _build_sensitivity_matrix(
+    intrinsic_value_fn,
+    base_wacc: float | None,
+    base_growth: float | None,
+    current_price: float | None,
+) -> list[list[dict]] | None:
+    """Build a 5x5 WACC x growth sensitivity matrix for frontend rendering."""
+    if base_wacc is None or base_growth is None or not current_price or current_price <= 0:
+        return None
+
+    wacc_grid = [
+        base_wacc - 0.025,
+        base_wacc - 0.015,
+        base_wacc,
+        base_wacc + 0.01,
+        base_wacc + 0.02,
+    ]
+    growth_grid = [
+        base_growth - 0.01,
+        base_growth - 0.005,
+        base_growth,
+        base_growth + 0.005,
+        base_growth + 0.01,
+    ]
+
+    matrix: list[list[dict]] = []
+    try:
+        for wacc in wacc_grid:
+            row = []
+            for growth in growth_grid:
+                intrinsic = intrinsic_value_fn(wacc=wacc, growth=growth)
+                if intrinsic is None:
+                    return None
+                row.append({
+                    "wacc": float(wacc),
+                    "growth": float(growth),
+                    "intrinsic_value": float(intrinsic),
+                    "safety_margin": (float(intrinsic) - float(current_price)) / float(current_price),
+                })
+            matrix.append(row)
+    except Exception:
+        return None
+
+    return matrix
 
 
 def calculate_dcf_scenarios(

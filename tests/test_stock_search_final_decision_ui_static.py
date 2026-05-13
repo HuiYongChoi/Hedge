@@ -5,50 +5,49 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 STOCK_TAB = ROOT / "app/frontend/src/components/tabs/stock-search-tab.tsx"
 DASHBOARD = ROOT / "app/frontend/src/components/reports/analyst-report-dashboard.tsx"
+V5_DIR = ROOT / "app/frontend/src/components/reports/analyst-report-v5"
 
 
 class StockSearchFinalDecisionUiStaticTests(unittest.TestCase):
     def test_final_decision_uses_composite_score_and_status_label(self):
         source = STOCK_TAB.read_text(encoding="utf-8")
         dashboard_source = DASHBOARD.read_text(encoding="utf-8")
+        header_source = (V5_DIR / "report-header-ribbon.tsx").read_text(encoding="utf-8")
 
         # calculateCompositeScore still lives in stock-search-tab and is passed to dashboard
         self.assertIn("function calculateCompositeScore", source)
-        # getScoreBand moved to dashboard component
-        self.assertIn("function getScoreBand", dashboard_source)
-        # Score band labels appear in the dashboard
-        self.assertIn("강력 매수", dashboard_source)
-        self.assertIn("Watch", dashboard_source)
+        # Dashboard delegates to the v5 layout and score band labels live in v5 helpers/header
+        self.assertIn("ReportLayout", dashboard_source)
+        self.assertIn("getScoreBand", header_source)
+        self.assertIn("ScoreGaugeCompact", header_source)
         self.assertNotIn("t('holdAction', language).toUpperCase()", source)
 
-    def test_final_decision_has_score_display_in_dashboard(self):
-        dashboard_source = DASHBOARD.read_text(encoding="utf-8")
+    def test_final_decision_has_score_display_in_v5_header(self):
+        header_source = (V5_DIR / "report-header-ribbon.tsx").read_text(encoding="utf-8")
+        helpers_source = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
 
         # New dashboard has compact score gauge
-        self.assertIn("ScoreGaugeCompact", dashboard_source)
-        self.assertIn("strokeDasharray", dashboard_source)
+        self.assertIn("ScoreGaugeCompact", header_source)
+        self.assertIn("strokeDasharray", header_source)
         # Score band labels
-        self.assertIn("강력 매수", dashboard_source)
-        self.assertIn("Strong Buy", dashboard_source)
+        self.assertIn("강력 매수", helpers_source)
+        self.assertIn("Strong Buy", helpers_source)
 
-    def test_final_decision_adds_6_panel_grid_to_dashboard(self):
+    def test_final_decision_adds_v5_layout_to_dashboard(self):
         dashboard_source = DASHBOARD.read_text(encoding="utf-8")
 
-        # 6-panel grid components
-        self.assertIn("DcfPanel", dashboard_source)
-        self.assertIn("MultiplesPanel", dashboard_source)
-        self.assertIn("VerdictPanel", dashboard_source)
-        self.assertIn("BearThesisPanel", dashboard_source)
-        self.assertIn("RiskPanel", dashboard_source)
-        self.assertIn("CrossCheckPanel", dashboard_source)
-        # Analyst strip
-        self.assertIn("AnalystStrip", dashboard_source)
+        self.assertIn("from './analyst-report-v5/report-layout'", dashboard_source)
+        self.assertIn("ReportLayout", dashboard_source)
+        self.assertNotIn("6-panel grid", dashboard_source)
 
     def test_final_decision_reasoning_is_split_into_markdown_blocks(self):
         source = STOCK_TAB.read_text(encoding="utf-8")
-        # Reasoning rendering helpers still exist in stock-search-tab
-        self.assertIn("function formatDecisionReasoning", source)
-        self.assertIn("function normalizeCrossCheckGuideHeading", source)
+        # Reasoning rendering helpers are shared through markdown-blocks
+        self.assertIn("from '@/lib/markdown-blocks'", source)
+        self.assertIn("formatDecisionReasoning", source)
+        self.assertIn("normalizeCrossCheckGuideHeading", source)
+        self.assertNotIn("function formatDecisionReasoning", source)
+        self.assertNotIn("function normalizeCrossCheckGuideHeading", source)
         # Detail report view still uses them
         detail_view_source = source[source.index("id=\"detail-report-view\""):]
         self.assertIn("renderMarkdownBlocks(", detail_view_source)

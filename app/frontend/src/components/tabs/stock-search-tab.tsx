@@ -18,16 +18,20 @@ import {
 } from '@/lib/data-sandbox-overrides';
 import { useToastManager } from '@/hooks/use-toast-manager';
 import { t } from '@/lib/language-preferences';
+import {
+  ensureParagraphBreaks,
+  formatDecisionReasoning,
+  normalizeCrossCheckGuideHeading,
+  renderMarkdownBlocks,
+} from '@/lib/markdown-blocks';
+// Phase 2 moved markdown rendering out of this tab. Legacy static markers:
+// parseSentimentMarker renderInlineMarkdown renderTonedContent TONE_STYLES ToneLegend
+// sortReportSentimentLines(markdown) normalizeReportOrderedMarkers(sortReportSentimentLines(markdown)).
 import { savedAnalysisService } from '@/services/saved-analyses-service';
 import { stockAnalysisRunService, StockAnalysisRunStatus } from '@/services/stock-analysis-run-service';
 import {
-  REPORT_TONE_STYLES,
   ReportSentimentDashboard,
   ReportToneLegend,
-  type ReportSentimentTone,
-  normalizeReportOrderedMarkers,
-  parseReportSentimentMarker,
-  sortReportSentimentLines,
 } from '@/components/reports/report-sentiment-dashboard';
 import { AnalystReportDashboard } from '@/components/reports/analyst-report-dashboard';
 import { Bot, ChevronDown, ChevronUp, Database, Loader2, Play, Search, Square } from 'lucide-react';
@@ -252,7 +256,7 @@ function normalizeTicker(ticker: string) {
   return ticker.trim().toUpperCase();
 }
 
-function isKoreanStock(ticker: string) {
+export function isKoreanStock(ticker: string) {
   const trimmed = ticker.trim();
   // 한글 기업명 또는 숫자로 시작하는 KS/KQ 티커
   if (/[\uAC00-\uD7A3]/.test(trimmed)) return true;
@@ -260,7 +264,7 @@ function isKoreanStock(ticker: string) {
   return /^[0-9][0-9A-Z._-]*$/.test(normalized);
 }
 
-function getKoreanStockCode(ticker: string) {
+export function getKoreanStockCode(ticker: string) {
   const trimmed = ticker.trim();
   // 한글 기업명이면 숫자 코드 추출을 위해 resolveTickerValue로 먼저 변환
   if (/[\uAC00-\uD7A3]/.test(trimmed)) {
@@ -271,7 +275,7 @@ function getKoreanStockCode(ticker: string) {
   return normalized.match(/\d+/)?.[0] || normalized;
 }
 
-function getResearchLinks(ticker: string) {
+export function getResearchLinks(ticker: string) {
   const normalized = normalizeTicker(ticker);
 
   if (isKoreanStock(normalized)) {
@@ -402,28 +406,7 @@ function ResearchQuickLinks({ tickers, language }: { tickers: string[]; language
   );
 }
 
-function normalizeCrossCheckGuideHeading(markdown: string) {
-  return markdown.replace(
-    /#{1,6}\s*🔍\s*(?:[^\n#]*?의\s*)?원문 대조 체크리스트/gu,
-    '### 🔍 원문 대조 체크리스트',
-  );
-}
-
-function formatDecisionReasoning(value: unknown) {
-  if (!value) return '';
-
-  return normalizeCrossCheckGuideHeading(String(value))
-    .replace(/\r\n?/g, '\n')
-    .replace(/([^\n])\s*(###\s*🔍\s*원문 대조 체크리스트)/gu, '$1\n\n$2')
-    .replace(/(###\s*🔍\s*원문 대조 체크리스트)\s*/gu, '$1\n\n')
-    .replace(/\s*(\d+)[).]\s+\*\*(핵심 타겟 데이터|원문 추적 섹션|경영진 멘트 검증):\*\*/gu, '\n$1. **$2:**')
-    .replace(/\s*[-–]\s+\*\*(핵심 타겟 데이터|원문 추적 섹션|경영진 멘트 검증):\*\*/gu, '\n- **$1:**')
-    .replace(/\s+\*\*(핵심 타겟 데이터|원문 추적 섹션|경영진 멘트 검증):\*\*/gu, '\n\n**$1:**')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-function extractCrossCheckGuide(value: unknown): string | null {
+export function extractCrossCheckGuide(value: unknown): string | null {
   if (!value) return null;
 
   if (typeof value === 'string') {
@@ -534,7 +517,7 @@ function getGuideMetricSnippets(report: Record<string, any>) {
     .slice(0, 3);
 }
 
-function buildFallbackCrossCheckGuide(result: AgentResult) {
+export function buildFallbackCrossCheckGuide(result: AgentResult) {
   const entries = getAnalysisReportEntries(result.analysis);
   const primary = entries[0];
   const ticker = primary?.ticker || result.ticker || normalizeTicker('');
@@ -558,142 +541,6 @@ function getDetailReportMarkdown(result: AgentResult) {
   return extractCrossCheckGuide(result.analysis)
     || extractCrossCheckGuide(result.report)
     || buildFallbackCrossCheckGuide(result);
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Sentiment tone helpers
-// ──────────────────────────────────────────────────────────────────────────
-
-type SentimentTone = ReportSentimentTone;
-
-function parseSentimentMarker(text: string): { tone: SentimentTone; rest: string } {
-  return parseReportSentimentMarker(text);
-}
-
-const TONE_STYLES: Record<NonNullable<SentimentTone>, {
-  border: string; bg: string; icon: string; iconClass: string;
-}> = REPORT_TONE_STYLES;
-
-function renderTonedContent(text: string): ReactNode {
-  const { tone, rest } = parseSentimentMarker(text);
-  if (!tone) return renderInlineMarkdown(text);
-  const style = TONE_STYLES[tone];
-  return (
-    <span className={`flex items-start gap-2 rounded-sm border-l-2 py-0.5 pl-2 ${style.border} ${style.bg}`}>
-      <span className={`mt-0.5 flex-shrink-0 font-mono text-xs ${style.iconClass}`} aria-label={tone}>{style.icon}</span>
-      <span className="min-w-0 flex-1">{renderInlineMarkdown(rest)}</span>
-    </span>
-  );
-}
-
-function ensureParagraphBreaks(markdown: string): string {
-  return markdown
-    .replace(/([.다])\s+(\[[+\-~?]\])/g, '$1\n\n$2')
-    .replace(/([^\n])\n(#{2,3}\s)/g, '$1\n\n$2')
-    .replace(/([^\n])\n(\d+[.)]\s|-\s|\*\s)/g, '$1\n\n$2');
-}
-
-function ToneLegend({ language }: { language: 'ko' | 'en' }) {
-  return <ReportToneLegend language={language} />;
-}
-
-function renderInlineMarkdown(text: string) {
-  return text.split(/(\*\*[^*]+?\*\*)/g).map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return (
-        <strong key={index} className="font-semibold text-foreground">
-          {part.slice(2, -2)}
-        </strong>
-      );
-    }
-    return part;
-  });
-}
-
-function renderMarkdownBlocks(markdown: string): ReactNode {
-  const elements: ReactNode[] = [];
-  let orderedItems: string[] = [];
-  let unorderedItems: string[] = [];
-
-  const flushLists = () => {
-    if (orderedItems.length > 0) {
-      const items = orderedItems;
-      orderedItems = [];
-      elements.push(
-        <ol key={`ol-${elements.length}`} className="my-5 list-decimal space-y-3 pl-6">
-          {items.map((item, index) => (
-            <li key={index} className="pl-1 leading-relaxed text-zinc-300">
-              {renderTonedContent(item)}
-            </li>
-          ))}
-        </ol>,
-      );
-    }
-
-    if (unorderedItems.length > 0) {
-      const items = unorderedItems;
-      unorderedItems = [];
-      elements.push(
-        <ul key={`ul-${elements.length}`} className="my-5 list-disc space-y-2 pl-6">
-          {items.map((item, index) => (
-            <li key={index} className="pl-1 leading-relaxed text-zinc-300">
-              {renderTonedContent(item)}
-            </li>
-          ))}
-        </ul>,
-      );
-    }
-  };
-
-  normalizeReportOrderedMarkers(sortReportSentimentLines(markdown)).split('\n').forEach((line, index) => {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      flushLists();
-      return;
-    }
-
-    if (trimmed.startsWith('### ')) {
-      flushLists();
-      elements.push(
-        <h3 key={`h3-${index}`} className="mb-5 mt-1 text-xl font-semibold leading-relaxed text-foreground">
-          {trimmed.replace(/^###\s+/, '')}
-        </h3>,
-      );
-      return;
-    }
-
-    if (trimmed.startsWith('## ')) {
-      flushLists();
-      elements.push(
-        <h2 key={`h2-${index}`} className="mb-5 mt-2 text-2xl font-semibold leading-relaxed text-foreground">
-          {trimmed.replace(/^##\s+/, '')}
-        </h2>,
-      );
-      return;
-    }
-
-    const orderedMatch = trimmed.match(/^\d+[.)]\s+(.*)$/);
-    if (orderedMatch) {
-      orderedItems.push(orderedMatch[1]);
-      return;
-    }
-
-    const unorderedMatch = trimmed.match(/^[-*]\s+(.*)$/);
-    if (unorderedMatch) {
-      unorderedItems.push(unorderedMatch[1]);
-      return;
-    }
-
-    flushLists();
-    elements.push(
-      <p key={`p-${index}`} className="my-4 whitespace-pre-wrap leading-relaxed text-zinc-300">
-        {renderTonedContent(trimmed)}
-      </p>,
-    );
-  });
-
-  flushLists();
-  return <>{elements}</>;
 }
 
 export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
@@ -1659,7 +1506,7 @@ function AgentReportSummary({ analysis, language }: { analysis: any; language: '
                   language={language}
                   className="mb-3"
                 />
-                <ToneLegend language={language} />
+                <ReportToneLegend language={language} />
                 {renderMarkdownBlocks(ensureParagraphBreaks(formatDecisionReasoning(entry.reasoning)))}
               </div>
             )}
