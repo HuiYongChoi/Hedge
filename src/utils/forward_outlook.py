@@ -20,7 +20,9 @@ FORWARD_OUTLOOK_SYSTEM_INSTRUCTION = (
     "value explicitly. Never ignore forward_outlook even if it conflicts with your "
     "trailing-based narrative; explicitly reconcile the two views. If "
     "`forward_outlook.available` is false or `confidence` is 'low', acknowledge the "
-    "limitation in one sentence and continue with trailing analysis."
+    "limitation in one sentence and continue with trailing analysis. "
+    "When `forward_pe_fy0` or `forward_pe_fy1` is present, treat them as the **annual** "
+    "anchor and quote them alongside the TTM splice; do not average silently."
 )
 
 
@@ -82,7 +84,18 @@ def build_forward_outlook_block(
         for quarter in forward_metrics.composition
     ]
 
-    return {
+    # ── Annual FY0 / FY+1 additions ───────────────────────────────────────────
+    fy0_pe = getattr(forward_metrics, "forward_pe_fy0", None)
+    fy1_pe = getattr(forward_metrics, "forward_pe_fy1", None)
+    fy0_est = getattr(forward_metrics, "fy0_estimate", None)
+    fy1_est = getattr(forward_metrics, "fy1_estimate", None)
+
+    def _pct_vs_ttm(fy_pe: float | None) -> float | None:
+        if fy_pe is None or forward_pe is None or forward_pe == 0:
+            return None
+        return round((fy_pe - forward_pe) / abs(forward_pe) * 100, 2)
+
+    block: dict[str, Any] = {
         "available": True,
         "as_of_date": forward_metrics.as_of_date.isoformat(),
         "currency": forward_metrics.currency,
@@ -101,6 +114,28 @@ def build_forward_outlook_block(
             pe_change_pct,
         ),
     }
+
+    if fy0_pe is not None:
+        block["forward_pe_fy0"] = fy0_pe
+        block["forward_eps_fy0"] = getattr(forward_metrics, "forward_eps_fy0", None)
+        block["fy0_fiscal_year"] = fy0_est.fiscal_year if fy0_est else None
+        block["fy0_analyst_count"] = fy0_est.analyst_count if fy0_est else None
+        block["fy0_confidence"] = fy0_est.confidence if fy0_est else None
+
+    if fy1_pe is not None:
+        block["forward_pe_fy1"] = fy1_pe
+        block["forward_eps_fy1"] = getattr(forward_metrics, "forward_eps_fy1", None)
+        block["fy1_fiscal_year"] = fy1_est.fiscal_year if fy1_est else None
+        block["fy1_analyst_count"] = fy1_est.analyst_count if fy1_est else None
+        block["fy1_confidence"] = fy1_est.confidence if fy1_est else None
+
+    if fy0_pe is not None or fy1_pe is not None:
+        block["annual_vs_ttm"] = {
+            "fy0_minus_ttm_pct": _pct_vs_ttm(fy0_pe),
+            "fy1_minus_ttm_pct": _pct_vs_ttm(fy1_pe),
+        }
+
+    return block
 
 
 def _build_interpretation_hint(
@@ -137,5 +172,16 @@ def _build_interpretation_hint(
 
     if forward_metrics.confidence == "low":
         parts.append("Confidence is LOW; treat forward figures as directional only.")
+
+    fy0_pe = getattr(forward_metrics, "forward_pe_fy0", None)
+    fy0_est = getattr(forward_metrics, "fy0_estimate", None)
+    if fy0_pe is not None:
+        fy0_year = fy0_est.fiscal_year if fy0_est else "FY"
+        if forward_pe is not None:
+            parts.append(
+                f"Annual forward P/E (FY{fy0_year}): {fy0_pe:.2f}x vs TTM {forward_pe:.2f}x."
+            )
+        else:
+            parts.append(f"Annual forward P/E (FY{fy0_year}): {fy0_pe:.2f}x.")
 
     return " ".join(parts) if parts else "No interpretive hint available."

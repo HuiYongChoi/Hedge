@@ -14,7 +14,7 @@ import re
 import time
 from datetime import date, datetime
 
-from src.data.models_forward import QuarterlyEPS
+from src.data.models_forward import AnnualEPSEstimate, QuarterlyEPS
 from src.tools.kr_consensus.annualized_split import (
     next_quarter_end,
     split_annual_to_next_quarter,
@@ -49,6 +49,25 @@ class NaverConsensusProvider:
             return _parse_consensus_estimates(html, as_of_date, num_quarters)
         except Exception as exc:
             logger.warning("NaverConsensusProvider parse failed for %s: %s", ticker, exc)
+            return []
+
+    def fetch_annual_eps_estimates(
+        self,
+        ticker: str,
+        as_of_date: date,
+        num_years: int = 2,
+    ) -> list[AnnualEPSEstimate]:
+        """Return annual EPS estimates from Naver Finance 기업실적분석 table."""
+        code = _to_six_digit(ticker)
+        if not code:
+            return []
+        html = _fetch_html(f"{_NAVER_BASE}?code={code}")
+        if html is None:
+            return []
+        try:
+            return _parse_annual_estimates(html, as_of_date, num_years)
+        except Exception as exc:
+            logger.warning("NaverConsensusProvider annual parse failed for %s: %s", ticker, exc)
             return []
 
 
@@ -213,3 +232,72 @@ def _parse_number(text: str) -> float | None:
 def _period_label(d: date) -> str:
     q = ((d.month - 1) // 3) + 1
     return f"{d.year}Q{q}"
+
+
+def _parse_annual_estimates(
+    html: str,
+    as_of_date: date,
+    num_years: int,
+) -> list[AnnualEPSEstimate]:
+    """Parse annual (full-year) EPS estimates from the 기업실적분석 table.
+
+    Naver Finance shows annual columns as YYYY.12(E) for December-fiscal companies.
+    We treat any (E)-marked column whose month == 12 as an annual estimate.
+    """
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    section = soup.find("div", class_="section cop_analysis") or soup.find("div", id="content")
+    tables = section.find_all("table") if section else soup.find_all("table")
+    results: list[AnnualEPSEstimate] = []
+
+    eps_row_labels = {"eps", "eps(원)", "주당순이익", "기본eps", "희석eps"}
+
+    for table in tables:
+        rows = table.find_all("tr")
+        if not rows:
+            continue
+        header_row = rows[0]
+        all_header_cells = header_row.find_all(["th", "td"])
+        headers: list[tuple[date | None, bool]] = []
+        for th in all_header_cells[1:]:
+            col_date, is_est = _parse_column_header(th.get_text(strip=True))
+            headers.append((col_date, is_est))
+
+        found_eps = False
+        for row in rows[1:]:
+            cells = row.find_all(["th", "td"])
+            if not cells:
+                continue
+            label_text = cells[0].get_text(strip=True).lower().replace(" ", "")
+            if not any(label in label_text for label in eps_row_labels):
+                continue
+            found_eps = True
+            for i, cell in enumerate(cells[1:]):
+                if i >= len(headers):
+                    break
+                col_date, is_est = headers[i]
+                if col_date is None or not is_est or col_date <= as_of_date:
+                    continue
+                # Only keep December-ending columns (annual reports)
+                if col_date.month != 12:
+                    continue
+                eps = _parse_number(cell.get_text(strip=True))
+                if eps is None:
+                    continue
+                results.append(
+                    AnnualEPSEstimate(
+                        fiscal_year=col_date.year,
+                        fiscal_year_end=col_date,
+                        eps=eps,
+                        source="consensus",
+                        provider="NaverFinance",
+                        as_of=as_of_date,
+                        confidence="medium",
+                    )
+                )
+        if found_eps and results:
+            break
+
+    results.sort(key=lambda e: e.fiscal_year_end)
+    return results[:num_years]

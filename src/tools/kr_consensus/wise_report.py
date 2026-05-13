@@ -14,7 +14,7 @@ import re
 import time
 from datetime import date
 
-from src.data.models_forward import QuarterlyEPS
+from src.data.models_forward import AnnualEPSEstimate, QuarterlyEPS
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,14 @@ class WiseReportProvider:
         except Exception as exc:
             logger.warning("WiseReportProvider parse failed for %s: %s", ticker, exc)
             return []
+
+    def fetch_annual_eps_estimates(
+        self,
+        ticker: str,
+        as_of_date: date,
+        num_years: int = 2,
+    ) -> list[AnnualEPSEstimate]:
+        return []
 
 
 def _to_six_digit(ticker: str) -> str | None:

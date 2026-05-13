@@ -236,12 +236,19 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         else:
             pe_signal = "neutral"
 
+        forward_pe_fy0 = getattr(forward_metrics, "forward_pe_fy0", None) if forward_metrics else None
+        forward_pe_fy1 = getattr(forward_metrics, "forward_pe_fy1", None) if forward_metrics else None
+        fy0_est = getattr(forward_metrics, "fy0_estimate", None) if forward_metrics else None
+        fy1_est = getattr(forward_metrics, "fy1_estimate", None) if forward_metrics else None
+
         reasoning["forward_per_analysis"] = {
             "signal": pe_signal,
             "details": (
                 f"Trailing P/E: {_format_ratio(trailing_pe)}, "
-                f"Forward P/E: {_format_ratio(forward_pe)}, "
+                f"Forward P/E (TTM): {_format_ratio(forward_pe)}, "
                 f"Blended P/E: {_format_ratio(blended_pe)}, "
+                f"Forward P/E (FY0 annual): {_format_ratio(forward_pe_fy0)}, "
+                f"Forward P/E (FY+1 annual): {_format_ratio(forward_pe_fy1)}, "
                 f"Forward confidence: {forward_confidence or 'N/A'}, "
                 f"Weights: trailing {trailing_weight:.0%} / forward {forward_weight:.0%}"
             ),
@@ -251,6 +258,10 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             "trailing_weight": trailing_weight,
             "forward_weight": forward_weight,
             "forward_confidence": forward_confidence,
+            "forward_pe_fy0": forward_pe_fy0,
+            "forward_pe_fy1": forward_pe_fy1,
+            "fy0_fiscal_year": fy0_est.fiscal_year if fy0_est else None,
+            "fy1_fiscal_year": fy1_est.fiscal_year if fy1_est else None,
         }
 
         valuation_analysis[ticker] = {

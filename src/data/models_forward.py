@@ -13,7 +13,44 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 SourceKind = Literal["actual", "consensus", "consensus_split_from_annual", "guidance", "llm_extracted"]
+AnnualSourceKind = Literal["consensus", "guidance", "llm_extracted"]
 ConfidenceKind = Literal["high", "medium", "low"]
+
+
+class AnnualEPSEstimate(BaseModel):
+    """Annual consensus EPS estimate for a single fiscal year."""
+
+    fiscal_year: int
+    fiscal_year_end: date
+    eps: float
+    source: AnnualSourceKind
+    provider: str
+    as_of: date
+    analyst_count: int | None = None
+    dispersion: float | None = None
+    confidence: ConfidenceKind = "medium"
+
+    @field_validator("provider")
+    @classmethod
+    def _provider_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("provider must not be blank")
+        return value
+
+    @field_validator("analyst_count")
+    @classmethod
+    def _analyst_count_non_negative(cls, value: int | None) -> int | None:
+        if value is not None and value < 0:
+            raise ValueError("analyst_count must be non-negative")
+        return value
+
+    @field_validator("dispersion")
+    @classmethod
+    def _dispersion_non_negative(cls, value: float | None) -> float | None:
+        if value is not None and value < 0:
+            raise ValueError("dispersion must be non-negative")
+        return value
 
 
 class QuarterlyEPS(BaseModel):
@@ -60,6 +97,15 @@ class ForwardMetrics(BaseModel):
     notes: list[str] = Field(default_factory=list)
     currency: str = "USD"
 
+    # Annual FY0/FY+1 fields (all Optional — added without breaking existing TTM path)
+    forward_eps_fy0: float | None = None
+    forward_pe_fy0: float | None = None
+    fy0_estimate: AnnualEPSEstimate | None = None
+    forward_eps_fy1: float | None = None
+    forward_pe_fy1: float | None = None
+    fy1_estimate: AnnualEPSEstimate | None = None
+    annual_estimates: list[AnnualEPSEstimate] = Field(default_factory=list)
+
     model_config = {"extra": "allow"}
 
     @field_validator("ticker")
@@ -94,6 +140,15 @@ class ForwardMetrics(BaseModel):
             raise ValueError("forward_pe must be None when forward_eps_ttm is non-positive")
         if self.forward_eps_ttm > 0 and self.forward_pe is not None and self.forward_pe <= 0:
             raise ValueError("forward_pe must be positive when defined")
+
+        # Annual FY0/FY1 consistency: pe must be None when eps is missing or ≤ 0
+        for pe_field, eps_field in (("forward_pe_fy0", "forward_eps_fy0"), ("forward_pe_fy1", "forward_eps_fy1")):
+            pe_val = getattr(self, pe_field)
+            eps_val = getattr(self, eps_field)
+            if pe_val is not None:
+                if eps_val is None or eps_val <= 0:
+                    object.__setattr__(self, pe_field, None)
+
         return self
 
 

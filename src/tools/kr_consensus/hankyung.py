@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-from src.data.models_forward import QuarterlyEPS
+from src.data.models_forward import AnnualEPSEstimate, QuarterlyEPS
 
 logger = logging.getLogger(__name__)
 
@@ -28,4 +28,12 @@ class HankyungMetaProvider:
         # v3 TODO: fetch https://consensus.hankyung.com/apps.analysis/analysis.list
         # filter by ticker, download latest PDF, extract EPS via LLM.
         logger.info("HankyungMetaProvider: not yet implemented for %s; skipping", ticker)
+        return []
+
+    def fetch_annual_eps_estimates(
+        self,
+        ticker: str,
+        as_of_date: date,
+        num_years: int = 2,
+    ) -> list[AnnualEPSEstimate]:
         return []

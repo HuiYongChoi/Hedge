@@ -6,7 +6,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from src.data.models_forward import ForwardMetrics, QuarterlyEPS
+from src.data.models_forward import AnnualEPSEstimate, ForwardMetrics, QuarterlyEPS
 from src.tools.api import _is_korean_ticker, get_financial_metrics, get_prices
 from src.tools.estimates_api import EstimateProvider, default_provider_chain
 
@@ -99,6 +99,30 @@ def build_forward_metrics_override(
     override_note = "user override: forward_pe manually set via Data Sandbox"
     if override_note not in notes:
         notes.append(override_note)
+
+    # Handle annual FY0 / FY1 overrides
+    for fy_key, eps_key, note_text in (
+        ("forward_pe_fy0", "forward_eps_fy0", "user override: forward_pe_fy0 manually set via Data Sandbox"),
+        ("forward_pe_fy1", "forward_eps_fy1", "user override: forward_pe_fy1 manually set via Data Sandbox"),
+    ):
+        raw_fy_pe = payload.get(fy_key)
+        if raw_fy_pe is not None:
+            try:
+                fy_pe = float(raw_fy_pe)
+            except (TypeError, ValueError):
+                fy_pe = None
+            if fy_pe is not None and fy_pe > 0:
+                data["confidence"] = "high"
+                data[fy_key] = fy_pe
+                # If no eps yet, back-derive from price / pe
+                if not data.get(eps_key):
+                    try:
+                        data[eps_key] = float(data.get("current_price", 0)) / fy_pe
+                    except Exception:
+                        pass
+                if note_text not in notes:
+                    notes.append(note_text)
+
     data["notes"] = notes
 
     try:
@@ -226,6 +250,43 @@ def get_forward_metrics(
     if currency_note == "MISMATCH":
         notes.append("currency mismatch between price and EPS; forward_pe may be unreliable")
 
+    # ── Annual FY0 / FY+1 synthesis ───────────────────────────────────────────
+    annual_estimates: list[AnnualEPSEstimate] = []
+    forward_eps_fy0: float | None = None
+    forward_pe_fy0: float | None = None
+    fy0_estimate: AnnualEPSEstimate | None = None
+    forward_eps_fy1: float | None = None
+    forward_pe_fy1: float | None = None
+    fy1_estimate: AnnualEPSEstimate | None = None
+
+    for provider in provider_chain:
+        try:
+            ann = provider.fetch_annual_eps_estimates(ticker, as_of, num_years=2)
+        except Exception as exc:
+            logger.warning("annual estimate provider %s failed for %s: %s", provider.name, ticker, exc)
+            continue
+        future_ann = [e for e in ann if e.fiscal_year_end >= as_of]
+        future_ann.sort(key=lambda e: e.fiscal_year_end)
+        if future_ann:
+            annual_estimates = future_ann[:2]
+            notes.append(f"annual estimate provider={provider.name}")
+            break
+
+    if currency_note != "MISMATCH" and annual_estimates:
+        fy0_est = annual_estimates[0]
+        fy0_estimate = fy0_est
+        forward_eps_fy0 = fy0_est.eps
+        if fy0_est.eps > 0:
+            forward_pe_fy0 = current_price / fy0_est.eps
+        if fy0_est.analyst_count is not None:
+            notes.append(f"fy0 analyst_count={fy0_est.analyst_count}")
+        if len(annual_estimates) >= 2:
+            fy1_est = annual_estimates[1]
+            fy1_estimate = fy1_est
+            forward_eps_fy1 = fy1_est.eps
+            if fy1_est.eps > 0:
+                forward_pe_fy1 = current_price / fy1_est.eps
+
     result = ForwardMetrics(
         ticker=ticker,
         as_of_date=as_of,
@@ -236,6 +297,13 @@ def get_forward_metrics(
         confidence=confidence,
         notes=notes,
         currency=ticker_currency or "USD",
+        forward_eps_fy0=forward_eps_fy0,
+        forward_pe_fy0=forward_pe_fy0,
+        fy0_estimate=fy0_estimate,
+        forward_eps_fy1=forward_eps_fy1,
+        forward_pe_fy1=forward_pe_fy1,
+        fy1_estimate=fy1_estimate,
+        annual_estimates=annual_estimates,
     )
     _FORWARD_CACHE[cache_key] = result
     return result
