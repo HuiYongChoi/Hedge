@@ -4,48 +4,54 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 STOCK_TAB = ROOT / "app/frontend/src/components/tabs/stock-search-tab.tsx"
+DASHBOARD = ROOT / "app/frontend/src/components/reports/analyst-report-dashboard.tsx"
 
 
 class StockSearchFinalDecisionUiStaticTests(unittest.TestCase):
     def test_final_decision_uses_composite_score_and_status_label(self):
         source = STOCK_TAB.read_text(encoding="utf-8")
+        dashboard_source = DASHBOARD.read_text(encoding="utf-8")
 
+        # calculateCompositeScore still lives in stock-search-tab and is passed to dashboard
         self.assertIn("function calculateCompositeScore", source)
-        self.assertIn("function getScoreBand", source)
-        self.assertIn("종합 점수", source)
-        self.assertIn("관망", source)
+        # getScoreBand moved to dashboard component
+        self.assertIn("function getScoreBand", dashboard_source)
+        # Score band labels appear in the dashboard
+        self.assertIn("강력 매수", dashboard_source)
+        self.assertIn("Watch", dashboard_source)
         self.assertNotIn("t('holdAction', language).toUpperCase()", source)
 
-    def test_final_decision_has_executive_summary_and_score_tooltip(self):
-        source = STOCK_TAB.read_text(encoding="utf-8")
+    def test_final_decision_has_score_display_in_dashboard(self):
+        dashboard_source = DASHBOARD.read_text(encoding="utf-8")
 
-        self.assertIn("function buildExecutiveSummary", source)
-        self.assertIn("약식 요약", source)
-        self.assertIn("TooltipContent", source)
-        self.assertIn("80~100점: 강력 매수", source)
-        self.assertIn("Info", source)
+        # New dashboard has compact score gauge
+        self.assertIn("ScoreGaugeCompact", dashboard_source)
+        self.assertIn("strokeDasharray", dashboard_source)
+        # Score band labels
+        self.assertIn("강력 매수", dashboard_source)
+        self.assertIn("Strong Buy", dashboard_source)
 
-    def test_final_decision_adds_score_gauge_and_agent_consensus_strip(self):
-        source = STOCK_TAB.read_text(encoding="utf-8")
+    def test_final_decision_adds_6_panel_grid_to_dashboard(self):
+        dashboard_source = DASHBOARD.read_text(encoding="utf-8")
 
-        self.assertIn("function DecisionScoreGauge", source)
-        self.assertIn("function ConsensusStrip", source)
-        self.assertIn("function getConsensusStats", source)
-        self.assertIn("strokeDasharray", source)
-        self.assertIn("분석가 합의", source)
-        self.assertIn("Agent consensus", source)
+        # 6-panel grid components
+        self.assertIn("DcfPanel", dashboard_source)
+        self.assertIn("MultiplesPanel", dashboard_source)
+        self.assertIn("VerdictPanel", dashboard_source)
+        self.assertIn("BearThesisPanel", dashboard_source)
+        self.assertIn("RiskPanel", dashboard_source)
+        self.assertIn("CrossCheckPanel", dashboard_source)
+        # Analyst strip
+        self.assertIn("AnalystStrip", dashboard_source)
 
     def test_final_decision_reasoning_is_split_into_markdown_blocks(self):
         source = STOCK_TAB.read_text(encoding="utf-8")
-        final_decision_source = source[
-            source.index("{/* Final Decision */}") : source.index("{completeResult.reasoning &&")
-        ]
-
+        # Reasoning rendering helpers still exist in stock-search-tab
         self.assertIn("function formatDecisionReasoning", source)
         self.assertIn("function normalizeCrossCheckGuideHeading", source)
-        self.assertIn("renderMarkdownBlocks(", final_decision_source)
-        self.assertIn("formatDecisionReasoning(decision.reasoning)", final_decision_source)
-        self.assertNotIn("{String(decision.reasoning)}", final_decision_source)
+        # Detail report view still uses them
+        detail_view_source = source[source.index("id=\"detail-report-view\""):]
+        self.assertIn("renderMarkdownBlocks(", detail_view_source)
 
     def test_cross_check_heading_is_generic_in_fallback_guides(self):
         source = STOCK_TAB.read_text(encoding="utf-8")
@@ -70,6 +76,14 @@ class StockSearchFinalDecisionUiStaticTests(unittest.TestCase):
             source.index("<ResearchQuickLinks"),
             source.index("{/* Final Decision */}"),
         )
+
+    def test_analyst_report_dashboard_wired_into_stock_search_tab(self):
+        source = STOCK_TAB.read_text(encoding="utf-8")
+
+        self.assertIn("AnalystReportDashboard", source)
+        self.assertIn("from '@/components/reports/analyst-report-dashboard'", source)
+        # compositeScore passed to dashboard
+        self.assertIn("compositeScore={score}", source)
 
 
 if __name__ == "__main__":

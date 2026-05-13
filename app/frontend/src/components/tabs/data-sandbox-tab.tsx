@@ -44,6 +44,18 @@ interface QuarterlyEPS {
   analyst_count?: number | null;
 }
 
+interface AnnualEPSEstimate {
+  fiscal_year: number;
+  fiscal_year_end: string;
+  eps: number;
+  source: string;
+  provider: string;
+  as_of: string;
+  analyst_count?: number | null;
+  dispersion?: number | null;
+  confidence?: string | null;
+}
+
 interface ForwardMetrics {
   ticker: string;
   as_of_date: string;
@@ -53,6 +65,14 @@ interface ForwardMetrics {
   composition: QuarterlyEPS[];
   confidence: string;
   notes: string[];
+  // Annual FY0 / FY+1 (optional — only present when annual consensus available)
+  forward_eps_fy0?: number | null;
+  forward_pe_fy0?: number | null;
+  fy0_estimate?: AnnualEPSEstimate | null;
+  forward_eps_fy1?: number | null;
+  forward_pe_fy1?: number | null;
+  fy1_estimate?: AnnualEPSEstimate | null;
+  annual_estimates?: AnnualEPSEstimate[];
 }
 
 interface FetchedData {
@@ -215,6 +235,14 @@ function ForwardMetricsCard({
   isForwardPeOverridden,
   onForwardPeOverrideChange,
   onForwardPeOverrideReset,
+  forwardPeFy0Override,
+  isForwardPeFy0Overridden,
+  onForwardPeFy0OverrideChange,
+  onForwardPeFy0OverrideReset,
+  forwardPeFy1Override,
+  isForwardPeFy1Overridden,
+  onForwardPeFy1OverrideChange,
+  onForwardPeFy1OverrideReset,
 }: {
   forwardMetrics: ForwardMetrics | null | undefined;
   language: string;
@@ -222,6 +250,14 @@ function ForwardMetricsCard({
   isForwardPeOverridden: boolean;
   onForwardPeOverrideChange: (value: string) => void;
   onForwardPeOverrideReset: () => void;
+  forwardPeFy0Override: string;
+  isForwardPeFy0Overridden: boolean;
+  onForwardPeFy0OverrideChange: (value: string) => void;
+  onForwardPeFy0OverrideReset: () => void;
+  forwardPeFy1Override: string;
+  isForwardPeFy1Overridden: boolean;
+  onForwardPeFy1OverrideChange: (value: string) => void;
+  onForwardPeFy1OverrideReset: () => void;
 }) {
   const isKo = language === 'ko';
 
@@ -349,6 +385,115 @@ function ForwardMetricsCard({
         </div>
       </div>
 
+      {/* Annual FY0 / FY+1 tiles */}
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {/* FY0 tile */}
+        {forwardMetrics.forward_pe_fy0 != null || forwardMetrics.forward_eps_fy0 != null ? (
+          <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              {isKo
+                ? `포워드 PER (연간 FY${forwardMetrics.fy0_estimate?.fiscal_year ?? ''}E)`
+                : `Forward PER (Annual FY${forwardMetrics.fy0_estimate?.fiscal_year ?? ''}E)`}
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {isKo ? '연간 EPS' : 'Annual EPS'}: {fmtNumber(forwardMetrics.forward_eps_fy0)}
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <Input
+                value={forwardPeFy0Override}
+                onChange={event => onForwardPeFy0OverrideChange(event.target.value)}
+                inputMode="decimal"
+                className="h-8 font-mono text-sm"
+                placeholder={fmtInputNumber(forwardMetrics.forward_pe_fy0)}
+              />
+              {isForwardPeFy0Overridden && (
+                <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-[11px]" onClick={onForwardPeFy0OverrideReset}>
+                  Reset
+                </Button>
+              )}
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {isKo ? '원본' : 'Original'} {fmtRatio(forwardMetrics.forward_pe_fy0)}
+              {isForwardPeFy0Overridden ? ` · ${isKo ? '수동 수정됨' : 'manual override'}` : ''}
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed bg-muted/10 p-3 flex items-center justify-center">
+            <p className="text-[11px] text-muted-foreground">
+              {isKo ? 'FY0 연간 컨센서스 없음' : 'Annual consensus unavailable (FY0)'}
+            </p>
+          </div>
+        )}
+
+        {/* FY+1 tile */}
+        {forwardMetrics.forward_pe_fy1 != null || forwardMetrics.forward_eps_fy1 != null ? (
+          <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              {isKo
+                ? `포워드 PER (연간 FY${forwardMetrics.fy1_estimate?.fiscal_year ?? ''}E)`
+                : `Forward PER (Annual FY${forwardMetrics.fy1_estimate?.fiscal_year ?? ''}E)`}
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {isKo ? '연간 EPS' : 'Annual EPS'}: {fmtNumber(forwardMetrics.forward_eps_fy1)}
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <Input
+                value={forwardPeFy1Override}
+                onChange={event => onForwardPeFy1OverrideChange(event.target.value)}
+                inputMode="decimal"
+                className="h-8 font-mono text-sm"
+                placeholder={fmtInputNumber(forwardMetrics.forward_pe_fy1)}
+              />
+              {isForwardPeFy1Overridden && (
+                <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-[11px]" onClick={onForwardPeFy1OverrideReset}>
+                  Reset
+                </Button>
+              )}
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {isKo ? '원본' : 'Original'} {fmtRatio(forwardMetrics.forward_pe_fy1)}
+              {isForwardPeFy1Overridden ? ` · ${isKo ? '수동 수정됨' : 'manual override'}` : ''}
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed bg-muted/10 p-3 flex items-center justify-center">
+            <p className="text-[11px] text-muted-foreground">
+              {isKo ? 'FY+1 연간 컨센서스 없음' : 'Annual consensus unavailable (FY+1)'}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Annual Estimates mini-table */}
+      {forwardMetrics.annual_estimates && forwardMetrics.annual_estimates.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">
+            {isKo ? '연간 컨센서스 추정' : 'Annual Estimates'}
+          </p>
+          <div className="overflow-hidden rounded-lg border bg-background/70">
+            <div className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr] border-b bg-muted/20 px-3 py-2 text-[11px] font-medium text-muted-foreground">
+              <span>{isKo ? '회계연도' : 'Fiscal Year'}</span>
+              <span>{isKo ? '종료일' : 'Year End'}</span>
+              <span>EPS</span>
+              <span>{isKo ? '제공자' : 'Provider'}</span>
+              <span>{isKo ? '애널리스트' : 'Analysts'}</span>
+            </div>
+            {forwardMetrics.annual_estimates.map((est, idx) => (
+              <div
+                key={`${est.fiscal_year}-${idx}`}
+                className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr] items-center border-b px-3 py-2 text-xs last:border-b-0"
+              >
+                <span className="font-mono text-foreground">FY{est.fiscal_year}</span>
+                <span className="font-mono text-muted-foreground">{fmtDate(est.fiscal_year_end)}</span>
+                <span className="font-mono text-foreground">{fmtNumber(est.eps)}</span>
+                <span className="text-muted-foreground">{est.provider}</span>
+                <span className="font-mono text-muted-foreground">{est.analyst_count ?? '—'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {forwardMetrics.notes.length > 0 && (
         <div className="mt-3 space-y-1">
           {forwardMetrics.notes.map((note, idx) => (
@@ -401,6 +546,10 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
   const [lineItemsOverrides, setLineItemsOverrides] = useState<Record<string, any>[]>([]);
   const [forwardPeOverride, setForwardPeOverride] = useState('');
   const [isForwardPeOverrideDirty, setIsForwardPeOverrideDirty] = useState(false);
+  const [forwardPeFy0Override, setForwardPeFy0Override] = useState('');
+  const [isForwardPeFy0OverrideDirty, setIsForwardPeFy0OverrideDirty] = useState(false);
+  const [forwardPeFy1Override, setForwardPeFy1Override] = useState('');
+  const [isForwardPeFy1OverrideDirty, setIsForwardPeFy1OverrideDirty] = useState(false);
 
   // Run state
   const [isRunning, setIsRunning] = useState(false);
@@ -459,6 +608,10 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
     setMetricsOverrides({});
     setForwardPeOverride('');
     setIsForwardPeOverrideDirty(false);
+    setForwardPeFy0Override('');
+    setIsForwardPeFy0OverrideDirty(false);
+    setForwardPeFy1Override('');
+    setIsForwardPeFy1OverrideDirty(false);
     setCompleteResult(null);
     setAgentResults(new Map());
     setRunError(null);
@@ -483,6 +636,10 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
       setLineItemsOverrides(data.line_items ? data.line_items.map(row => ({ ...row })) : []);
       setForwardPeOverride(fmtInputNumber(data.forward_metrics?.forward_pe));
       setIsForwardPeOverrideDirty(false);
+      setForwardPeFy0Override(fmtInputNumber(data.forward_metrics?.forward_pe_fy0));
+      setIsForwardPeFy0OverrideDirty(false);
+      setForwardPeFy1Override(fmtInputNumber(data.forward_metrics?.forward_pe_fy1));
+      setIsForwardPeFy1OverrideDirty(false);
       setViewTab('metrics');
     } catch (err: any) {
       setFetchError(err.message || 'Fetch failed');
@@ -495,25 +652,60 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
 
   const buildForwardMetricsOverride = () => {
     const baseForwardMetrics = fetchedData?.forward_metrics;
-    if (!baseForwardMetrics || !isForwardPeOverrideDirty) return null;
+    const anyDirty = isForwardPeOverrideDirty || isForwardPeFy0OverrideDirty || isForwardPeFy1OverrideDirty;
+    if (!baseForwardMetrics || !anyDirty) return null;
 
-    const parsedForwardPe = parseOverrideInput(forwardPeOverride);
-    if (parsedForwardPe === null || parsedForwardPe <= 0) return null;
+    const overridePayload: Record<string, any> = { ...baseForwardMetrics };
+    const addedNotes: string[] = [...(baseForwardMetrics.notes || [])];
 
-    const originalForwardPe = Number(baseForwardMetrics.forward_pe);
-    if (Number.isFinite(originalForwardPe) && Math.abs(parsedForwardPe - originalForwardPe) < 1e-9) {
-      return null;
+    if (isForwardPeOverrideDirty) {
+      const parsedForwardPe = parseOverrideInput(forwardPeOverride);
+      if (parsedForwardPe !== null && parsedForwardPe > 0) {
+        const originalForwardPe = Number(baseForwardMetrics.forward_pe);
+        if (!Number.isFinite(originalForwardPe) || Math.abs(parsedForwardPe - originalForwardPe) >= 1e-9) {
+          overridePayload.forward_pe = parsedForwardPe;
+          overridePayload.confidence = 'high';
+          const note = 'user override: forward_pe manually set via Data Sandbox';
+          if (!addedNotes.includes(note)) addedNotes.push(note);
+        }
+      }
     }
 
-    return {
-      ...baseForwardMetrics,
-      forward_pe: parsedForwardPe,
-      confidence: 'high',
-      notes: [
-        ...(baseForwardMetrics.notes || []),
-        'user override: forward_pe manually set via Data Sandbox',
-      ],
-    };
+    if (isForwardPeFy0OverrideDirty) {
+      const parsed = parseOverrideInput(forwardPeFy0Override);
+      if (parsed !== null && parsed > 0) {
+        const original = Number(baseForwardMetrics.forward_pe_fy0);
+        if (!Number.isFinite(original) || Math.abs(parsed - original) >= 1e-9) {
+          overridePayload.forward_pe_fy0 = parsed;
+          overridePayload.confidence = 'high';
+          const note = 'user override: forward_pe_fy0 manually set via Data Sandbox';
+          if (!addedNotes.includes(note)) addedNotes.push(note);
+        }
+      }
+    }
+
+    if (isForwardPeFy1OverrideDirty) {
+      const parsed = parseOverrideInput(forwardPeFy1Override);
+      if (parsed !== null && parsed > 0) {
+        const original = Number(baseForwardMetrics.forward_pe_fy1);
+        if (!Number.isFinite(original) || Math.abs(parsed - original) >= 1e-9) {
+          overridePayload.forward_pe_fy1 = parsed;
+          overridePayload.confidence = 'high';
+          const note = 'user override: forward_pe_fy1 manually set via Data Sandbox';
+          if (!addedNotes.includes(note)) addedNotes.push(note);
+        }
+      }
+    }
+
+    // Return null if nothing actually changed
+    if (
+      overridePayload.forward_pe === baseForwardMetrics.forward_pe &&
+      overridePayload.forward_pe_fy0 === baseForwardMetrics.forward_pe_fy0 &&
+      overridePayload.forward_pe_fy1 === baseForwardMetrics.forward_pe_fy1
+    ) return null;
+
+    overridePayload.notes = addedNotes;
+    return overridePayload;
   };
 
   const buildAppliedMetricOverrides = () => {
@@ -783,6 +975,26 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
     setIsForwardPeOverrideDirty(false);
   };
 
+  const handleForwardPeFy0OverrideChange = (value: string) => {
+    setForwardPeFy0Override(value);
+    setIsForwardPeFy0OverrideDirty(true);
+  };
+
+  const resetForwardPeFy0Override = () => {
+    setForwardPeFy0Override(fmtInputNumber(fetchedData?.forward_metrics?.forward_pe_fy0));
+    setIsForwardPeFy0OverrideDirty(false);
+  };
+
+  const handleForwardPeFy1OverrideChange = (value: string) => {
+    setForwardPeFy1Override(value);
+    setIsForwardPeFy1OverrideDirty(true);
+  };
+
+  const resetForwardPeFy1Override = () => {
+    setForwardPeFy1Override(fmtInputNumber(fetchedData?.forward_metrics?.forward_pe_fy1));
+    setIsForwardPeFy1OverrideDirty(false);
+  };
+
   const handleLineItemOverride = (rowIdx: number, field: string, value: string) => {
     setLineItemsOverrides(prev => {
       const next = [...prev];
@@ -795,6 +1007,8 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
     setMetricsOverrides({});
     if (fetchedData) setLineItemsOverrides(fetchedData.line_items.map(row => ({ ...row })));
     resetForwardPeOverride();
+    resetForwardPeFy0Override();
+    resetForwardPeFy1Override();
   };
 
   const parsedForwardPeOverride = parseOverrideInput(forwardPeOverride);
@@ -806,7 +1020,31 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
     parsedForwardPeOverride > 0 &&
     (!Number.isFinite(originalForwardPe) || Math.abs(parsedForwardPeOverride - originalForwardPe) >= 1e-9),
   );
-  const overrideCount = Object.values(metricsOverrides).filter(v => v !== '').length + (hasForwardPeOverride ? 1 : 0);
+
+  const parsedForwardPeFy0Override = parseOverrideInput(forwardPeFy0Override);
+  const originalForwardPeFy0 = Number(fetchedData?.forward_metrics?.forward_pe_fy0);
+  const hasForwardPeFy0Override = Boolean(
+    fetchedData?.forward_metrics &&
+    isForwardPeFy0OverrideDirty &&
+    parsedForwardPeFy0Override !== null &&
+    parsedForwardPeFy0Override > 0 &&
+    (!Number.isFinite(originalForwardPeFy0) || Math.abs(parsedForwardPeFy0Override - originalForwardPeFy0) >= 1e-9),
+  );
+
+  const parsedForwardPeFy1Override = parseOverrideInput(forwardPeFy1Override);
+  const originalForwardPeFy1 = Number(fetchedData?.forward_metrics?.forward_pe_fy1);
+  const hasForwardPeFy1Override = Boolean(
+    fetchedData?.forward_metrics &&
+    isForwardPeFy1OverrideDirty &&
+    parsedForwardPeFy1Override !== null &&
+    parsedForwardPeFy1Override > 0 &&
+    (!Number.isFinite(originalForwardPeFy1) || Math.abs(parsedForwardPeFy1Override - originalForwardPeFy1) >= 1e-9),
+  );
+
+  const overrideCount = Object.values(metricsOverrides).filter(v => v !== '').length +
+    (hasForwardPeOverride ? 1 : 0) +
+    (hasForwardPeFy0Override ? 1 : 0) +
+    (hasForwardPeFy1Override ? 1 : 0);
 
   useEffect(() => {
     if (!fetchedData) return;
@@ -822,7 +1060,7 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
     if (snapshot) {
       saveDataSandboxOverrideSnapshot(snapshot);
     }
-  }, [fetchedData, forwardPeOverride, isForwardPeOverrideDirty, lineItemsOverrides, metricsOverrides]);
+  }, [fetchedData, forwardPeOverride, isForwardPeOverrideDirty, forwardPeFy0Override, isForwardPeFy0OverrideDirty, forwardPeFy1Override, isForwardPeFy1OverrideDirty, lineItemsOverrides, metricsOverrides]);
 
   const canFetch = tickers.trim() !== '' && !isFetching && !isRunning;
   const canRun = !!fetchedData && selectedAgents.size > 0 && !isRunning && !isFetching;
@@ -1111,6 +1349,14 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
                       isForwardPeOverridden={hasForwardPeOverride}
                       onForwardPeOverrideChange={handleForwardPeOverrideChange}
                       onForwardPeOverrideReset={resetForwardPeOverride}
+                      forwardPeFy0Override={forwardPeFy0Override}
+                      isForwardPeFy0Overridden={hasForwardPeFy0Override}
+                      onForwardPeFy0OverrideChange={handleForwardPeFy0OverrideChange}
+                      onForwardPeFy0OverrideReset={resetForwardPeFy0Override}
+                      forwardPeFy1Override={forwardPeFy1Override}
+                      isForwardPeFy1Overridden={hasForwardPeFy1Override}
+                      onForwardPeFy1OverrideChange={handleForwardPeFy1OverrideChange}
+                      onForwardPeFy1OverrideReset={resetForwardPeFy1Override}
                     />
                     <p className="text-xs text-muted-foreground">
                       {t('overrideInstruction', language)}

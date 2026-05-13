@@ -116,20 +116,17 @@ class ReportSentimentMarkerStaticTests(unittest.TestCase):
 
     def test_stock_search_uses_sentiment_dashboard_before_raw_reasoning(self):
         source = TAB.read_text(encoding="utf-8")
-        agent_summary_source = source[source.index("function AgentReportSummary") :]
-        final_decision_source = source[
-            source.index("{/* Final Decision */}") : source.index("{completeResult.reasoning &&")
-        ]
+        agent_summary_source = source[source.index("function AgentReportSummary"):]
 
         self.assertIn("ReportSentimentDashboard", source)
+        # AgentReportSummary still uses ReportSentimentDashboard before renderMarkdownBlocks
         self.assertLess(
             agent_summary_source.index("<ReportSentimentDashboard"),
             agent_summary_source.index("renderMarkdownBlocks("),
         )
-        self.assertLess(
-            final_decision_source.index("<ReportSentimentDashboard"),
-            final_decision_source.index("renderMarkdownBlocks("),
-        )
+        # Detail report view still renders markdown blocks
+        detail_view_source = source[source.index("id=\"detail-report-view\""):]
+        self.assertIn("renderMarkdownBlocks(", detail_view_source)
 
     def test_data_sandbox_uses_sentiment_dashboard_and_toned_lines(self):
         source = DATA_SANDBOX_TAB.read_text(encoding="utf-8")
