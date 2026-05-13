@@ -17,6 +17,13 @@ export function SavedAnalysesTab() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<SavedAnalysis | null>(null);
+  const [isListCollapsed, setIsListCollapsed] = useState(false);
+
+  const handleSelect = (id: number) => {
+    setSelectedId(id);
+    // Auto-collapse left panel when item is selected
+    setIsListCollapsed(true);
+  };
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -67,14 +74,18 @@ export function SavedAnalysesTab() {
         errorMsg={errorMsg}
         selectedId={selectedId}
         onFilterChange={setFilter}
-        onSelect={setSelectedId}
+        onSelect={handleSelect}
         onAfterDelete={refresh}
         onRetry={refresh}
         language={reportLanguage}
+        isCollapsed={isListCollapsed}
+        onToggleCollapse={() => setIsListCollapsed(c => !c)}
       />
       <SavedDetailPanel
         detail={selectedDetail}
         language={reportLanguage}
+        isListCollapsed={isListCollapsed}
+        onToggleList={() => setIsListCollapsed(c => !c)}
       />
     </div>
   );

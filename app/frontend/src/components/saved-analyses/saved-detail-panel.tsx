@@ -1,4 +1,4 @@
-import { Download, ExternalLink } from 'lucide-react';
+import { Download, ExternalLink, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useTabsContext } from '@/contexts/tabs-context';
@@ -16,15 +16,35 @@ import { cn } from '@/lib/utils';
 interface SavedDetailPanelProps {
   detail: SavedAnalysis | null;
   language: ReportLanguage;
+  isListCollapsed?: boolean;
+  onToggleList?: () => void;
 }
 
-export function SavedDetailPanel({ detail, language }: SavedDetailPanelProps) {
+export function SavedDetailPanel({ detail, language, isListCollapsed = false, onToggleList }: SavedDetailPanelProps) {
   const { openTab } = useTabsContext();
   const { workspace, patchWorkspace } = useWorkspace();
 
   if (!detail) {
     return (
       <main className="flex flex-1 flex-col overflow-hidden">
+        {onToggleList && (
+          <div className="flex items-center border-b px-3 py-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onToggleList}
+              className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+              aria-label={isListCollapsed ? 'Show list' : 'Hide list'}
+            >
+              {isListCollapsed ? (
+                <PanelLeftOpen className="h-3.5 w-3.5" />
+              ) : (
+                <PanelLeftClose className="h-3.5 w-3.5" />
+              )}
+              {isListCollapsed ? '목록 열기' : '목록 접기'}
+            </Button>
+          </div>
+        )}
         <SavedEmptyState language={language} />
       </main>
     );
@@ -57,8 +77,26 @@ export function SavedDetailPanel({ detail, language }: SavedDetailPanelProps) {
 
   return (
     <main className="flex flex-1 flex-col overflow-hidden">
-      <header className="flex items-center justify-between border-b px-4 py-3">
-        <div>
+      <header className="flex items-center gap-2 border-b px-4 py-3">
+        {/* Toggle list button */}
+        {onToggleList && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleList}
+            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+            aria-label={isListCollapsed ? 'Show list' : 'Hide list'}
+            title={isListCollapsed ? '목록 열기' : '목록 접기'}
+          >
+            {isListCollapsed ? (
+              <PanelLeftOpen className="h-3.5 w-3.5" />
+            ) : (
+              <PanelLeftClose className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        )}
+        {/* Ticker info - grows to fill space */}
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-mono text-base font-semibold text-primary">{detail.ticker}</span>
             <Badge variant="outline" className={cn('text-[10px] px-1 py-0', sourceTabBadgeClass(detail.source_tab))}>
@@ -72,7 +110,8 @@ export function SavedDetailPanel({ detail, language }: SavedDetailPanelProps) {
             {t('savedAt', language)} · {formatDateLong(detail.created_at, language)}
           </p>
         </div>
-        <div className="flex gap-1.5">
+        {/* Action buttons */}
+        <div className="flex shrink-0 gap-1.5">
           <Button variant="outline" size="sm" onClick={() => downloadJson(detail)} className="text-xs h-7">
             <Download className="mr-1 h-3.5 w-3.5" />
             {t('exportJson', language)}

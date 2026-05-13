@@ -1,3 +1,4 @@
+import { ChevronLeft, PanelLeftClose } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { t } from '@/lib/language-preferences';
 import type { SavedAnalysis, SavedAnalysisFilter } from '@/services/saved-analyses-service';
@@ -17,6 +18,8 @@ interface SavedListPanelProps {
   onAfterDelete: () => void;
   onRetry: () => void;
   language: ReportLanguage;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export function SavedListPanel({
@@ -31,6 +34,8 @@ export function SavedListPanel({
   onAfterDelete,
   onRetry,
   language,
+  isCollapsed = false,
+  onToggleCollapse,
 }: SavedListPanelProps) {
   const limit = filter.limit ?? 25;
   const skip = filter.skip ?? 0;
@@ -38,12 +43,30 @@ export function SavedListPanel({
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
-    <aside className="flex w-[360px] flex-shrink-0 flex-col border-r bg-muted/10">
-      <header className="border-b p-3">
-        <h2 className="text-sm font-semibold">{t('savedAnalyses', language)}</h2>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
-          {t('savedAnalysesSummary', language).replace('{total}', String(total))}
-        </p>
+    <aside
+      className="flex flex-shrink-0 flex-col border-r bg-muted/10 transition-all duration-300 ease-in-out overflow-hidden"
+      style={{ width: isCollapsed ? 0 : 360, opacity: isCollapsed ? 0 : 1 }}
+      aria-hidden={isCollapsed}
+    >
+      <header className="border-b p-3 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold whitespace-nowrap">{t('savedAnalyses', language)}</h2>
+          <p className="mt-0.5 text-[11px] text-muted-foreground whitespace-nowrap">
+            {t('savedAnalysesSummary', language).replace('{total}', String(total))}
+          </p>
+        </div>
+        {onToggleCollapse && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 shrink-0 mt-0.5 text-muted-foreground hover:text-foreground"
+            onClick={onToggleCollapse}
+            title="패널 접기"
+            aria-label="Close list panel"
+          >
+            <PanelLeftClose className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </header>
 
       <SavedFiltersBar value={filter} onChange={onFilterChange} language={language} />
