@@ -27,6 +27,7 @@ import {
   ReportToneLegend,
   type ReportSentimentTone,
   parseReportSentimentMarker,
+  sortReportSentimentLines,
 } from '@/components/reports/report-sentiment-dashboard';
 import { Bot, ChevronDown, ChevronUp, Database, Info, Loader2, Play, Search, Square } from 'lucide-react';
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -926,7 +927,7 @@ function renderMarkdownBlocks(markdown: string): ReactNode {
     }
   };
 
-  markdown.split('\n').forEach((line, index) => {
+  sortReportSentimentLines(markdown).split('\n').forEach((line, index) => {
     const trimmed = line.trim();
     if (!trimmed) {
       flushLists();

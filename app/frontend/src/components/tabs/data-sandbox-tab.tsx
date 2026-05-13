@@ -7,6 +7,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import {
   ReportSentimentDashboard,
   renderReportTonedContent,
+  sortReportSentimentLines,
 } from '@/components/reports/report-sentiment-dashboard';
 import { useLanguage } from '@/contexts/language-context';
 import { Agent, getAgents } from '@/data/agents';
@@ -161,7 +162,7 @@ function previewText(value: string, maxLength = 180): string {
 
 // LLM 출력 마크다운을 JSX로 렌더링
 function renderMarkdown(text: string): React.ReactNode {
-  const lines = text.split('\n');
+  const lines = sortReportSentimentLines(text).split('\n');
   const nodes: React.ReactNode[] = [];
   let i = 0;
   while (i < lines.length) {

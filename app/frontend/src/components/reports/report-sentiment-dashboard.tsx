@@ -52,6 +52,13 @@ const TONE_META: Array<{
   },
 ];
 
+export const REPORT_TONE_ORDER: Record<Exclude<ReportSentimentTone, null>, number> = {
+  positive: 0,
+  negative: 1,
+  neutral: 2,
+  unknown: 3,
+};
+
 function renderDefaultInlineMarkdown(text: string) {
   return text.split(/(\*\*[^*]+?\*\*)/g).map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**')) {
@@ -88,6 +95,49 @@ export function collectReportSentimentItems(markdown: string) {
     .filter((item): item is { tone: Exclude<ReportSentimentTone, null>; rest: string } => (
       item.tone !== null && item.rest.trim().length > 0
     ));
+}
+
+function sortReportSectionLines(lines: string[]) {
+  const rows = lines.map((line, index) => ({
+    line,
+    index,
+    tone: parseReportSentimentMarker(line).tone,
+  }));
+  const tonedRows = rows.filter((row): row is typeof row & { tone: Exclude<ReportSentimentTone, null> } => row.tone !== null);
+
+  if (tonedRows.length <= 1) {
+    return lines;
+  }
+
+  const untonedRows = rows.filter(row => row.tone === null);
+  return [
+    ...tonedRows.sort((a, b) => REPORT_TONE_ORDER[a.tone] - REPORT_TONE_ORDER[b.tone] || a.index - b.index),
+    ...untonedRows,
+  ].map(row => row.line);
+}
+
+export function sortReportSentimentLines(markdown: string) {
+  const sortedLines: string[] = [];
+  let sectionLines: string[] = [];
+
+  const flushSection = () => {
+    if (sectionLines.length === 0) return;
+    sortedLines.push(...sortReportSectionLines(sectionLines));
+    sectionLines = [];
+  };
+
+  markdown.split('\n').forEach((line) => {
+    if (/^\s*#{1,6}\s+/.test(line)) {
+      flushSection();
+      sortedLines.push(line);
+      return;
+    }
+
+    sectionLines.push(line);
+  });
+
+  flushSection();
+  return sortedLines.join('\n');
 }
 
 export function renderReportTonedContent(

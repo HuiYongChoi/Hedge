@@ -142,6 +142,20 @@ class ReportSentimentMarkerStaticTests(unittest.TestCase):
             source.index("renderMarkdown(result.reasoning)"),
         )
 
+    def test_detailed_report_lines_are_sorted_by_sentiment_tone(self):
+        dashboard_source = REPORT_SENTIMENT.read_text(encoding="utf-8")
+        stock_source = TAB.read_text(encoding="utf-8")
+        sandbox_source = DATA_SANDBOX_TAB.read_text(encoding="utf-8")
+
+        self.assertIn("REPORT_TONE_ORDER", dashboard_source)
+        self.assertIn("sortReportSentimentLines", dashboard_source)
+        self.assertIn("positive: 0", dashboard_source)
+        self.assertIn("negative: 1", dashboard_source)
+        self.assertIn("neutral: 2", dashboard_source)
+        self.assertIn("unknown: 3", dashboard_source)
+        self.assertIn("sortReportSentimentLines(markdown)", stock_source)
+        self.assertIn("sortReportSentimentLines(text)", sandbox_source)
+
 
 if __name__ == "__main__":
     unittest.main()
