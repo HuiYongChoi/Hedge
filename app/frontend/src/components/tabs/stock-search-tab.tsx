@@ -26,6 +26,7 @@ import {
   ReportSentimentDashboard,
   ReportToneLegend,
   type ReportSentimentTone,
+  normalizeReportOrderedMarkers,
   parseReportSentimentMarker,
   sortReportSentimentLines,
 } from '@/components/reports/report-sentiment-dashboard';
@@ -927,7 +928,7 @@ function renderMarkdownBlocks(markdown: string): ReactNode {
     }
   };
 
-  sortReportSentimentLines(markdown).split('\n').forEach((line, index) => {
+  normalizeReportOrderedMarkers(sortReportSentimentLines(markdown)).split('\n').forEach((line, index) => {
     const trimmed = line.trim();
     if (!trimmed) {
       flushLists();

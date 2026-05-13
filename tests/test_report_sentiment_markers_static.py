@@ -156,6 +156,16 @@ class ReportSentimentMarkerStaticTests(unittest.TestCase):
         self.assertIn("sortReportSentimentLines(markdown)", stock_source)
         self.assertIn("sortReportSentimentLines(text)", sandbox_source)
 
+    def test_orphan_ordered_numbers_are_joined_to_following_paragraph(self):
+        dashboard_source = REPORT_SENTIMENT.read_text(encoding="utf-8")
+        stock_source = TAB.read_text(encoding="utf-8")
+        sandbox_source = DATA_SANDBOX_TAB.read_text(encoding="utf-8")
+
+        self.assertIn("normalizeReportOrderedMarkers", dashboard_source)
+        self.assertIn("pendingOrderedMarker", dashboard_source)
+        self.assertIn("normalizeReportOrderedMarkers(sortReportSentimentLines(markdown))", stock_source)
+        self.assertIn("normalizeReportOrderedMarkers(sortReportSentimentLines(text))", sandbox_source)
+
 
 if __name__ == "__main__":
     unittest.main()

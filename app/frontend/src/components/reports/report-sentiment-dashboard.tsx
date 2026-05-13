@@ -140,6 +140,47 @@ export function sortReportSentimentLines(markdown: string) {
   return sortedLines.join('\n');
 }
 
+export function normalizeReportOrderedMarkers(markdown: string) {
+  const normalizedLines: string[] = [];
+  let pendingOrderedMarker: string | null = null;
+
+  const flushPendingOrderedMarker = () => {
+    if (!pendingOrderedMarker) return;
+    normalizedLines.push(pendingOrderedMarker);
+    pendingOrderedMarker = null;
+  };
+
+  markdown.split('\n').forEach((line) => {
+    const trimmed = line.trim();
+    const orphanMarker = trimmed.match(/^(\d+[.)])$/);
+
+    if (orphanMarker) {
+      flushPendingOrderedMarker();
+      pendingOrderedMarker = orphanMarker[1];
+      return;
+    }
+
+    if (pendingOrderedMarker) {
+      if (!trimmed) return;
+
+      if (/^#{1,6}\s+/.test(trimmed)) {
+        flushPendingOrderedMarker();
+        normalizedLines.push(line);
+        return;
+      }
+
+      normalizedLines.push(`${pendingOrderedMarker} ${trimmed}`);
+      pendingOrderedMarker = null;
+      return;
+    }
+
+    normalizedLines.push(line);
+  });
+
+  flushPendingOrderedMarker();
+  return normalizedLines.join('\n');
+}
+
 export function renderReportTonedContent(
   text: string,
   renderInline: (value: string) => ReactNode = renderDefaultInlineMarkdown,
