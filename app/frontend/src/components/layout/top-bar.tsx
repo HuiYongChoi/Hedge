@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/contexts/language-context';
 import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
-import { Database, PanelBottom, PanelLeft, PanelRight, Search, Settings, Workflow } from 'lucide-react';
+import { Archive, Database, PanelBottom, PanelLeft, PanelRight, Search, Settings, Workflow } from 'lucide-react';
 
 interface TopBarProps {
   isFlowTab: boolean;
@@ -19,6 +19,7 @@ interface TopBarProps {
   isFlowTabActive: boolean;
   isOpeningFlow: boolean;
   onFlowClick: () => void;
+  onSavedAnalysesClick: () => void;
 }
 
 export function TopBar({
@@ -36,6 +37,7 @@ export function TopBar({
   isFlowTabActive,
   isOpeningFlow,
   onFlowClick,
+  onSavedAnalysesClick,
 }: TopBarProps) {
   const { language } = useLanguage();
   const navButtonClass = "h-8 gap-1.5 rounded-full px-2.5 text-muted-foreground hover:text-foreground hover:bg-ramp-grey-700 transition-colors";
@@ -135,6 +137,19 @@ export function TopBar({
       >
         <Search size={16} />
         <span className="hidden 2xl:inline">{t('stockAnalysis', language)}</span>
+      </Button>
+
+      {/* Saved Analyses */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onSavedAnalysesClick}
+        className={navButtonClass}
+        aria-label="Open Saved Analyses"
+        title="Saved Analyses (저장 분석)"
+      >
+        <Archive size={16} />
+        <span className="hidden 2xl:inline">{t('savedAnalyses', language)}</span>
       </Button>
 
       {/* Settings */}

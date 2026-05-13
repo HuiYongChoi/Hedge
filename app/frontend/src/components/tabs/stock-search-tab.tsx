@@ -34,7 +34,7 @@ import {
   ReportToneLegend,
 } from '@/components/reports/report-sentiment-dashboard';
 import { AnalystReportDashboard } from '@/components/reports/analyst-report-dashboard';
-import { Bot, ChevronDown, ChevronUp, Database, Loader2, Play, Search, Square } from 'lucide-react';
+import { Bot, ChevronDown, ChevronUp, Database, Loader2, PanelLeftClose, PanelLeftOpen, Play, Search, Square } from 'lucide-react';
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { AgentFormulaTooltip, extractBaseAgentKey } from '@/components/ui/agent-formula-tooltip';
@@ -304,7 +304,7 @@ export function getResearchLinks(ticker: string) {
   ];
 }
 
-function getTickerAnalystReports(analystSignals: Record<string, any> | undefined, ticker: string) {
+export function getTickerAnalystReports(analystSignals: Record<string, any> | undefined, ticker: string) {
   if (!analystSignals) return [];
 
   return Object.entries(analystSignals)
@@ -323,7 +323,7 @@ function getTickerAnalystReports(analystSignals: Record<string, any> | undefined
 
 
 
-function scoreSignal(signal: unknown, confidence: unknown) {
+export function scoreSignal(signal: unknown, confidence: unknown) {
   const raw = String(signal || 'neutral').toLowerCase();
   const normalizedConfidence = normalizeConfidence(confidence) ?? 50;
 
@@ -336,7 +336,7 @@ function scoreSignal(signal: unknown, confidence: unknown) {
   return 50;
 }
 
-function scoreDecision(decision: any) {
+export function scoreDecision(decision: any) {
   const action = String(decision?.action || 'hold').toLowerCase();
   const confidence = normalizeConfidence(decision?.confidence) ?? 50;
 
@@ -345,7 +345,7 @@ function scoreDecision(decision: any) {
   return 50;
 }
 
-function calculateCompositeScore(
+export function calculateCompositeScore(
   analystSignals: Record<string, any> | undefined,
   ticker: string,
   decision: any,
@@ -565,6 +565,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSavingAnalysis, setIsSavingAnalysis] = useState(false);
   const [sandboxOverrideSnapshot, setSandboxOverrideSnapshot] = useState(() => loadDataSandboxOverrideSnapshot());
+  const [isConfigPanelCollapsed, setIsConfigPanelCollapsed] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const savedRunIdRef = useRef<number | null>(null);
   const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -788,6 +789,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
     if (!singleTicker) return;
 
     setTickers(rawTicker);
+    setIsConfigPanelCollapsed(true);
 
     const latestSandboxSnapshot = loadDataSandboxOverrideSnapshot() || sandboxOverrideSnapshot;
     const sandboxMetricOverrides = useDataSandboxOverrides
@@ -1089,7 +1091,38 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Config Panel */}
-        <div className="w-72 flex-shrink-0 border-r overflow-y-auto p-4 space-y-4">
+        <div className={`${isConfigPanelCollapsed ? 'w-14 p-2' : 'w-72 p-4'} flex-shrink-0 space-y-4 overflow-y-auto border-r transition-all duration-200`}>
+          <div className={`flex items-center ${isConfigPanelCollapsed ? 'justify-center' : 'justify-between gap-2'}`}>
+            {!isConfigPanelCollapsed && (
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {language === 'ko' ? '분석 설정' : 'Analysis setup'}
+              </span>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0"
+              aria-label={isConfigPanelCollapsed
+                ? (language === 'ko' ? '분석 설정 패널 펼치기' : 'Expand analysis setup panel')
+                : (language === 'ko' ? '분석 설정 패널 접기' : 'Collapse analysis setup panel')}
+              onClick={() => setIsConfigPanelCollapsed(prev => !prev)}
+            >
+              {isConfigPanelCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </Button>
+          </div>
+
+          {isConfigPanelCollapsed ? (
+            <div className="flex flex-col items-center gap-3 rounded-md border border-border/60 bg-muted/20 px-2 py-3 text-muted-foreground">
+              <Search className="h-4 w-4" />
+              {currentTicker && (
+                <span className="font-mono text-[10px] font-semibold [writing-mode:vertical-rl]">
+                  {currentTicker}
+                </span>
+              )}
+            </div>
+          ) : (
+          <>
           {/* Tickers */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium">{t('tickers', language)}</label>
@@ -1237,6 +1270,8 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
               <><Play className="h-4 w-4 mr-2" /> {language === 'ko' ? '분석 실행' : 'Run Analysis'}</>
             )}
           </Button>
+          </>
+          )}
         </div>
 
         {/* Right: Results */}
@@ -1285,6 +1320,35 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
               </div>
             </div>
           )}
+
+          {completeResult && completeResult.decisions && (
+            <ResearchQuickLinks
+              tickers={Object.keys(completeResult.decisions)}
+              language={language}
+            />
+          )}
+
+          {/* Final Decision */}
+          {completeResult && completeResult.decisions && (() => {
+            const firstTicker = Object.keys(completeResult.decisions)[0];
+            if (!firstTicker) return null;
+            const score = calculateCompositeScore(
+              completeResult.analyst_signals,
+              firstTicker,
+              completeResult.decisions[firstTicker],
+            );
+            return (
+              <AnalystReportDashboard
+                ticker={firstTicker}
+                completeResult={completeResult}
+                agentResults={agentResults}
+                language={language}
+                compositeScore={score}
+                onSave={handleSaveAnalysis}
+                isSaving={isSavingAnalysis}
+              />
+            );
+          })()}
 
           {/* Agent cards */}
           {agentResultList.map(result => {
@@ -1342,35 +1406,6 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
               </Card>
             );
           })}
-
-          {completeResult && completeResult.decisions && (
-            <ResearchQuickLinks
-              tickers={Object.keys(completeResult.decisions)}
-              language={language}
-            />
-          )}
-
-          {/* Final Decision */}
-          {completeResult && completeResult.decisions && (() => {
-            const firstTicker = Object.keys(completeResult.decisions)[0];
-            if (!firstTicker) return null;
-            const score = calculateCompositeScore(
-              completeResult.analyst_signals,
-              firstTicker,
-              completeResult.decisions[firstTicker],
-            );
-            return (
-              <AnalystReportDashboard
-                ticker={firstTicker}
-                completeResult={completeResult}
-                agentResults={agentResults}
-                language={language}
-                compositeScore={score}
-                onSave={handleSaveAnalysis}
-                isSaving={isSavingAnalysis}
-              />
-            );
-          })()}
 
           {/* Synthesized reasoning (if available) */}
           {completeResult?.reasoning && (

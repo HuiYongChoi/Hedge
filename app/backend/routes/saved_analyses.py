@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from app.backend.database import get_db
 from app.backend.models.schemas import ErrorResponse, SavedAnalysisCreateRequest, SavedAnalysisResponse
@@ -36,13 +36,32 @@ async def save_analysis(
     responses={500: {"model": ErrorResponse, "description": "Internal server error"}},
 )
 async def list_saved_analyses(
+    response: Response,
     limit: int = 50,
     skip: int = 0,
+    source_tab: Optional[str] = None,
+    ticker: Optional[str] = None,
+    created_from: Optional[str] = None,
+    created_to: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     try:
         repo = SavedAnalysisRepository(db)
-        items = repo.get_all(limit=limit, skip=skip)
+        items = repo.get_all(
+            limit=limit,
+            skip=skip,
+            source_tab=source_tab,
+            ticker=ticker,
+            created_from=created_from,
+            created_to=created_to,
+        )
+        total = repo.count(
+            source_tab=source_tab,
+            ticker=ticker,
+            created_from=created_from,
+            created_to=created_to,
+        )
+        response.headers["X-Total-Count"] = str(total)
         return [SavedAnalysisResponse.from_orm(item) for item in items]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list saved analyses: {str(e)}")
@@ -69,3 +88,27 @@ async def get_saved_analysis(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get saved analysis: {str(e)}")
+
+@router.delete(
+    "/{analysis_id}",
+    status_code=204,
+    responses={
+        404: {"model": ErrorResponse, "description": "Saved analysis not found"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+)
+async def delete_saved_analysis(
+    analysis_id: int,
+    db: Session = Depends(get_db),
+):
+    try:
+        repo = SavedAnalysisRepository(db)
+        item = repo.get_by_id(analysis_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Saved analysis not found")
+        repo.delete(analysis_id)
+        return None
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete saved analysis: {str(e)}")

@@ -2,7 +2,7 @@ import { Flow } from '@/types/flow';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
 // Define tab types
-export type TabType = 'flow' | 'settings' | 'stock-search' | 'data-sandbox';
+export type TabType = 'flow' | 'settings' | 'stock-search' | 'data-sandbox' | 'saved-analyses';
 
 export interface Tab {
   id: string;
@@ -78,6 +78,9 @@ export function TabsProvider({ children }: TabsProviderProps) {
     }
     if (type === 'stock-search') {
       return 'stock-search';
+    }
+    if (type === 'saved-analyses') {
+      return 'saved-analyses';
     }
     return `${type}-${Date.now()}`;
   }, []);

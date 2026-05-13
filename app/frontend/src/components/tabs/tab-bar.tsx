@@ -3,7 +3,7 @@ import { useTabsContext } from '@/contexts/tabs-context';
 import { useLanguage } from '@/contexts/language-context';
 import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
-import { FileText, Layout, Search, Settings, X } from 'lucide-react';
+import { Archive, FileText, Layout, Search, Settings, X } from 'lucide-react';
 import { ReactNode, useState } from 'react';
 
 interface TabBarProps {
@@ -19,6 +19,8 @@ const getTabIcon = (type: string): ReactNode => {
       return <Settings size={13} />;
     case 'stock-search':
       return <Search size={13} />;
+    case 'saved-analyses':
+      return <Archive size={13} />;
     default:
       return <Layout size={13} />;
   }
@@ -33,6 +35,7 @@ export function TabBar({ className }: TabBarProps) {
     if (tab.type === 'settings') return t('settings', language);
     if (tab.type === 'stock-search') return t('stockAnalysis', language);
     if (tab.type === 'data-sandbox') return t('dataSandbox', language);
+    if (tab.type === 'saved-analyses') return t('savedAnalyses', language);
     return tab.title;
   };
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);

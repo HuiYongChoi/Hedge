@@ -61,6 +61,11 @@ function LayoutContent() {
     openTab(tabData);
   };
 
+  const handleSavedAnalysesClick = () => {
+    const tabData = TabService.createSavedAnalysesTab();
+    openTab(tabData);
+  };
+
   const handleFlowClick = useCallback(async () => {
     if (hasFlowTab) {
       focusFirstFlowTab();
@@ -192,6 +197,7 @@ function LayoutContent() {
             isFlowTabActive={isFlowTab}
             isOpeningFlow={isOpeningFlow}
             onFlowClick={handleFlowClick}
+            onSavedAnalysesClick={handleSavedAnalysesClick}
           />
         </div>
       </div>
