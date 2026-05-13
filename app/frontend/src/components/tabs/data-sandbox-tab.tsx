@@ -4,6 +4,10 @@ import { Input } from '@/components/ui/input';
 import { ModelSelector } from '@/components/ui/llm-selector';
 import { resolveTickerValue, TickerInput } from '@/components/ui/ticker-input';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import {
+  ReportSentimentDashboard,
+  renderReportTonedContent,
+} from '@/components/reports/report-sentiment-dashboard';
 import { useLanguage } from '@/contexts/language-context';
 import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
@@ -172,7 +176,7 @@ function renderMarkdown(text: string): React.ReactNode {
     } else if (/^[-*]\s+/.test(line)) {
       nodes.push(
         <p key={i} className="text-xs text-muted-foreground ml-2">
-          {'• '}{renderInline(line.replace(/^[-*]\s+/, ''))}
+          {'• '}{renderReportTonedContent(line.replace(/^[-*]\s+/, ''), renderInline)}
         </p>
       );
     } else if (line.trim() === '') {
@@ -180,7 +184,7 @@ function renderMarkdown(text: string): React.ReactNode {
     } else {
       nodes.push(
         <p key={i} className="text-xs text-muted-foreground">
-          {renderInline(line)}
+          {renderReportTonedContent(line, renderInline)}
         </p>
       );
     }
@@ -1304,6 +1308,11 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
                           </button>
                           {isExpanded && result.reasoning && (
                             <div className="px-3 pb-3 pt-1 border-t border-border/50 pl-9">
+                              <ReportSentimentDashboard
+                                markdown={result.reasoning}
+                                language={language}
+                                className="mb-3"
+                              />
                               {renderMarkdown(result.reasoning)}
                             </div>
                           )}
@@ -1353,10 +1362,18 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
                               </div>
                               {decision.reasoning && (
                                 <div className="mt-1">
-                                  {isFinalDecisionExpanded
-                                    ? renderMarkdown(decision.reasoning)
-                                    : <p className="text-xs text-muted-foreground">{previewText(decision.reasoning)}</p>
-                                  }
+                                  {isFinalDecisionExpanded ? (
+                                    <>
+                                      <ReportSentimentDashboard
+                                        markdown={decision.reasoning}
+                                        language={language}
+                                        className="mb-3"
+                                      />
+                                      {renderMarkdown(decision.reasoning)}
+                                    </>
+                                  ) : (
+                                    <p className="text-xs text-muted-foreground">{previewText(decision.reasoning)}</p>
+                                  )}
                                 </div>
                               )}
                             </div>

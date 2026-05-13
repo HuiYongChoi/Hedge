@@ -12,9 +12,10 @@ import { WorkspaceProvider } from '@/contexts/workspace-context';
 import { useLayoutKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { cn } from '@/lib/utils';
 import { SidebarStorageService } from '@/services/sidebar-storage';
+import { flowService } from '@/services/flow-service';
 import { TabService } from '@/services/tab-service';
 import { ReactFlowProvider } from '@xyflow/react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { TopBar } from './layout/top-bar';
 
 // Create a LayoutContent component to access the FlowContext, TabsContext, and LayoutContext
@@ -38,6 +39,7 @@ function LayoutContent() {
     right: boolean;
     bottom: boolean;
   } | null>(null);
+  const [isOpeningFlow, setIsOpeningFlow] = useState(false);
 
   // Track actual sidebar widths for dynamic positioning
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(280);
@@ -58,6 +60,41 @@ function LayoutContent() {
     const tabData = TabService.createDataSandboxTab();
     openTab(tabData);
   };
+
+  const handleFlowClick = useCallback(async () => {
+    if (hasFlowTab) {
+      focusFirstFlowTab();
+      return;
+    }
+
+    setIsOpeningFlow(true);
+    try {
+      const flows = await flowService.getFlows();
+      const sortedFlows = [...flows].sort((a, b) => {
+        const dateA = new Date(a.updated_at || a.created_at).getTime();
+        const dateB = new Date(b.updated_at || b.created_at).getTime();
+        return dateB - dateA;
+      });
+      const targetFlow = sortedFlows.find(flow => !flow.is_template) ?? sortedFlows[0];
+
+      if (targetFlow) {
+        const fullFlow = await flowService.getFlow(targetFlow.id);
+        openTab(TabService.createFlowTab(fullFlow));
+        return;
+      }
+
+      const defaultFlow = await flowService.createDefaultFlow(
+        reactFlowInstance?.getNodes() || [],
+        reactFlowInstance?.getEdges() || [],
+        reactFlowInstance?.getViewport() || { x: 0, y: 0, zoom: 1 },
+      );
+      openTab(TabService.createFlowTab(defaultFlow));
+    } catch (error) {
+      console.error('Failed to open flow from top navigation:', error);
+    } finally {
+      setIsOpeningFlow(false);
+    }
+  }, [focusFirstFlowTab, hasFlowTab, openTab, reactFlowInstance]);
 
   // Add keyboard shortcuts for toggling sidebars and fit view
   useLayoutKeyboardShortcuts(
@@ -130,31 +167,32 @@ function LayoutContent() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden relative bg-background">
-      {/* VSCode-style Top Bar */}
-      <TopBar
-        isFlowTab={isFlowTab}
-        isLeftCollapsed={effectiveIsLeftCollapsed}
-        isRightCollapsed={effectiveIsRightCollapsed}
-        isBottomCollapsed={effectiveIsBottomCollapsed}
-        onToggleLeft={() => setIsLeftCollapsed(!isLeftCollapsed)}
-        onToggleRight={() => setIsRightCollapsed(!isRightCollapsed)}
-        onToggleBottom={toggleBottomPanel}
-        onSettingsClick={handleSettingsClick}
-        onSearchClick={handleSearchClick}
-        onDataSandboxClick={handleDataSandboxClick}
-        hasFlowTab={hasFlowTab}
-        isFlowTabActive={isFlowTab}
-        onFlowClick={focusFirstFlowTab}
-      />
-
-      {/* Tab Bar - positioned absolutely like bottom panel */}
+      {/* Header rail: tabs, workspace context, and app navigation share one layer. */}
       <div 
-        className="absolute top-0 z-10 flex items-stretch gap-2 border-b bg-panel pr-2 transition-all duration-200"
+        className="absolute top-0 z-40 flex items-stretch gap-2 border-b bg-panel pr-2 transition-all duration-200"
         style={getSidebarBasedStyle()}
       >
         <TabBar className="min-w-0 flex-1 border-b-0" />
         <div className="flex shrink-0 items-center py-1">
           <WorkspacePill />
+        </div>
+        <div className="flex shrink-0 items-center py-1">
+          <TopBar
+            isFlowTab={isFlowTab}
+            isLeftCollapsed={effectiveIsLeftCollapsed}
+            isRightCollapsed={effectiveIsRightCollapsed}
+            isBottomCollapsed={effectiveIsBottomCollapsed}
+            onToggleLeft={() => setIsLeftCollapsed(!isLeftCollapsed)}
+            onToggleRight={() => setIsRightCollapsed(!isRightCollapsed)}
+            onToggleBottom={toggleBottomPanel}
+            onSettingsClick={handleSettingsClick}
+            onSearchClick={handleSearchClick}
+            onDataSandboxClick={handleDataSandboxClick}
+            hasFlowTab={hasFlowTab}
+            isFlowTabActive={isFlowTab}
+            isOpeningFlow={isOpeningFlow}
+            onFlowClick={handleFlowClick}
+          />
         </div>
       </div>
 

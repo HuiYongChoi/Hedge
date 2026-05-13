@@ -52,7 +52,7 @@ const PillButton = forwardRef<HTMLButtonElement, { icon: ReactNode; label: strin
         ref={ref}
         variant="outline"
         title={title}
-        className="h-8 gap-1.5 rounded-full border-border/80 bg-background/70 px-3 text-xs font-medium shadow-sm whitespace-nowrap"
+        className="h-8 gap-1.5 rounded-full border-border/80 bg-background/90 px-3 text-xs font-medium shadow-sm whitespace-nowrap"
       >
         <span className="text-muted-foreground">{icon}</span>
         <span className="hidden text-muted-foreground xl:inline">{label}</span>
@@ -120,7 +120,7 @@ export function WorkspacePill() {
 
   return (
     <div
-      className="flex items-center gap-1.5 rounded-full border border-border/40 bg-background/40 px-2 py-1"
+      className="flex items-center gap-1.5 rounded-full border border-border/70 bg-background/90 px-2 py-1 shadow-sm"
       role="group"
       aria-label={language === 'ko' ? '종목 분석 컨텍스트' : 'Stock analysis context'}
     >

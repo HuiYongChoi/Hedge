@@ -21,6 +21,13 @@ import { useToastManager } from '@/hooks/use-toast-manager';
 import { t } from '@/lib/language-preferences';
 import { savedAnalysisService } from '@/services/saved-analyses-service';
 import { stockAnalysisRunService, StockAnalysisRunStatus } from '@/services/stock-analysis-run-service';
+import {
+  REPORT_TONE_STYLES,
+  ReportSentimentDashboard,
+  ReportToneLegend,
+  type ReportSentimentTone,
+  parseReportSentimentMarker,
+} from '@/components/reports/report-sentiment-dashboard';
 import { Bot, ChevronDown, ChevronUp, Database, Info, Loader2, Play, Search, Square } from 'lucide-react';
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -838,38 +845,24 @@ function getDetailReportMarkdown(result: AgentResult) {
 // Sentiment tone helpers
 // ──────────────────────────────────────────────────────────────────────────
 
-type SentimentTone = 'positive' | 'negative' | 'neutral' | 'unknown' | null;
-
-const SENTIMENT_PATTERN = /^\[([+\-~?])\]\s*/;
+type SentimentTone = ReportSentimentTone;
 
 function parseSentimentMarker(text: string): { tone: SentimentTone; rest: string } {
-  const m = text.match(SENTIMENT_PATTERN);
-  if (!m) return { tone: null, rest: text };
-  const tone: SentimentTone =
-    m[1] === '+' ? 'positive' :
-    m[1] === '-' ? 'negative' :
-    m[1] === '~' ? 'neutral' :
-    'unknown';
-  return { tone, rest: text.slice(m[0].length) };
+  return parseReportSentimentMarker(text);
 }
 
 const TONE_STYLES: Record<NonNullable<SentimentTone>, {
   border: string; bg: string; icon: string; iconClass: string;
-}> = {
-  positive: { border: 'border-l-green-500',  bg: 'bg-green-500/5',  icon: '✓', iconClass: 'text-green-500' },
-  negative: { border: 'border-l-red-500',    bg: 'bg-red-500/5',    icon: '✗', iconClass: 'text-red-500' },
-  neutral:  { border: 'border-l-amber-500',  bg: 'bg-amber-500/5',  icon: '–', iconClass: 'text-amber-500' },
-  unknown:  { border: 'border-l-zinc-500',   bg: 'bg-zinc-500/5',   icon: '?', iconClass: 'text-zinc-400' },
-};
+}> = REPORT_TONE_STYLES;
 
 function renderTonedContent(text: string): ReactNode {
   const { tone, rest } = parseSentimentMarker(text);
   if (!tone) return renderInlineMarkdown(text);
-  const s = TONE_STYLES[tone];
+  const style = TONE_STYLES[tone];
   return (
-    <span className={`flex items-start gap-2 border-l-2 pl-2 py-0.5 rounded-sm ${s.border} ${s.bg}`}>
-      <span className={`mt-0.5 flex-shrink-0 font-mono text-xs ${s.iconClass}`} aria-label={tone}>{s.icon}</span>
-      <span className="flex-1">{renderInlineMarkdown(rest)}</span>
+    <span className={`flex items-start gap-2 rounded-sm border-l-2 py-0.5 pl-2 ${style.border} ${style.bg}`}>
+      <span className={`mt-0.5 flex-shrink-0 font-mono text-xs ${style.iconClass}`} aria-label={tone}>{style.icon}</span>
+      <span className="min-w-0 flex-1">{renderInlineMarkdown(rest)}</span>
     </span>
   );
 }
@@ -882,25 +875,7 @@ function ensureParagraphBreaks(markdown: string): string {
 }
 
 function ToneLegend({ language }: { language: 'ko' | 'en' }) {
-  const items: Array<{ icon: string; cls: string; label: string }> = [
-    { icon: '✓', cls: 'text-green-500', label: language === 'ko' ? '긍정' : 'Positive' },
-    { icon: '✗', cls: 'text-red-500',   label: language === 'ko' ? '부정' : 'Negative' },
-    { icon: '–', cls: 'text-amber-500', label: language === 'ko' ? '보합/중립' : 'Neutral' },
-    { icon: '?', cls: 'text-zinc-400',  label: language === 'ko' ? '데이터 공백' : 'Unknown' },
-  ];
-  return (
-    <div className="mb-3 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-      <span className="font-medium uppercase tracking-wider">
-        {language === 'ko' ? '톤 표시' : 'Tone'}:
-      </span>
-      {items.map(({ icon, cls, label }) => (
-        <span key={label} className="inline-flex items-center gap-1">
-          <span className={`font-mono ${cls}`}>{icon}</span>
-          {label}
-        </span>
-      ))}
-    </div>
-  );
+  return <ReportToneLegend language={language} />;
 }
 
 function renderInlineMarkdown(text: string) {
@@ -1882,6 +1857,11 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
                             <div className="mb-2 text-xs font-medium text-muted-foreground">
                               {language === 'ko' ? '상세 근거' : 'Detailed Rationale'}
                             </div>
+                            <ReportSentimentDashboard
+                              markdown={formatDecisionReasoning(decision.reasoning)}
+                              language={language}
+                              className="mb-3"
+                            />
                             <div className="text-xs leading-relaxed text-muted-foreground [&_h2]:mb-2 [&_h2]:mt-1 [&_h2]:text-sm [&_h3]:mb-2 [&_h3]:mt-1 [&_h3]:text-sm [&_li]:text-muted-foreground [&_ol]:my-2 [&_p]:my-2 [&_p]:text-muted-foreground [&_ul]:my-2">
                               {renderMarkdownBlocks(ensureParagraphBreaks(formatDecisionReasoning(decision.reasoning)))}
                             </div>
@@ -2020,6 +2000,11 @@ function AgentReportSummary({ analysis, language }: { analysis: any; language: '
             </div>
             {entry.reasoning && (
               <div className="mt-2 text-xs leading-relaxed text-muted-foreground [&_h2]:mb-2 [&_h2]:mt-1 [&_h2]:text-sm [&_h3]:mb-2 [&_h3]:mt-1 [&_h3]:text-sm [&_li]:text-muted-foreground [&_ol]:my-2 [&_p]:my-2 [&_p]:text-muted-foreground [&_ul]:my-2">
+                <ReportSentimentDashboard
+                  markdown={formatDecisionReasoning(entry.reasoning)}
+                  language={language}
+                  className="mb-3"
+                />
                 <ToneLegend language={language} />
                 {renderMarkdownBlocks(ensureParagraphBreaks(formatDecisionReasoning(entry.reasoning)))}
               </div>

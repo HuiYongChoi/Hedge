@@ -1,4 +1,6 @@
 import { Button } from '@/components/ui/button';
+import { useLanguage } from '@/contexts/language-context';
+import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
 import { Database, PanelBottom, PanelLeft, PanelRight, Search, Settings, Workflow } from 'lucide-react';
 
@@ -15,6 +17,7 @@ interface TopBarProps {
   onDataSandboxClick: () => void;
   hasFlowTab: boolean;
   isFlowTabActive: boolean;
+  isOpeningFlow: boolean;
   onFlowClick: () => void;
 }
 
@@ -31,10 +34,14 @@ export function TopBar({
   onDataSandboxClick,
   hasFlowTab,
   isFlowTabActive,
+  isOpeningFlow,
   onFlowClick,
 }: TopBarProps) {
+  const { language } = useLanguage();
+  const navButtonClass = "h-8 gap-1.5 rounded-full px-2.5 text-muted-foreground hover:text-foreground hover:bg-ramp-grey-700 transition-colors";
+
   return (
-    <div className="absolute top-0 right-0 z-40 flex items-center gap-0 py-1 px-2 bg-panel/80">
+    <div className="flex items-center gap-1 rounded-full border border-border/70 bg-background/90 px-1.5 py-1 shadow-sm">
       {isFlowTab && (
         <>
           {/* Left Sidebar Toggle */}
@@ -92,15 +99,16 @@ export function TopBar({
         variant="ghost"
         size="sm"
         onClick={onFlowClick}
-        disabled={!hasFlowTab || isFlowTabActive}
+        disabled={isOpeningFlow}
         className={cn(
-          "h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-ramp-grey-700 transition-colors",
+          navButtonClass,
           isFlowTabActive && "text-foreground"
         )}
         aria-label="Focus flow tab"
-        title={hasFlowTab ? 'Flow 탭으로 이동' : '열린 Flow 탭이 없습니다'}
+        title={hasFlowTab ? 'Flow 탭으로 이동' : '최근 Flow를 열거나 기본 Flow를 생성합니다'}
       >
         <Workflow size={16} />
+        <span className="hidden 2xl:inline">{t('flows', language)}</span>
       </Button>
 
       {/* Data Sandbox */}
@@ -108,11 +116,12 @@ export function TopBar({
         variant="ghost"
         size="sm"
         onClick={onDataSandboxClick}
-        className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-ramp-grey-700 transition-colors"
+        className={navButtonClass}
         aria-label="Open Data Sandbox"
         title="Data Sandbox"
       >
         <Database size={16} />
+        <span className="hidden 2xl:inline">{t('dataSandbox', language)}</span>
       </Button>
 
       {/* Stock Analysis */}
@@ -120,11 +129,12 @@ export function TopBar({
         variant="ghost"
         size="sm"
         onClick={onSearchClick}
-        className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-ramp-grey-700 transition-colors"
+        className={navButtonClass}
         aria-label="Open Stock Analysis"
         title="Stock Analysis"
       >
         <Search size={16} />
+        <span className="hidden 2xl:inline">{t('stockAnalysis', language)}</span>
       </Button>
 
       {/* Settings */}
@@ -132,7 +142,7 @@ export function TopBar({
         variant="ghost"
         size="sm"
         onClick={onSettingsClick}
-        className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-ramp-grey-700 transition-colors"
+        className="h-8 w-8 rounded-full p-0 text-muted-foreground transition-colors hover:bg-ramp-grey-700 hover:text-foreground"
         aria-label="Open settings"
         title="Open Settings (⌘,)"
       >

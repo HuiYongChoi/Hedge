@@ -59,6 +59,30 @@ def test_layout_shortcuts_are_guarded_to_flow_tabs() -> None:
     assert "isFlowTab={isFlowTab}" in source
 
 
+def test_top_bar_navigation_is_labeled_and_not_disabled_without_flow_tab() -> None:
+    source = _read(TOP_BAR)
+
+    assert "t('flows', language)" in source
+    assert "t('dataSandbox', language)" in source
+    assert "t('stockAnalysis', language)" in source
+    assert "isOpeningFlow" in source
+    assert "disabled={isOpeningFlow}" in source
+    assert "disabled={!hasFlowTab || isFlowTabActive}" not in source
+    assert "absolute top-0 right-0" not in source
+
+
+def test_layout_keeps_tabs_workspace_and_navigation_in_one_header_rail() -> None:
+    source = _read(LAYOUT)
+
+    assert "const handleFlowClick = useCallback(async () => {" in source
+    assert "flowService.getFlows()" in source
+    assert "flowService.createDefaultFlow" in source
+    assert "<WorkspacePill />" in source
+    assert source.index("<WorkspacePill />") < source.index("<TopBar")
+    assert "items-stretch gap-2 border-b bg-panel" in source
+    assert "pr-2 transition-all duration-200" in source
+
+
 def test_workspace_pill_has_three_truthful_chips_with_scope_titles() -> None:
     source = _read(WORKSPACE_PILL)
 

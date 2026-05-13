@@ -6,6 +6,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LLM = ROOT / "src/utils/llm.py"
 TAB = ROOT / "app/frontend/src/components/tabs/stock-search-tab.tsx"
+DATA_SANDBOX_TAB = ROOT / "app/frontend/src/components/tabs/data-sandbox-tab.tsx"
+REPORT_SENTIMENT = ROOT / "app/frontend/src/components/reports/report-sentiment-dashboard.tsx"
 DAMODARAN = ROOT / "src/agents/aswath_damodaran.py"
 BUFFETT = ROOT / "src/agents/warren_buffett.py"
 GROWTH = ROOT / "src/agents/growth_agent.py"
@@ -100,6 +102,45 @@ class ReportSentimentMarkerStaticTests(unittest.TestCase):
         source = TAB.read_text(encoding="utf-8")
         self.assertIn("companyName", source)
         self.assertIn("company_name", source)
+
+    def test_frontend_has_grouped_sentiment_dashboard_component(self):
+        self.assertTrue(REPORT_SENTIMENT.exists())
+        source = REPORT_SENTIMENT.read_text(encoding="utf-8")
+
+        self.assertIn("ReportSentimentDashboard", source)
+        self.assertIn("collectReportSentimentItems", source)
+        self.assertIn("긍정 근거", source)
+        self.assertIn("부정 리스크", source)
+        self.assertIn("중립/보합", source)
+        self.assertIn("데이터 공백", source)
+
+    def test_stock_search_uses_sentiment_dashboard_before_raw_reasoning(self):
+        source = TAB.read_text(encoding="utf-8")
+        agent_summary_source = source[source.index("function AgentReportSummary") :]
+        final_decision_source = source[
+            source.index("{/* Final Decision */}") : source.index("{completeResult.reasoning &&")
+        ]
+
+        self.assertIn("ReportSentimentDashboard", source)
+        self.assertLess(
+            agent_summary_source.index("<ReportSentimentDashboard"),
+            agent_summary_source.index("renderMarkdownBlocks("),
+        )
+        self.assertLess(
+            final_decision_source.index("<ReportSentimentDashboard"),
+            final_decision_source.index("renderMarkdownBlocks("),
+        )
+
+    def test_data_sandbox_uses_sentiment_dashboard_and_toned_lines(self):
+        source = DATA_SANDBOX_TAB.read_text(encoding="utf-8")
+
+        self.assertIn("ReportSentimentDashboard", source)
+        self.assertIn("renderReportTonedContent", source)
+        self.assertIn("renderReportTonedContent(line.replace", source)
+        self.assertLess(
+            source.index("<ReportSentimentDashboard"),
+            source.index("renderMarkdown(result.reasoning)"),
+        )
 
 
 if __name__ == "__main__":
