@@ -308,6 +308,45 @@ function getTickerAnalystReports(analystSignals: Record<string, any> | undefined
     .filter((entry): entry is { agentId: string; signal: unknown; confidence: unknown } => Boolean(entry));
 }
 
+type ConsensusTone = 'bullish' | 'bearish' | 'neutral';
+
+function getSignalTone(signal: unknown): ConsensusTone {
+  const raw = String(signal || 'neutral').toLowerCase();
+
+  if (raw === 'bullish' || raw === 'buy' || raw === 'long' || raw === 'positive') {
+    return 'bullish';
+  }
+  if (raw === 'bearish' || raw === 'sell' || raw === 'short' || raw === 'negative') {
+    return 'bearish';
+  }
+  return 'neutral';
+}
+
+function getConsensusStats(analystSignals: Record<string, unknown> | undefined, ticker: string) {
+  const reports = getTickerAnalystReports(analystSignals, ticker);
+  const total = reports.length;
+  const bullishCount = reports.filter(report => getSignalTone(report.signal) === 'bullish').length;
+  const bearishCount = reports.filter(report => getSignalTone(report.signal) === 'bearish').length;
+  const neutralCount = total - bullishCount - bearishCount;
+  const confidences = reports
+    .map(report => normalizeConfidence(report.confidence))
+    .filter((confidence): confidence is number => confidence !== null);
+  const averageConfidence = confidences.length > 0
+    ? Math.round(confidences.reduce((sum, confidence) => sum + confidence, 0) / confidences.length)
+    : null;
+
+  return {
+    total,
+    bullishCount,
+    bearishCount,
+    neutralCount,
+    bullishPct: total > 0 ? Math.round((bullishCount / total) * 100) : 0,
+    bearishPct: total > 0 ? Math.round((bearishCount / total) * 100) : 0,
+    neutralPct: total > 0 ? Math.round((neutralCount / total) * 100) : 0,
+    averageConfidence,
+  };
+}
+
 function scoreSignal(signal: unknown, confidence: unknown) {
   const raw = String(signal || 'neutral').toLowerCase();
   const normalizedConfidence = normalizeConfidence(confidence) ?? 50;
@@ -346,6 +385,26 @@ function calculateCompositeScore(
 
   const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
   return Math.max(0, Math.min(100, Math.round(average)));
+}
+
+function getDecisionActionLabel(action: unknown, language: 'ko' | 'en') {
+  const raw = String(action || 'hold').toLowerCase();
+
+  if (raw === 'buy' || raw === 'cover') return language === 'ko' ? '매수 실행' : 'Buy';
+  if (raw === 'sell' || raw === 'short') return language === 'ko' ? '매도/숏' : 'Sell / Short';
+  return language === 'ko' ? '관망' : 'Hold';
+}
+
+function getDecisionActionClass(action: unknown) {
+  const raw = String(action || 'hold').toLowerCase();
+
+  if (raw === 'buy' || raw === 'cover') {
+    return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300';
+  }
+  if (raw === 'sell' || raw === 'short') {
+    return 'border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-300';
+  }
+  return 'border-yellow-500/30 bg-yellow-500/10 text-yellow-600 dark:text-yellow-300';
 }
 
 function getScoreBand(score: number, language: 'ko' | 'en') {
@@ -401,6 +460,140 @@ function buildExecutiveSummary(
   return language === 'ko'
     ? `${reports.length}개 에이전트 기준 강세 ${bullishCount}개, 약세 ${bearishCount}개, 중립 ${neutralCount}개입니다. 종합 판단은 ${band.label}이며, 판단 상태와 핵심 근거를 중심으로 해석하세요.`
     : `${reports.length} agents show ${bullishCount} bullish, ${bearishCount} bearish, and ${neutralCount} neutral views. The combined decision is ${band.label}; interpret it by the decision status and core rationale.`;
+}
+
+function DecisionScoreGauge({ score, language }: { score: number; language: 'ko' | 'en' }) {
+  const clampedScore = Math.max(0, Math.min(100, score));
+  const radius = 38;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (clampedScore / 100) * circumference;
+  const scoreColor =
+    clampedScore >= 60 ? '#059669' : clampedScore >= 40 ? '#ca8a04' : '#dc2626';
+
+  return (
+    <div className="flex flex-col items-center justify-center rounded-xl border border-border/70 bg-background/70 p-4 shadow-sm">
+      <div className="relative h-28 w-28">
+        <svg className="h-28 w-28 -rotate-90" viewBox="0 0 100 100" aria-hidden="true">
+          <circle
+            className="text-muted"
+            cx="50"
+            cy="50"
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="9"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r={radius}
+            fill="none"
+            stroke={scoreColor}
+            strokeLinecap="round"
+            strokeWidth="9"
+            style={{
+              strokeDasharray: `${circumference} ${circumference}`,
+              strokeDashoffset,
+            }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="font-mono text-3xl font-semibold text-foreground">{clampedScore}</span>
+          <span className="font-mono text-[11px] text-muted-foreground">/100</span>
+        </div>
+      </div>
+      <div className="mt-2 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+        <span>{language === 'ko' ? '종합 점수' : 'Composite Score'}</span>
+        <ScoreTooltip language={language} />
+      </div>
+    </div>
+  );
+}
+
+function ConsensusStrip({
+  stats,
+  language,
+}: {
+  stats: ReturnType<typeof getConsensusStats>;
+  language: 'ko' | 'en';
+}) {
+  const segments = [
+    {
+      key: 'bullish',
+      label: language === 'ko' ? '강세' : 'Bullish',
+      count: stats.bullishCount,
+      pct: stats.bullishPct,
+      className: 'bg-emerald-500',
+      dotClassName: 'bg-emerald-500',
+    },
+    {
+      key: 'neutral',
+      label: language === 'ko' ? '중립' : 'Neutral',
+      count: stats.neutralCount,
+      pct: stats.neutralPct,
+      className: 'bg-yellow-500',
+      dotClassName: 'bg-yellow-500',
+    },
+    {
+      key: 'bearish',
+      label: language === 'ko' ? '약세' : 'Bearish',
+      count: stats.bearishCount,
+      pct: stats.bearishPct,
+      className: 'bg-red-500',
+      dotClassName: 'bg-red-500',
+    },
+  ];
+
+  return (
+    <div className="rounded-lg border border-border/70 bg-muted/10 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-semibold text-foreground">
+          {language === 'ko' ? '분석가 합의' : 'Agent consensus'}
+        </div>
+        <div className="text-[11px] text-muted-foreground">
+          {language === 'ko'
+            ? `${stats.total}개 에이전트`
+            : `${stats.total} agents`}
+        </div>
+      </div>
+
+      {stats.total > 0 ? (
+        <>
+          <div className="flex h-2 overflow-hidden rounded-full bg-muted">
+            {segments.map(segment => (
+              segment.count > 0 ? (
+                <div
+                  key={segment.key}
+                  className={segment.className}
+                  style={{ width: `${segment.pct}%` }}
+                  title={`${segment.label}: ${segment.count}`}
+                />
+              ) : null
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+            {segments.map(segment => (
+              <span key={segment.key} className="inline-flex items-center gap-1">
+                <span className={`h-2 w-2 rounded-full ${segment.dotClassName}`} aria-hidden="true" />
+                {segment.label} {segment.count} ({segment.pct}%)
+              </span>
+            ))}
+            {stats.averageConfidence !== null && (
+              <span className="inline-flex items-center rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-blue-600 dark:text-blue-300">
+                {language === 'ko' ? '평균 확신도' : 'Avg confidence'} {stats.averageConfidence}%
+              </span>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+          {language === 'ko'
+            ? '에이전트별 신호가 없어 최종 판단과 상세 근거를 우선 확인하세요.'
+            : 'No per-agent signals are available; review the final decision and rationale first.'}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ScoreTooltip({ language }: { language: 'ko' | 'en' }) {
@@ -1618,14 +1811,19 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
 
           {/* Final Decision */}
           {completeResult && completeResult.decisions && (
-            <Card className="border-green-300 dark:border-green-700">
-              <CardHeader className="py-3 px-4">
-                <CardTitle className="text-sm font-medium text-green-600 dark:text-green-400">
-                  {language === 'ko' ? '최종 투자 결정' : 'Final Investment Decisions'}
-                </CardTitle>
+            <Card className="overflow-hidden border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 via-background to-background shadow-sm">
+              <CardHeader className="border-b border-border/60 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <CardTitle className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                    {language === 'ko' ? '최종 투자 결정' : 'Final Investment Decisions'}
+                  </CardTitle>
+                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                    {language === 'ko' ? '요약부터 빠르게 확인' : 'Executive-first view'}
+                  </span>
+                </div>
               </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0">
-                <div className="space-y-3">
+              <CardContent className="px-4 pb-4 pt-4">
+                <div className="space-y-4">
                   {Object.entries(completeResult.decisions).map(([ticker, decision]: [string, any]) => {
                     const compositeScore = calculateCompositeScore(
                       completeResult.analyst_signals,
@@ -1633,6 +1831,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
                       decision,
                     );
                     const scoreBand = getScoreBand(compositeScore, language);
+                    const consensusStats = getConsensusStats(completeResult.analyst_signals, ticker);
                     const executiveSummary = buildExecutiveSummary(
                       ticker,
                       compositeScore,
@@ -1641,40 +1840,53 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
                     );
 
                     return (
-                      <div key={ticker} className="rounded-md border border-border bg-background/60 p-3">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono text-sm font-semibold text-primary">{ticker}</span>
-                            <Badge variant="outline" className={scoreBand.className}>
-                              {scoreBand.label}
-                            </Badge>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2 text-sm">
-                            <span className="font-semibold text-primary">
-                              {language === 'ko' ? '종합 점수' : 'Composite Score'}: {compositeScore} / 100
-                            </span>
-                            <ScoreTooltip language={language} />
+                      <div key={ticker} className="rounded-xl border border-border/80 bg-background/75 p-4 shadow-sm">
+                        <div className="grid gap-4 lg:grid-cols-[148px_1fr]">
+                          <DecisionScoreGauge score={compositeScore} language={language} />
+
+                          <div className="space-y-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-mono text-base font-semibold text-primary">{ticker}</span>
+                                  <Badge variant="outline" className={scoreBand.className}>
+                                    {scoreBand.label}
+                                  </Badge>
+                                  <Badge variant="outline" className={getDecisionActionClass(decision?.action)}>
+                                    {getDecisionActionLabel(decision?.action, language)}
+                                  </Badge>
+                                </div>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {language === 'ko'
+                                    ? '점수, 액션, 에이전트 합의를 한 화면에서 먼저 확인합니다.'
+                                    : 'Score, action, and agent consensus are grouped first.'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="rounded-lg border border-border/60 bg-muted/15 p-3">
+                              <div className="mb-1 text-xs font-medium text-muted-foreground">
+                                {language === 'ko' ? '약식 요약' : 'Executive Summary'}
+                              </div>
+                              <p className="text-sm leading-relaxed text-foreground">
+                                {executiveSummary}
+                              </p>
+                            </div>
+
+                            <ConsensusStrip stats={consensusStats} language={language} />
                           </div>
                         </div>
 
-                        <div className="mt-3 rounded-md bg-muted/20 p-3">
-                          <div className="mb-1 text-xs font-medium text-muted-foreground">
-                            {language === 'ko' ? '약식 요약' : 'Executive Summary'}
-                          </div>
-                          <p className="text-sm leading-relaxed text-foreground">
-                            {executiveSummary}
-                          </p>
-                          {decision?.reasoning && (
-                            <div className="mt-3 border-t border-border/60 pt-3">
-                              <div className="mb-2 text-xs font-medium text-muted-foreground">
-                                {language === 'ko' ? '상세 근거' : 'Detailed Rationale'}
-                              </div>
-                              <div className="text-xs leading-relaxed text-muted-foreground [&_h2]:mb-2 [&_h2]:mt-1 [&_h2]:text-sm [&_h3]:mb-2 [&_h3]:mt-1 [&_h3]:text-sm [&_li]:text-muted-foreground [&_ol]:my-2 [&_p]:my-2 [&_p]:text-muted-foreground [&_ul]:my-2">
-                                {renderMarkdownBlocks(ensureParagraphBreaks(formatDecisionReasoning(decision.reasoning)))}
-                              </div>
+                        {decision?.reasoning && (
+                          <div className="mt-4 rounded-lg border border-border/60 bg-muted/10 p-3">
+                            <div className="mb-2 text-xs font-medium text-muted-foreground">
+                              {language === 'ko' ? '상세 근거' : 'Detailed Rationale'}
                             </div>
-                          )}
-                        </div>
+                            <div className="text-xs leading-relaxed text-muted-foreground [&_h2]:mb-2 [&_h2]:mt-1 [&_h2]:text-sm [&_h3]:mb-2 [&_h3]:mt-1 [&_h3]:text-sm [&_li]:text-muted-foreground [&_ol]:my-2 [&_p]:my-2 [&_p]:text-muted-foreground [&_ul]:my-2">
+                              {renderMarkdownBlocks(ensureParagraphBreaks(formatDecisionReasoning(decision.reasoning)))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

@@ -25,6 +25,16 @@ class StockSearchFinalDecisionUiStaticTests(unittest.TestCase):
         self.assertIn("80~100점: 강력 매수", source)
         self.assertIn("Info", source)
 
+    def test_final_decision_adds_score_gauge_and_agent_consensus_strip(self):
+        source = STOCK_TAB.read_text(encoding="utf-8")
+
+        self.assertIn("function DecisionScoreGauge", source)
+        self.assertIn("function ConsensusStrip", source)
+        self.assertIn("function getConsensusStats", source)
+        self.assertIn("strokeDasharray", source)
+        self.assertIn("분석가 합의", source)
+        self.assertIn("Agent consensus", source)
+
     def test_final_decision_reasoning_is_split_into_markdown_blocks(self):
         source = STOCK_TAB.read_text(encoding="utf-8")
         final_decision_source = source[
