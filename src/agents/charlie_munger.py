@@ -103,14 +103,13 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
         trailing_pe = getattr(metrics[0], "price_to_earnings_ratio", None) if metrics else None
         forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
         
-        # Combine partial scores with Munger's weighting preferences
-        # Munger weights quality and predictability higher than current valuation
-        total_score = (
-            moat_analysis["score"] * 0.35 +
-            management_analysis["score"] * 0.25 +
-            predictability_analysis["score"] * 0.25 +
-            valuation_analysis["score"] * 0.15
+        score_components = (
+            ("moat", moat_analysis, 0.35),
+            ("management", management_analysis, 0.25),
+            ("predictability", predictability_analysis, 0.25),
+            ("valuation", valuation_analysis, 0.15),
         )
+        total_score, score_weight_used = _weighted_component_score(score_components)
         
         max_possible_score = 10  # Scale to 0-10
                 
@@ -131,6 +130,17 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
             "predictability_analysis": predictability_analysis,
             "valuation_analysis": valuation_analysis,
             "forward_outlook": forward_outlook,
+            "score_weight_used": score_weight_used,
+            "score_components_used": {
+                name: _r((component or {}).get("score"), 2)
+                for name, component, _weight in score_components
+                if _r((component or {}).get("score"), 2) is not None
+            },
+            "score_components_excluded": [
+                name
+                for name, component, _weight in score_components
+                if _r((component or {}).get("score"), 2) is None
+            ],
             # Include some qualitative assessment from news
             "news_sentiment": analyze_news_sentiment(company_news) if company_news else "No news data available"
         }
@@ -483,25 +493,43 @@ def analyze_management_quality(financial_line_items: list, insider_trades: list)
     }
 
 
+def _derive_operating_margin(item) -> tuple[float | None, bool]:
+    margin = getattr(item, "operating_margin", None)
+    if margin is not None:
+        return _r(margin, 6), False
+
+    revenue = getattr(item, "revenue", None)
+    operating_income = getattr(item, "operating_income", None)
+    if revenue in (None, 0) or operating_income is None:
+        return None, False
+
+    try:
+        return float(operating_income) / float(revenue), True
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None, False
+
+
 def analyze_predictability(financial_line_items: list) -> dict:
     """
     Assess the predictability of the business - Munger strongly prefers businesses
     whose future operations and cashflows are relatively easy to predict.
     """
     score = 0
+    possible_score = 0
     details = []
     usable_line_items = [
         item for item in financial_line_items
         if any(
             getattr(item, field, None) is not None
             for field in ("revenue", "operating_income", "operating_margin", "free_cash_flow")
-        )
+        ) or _derive_operating_margin(item)[0] is not None
     ]
     
     if not usable_line_items or len(usable_line_items) < MIN_PREDICTABILITY_PERIODS:
         return {
-            "score": 0,
-            "details": "Insufficient data to analyze business predictability (need 4+ usable years)"
+            "score": None,
+            "details": "Insufficient data to analyze business predictability (need 4+ usable years) - 데이터 부족 (4년 미만) - 예측가능성 평가 보류",
+            "operating_margin_backfilled_periods": 0,
         }
     
     # 1. Revenue stability and growth
@@ -519,6 +547,7 @@ def analyze_predictability(financial_line_items: list) -> dict:
         if not growth_rates:
             details.append("Cannot calculate revenue growth: zero revenue values found")
         else:
+            possible_score += 3
             avg_growth = sum(growth_rates) / len(growth_rates)
             growth_volatility = sum(abs(r - avg_growth) for r in growth_rates) / len(growth_rates)
             
@@ -544,6 +573,7 @@ def analyze_predictability(financial_line_items: list) -> dict:
                 if hasattr(item, 'operating_income') and item.operating_income is not None]
     
     if op_income and len(op_income) >= MIN_PREDICTABILITY_PERIODS:
+        possible_score += 3
         # Count positive operating income periods
         positive_periods = sum(1 for income in op_income if income > 0)
         
@@ -565,10 +595,22 @@ def analyze_predictability(financial_line_items: list) -> dict:
         details.append("Insufficient operating income history")
     
     # 3. Margin consistency - Munger values stable margins
-    op_margins = [item.operating_margin for item in usable_line_items 
-                 if hasattr(item, 'operating_margin') and item.operating_margin is not None]
+    op_margins = []
+    operating_margin_backfilled_periods = 0
+    for item in usable_line_items:
+        margin, backfilled = _derive_operating_margin(item)
+        if margin is not None:
+            op_margins.append(margin)
+            if backfilled:
+                operating_margin_backfilled_periods += 1
+
+    if operating_margin_backfilled_periods:
+        details.append(
+            f"Operating margin backfilled from operating income / revenue in {operating_margin_backfilled_periods} periods"
+        )
     
     if op_margins and len(op_margins) >= MIN_PREDICTABILITY_PERIODS:
+        possible_score += 2
         # Calculate margin volatility
         avg_margin = sum(op_margins) / len(op_margins)
         margin_volatility = sum(abs(m - avg_margin) for m in op_margins) / len(op_margins)
@@ -589,6 +631,7 @@ def analyze_predictability(financial_line_items: list) -> dict:
                  if hasattr(item, 'free_cash_flow') and item.free_cash_flow is not None]
     
     if fcf_values and len(fcf_values) >= MIN_PREDICTABILITY_PERIODS:
+        possible_score += 2
         # Count positive FCF periods
         positive_fcf_periods = sum(1 for fcf in fcf_values if fcf > 0)
         
@@ -605,13 +648,20 @@ def analyze_predictability(financial_line_items: list) -> dict:
     else:
         details.append("Insufficient free cash flow history")
     
-    # Scale score to 0-10 range
-    # Maximum possible raw score would be 10 (3+3+2+2)
-    final_score = min(10, score * 10 / 10)
+    if possible_score == 0:
+        return {
+            "score": None,
+            "details": "; ".join(details) or "Insufficient data to analyze business predictability (need 4+ usable years) - 데이터 부족 - 예측가능성 평가 보류",
+            "operating_margin_backfilled_periods": operating_margin_backfilled_periods,
+        }
+
+    # Scale only across scorable dimensions, so missing provider fields are not false zeroes.
+    final_score = min(10, score * 10 / possible_score)
     
     return {
         "score": final_score,
-        "details": "; ".join(details)
+        "details": "; ".join(details),
+        "operating_margin_backfilled_periods": operating_margin_backfilled_periods,
     }
 
 
@@ -749,6 +799,31 @@ def _r(x, n=3):
         return None
 
 
+def _weighted_component_score(components) -> tuple[float, float]:
+    weighted_total = 0.0
+    used_weight = 0.0
+    for _name, component, weight in components:
+        component_score = _r((component or {}).get("score"), 4)
+        if component_score is None:
+            continue
+        weighted_total += component_score * weight
+        used_weight += weight
+
+    if used_weight <= 0:
+        return 0.0, 0.0
+
+    return weighted_total / used_weight, used_weight
+
+
+def _munger_decision_factors(analysis_data: dict) -> str:
+    factors = ["moat strength", "management quality"]
+    pred_score = _r((analysis_data.get("predictability_analysis") or {}).get("score"), 2)
+    if pred_score is not None:
+        factors.append("predictability")
+    factors.append("valuation")
+    return ", ".join(factors)
+
+
 def _score_text(value: float | None) -> str:
     if value is None:
         return "N/A"
@@ -778,12 +853,12 @@ def make_munger_facts_bundle(analysis: dict[str, any]) -> dict[str, any]:
 
     moat_score = _r(moat.get("score"), 2) or 0
     mgmt_score = _r(mgmt.get("score"), 2) or 0
-    pred_score = _r(pred.get("score"), 2) or 0
+    pred_score = _r(pred.get("score"), 2)
     val_score  = _r(val.get("score"), 2) or 0
 
     # Simple mental-model flags (booleans/ints = cheap tokens, strong guidance)
     moat_strong = moat_score >= 7
-    predictable = pred_score >= 7
+    predictable = pred_score >= 7 if pred_score is not None else None
     owner_aligned = (mgmt_score >= 7) or ((mgmt.get("insider_buy_ratio") or 0) >= 0.6)
     low_leverage = (mgmt.get("recent_de_ratio") is not None and mgmt.get("recent_de_ratio") < 0.7)
     sensible_cash = (mgmt.get("cash_to_revenue") is not None and 0.1 <= mgmt.get("cash_to_revenue") <= 0.25)
@@ -791,13 +866,12 @@ def make_munger_facts_bundle(analysis: dict[str, any]) -> dict[str, any]:
     fcf_yield_ok = (val.get("fcf_yield") or 0) >= 0.05
     share_count_friendly = (mgmt.get("share_count_trend") == "decreasing")
 
-    return {
+    facts = {
         "사전 신호": analysis.get("signal"),
         "종합 점수": _score_text(_r(analysis.get("score"), 2)),
         "최대 점수": _score_text(_r(analysis.get("max_score"), 2)),
         "해자 점수": _score_text(moat_score),
         "경영진 점수": _score_text(mgmt_score),
-        "예측가능성 점수": _score_text(pred_score),
         "밸류에이션 점수": _score_text(val_score),
         "FCF 수익률": _friendly_percent(_r(val.get("fcf_yield"), 4), emphasize_small_ratio=True),
         "정규화 FCF": format_korean_won_amount(_r(val.get("normalized_fcf"), 0)),
@@ -810,7 +884,6 @@ def make_munger_facts_bundle(analysis: dict[str, any]) -> dict[str, any]:
         "forward_outlook": analysis.get("forward_outlook"),
         "핵심 체크": {
             "해자 경쟁력": _status_text(moat_strong, "강함", "약함"),
-            "예측가능성": _status_text(predictable, "높음", "낮음"),
             "주주 정렬": _status_text(owner_aligned, "우호적", "보통"),
             "레버리지 부담": _status_text(low_leverage, "낮음", "높음"),
             "현금 여력": _status_text(sensible_cash, "무난함", "보수적 점검 필요"),
@@ -821,21 +894,28 @@ def make_munger_facts_bundle(analysis: dict[str, any]) -> dict[str, any]:
         "메모": {
             "해자": (moat.get("details") or "")[:120],
             "경영진": (mgmt.get("details") or "")[:120],
-            "예측가능성": (pred.get("details") or "")[:120],
             "밸류에이션": (val.get("details") or "")[:120],
         },
     }
 
-def compute_confidence(analysis: dict, signal: str) -> int:
-    # Pull component scores (0..10 each in your pipeline)
-    moat = float((analysis.get("moat_analysis") or {}).get("score") or 0)
-    mgmt = float((analysis.get("management_analysis") or {}).get("score") or 0)
-    pred = float((analysis.get("predictability_analysis") or {}).get("score") or 0)
-    val  = float((analysis.get("valuation_analysis") or {}).get("score") or 0)
+    if pred_score is not None:
+        facts["예측가능성 점수"] = _score_text(pred_score)
+        facts["핵심 체크"]["예측가능성"] = _status_text(predictable, "높음", "낮음")
+        facts["메모"]["예측가능성"] = (pred.get("details") or "")[:120]
 
-    # Quality dominates (Munger): 0.35*moat + 0.25*mgmt + 0.25*pred (max 8.5)
-    quality = 0.35 * moat + 0.25 * mgmt + 0.25 * pred  # 0..8.5
-    quality_pct = 100 * (quality / 8.5) if quality > 0 else 0  # 0..100
+    return facts
+
+def compute_confidence(analysis: dict, signal: str) -> int:
+    val = _r((analysis.get("valuation_analysis") or {}).get("score"), 4) or 0
+
+    quality, quality_weight = _weighted_component_score(
+        (
+            ("moat", analysis.get("moat_analysis") or {}, 0.35),
+            ("management", analysis.get("management_analysis") or {}, 0.25),
+            ("predictability", analysis.get("predictability_analysis") or {}, 0.25),
+        )
+    )
+    quality_pct = quality * 10 if quality_weight > 0 else 0  # 0..100
 
     # Valuation bump from MOS vs “reasonable”
     mos = (analysis.get("valuation_analysis") or {}).get("margin_of_safety_vs_fair_value")
@@ -872,12 +952,13 @@ def generate_munger_output(
     confidence_hint: int,
 ) -> CharlieMungerSignal:
     facts_bundle = make_munger_facts_bundle(analysis_data)
+    decision_factors = _munger_decision_factors(analysis_data)
     template = ChatPromptTemplate.from_messages([
         ("system",
          "You are Charlie Munger. Decide bullish, bearish, or neutral using only the facts. "
          "Write structured, decision-grade reasoning in Korean using these sections: "
          "### 핵심 판단, ### 핵심 근거, ### 리스크와 반대 근거. "
-         "Ground the report in moat strength, management quality, predictability, valuation, "
+         f"Ground the report in {decision_factors}, "
          f"{FORWARD_OUTLOOK_SYSTEM_INSTRUCTION} "
          f"{COMPANY_IDENTITY_REQUIREMENT} "
          f"{SENTIMENT_MARKER_REQUIREMENT} "

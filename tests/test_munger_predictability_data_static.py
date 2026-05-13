@@ -1,4 +1,14 @@
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from src.agents.charlie_munger import (
+    _munger_decision_factors,
+    _weighted_component_score,
+    analyze_predictability,
+    make_munger_facts_bundle,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,3 +41,73 @@ def test_munger_facts_bundle_formats_recent_debt_ratio_as_percent() -> None:
 
     assert "format_debt_ratio_percent" in source
     assert '"최근 부채비율": format_debt_ratio_percent' in bundle_source
+
+
+def test_munger_predictability_backfills_operating_margin_from_income_and_revenue() -> None:
+    line_items = [
+        SimpleNamespace(revenue=100, operating_income=20, operating_margin=None, free_cash_flow=12),
+        SimpleNamespace(revenue=92, operating_income=18, operating_margin=None, free_cash_flow=10),
+        SimpleNamespace(revenue=84, operating_income=16, operating_margin=None, free_cash_flow=9),
+        SimpleNamespace(revenue=76, operating_income=14, operating_margin=None, free_cash_flow=8),
+    ]
+
+    result = analyze_predictability(line_items)
+
+    assert result["score"] is not None
+    assert result["operating_margin_backfilled_periods"] == 4
+    assert "backfilled" in result["details"].lower()
+
+
+def test_munger_predictability_returns_none_when_data_is_insufficient() -> None:
+    line_items = [
+        SimpleNamespace(revenue=100, operating_income=20, operating_margin=None, free_cash_flow=12),
+        SimpleNamespace(revenue=92, operating_income=18, operating_margin=None, free_cash_flow=10),
+        SimpleNamespace(revenue=84, operating_income=16, operating_margin=None, free_cash_flow=9),
+    ]
+
+    result = analyze_predictability(line_items)
+
+    assert result["score"] is None
+    assert "보류" in result["details"]
+
+
+def test_munger_weighted_score_excludes_missing_predictability_weight() -> None:
+    score, weight = _weighted_component_score(
+        [
+            ("moat", {"score": 8}, 0.35),
+            ("management", {"score": 6}, 0.25),
+            ("predictability", {"score": None}, 0.25),
+            ("valuation", {"score": 4}, 0.15),
+        ]
+    )
+
+    assert score == pytest.approx((8 * 0.35 + 6 * 0.25 + 4 * 0.15) / 0.75)
+    assert weight == pytest.approx(0.75)
+
+
+def test_munger_facts_bundle_omits_predictability_when_score_is_missing() -> None:
+    facts = make_munger_facts_bundle(
+        {
+            "signal": "neutral",
+            "score": 6,
+            "max_score": 10,
+            "moat_analysis": {"score": 7, "details": "Moat detail"},
+            "management_analysis": {"score": 6, "details": "Management detail"},
+            "predictability_analysis": {
+                "score": None,
+                "details": "데이터 부족 (4년 미만) - 예측가능성 평가 보류",
+            },
+            "valuation_analysis": {"score": 5, "details": "Valuation detail"},
+        }
+    )
+
+    assert "예측가능성 점수" not in facts
+    assert "예측가능성" not in facts["핵심 체크"]
+    assert "예측가능성" not in facts["메모"]
+
+
+def test_munger_prompt_factors_omit_predictability_when_score_is_missing() -> None:
+    factors = _munger_decision_factors({"predictability_analysis": {"score": None}})
+
+    assert "predictability" not in factors
+    assert factors == "moat strength, management quality, valuation"
