@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { ModelSelector } from '@/components/ui/llm-selector';
-import { resolveTickerValue, TickerInput } from '@/components/ui/ticker-input';
+import { resolveTickerValue, TickerInput, type TickerInputValidationStatus } from '@/components/ui/ticker-input';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import {
   normalizeReportOrderedMarkers,
@@ -19,7 +19,7 @@ import { t } from '@/lib/language-preferences';
 import { MetricsGrid, parseOverrideInput, compareOverrideVsLineItem0, getFinancialFieldLabel } from './data-sandbox/metrics-grid';
 import { savedAnalysisService } from '@/services/saved-analyses-service';
 import { AlertCircle, ChevronDown, ChevronRight, Database, Loader2, Play, RefreshCw, Square, Bot } from 'lucide-react';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { buildDataSandboxOverrideSnapshot, saveDataSandboxOverrideSnapshot } from '@/lib/data-sandbox-overrides';
 
 const TrendCharts = lazy(() =>
@@ -525,6 +525,8 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
 
   // Config state
   const [tickers, setTickers] = useState('');
+  const [tickerValidationStatus, setTickerValidationStatus] = useState<TickerInputValidationStatus>('empty');
+  const [validatedTicker, setValidatedTicker] = useState('');
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 3);
@@ -564,6 +566,11 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
   // View tab
   const [viewTab, setViewTab] = useState<ViewTab>('metrics');
 
+  const handleTickerValidationChange = useCallback((status: TickerInputValidationStatus, resolvedTicker?: string) => {
+    setTickerValidationStatus(status);
+    setValidatedTicker(status === 'valid' && resolvedTicker ? resolvedTicker : '');
+  }, []);
+
   // Load agents & models on mount
   useEffect(() => {
     Promise.all([getAgents(), getModels(), getDefaultModel()]).then(([agentList, modelList, defaultModel]) => {
@@ -599,7 +606,15 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
 
   const handleFetch = async () => {
     const raw = tickers.split(',')[0].trim();
-    const ticker = resolveTickerValue(raw).toUpperCase();
+    if (tickerValidationStatus !== 'valid') {
+      setFetchError(
+        language === 'ko'
+          ? '존재하는 종목을 자동완성에서 선택하거나 정확한 티커를 입력해 주세요.'
+          : 'Choose an existing stock from autocomplete or enter an exact ticker.'
+      );
+      return;
+    }
+    const ticker = (validatedTicker || resolveTickerValue(raw)).toUpperCase();
     if (!ticker) return;
 
     setIsFetching(true);
@@ -1062,7 +1077,7 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
     }
   }, [fetchedData, forwardPeOverride, isForwardPeOverrideDirty, forwardPeFy0Override, isForwardPeFy0OverrideDirty, forwardPeFy1Override, isForwardPeFy1OverrideDirty, lineItemsOverrides, metricsOverrides]);
 
-  const canFetch = tickers.trim() !== '' && !isFetching && !isRunning;
+  const canFetch = tickerValidationStatus === 'valid' && !isFetching && !isRunning;
   const canRun = !!fetchedData && selectedAgents.size > 0 && !isRunning && !isFetching;
   const agentResultList = Array.from(agentResults.values());
   const hasSavableResults = !!fetchedData && !isRunning && (agentResultList.length > 0 || !!completeResult);
@@ -1131,8 +1146,18 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
               value={tickers}
               isActive={isTabActive}
               onChange={setTickers}
+              onValidationChange={handleTickerValidationChange}
               onKeyDown={e => { if (e.key === 'Enter' && canFetch) handleFetch(); }}
             />
+            {tickers.trim() && tickerValidationStatus !== 'valid' && (
+              <p className={`text-xs ${tickerValidationStatus === 'invalid' ? 'text-red-500' : 'text-muted-foreground'}`}>
+                {tickerValidationStatus === 'checking'
+                  ? (language === 'ko' ? '종목 존재 여부 확인 중...' : 'Checking ticker...')
+                  : (language === 'ko'
+                      ? '자동완성 결과에 있는 실제 종목만 조회할 수 있습니다.'
+                      : 'Only stocks found in autocomplete can be fetched.')}
+              </p>
+            )}
           </div>
 
           {/* Dates */}

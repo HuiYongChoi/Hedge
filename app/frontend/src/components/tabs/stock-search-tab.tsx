@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { ModelSelector } from '@/components/ui/llm-selector';
-import { resolveTickerValue, TickerInput } from '@/components/ui/ticker-input';
+import { resolveTickerValue, TickerInput, type TickerInputValidationStatus } from '@/components/ui/ticker-input';
 import { useLanguage } from '@/contexts/language-context';
 import { useWorkspace, type Workspace } from '@/contexts/workspace-context';
 import { Agent, getAgents } from '@/data/agents';
@@ -566,6 +566,8 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
   const [isSavingAnalysis, setIsSavingAnalysis] = useState(false);
   const [sandboxOverrideSnapshot, setSandboxOverrideSnapshot] = useState(() => loadDataSandboxOverrideSnapshot());
   const [isConfigPanelCollapsed, setIsConfigPanelCollapsed] = useState(false);
+  const [tickerValidationStatus, setTickerValidationStatus] = useState<TickerInputValidationStatus>('empty');
+  const [validatedTicker, setValidatedTicker] = useState('');
   const abortControllerRef = useRef<AbortController | null>(null);
   const savedRunIdRef = useRef<number | null>(null);
   const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -639,6 +641,11 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
   ), [currentTicker, sandboxOverrideSnapshot]);
 
   const sandboxOverrideFieldCount = countSandboxOverrideFields(sandboxOverrideForTicker);
+
+  const handleTickerValidationChange = useCallback((status: TickerInputValidationStatus, resolvedTicker?: string) => {
+    setTickerValidationStatus(status);
+    setValidatedTicker(status === 'valid' && resolvedTicker ? resolvedTicker : '');
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -781,11 +788,19 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
 
   const handleRun = async () => {
     if (!tickers.trim() || selectedAgents.size === 0) return;
+    if (tickerValidationStatus !== 'valid') {
+      setErrorMessage(
+        language === 'ko'
+          ? '존재하는 종목을 자동완성에서 선택하거나 정확한 티커를 입력해 주세요.'
+          : 'Choose an existing stock from autocomplete or enter an exact ticker.'
+      );
+      return;
+    }
 
     // Use only the first ticker for single ticker analysis
     // 한국 기업명이 입력된 경우 티커 코드로 변환
     const rawTicker = tickers.split(',')[0].trim();
-    const singleTicker = resolveTickerValue(rawTicker).toUpperCase();
+    const singleTicker = (validatedTicker || resolveTickerValue(rawTicker)).toUpperCase();
     if (!singleTicker) return;
 
     setTickers(rawTicker);
@@ -1063,7 +1078,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
     }
   };
 
-  const canRun = tickers.trim() !== '' && selectedAgents.size > 0 && !isRunning;
+  const canRun = tickerValidationStatus === 'valid' && selectedAgents.size > 0 && !isRunning;
   const agentResultList = Array.from(agentResults.values());
   const hasSavableResults = !isRunning && (agentResultList.length > 0 || !!completeResult);
 
@@ -1133,11 +1148,21 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
               onChange={val => {
                  setTickers(val);
               }}
+              onValidationChange={handleTickerValidationChange}
               onKeyDown={e => { if (e.key === 'Enter' && canRun) handleRun(); }}
             />
             <p className="text-xs text-muted-foreground">
               {language === 'ko' ? '단일 종목만 검색 및 분석이 가능합니다.' : 'Only a single ticker can be analyzed at a time.'}
             </p>
+            {tickers.trim() && tickerValidationStatus !== 'valid' && (
+              <p className={`text-xs ${tickerValidationStatus === 'invalid' ? 'text-red-500' : 'text-muted-foreground'}`}>
+                {tickerValidationStatus === 'checking'
+                  ? (language === 'ko' ? '종목 존재 여부 확인 중...' : 'Checking ticker...')
+                  : (language === 'ko'
+                      ? '자동완성 결과에 있는 실제 종목만 분석할 수 있습니다.'
+                      : 'Only stocks found in autocomplete can be analyzed.')}
+              </p>
+            )}
           </div>
 
           {/* Dates */}

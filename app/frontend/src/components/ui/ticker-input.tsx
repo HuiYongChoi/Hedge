@@ -14,6 +14,8 @@ interface TickerSuggestion {
   market?: string; // 'US' | 'KR' | 'GLOBAL'
 }
 
+export type TickerInputValidationStatus = 'empty' | 'checking' | 'valid' | 'invalid';
+
 // 즉시 표시할 인기 종목 (API 호출 전 fallback)
 export const POPULAR_TICKERS: TickerSuggestion[] = [
   { ticker: 'AAPL', name: 'Apple Inc.', market: 'US' },
@@ -94,13 +96,19 @@ function normalizeAutocompleteToken(value: string): string {
 }
 
 function isExactSuggestionMatch(term: string, suggestions: TickerSuggestion[]): boolean {
-  const normalizedTerm = normalizeAutocompleteToken(term);
-  if (!normalizedTerm) return false;
+  return findExactSuggestionMatch(term, suggestions) !== null;
+}
 
-  return suggestions.some(suggestion => {
+function findExactSuggestionMatch(term: string, suggestions: TickerSuggestion[]): TickerSuggestion | null {
+  const normalizedTerm = normalizeAutocompleteToken(term);
+  if (!normalizedTerm) return null;
+
+  return suggestions.find(suggestion => {
+    const tickerValue = normalizeAutocompleteToken(suggestion.ticker);
     const suggestionValue = normalizeAutocompleteToken(getSuggestionInsertValue(suggestion));
-    return suggestionValue === normalizedTerm;
-  });
+    const nameValue = normalizeAutocompleteToken(suggestion.name);
+    return [tickerValue, suggestionValue, nameValue].includes(normalizedTerm);
+  }) ?? null;
 }
 
 function hasCompletedSuggestion(term: string, suggestions: TickerSuggestion[]): boolean {
@@ -136,6 +144,7 @@ interface TickerInputProps {
   className?: string;
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   isActive?: boolean;
+  onValidationChange?: (status: TickerInputValidationStatus, resolvedTicker?: string) => void;
 }
 
 export function TickerInput({
@@ -145,6 +154,7 @@ export function TickerInput({
   className,
   onKeyDown,
   isActive = true,
+  onValidationChange,
 }: TickerInputProps) {
   const [draftValue, setDraftValue] = useState(value);
   const [activeIdx, setActiveIdx] = useState(-1);
@@ -161,6 +171,8 @@ export function TickerInput({
   const skipNextFetchRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const validationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const validationAbortRef = useRef<AbortController | null>(null);
   const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentTerm = getTermFromValue(draftValue);
@@ -255,6 +267,76 @@ export function TickerInput({
     }, 300);
   };
 
+  useEffect(() => {
+    if (!onValidationChange) return;
+    if (isComposingRef.current) return;
+
+    if (validationDebounceRef.current) {
+      clearTimeout(validationDebounceRef.current);
+      validationDebounceRef.current = null;
+    }
+    if (validationAbortRef.current) {
+      validationAbortRef.current.abort();
+      validationAbortRef.current = null;
+    }
+
+    const term = currentTerm.trim();
+    if (!term) {
+      onValidationChange('empty');
+      return;
+    }
+
+    const staticMatch = findExactSuggestionMatch(term, getStaticSuggestions(term));
+    if (staticMatch) {
+      rememberKoreanTickerSuggestion(staticMatch);
+      onValidationChange('valid', staticMatch.ticker.toUpperCase());
+      return;
+    }
+
+    onValidationChange('checking');
+    const controller = new AbortController();
+    validationAbortRef.current = controller;
+
+    validationDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/ticker-search?q=${encodeURIComponent(term)}`,
+          { signal: controller.signal }
+        );
+        if (!res.ok) throw new Error('Ticker validation failed');
+
+        const data: TickerSuggestion[] = await res.json();
+        data.forEach(rememberKoreanTickerSuggestion);
+
+        const liveTerm = getTermFromValue(inputRef.current?.value ?? draftValue);
+        if (normalizeAutocompleteToken(liveTerm) !== normalizeAutocompleteToken(term)) {
+          return;
+        }
+
+        const match = findExactSuggestionMatch(term, data);
+        if (match) {
+          onValidationChange('valid', match.ticker.toUpperCase());
+        } else {
+          onValidationChange('invalid');
+        }
+      } catch (e: any) {
+        if (e.name === 'AbortError') return;
+        onValidationChange('invalid');
+      }
+    }, 250);
+
+    return () => {
+      if (validationDebounceRef.current) {
+        clearTimeout(validationDebounceRef.current);
+        validationDebounceRef.current = null;
+      }
+      if (validationAbortRef.current) {
+        validationAbortRef.current.abort();
+        validationAbortRef.current = null;
+      }
+    };
+  }, [currentTerm, draftValue, onValidationChange]);
+
   // currentTerm 변경 시 검색 실행
   useEffect(() => {
     if (isComposingRef.current) return;
@@ -316,6 +398,7 @@ export function TickerInput({
 
     setDraftValue(nextValue);
     onChange(nextValue);
+    onValidationChange?.('valid', suggestion.ticker.toUpperCase());
     setSuggestions([]);
     setDismissedTerm(null);
     setActiveIdx(-1);
@@ -443,6 +526,7 @@ export function TickerInput({
           onClick={() => {
             setDraftValue('');
             onChange('');
+            onValidationChange?.('empty');
             setSuggestions([]);
             setDismissedTerm(null);
             setActiveIdx(-1);

@@ -50,6 +50,15 @@ class TickerInputAutocompleteStaticTests(unittest.TestCase):
         self.assertIn("min-w-0 flex-1", source)
         self.assertNotIn("font-mono font-semibold w-20", source)
 
+    def test_ticker_input_exposes_exact_match_validation_state(self):
+        source = TICKER_INPUT.read_text(encoding="utf-8")
+
+        self.assertIn("export type TickerInputValidationStatus", source)
+        self.assertIn("onValidationChange?: (status: TickerInputValidationStatus", source)
+        self.assertIn("function findExactSuggestionMatch", source)
+        self.assertIn("onValidationChange('valid'", source)
+        self.assertIn("onValidationChange('invalid')", source)
+
 
 if __name__ == "__main__":
     unittest.main()

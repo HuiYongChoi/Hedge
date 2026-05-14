@@ -52,6 +52,24 @@ class TickerInputTabActivationStaticTests(unittest.TestCase):
         self.assertIn("export function DataSandboxTab({ isTabActive = true", source)
         self.assertIn("isActive={isTabActive}", source)
 
+    def test_stock_search_requires_valid_ticker_before_running_agents(self):
+        source = STOCK_TAB.read_text(encoding="utf-8")
+
+        self.assertIn("TickerInputValidationStatus", source)
+        self.assertIn("const [tickerValidationStatus, setTickerValidationStatus]", source)
+        self.assertIn("onValidationChange={handleTickerValidationChange}", source)
+        self.assertIn("tickerValidationStatus === 'valid'", source)
+        self.assertIn("validatedTicker", source)
+
+    def test_data_sandbox_requires_valid_ticker_before_fetching(self):
+        source = DATA_SANDBOX_TAB.read_text(encoding="utf-8")
+
+        self.assertIn("TickerInputValidationStatus", source)
+        self.assertIn("const [tickerValidationStatus, setTickerValidationStatus]", source)
+        self.assertIn("onValidationChange={handleTickerValidationChange}", source)
+        self.assertIn("tickerValidationStatus === 'valid'", source)
+        self.assertIn("validatedTicker", source)
+
 
 if __name__ == "__main__":
     unittest.main()
