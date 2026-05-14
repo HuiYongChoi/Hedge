@@ -26,6 +26,7 @@ class AnalystTargetApiTests(unittest.TestCase):
         "low": 80.0,
         "median": 128.0,
         "analyst_count": 18,
+        "current_fy_eps": 58.11,
         "brokers": [],
         "rec_summary_row": {"strongBuy": 2, "buy": 1, "hold": 1, "sell": 0, "strongSell": 0},
     }
@@ -44,6 +45,7 @@ class AnalystTargetApiTests(unittest.TestCase):
         self.assertEqual(result.low, 80.0)
         self.assertEqual(result.analyst_count, 18)
         self.assertEqual(result.current_price, 125.5)
+        self.assertEqual(result.current_fy_eps, 58.11)
         self.assertEqual(result.source, "yfinance")
         self.assertIsNotNone(result.distribution)
         self.assertEqual(result.distribution.buy, 3)   # strongBuy=2 + buy=1
@@ -67,7 +69,7 @@ class AnalystTargetApiTests(unittest.TestCase):
         mock_fund.return_value = {}
         mock_an.return_value = {
             "consensus": None, "high": None, "low": None, "median": None,
-            "analyst_count": None, "brokers": [], "rec_summary_row": None,
+            "analyst_count": None, "current_fy_eps": None, "brokers": [], "rec_summary_row": None,
         }
         result = fetch_analyst_target("XYZ")
         self.assertIsNone(result.consensus)
@@ -104,6 +106,7 @@ class AnalystTargetApiTests(unittest.TestCase):
             "low": 700.0,
             "median": 870.0,
             "analyst_count": 2,
+            "current_fy_eps": 58.11,
             "brokers": [
                 BrokerTarget("Citi", 720.0, "SELL", today_str, 0),
                 BrokerTarget("JPMorgan", 830.0, "NEUTRAL", today_str, 0),
@@ -157,7 +160,7 @@ class AnalystTargetApiTests(unittest.TestCase):
         mock_fund.return_value = {}
         mock_an.return_value = {
             "consensus": None, "high": None, "low": None, "median": None,
-            "analyst_count": None, "brokers": [], "rec_summary_row": None,
+            "analyst_count": None, "current_fy_eps": None, "brokers": [], "rec_summary_row": None,
         }
         result = fetch_analyst_target("TEST")
         self.assertTrue(hasattr(result, "beta"))
@@ -176,10 +179,10 @@ class AnalystTargetApiTests(unittest.TestCase):
         mock_fund.return_value = {}
         mock_an.return_value = {
             "consensus": None, "high": None, "low": None, "median": None,
-            "analyst_count": None, "brokers": [], "rec_summary_row": None,
+            "analyst_count": None, "current_fy_eps": None, "brokers": [], "rec_summary_row": None,
         }
         response = asyncio.run(get_analyst_target("MU"))
-        for key in ["beta", "sigma_annual", "brokers", "distribution"]:
+        for key in ["beta", "sigma_annual", "brokers", "distribution", "current_fy_eps"]:
             self.assertIn(key, response, key)
 
     @patch("src.tools.analyst_target_api._fetch_yfinance_analyst")
@@ -194,6 +197,7 @@ class AnalystTargetApiTests(unittest.TestCase):
         mock_an.return_value = {
             "consensus": 310.0, "high": 400.0, "low": 215.0, "median": 305.0,
             "analyst_count": 48,
+            "current_fy_eps": 58.11,
             "brokers": [
                 BrokerTarget("Evercore", 365.0, "BUY", "2026-05-14", 1),
                 BrokerTarget("Wedbush",  400.0, "BUY", "2026-05-08", 7),
@@ -208,6 +212,44 @@ class AnalystTargetApiTests(unittest.TestCase):
         self.assertEqual(result.distribution.sell, 2)   # sell + strongSell
         self.assertEqual(result.distribution.total, 48)
         self.assertAlmostEqual(result.distribution.average, (365 + 400 + 296) / 3, places=1)
+
+    def test_ttm_eps_quarterly_fallback(self):
+        """info에 trailingEps 없으면 quarterly_income_stmt 4분기 Diluted EPS 합 사용."""
+        from src.tools.analyst_target_api import _compute_ttm_eps_from_quarterly
+        import pandas as pd
+
+        class MockTicker:
+            @property
+            def quarterly_income_stmt(self):
+                return pd.DataFrame({
+                    "2026-02-28": [12.07, 13.785e9],
+                    "2025-11-30": [4.60, 5.24e9],
+                    "2025-08-31": [2.83, 3.201e9],
+                    "2025-05-31": [1.68, 1.885e9],
+                }, index=["Diluted EPS", "Net Income"])
+
+        result = _compute_ttm_eps_from_quarterly(MockTicker())
+        self.assertAlmostEqual(result, 21.18, places=1)
+
+    def test_current_fy_eps_extracted(self):
+        """earnings_estimate 0y avg → current_fy_eps."""
+        from src.tools.analyst_target_api import _fetch_current_fy_eps
+        import pandas as pd
+
+        class MockTicker:
+            @property
+            def earnings_estimate(self):
+                return pd.DataFrame(
+                    {
+                        "avg": [18.97, 22.57, 58.11, 101.78],
+                        "low": [7.53, 7.68, 28.42, 70.77],
+                        "high": [21.05, 26.90, 64.37, 142.48],
+                    },
+                    index=["0q", "+1q", "0y", "+1y"],
+                )
+
+        result = _fetch_current_fy_eps(MockTicker())
+        self.assertAlmostEqual(result, 58.11, places=2)
 
 
 if __name__ == "__main__":

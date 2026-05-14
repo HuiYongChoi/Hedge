@@ -45,6 +45,7 @@ async def get_analyst_target(ticker: str):
         "trailing_eps": result.trailing_eps,
         "forward_eps": result.forward_eps,
         "forward_pe": result.forward_pe,
+        "current_fy_eps": result.current_fy_eps,
         "beta": result.beta,
         "sigma_annual": result.sigma_annual,
         "brokers": [_broker_to_dict(b) for b in result.brokers],

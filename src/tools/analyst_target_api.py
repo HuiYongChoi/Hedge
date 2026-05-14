@@ -61,6 +61,7 @@ class AnalystTarget:
     forward_pe: Optional[float]      # Next-year P/E (yfinance info)
     beta: Optional[float]            # beta (yfinance info)
     sigma_annual: Optional[float]    # annualised σ (historical or derived)
+    current_fy_eps: Optional[float] = None  # Current fiscal-year EPS estimate
     brokers: list[BrokerTarget] = field(default_factory=list)
     distribution: Optional[TargetDistribution] = None
     source: str = "stub"
@@ -89,6 +90,36 @@ def _normalize_signal(grade: Optional[str]) -> str:
     return GRADE_TO_SIGNAL.get(key, "NEUTRAL")
 
 
+def _compute_ttm_eps_from_quarterly(ticker_obj) -> Optional[float]:
+    """quarterly_income_stmt의 최근 4분기 EPS 합산값."""
+    try:
+        qis = ticker_obj.quarterly_income_stmt
+        if qis is None or qis.empty:
+            return None
+        for label in ("Diluted EPS", "Basic EPS"):
+            if label not in qis.index:
+                continue
+            values = [_coerce_pos_float(v) for v in qis.loc[label].dropna().head(4)]
+            if len(values) == 4 and all(v is not None for v in values):
+                total = float(sum(v for v in values if v is not None))
+                return total if total > 0 else None
+    except Exception:
+        pass
+    return None
+
+
+def _fetch_current_fy_eps(ticker_obj) -> Optional[float]:
+    """yfinance earnings_estimate의 0y(current fiscal year) avg EPS."""
+    try:
+        ee = ticker_obj.earnings_estimate
+        if ee is None or ee.empty or "0y" not in ee.index:
+            return None
+        return _coerce_pos_float(ee.loc["0y", "avg"])
+    except Exception:
+        pass
+    return None
+
+
 def _fetch_yfinance_data(ticker: str) -> dict:
     """yfinance로 현재가 + 기본 펀더멘털(PE/EPS/beta) fetch."""
     out: dict = {}
@@ -114,6 +145,13 @@ def _fetch_yfinance_data(ticker: str) -> dict:
             val = info.get(src_key)
             if val is not None and isinstance(val, (int, float)) and float(val) > 0:
                 out[dst_key] = float(val)
+
+        if "trailing_eps" not in out:
+            fallback = _compute_ttm_eps_from_quarterly(t)
+            if fallback is not None and fallback > 0:
+                out["trailing_eps"] = fallback
+                if "current_price" in out and "trailing_pe" not in out:
+                    out["trailing_pe"] = out["current_price"] / fallback
     except Exception as e:
         logger.debug("yfinance data fetch failed for %s: %s", ticker, e)
     return out
@@ -149,6 +187,7 @@ def _fetch_yfinance_analyst(ticker: str) -> dict:
     out: dict = {
         "consensus": None, "high": None, "low": None, "median": None,
         "analyst_count": None,
+        "current_fy_eps": None,
         "brokers": [],
         "rec_summary_row": None,  # {strongBuy, buy, hold, sell, strongSell}
     }
@@ -165,6 +204,8 @@ def _fetch_yfinance_analyst(ticker: str) -> dict:
             out["median"]    = _coerce_pos_float(apt.get("median"))
         except Exception:
             pass
+
+        out["current_fy_eps"] = _fetch_current_fy_eps(t)
 
         # ── recommendations_summary (최신 행) ──
         try:
@@ -301,6 +342,7 @@ def fetch_analyst_target(ticker: str) -> AnalystTarget:
         forward_pe=yf_fund.get("forward_pe"),
         beta=beta_final,
         sigma_annual=sigma_final,
+        current_fy_eps=yf_an.get("current_fy_eps"),
         brokers=yf_an["brokers"],
         distribution=distribution,
         source="yfinance" if has_data else "stub",
