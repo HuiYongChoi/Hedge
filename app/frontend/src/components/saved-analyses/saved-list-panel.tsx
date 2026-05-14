@@ -1,4 +1,4 @@
-import { ChevronLeft, PanelLeftClose } from 'lucide-react';
+import { Archive, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { t } from '@/lib/language-preferences';
 import type { SavedAnalysis, SavedAnalysisFilter } from '@/services/saved-analyses-service';
@@ -41,12 +41,41 @@ export function SavedListPanel({
   const skip = filter.skip ?? 0;
   const currentPage = Math.floor(skip / limit) + 1;
   const totalPages = Math.max(1, Math.ceil(total / limit));
+  const expandLabel = language === 'ko' ? '저장 분석 목록 열기' : 'Open saved analyses list';
+
+  if (isCollapsed) {
+    return (
+      <aside
+        className="flex min-w-[44px] flex-shrink-0 flex-col items-center border-r bg-muted/10 py-2 transition-all duration-300 ease-in-out"
+        style={{ width: isCollapsed ? 48 : 360 }}
+        aria-label={expandLabel}
+      >
+        {onToggleCollapse && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11 text-muted-foreground hover:text-foreground"
+            onClick={onToggleCollapse}
+            title={expandLabel}
+            aria-label={language === 'ko' ? '저장 분석 목록 열기' : 'Open saved analyses list'}
+          >
+            <PanelLeftOpen className="h-4 w-4" />
+          </Button>
+        )}
+        <div className="mt-2 flex h-8 w-8 items-center justify-center rounded-full border border-border/60 text-muted-foreground">
+          <Archive className="h-3.5 w-3.5" />
+        </div>
+        <div className="mt-3 text-[10px] font-medium text-muted-foreground" style={{ writingMode: 'vertical-rl' }}>
+          {t('savedAnalyses', language)}
+        </div>
+      </aside>
+    );
+  }
 
   return (
     <aside
       className="flex flex-shrink-0 flex-col border-r bg-muted/10 transition-all duration-300 ease-in-out overflow-hidden"
-      style={{ width: isCollapsed ? 0 : 360, opacity: isCollapsed ? 0 : 1 }}
-      aria-hidden={isCollapsed}
+      style={{ width: isCollapsed ? 48 : 360 }}
     >
       <header className="border-b p-3 flex items-start justify-between gap-2">
         <div className="min-w-0">

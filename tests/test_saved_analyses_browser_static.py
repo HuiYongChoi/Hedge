@@ -97,6 +97,14 @@ class SavedAnalysesBrowserStaticTests(unittest.TestCase):
         self.assertIn('def delete', src)
         self.assertIn('def count', src)
 
+    def test_saved_list_panel_keeps_expand_rail_when_collapsed(self):
+        src = (DIR / 'saved-list-panel.tsx').read_text(encoding='utf-8')
+
+        self.assertIn('PanelLeftOpen', src)
+        self.assertIn('isCollapsed ? 48 : 360', src)
+        self.assertIn("aria-label={language === 'ko' ? '저장 분석 목록 열기' : 'Open saved analyses list'}", src)
+        self.assertIn('min-w-[44px]', src)
+
 
 if __name__ == "__main__":
     unittest.main()
