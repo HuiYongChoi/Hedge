@@ -72,6 +72,9 @@ export const AGENT_META: Record<string, { categoryKo: string; categoryEn: string
 const DATA_TOKEN_PATTERN = /(\$\d[\d,]*(?:\.\d+)?[BMK]?|\d[\d,]*(?:\.\d+)?\s?(?:%|배|x|X|B|M|K)|-\d[\d,]*(?:\.\d+)?%)/g;
 
 const LABEL_CANDIDATES: Array<{ pattern: RegExp; ko: string; en: string }> = [
+  { pattern: /ROIC|투하자본/i, ko: 'ROIC', en: 'ROIC' },
+  { pattern: /FCF\s*수익률|free cash flow yield|fcf yield/i, ko: 'FCF 수익률', en: 'FCF yield' },
+  { pattern: /부채비율|debt-to-equity|D\/E/i, ko: '부채비율', en: 'Debt-to-equity' },
   { pattern: /내재가치|intrinsic value|fair value/i, ko: '1주당 내재가치', en: 'Intrinsic value' },
   { pattern: /현재가|current price|price/i, ko: '현재가', en: 'Current price' },
   { pattern: /안전마진|margin of safety/i, ko: '안전마진', en: 'Margin of safety' },
@@ -635,16 +638,49 @@ export function classifyItemTone(itemText: string): ReportTone {
 }
 
 export function extractItemHeading(itemText: string): { heading: string | null; body: string } {
-  const bold = itemText.match(/^\*\*([^*]{2,80})\*\*:?\s*(.*)$/su);
+  const normalizedItemText = normalizeFinancialDisplayText(itemText);
+  const bold = normalizedItemText.match(/^\*\*([^*]{2,80})\*\*:?\s*(.*)$/su);
   if (bold) return { heading: bold[1].trim(), body: bold[2].trim() };
 
-  const colon = itemText.match(/^([^:：]{2,42})[:：]\s+(.+)$/su);
+  const colon = normalizedItemText.match(/^([^:：]{2,42})[:：]\s+(.+)$/su);
   if (colon) return { heading: colon[1].replace(/^\[[+\-~?]\]\s*/u, '').trim(), body: colon[2].trim() };
 
-  const marker = itemText.match(/^\[[+\-~?]\]\s*([^.!?다]{6,60})[.!?다]\s*(.*)$/su);
-  if (marker) return { heading: marker[1].trim(), body: `${marker[1].trim()}${itemText.includes('다') ? '다' : '.'} ${marker[2].trim()}`.trim() };
+  const marker = normalizedItemText.match(/^\[[+\-~?]\]\s*(.+)$/su);
+  if (marker) {
+    const bodyText = marker[1].trim();
+    return { heading: deriveMarkerHeading(bodyText), body: bodyText };
+  }
 
-  return { heading: null, body: itemText };
+  return { heading: null, body: normalizedItemText };
+}
+
+function isDecimalPoint(text: string, index: number) {
+  return text[index] === '.' && /\d/u.test(text[index - 1] || '') && /\d/u.test(text[index + 1] || '');
+}
+
+function findSafeHeadingBoundary(text: string) {
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if ((char === '.' || char === '!' || char === '?') && !isDecimalPoint(text, index)) {
+      return index + 1;
+    }
+    if (char === '다' && (index === text.length - 1 || /\s/u.test(text[index + 1] || ''))) {
+      return index + 1;
+    }
+  }
+  return -1;
+}
+
+function deriveMarkerHeading(bodyText: string) {
+  const boundary = findSafeHeadingBoundary(bodyText);
+  const source = boundary > 0 ? bodyText.slice(0, boundary) : bodyText;
+  const compact = source
+    .replace(/[.!?]\s*$/u, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!compact) return null;
+  if (compact.length <= 60) return compact;
+  return `${compact.slice(0, 57).replace(/\s+\S*$/u, '').trim()}...`;
 }
 
 export function getDataTokenPattern() {

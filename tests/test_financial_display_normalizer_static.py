@@ -15,6 +15,8 @@ def test_frontend_financial_text_normalizer_repairs_broken_debt_ratio_sequences(
     assert "normalizeFinancialDisplayText" in source
     assert "BROKEN_DEBT_PERCENT_SEQUENCE" in source
     assert "pickDebtPercent" in source
+    assert "normalizeBrokenKoreanDecimalSeparators" in source
+    assert "normalizeNestedDebtRatioLabels" in source
     assert "10000%0%0%5%" in source
     assert "부채비율 5%" in source
     assert "Debt-To-Equity(부채비율) 5%" in source
@@ -32,3 +34,13 @@ def test_all_report_render_paths_apply_financial_text_normalizer() -> None:
     assert "normalizeFinancialDisplayText(sectionText" in helpers
     assert "from '@/lib/financial-text-normalizer'" in inline
     assert "normalizeFinancialDisplayText(text)" in inline
+
+
+def test_v5_marker_headings_do_not_rebuild_decimal_numbers_with_korean_sentence_endings() -> None:
+    helpers = V5_HELPERS.read_text(encoding="utf-8")
+
+    assert "findSafeHeadingBoundary" in helpers
+    assert "isDecimalPoint" in helpers
+    assert "deriveMarkerHeading" in helpers
+    assert "body: bodyText" in helpers
+    assert "itemText.includes('다')" not in helpers
