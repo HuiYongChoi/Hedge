@@ -73,6 +73,8 @@ export interface AgentReport {
   signal?: string;
   confidence?: number | string;
   reasoning?: unknown;
+  data_coverage?: number | null;
+  raw_max_score?: number | null;
   [key: string]: any;
 }
 

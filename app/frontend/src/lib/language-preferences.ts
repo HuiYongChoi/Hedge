@@ -467,6 +467,13 @@ export const translations = {
     filterTo: '종료일',
     savedRequestSnapshot: '요청 스냅샷',
     savedNoDecisions: '저장된 결과에 결정 데이터가 없습니다.',
+    // Data quality null-score keys
+    dataInsufficient: '데이터 부족',
+    scoreOnHold: '평가 보류',
+    dataCoverageLabel: '데이터 충실도 {pct}%',
+    nullScoreTooltip: '이 항목은 원천 데이터가 부족해 점수를 계산하지 않았습니다.',
+    targetDataCoverageLow: '데이터 커버리지가 낮아 핵심 타겟을 보류했습니다.',
+    verdictOnHold: '판단 보류',
   },
   en: {
     // Settings Navigation
@@ -900,6 +907,13 @@ export const translations = {
     filterTo: 'To',
     savedRequestSnapshot: 'Request snapshot',
     savedNoDecisions: 'Saved result has no decisions data.',
+    // Data quality null-score keys
+    dataInsufficient: 'Insufficient data',
+    scoreOnHold: 'Score on hold',
+    dataCoverageLabel: 'Data coverage {pct}%',
+    nullScoreTooltip: 'This axis was not scored because the underlying data is insufficient.',
+    targetDataCoverageLow: 'Target data is on hold due to low coverage.',
+    verdictOnHold: 'Verdict on hold',
   }
 };
 

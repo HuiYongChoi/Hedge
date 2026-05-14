@@ -10,6 +10,7 @@ interface TargetDataSidebarProps {
   language: ReportLanguage;
   onSwitchAgent: (agentKey: string) => void;
   className?: string;
+  report?: Record<string, any> | null;
 }
 
 function shortTone(tone: OtherAgent['tone']) {
@@ -24,6 +25,7 @@ export function TargetDataSidebar({
   language,
   onSwitchAgent,
   className = '',
+  report,
 }: TargetDataSidebarProps) {
   return (
     <aside className={`w-full flex-shrink-0 lg:sticky lg:top-4 lg:w-[280px] lg:self-start lg:overflow-y-auto lg:max-h-[calc(100vh-6rem)] ${className}`}>
@@ -62,9 +64,11 @@ export function TargetDataSidebar({
             })}
           </div>
         ) : (
-          <p className="rounded-lg border border-dashed border-border/70 bg-muted/10 p-3 text-xs text-muted-foreground">
-            {t('targetDataEmpty', language)}
-          </p>
+          <div className="rounded-lg border border-dashed p-4 text-center text-[11px] text-muted-foreground">
+            {report?.data_coverage !== undefined && report.data_coverage !== null && report.data_coverage < 0.4
+              ? (language === 'ko' ? '데이터 커버리지가 낮아 핵심 타겟을 보류했습니다.' : 'Target data is on hold due to low coverage.')
+              : (language === 'ko' ? '핵심 타겟 데이터가 없습니다.' : 'No target data available.')}
+          </div>
         )}
 
         {otherAgents.length > 0 && (

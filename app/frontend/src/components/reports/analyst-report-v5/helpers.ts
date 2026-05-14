@@ -21,6 +21,23 @@ import type {
 } from './types';
 import { normalizeFinancialDisplayText } from '@/lib/financial-text-normalizer';
 
+export function isInsufficient(score: number | null | undefined): boolean {
+  return score === null || score === undefined;
+}
+
+export function formatScoreOrDash(score: number | null | undefined): string {
+  if (isInsufficient(score)) return '—';
+  return String(score);
+}
+
+export function dataCoverageLabel(coverage: number | null | undefined, language: 'ko' | 'en'): string {
+  if (coverage === null || coverage === undefined) return '';
+  const pct = Math.round(coverage * 100);
+  return language === 'ko'
+    ? `데이터 충실도 ${pct}%`
+    : `Data coverage ${pct}%`;
+}
+
 export const SECTION_DEFS: SectionDef[] = [
   { id: 'section-01', number: '01', titleKo: '결론 요약', titleEn: 'Conclusion' },
   { id: 'section-02', number: '02', titleKo: '밸류에이션 — DCF', titleEn: 'Valuation — DCF' },

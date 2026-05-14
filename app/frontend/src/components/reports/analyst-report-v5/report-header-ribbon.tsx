@@ -1,8 +1,9 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { t } from '@/lib/language-preferences';
 import { Database, FileText, Loader2, SearchCode } from 'lucide-react';
-import { getScoreBand, getSignalTone, signalToVerdict, toneToClasses } from './helpers';
+import { dataCoverageLabel, getScoreBand, getSignalTone, signalToVerdict, toneToClasses } from './helpers';
 import type { AgentMeta, AgentReport, ReportLanguage } from './types';
 
 interface ReportHeaderRibbonProps {
@@ -99,6 +100,16 @@ export function ReportHeaderRibbon({
               {normalizedConfidence !== null && Number.isFinite(normalizedConfidence) && (
                 <Badge variant="outline" className="border-blue-500/25 bg-blue-500/10 text-blue-500">
                   {normalizedConfidence}%
+                </Badge>
+              )}
+              {activeReport?.data_coverage !== undefined && activeReport.data_coverage !== null && (
+                <Badge variant="outline" className={cn(
+                  'text-[10px] px-1 py-0',
+                  activeReport.data_coverage < 0.4 ? 'border-red-500/40 text-red-600' :
+                  activeReport.data_coverage < 0.6 ? 'border-amber-500/40 text-amber-600' :
+                  'border-emerald-500/40 text-emerald-600',
+                )}>
+                  {dataCoverageLabel(activeReport.data_coverage, language)}
                 </Badge>
               )}
             </div>

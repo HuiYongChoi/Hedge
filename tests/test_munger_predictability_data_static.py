@@ -85,7 +85,7 @@ def test_munger_weighted_score_excludes_missing_predictability_weight() -> None:
     assert weight == pytest.approx(0.75)
 
 
-def test_munger_facts_bundle_omits_predictability_when_score_is_missing() -> None:
+def test_munger_facts_bundle_shows_data_insufficient_when_score_is_missing() -> None:
     facts = make_munger_facts_bundle(
         {
             "signal": "neutral",
@@ -101,9 +101,10 @@ def test_munger_facts_bundle_omits_predictability_when_score_is_missing() -> Non
         }
     )
 
-    assert "예측가능성 점수" not in facts
-    assert "예측가능성" not in facts["핵심 체크"]
-    assert "예측가능성" not in facts["메모"]
+    assert "예측가능성 점수" in facts
+    assert "데이터 부족" in facts["예측가능성 점수"]
+    assert facts["핵심 체크"]["예측가능성"] == "보류"
+    assert "예측가능성" in facts["메모"]
 
 
 def test_munger_prompt_factors_omit_predictability_when_score_is_missing() -> None:

@@ -22,6 +22,10 @@ from src.utils.forward_outlook import (
 from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
 from src.tools.company_name import resolve_company_name
 from src.utils.progress import progress
+from src.utils.agent_data_quality import (
+    insufficient, ok, partial,
+    aggregate_scores, sanitize_for_llm, coverage_caps_signal,
+)
 
 
 class AswathDamodaranSignal(BaseModel):
@@ -52,26 +56,24 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         progress.update_status(agent_id, ticker, "Fetching financial metrics")
         metrics = get_financial_metrics(ticker, end_date, period="ttm", limit=5, api_key=api_key)
 
-        progress.update_status(agent_id, ticker, "Fetching financial line items")
-        line_items = search_line_items(
-            ticker,
-            [
-                "revenue",
-                "free_cash_flow",
-                "ebit",
-                "interest_expense",
-                "operating_income",
-                "capital_expenditure",
-                "depreciation_and_amortization",
-                "outstanding_shares",
-                "net_income",
-                "total_debt",
-                "shareholders_equity",
-                "cash_and_equivalents",
-            ],
-            end_date,
-            api_key=api_key,
+        _li_fields = [
+            "revenue", "free_cash_flow", "ebit", "interest_expense",
+            "operating_income", "capital_expenditure",
+            "depreciation_and_amortization", "outstanding_shares",
+            "net_income", "total_debt", "shareholders_equity",
+            "cash_and_equivalents",
+        ]
+        progress.update_status(agent_id, ticker, "Fetching financial line items (annual)")
+        line_items_annual = search_line_items(
+            ticker, _li_fields, end_date,
+            period="annual", limit=8, api_key=api_key,
         )
+        progress.update_status(agent_id, ticker, "Fetching financial line items (ttm)")
+        line_items_ttm = search_line_items(
+            ticker, _li_fields, end_date,
+            period="ttm", limit=1, api_key=api_key,
+        )
+        line_items = (line_items_ttm or []) + (line_items_annual or [])
 
         progress.update_status(agent_id, ticker, "Getting market cap")
         market_cap = get_market_cap(ticker, end_date, api_key=api_key)
@@ -95,12 +97,12 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
 
         # ─── Score & margin of safety ──────────────────────────────────────────
-        total_score = (
-            growth_analysis["score"]
-            + risk_analysis["score"]
-            + relative_val_analysis["score"]
-        )
-        max_score = growth_analysis["max_score"] + risk_analysis["max_score"] + relative_val_analysis["max_score"]
+        _components = [growth_analysis, risk_analysis, relative_val_analysis]
+        _agg = aggregate_scores(_components)
+        total_score = _agg["total_score"]
+        max_score = _agg["effective_max"]
+        _coverage = _agg["coverage"]
+        _raw_max = _agg["raw_max"]
 
         intrinsic_value = intrinsic_val_analysis["intrinsic_value"]
         margin_of_safety = (
@@ -119,6 +121,8 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             "signal": signal,
             "score": total_score,
             "max_score": max_score,
+            "data_coverage": _coverage,
+            "raw_max_score": _raw_max,
             "margin_of_safety": margin_of_safety,
             "growth_analysis": growth_analysis,
             "risk_analysis": risk_analysis,
@@ -138,6 +142,19 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             state=state,
             agent_id=agent_id,
         )
+
+        # Apply data-coverage signal cap
+        raw_sig = damodaran_output.signal
+        raw_conf = damodaran_output.confidence
+        capped_sig, capped_conf = coverage_caps_signal(_coverage, raw_sig, raw_conf)
+        if capped_sig != raw_sig or capped_conf != raw_conf:
+            damodaran_output.signal = capped_sig
+            damodaran_output.confidence = capped_conf
+            if _coverage < 0.4 and "데이터 커버리지" not in damodaran_output.reasoning:
+                damodaran_output.reasoning = (
+                    f"[데이터 커버리지 {_coverage:.0%}] 핵심 축이 결측되어 정량 결론을 보류하고 중립으로 조정함.\n\n"
+                    + damodaran_output.reasoning
+                )
 
         damodaran_signals[ticker] = damodaran_output.model_dump()
 
@@ -168,7 +185,7 @@ def analyze_growth_and_reinvestment(metrics: list, line_items: list) -> dict[str
     """
     max_score = 4
     if len(metrics) < 2 and len(line_items) < 2:
-        return {"score": 0, "max_score": max_score, "details": "N/A: 기간별 성장 이력은 제한적이어서 현금흐름과 수익성 대체 지표를 우선 해석"}
+        return insufficient(max_score, "성장 분석 보류 — 기간별 매출/현금흐름 데이터가 2개 미만이라 CAGR 계산 불가")
 
     # Revenue CAGR (oldest to latest)
     revs = [li.revenue for li in reversed(line_items) if getattr(li, "revenue", None)]
@@ -228,7 +245,7 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
     """
     max_score = 3
     if not metrics and not line_items:
-        return {"score": 0, "max_score": max_score, "details": "N/A: 위험 지표 원천이 제한되어 보수적 할인율을 적용"}
+        return insufficient(max_score, "위험 지표 보류 — Beta, D/E, Interest Coverage 모두 부재")
 
     latest = metrics[0] if metrics else None
     latest_li = line_items[0] if line_items else None
@@ -298,11 +315,11 @@ def analyze_relative_valuation(metrics: list) -> dict[str, any]:
     """
     max_score = 1
     if not metrics or len(metrics) < 5:
-        return {"score": 0, "max_score": max_score, "details": "Insufficient P/E history"}
+        return insufficient(max_score, "상대 P/E 비교 보류 — 5년치 P/E 이력 부족")
 
     pes = [m.price_to_earnings_ratio for m in metrics if m.price_to_earnings_ratio]
     if len(pes) < 5:
-        return {"score": 0, "max_score": max_score, "details": "P/E data sparse"}
+        return insufficient(max_score, "상대 P/E 비교 보류 — P/E 유효값이 5개 미만")
 
     ttm_pe = pes[0]
     median_pe = sorted(pes)[len(pes) // 2]
@@ -430,6 +447,8 @@ def generate_damodaran_output(
 
                 {SENTIMENT_MARKER_REQUIREMENT}
 
+                - `score` 값이 `"DATA_INSUFFICIENT"` 인 항목은 점수를 인용하지 말고 "데이터 부족으로 평가 보류"라고 명시한다. 그 축을 근거로 단정적 매수/매도 판단을 하지 않는다.
+
                 Return ONLY the JSON specified below.""",
             ),
             (
@@ -451,7 +470,7 @@ def generate_damodaran_output(
     )
 
     prompt = template.invoke({
-        "analysis_data": json.dumps(analysis_data, indent=2),
+        "analysis_data": json.dumps(sanitize_for_llm(analysis_data), indent=2, ensure_ascii=False),
         "ticker": ticker,
         "company_name": analysis_data.get(ticker, {}).get("company_name", ticker),
     })

@@ -15,6 +15,7 @@ from src.utils.forward_outlook import (
     get_cached_forward_metrics,
 )
 from src.utils.financial_formatting import format_debt_ratio_percent, format_korean_won_amount
+from src.utils.agent_data_quality import sanitize_for_llm, coverage_caps_signal
 
 MIN_PREDICTABILITY_PERIODS = 4
 
@@ -148,14 +149,27 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
         analysis_data[ticker]["company_name"] = company_name
 
         progress.update_status(agent_id, ticker, "Generating Charlie Munger analysis")
+        score_weight_used = analysis_data[ticker].get("score_weight_used", 1.0)
         munger_output = generate_munger_output(
-            ticker=ticker, 
+            ticker=ticker,
             analysis_data=analysis_data[ticker],
             state=state,
             agent_id=agent_id,
             confidence_hint=compute_confidence(analysis_data[ticker], signal)
         )
-        
+
+        # Apply data-coverage signal cap (score_weight_used ≈ coverage)
+        raw_sig = munger_output.signal
+        raw_conf = munger_output.confidence
+        capped_sig, capped_conf = coverage_caps_signal(score_weight_used, raw_sig, raw_conf)
+        munger_output.signal = capped_sig
+        munger_output.confidence = capped_conf
+        if score_weight_used < 0.4 and "데이터 커버리지" not in munger_output.reasoning:
+            munger_output.reasoning = (
+                f"[데이터 커버리지 {score_weight_used:.0%}] 핵심 축이 결측되어 중립으로 조정함.\n\n"
+                + munger_output.reasoning
+            )
+
         munger_analysis[ticker] = {
             "signal": munger_output.signal,
             "confidence": munger_output.confidence,
@@ -902,6 +916,10 @@ def make_munger_facts_bundle(analysis: dict[str, any]) -> dict[str, any]:
         facts["예측가능성 점수"] = _score_text(pred_score)
         facts["핵심 체크"]["예측가능성"] = _status_text(predictable, "높음", "낮음")
         facts["메모"]["예측가능성"] = (pred.get("details") or "")[:120]
+    else:
+        facts["예측가능성 점수"] = "데이터 부족 (평가 보류)"
+        facts["핵심 체크"]["예측가능성"] = "보류"
+        facts["메모"]["예측가능성"] = (pred.get("details") or "데이터 부족")[:120]
 
     return facts
 
@@ -952,6 +970,7 @@ def generate_munger_output(
     confidence_hint: int,
 ) -> CharlieMungerSignal:
     facts_bundle = make_munger_facts_bundle(analysis_data)
+    sanitized_facts = sanitize_for_llm(facts_bundle)
     decision_factors = _munger_decision_factors(analysis_data)
     template = ChatPromptTemplate.from_messages([
         ("system",
@@ -979,7 +998,7 @@ def generate_munger_output(
 
     prompt = template.invoke({
         "ticker": ticker,
-        "facts": json.dumps(facts_bundle, separators=(",", ":"), ensure_ascii=False),
+        "facts": json.dumps(sanitized_facts, separators=(",", ":"), ensure_ascii=False),
         "confidence": confidence_hint,
         "company_name": analysis_data.get("company_name", ticker),
     })
