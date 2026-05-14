@@ -63,7 +63,8 @@ export function PriceCompassBar({
   // 3) Build markers (only include non-null)
   const markers = useMemo<MarkerSpec[]>(() => {
     const out: MarkerSpec[] = [];
-    const current = metrics.currentPrice?.value;
+    // metrics.currentPrice가 없으면 FMP quote 현재가로 fallback
+    const current = metrics.currentPrice?.value ?? (target?.current_price ?? undefined);
     const intrinsic = metrics.intrinsicValue?.value;
 
     if (current !== undefined) {
@@ -151,7 +152,7 @@ export function PriceCompassBar({
 
   // 5) Beta band
   const beta = metrics.beta?.value;
-  const current = metrics.currentPrice?.value;
+  const current = metrics.currentPrice?.value ?? (target?.current_price ?? undefined);
   const betaBand = beta && current
     ? { lo: current * (1 - beta * marketSigma), hi: current * (1 + beta * marketSigma) }
     : null;

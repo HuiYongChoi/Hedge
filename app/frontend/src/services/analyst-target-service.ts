@@ -11,6 +11,7 @@ export interface AnalystTarget {
   low: number | null;
   median: number | null;
   analyst_count: number | null;
+  current_price: number | null;
   source: 'FMP' | 'stub';
 }
 

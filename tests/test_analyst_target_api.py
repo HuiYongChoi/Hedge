@@ -39,8 +39,8 @@ class AnalystTargetApiTests(unittest.TestCase):
 
         fetch_analyst_target("MU")
         fetch_analyst_target("MU")
-        # First call makes 2 HTTP requests (consensus + summary); second call is cached
-        self.assertLessEqual(mock_get.call_count, 2)
+        # First call makes 3 HTTP requests (consensus + summary + quote); second call is cached
+        self.assertLessEqual(mock_get.call_count, 3)
 
 
 if __name__ == "__main__":

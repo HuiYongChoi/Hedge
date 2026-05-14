@@ -17,5 +17,6 @@ async def get_analyst_target(ticker: str):
         "low": result.low,
         "median": result.median,
         "analyst_count": result.analyst_count,
+        "current_price": result.current_price,
         "source": result.source,
     }
