@@ -55,8 +55,8 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
 
     def test_card_default_and_hover_states(self):
         src = CARD.read_text(encoding="utf-8")
-        # Collapsed identifiers
-        self.assertIn("96", src, "collapsed width 96px should be referenced")
+        # Collapsed width 112px (w-28) referenced
+        self.assertIn("w-28", src, "collapsed width w-28 (112px) should be referenced")
         # Hover identifiers
         self.assertIn("isHovered", src)
         self.assertIn("onHoverChange", src)
@@ -72,12 +72,15 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
 
     def test_opinion_distribution_components(self):
         src = OPINION.read_text(encoding="utf-8")
-        for needle in ["distribution.buy", "distribution.hold", "distribution.neutral", "distribution.sell", "distribution.average", "distribution.median", "distribution.stdev"]:
+        for needle in ["distribution.buy", "distribution.hold", "distribution.neutral",
+                       "distribution.sell", "distribution.average", "distribution.median",
+                       "distribution.stdev"]:
             self.assertIn(needle, src, needle)
 
     def test_service_has_broker_types(self):
         src = SERVICE.read_text(encoding="utf-8")
-        for needle in ["BrokerTarget", "TargetDistribution", "brokers:", "distribution:", "beta:", "sigma_annual:"]:
+        for needle in ["BrokerTarget", "TargetDistribution", "brokers:", "distribution:",
+                       "beta:", "sigma_annual:"]:
             self.assertIn(needle, src, needle)
 
     def test_backend_response_includes_new_fields(self):
@@ -86,8 +89,10 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
             self.assertIn(needle, src, needle)
 
     def test_tool_module_has_new_helpers(self):
+        """v5: yfinance-only helpers. FMP helpers gone."""
         src = BACKEND_TOOL.read_text(encoding="utf-8")
-        for needle in ["BrokerTarget", "TargetDistribution", "_fetch_brokers_fmp", "_fetch_beta_sigma_yf", "_compute_distribution"]:
+        for needle in ["BrokerTarget", "TargetDistribution", "_fetch_yfinance_analyst",
+                       "_fetch_beta_sigma_yf", "_compute_distribution_v5"]:
             self.assertIn(needle, src, needle)
 
     def test_i18n_keys_present(self):
@@ -96,6 +101,41 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
                     "pcpBetaFrameTitle", "pcpOpinionTitle", "pcpBrokerGridTitle",
                     "pcpSignalBuy", "pcpSignalSell", "pcpNoBrokers"]:
             self.assertIn(f"{key}:", src, key)
+
+    # ── v5 new tests ────────────────────────────────────────────────────────────
+
+    def test_no_fmp_references_remain(self):
+        """v5: all FMP code must be purged from the backend tool."""
+        src = BACKEND_TOOL.read_text(encoding="utf-8")
+        self.assertNotIn("financialmodelingprep", src.lower(),
+                         "FMP base URL must not appear in v5 code")
+        self.assertNotIn("_FMP_", src,
+                         "_FMP_ constants must be removed in v5")
+
+    def test_current_price_marker_is_vertical_line(self):
+        """v5: current price marker must be a vertical line, not a white circle."""
+        src = BAR.read_text(encoding="utf-8")
+        # New marker uses w-[2px] and h-12
+        self.assertIn("w-[2px]", src, "current price marker must be a 2px-wide vertical line")
+        self.assertIn("h-12", src, "current price line must extend 48px (h-12) through bar")
+        # Old white circle must be gone
+        self.assertNotIn("h-3 w-3 rounded-full bg-white",
+                         src, "old white circle marker must be removed in v5")
+
+    def test_readable_text_sizes(self):
+        """v5: all panel components must use legible text sizes (text-sm/text-xs/text-base)."""
+        files_to_check = [BAR, CARD, GRID, OPINION, BETA, INDEX]
+        for path in files_to_check:
+            src = path.read_text(encoding="utf-8")
+            has_readable = (
+                "text-sm" in src or
+                "text-xs" in src or
+                "text-base" in src
+            )
+            self.assertTrue(
+                has_readable,
+                f"{path.name} must contain at least one of text-sm/text-xs/text-base"
+            )
 
 
 if __name__ == "__main__":
