@@ -33,7 +33,7 @@ export function BrokerTargetBar({
   return (
     <div className="w-full">
       {/* Range scenario labels */}
-      <div className="mb-1 flex justify-between text-[10px] font-medium">
+      <div className="mb-1 flex justify-between text-xs font-semibold">
         <span className="text-rose-400/80">{t('pcpLegendBear', language)}</span>
         <span className="text-emerald-400/80">{t('pcpLegendBull', language)}</span>
       </div>
@@ -52,11 +52,11 @@ export function BrokerTargetBar({
               {/* Tick line */}
               <div className="absolute inset-y-0 w-px -translate-x-px bg-background/40" />
               {/* Label below bar */}
-              <div className="absolute top-full mt-1 -translate-x-1/2 whitespace-nowrap font-mono text-[9px] text-muted-foreground/70">
+              <div className="absolute top-full mt-1 -translate-x-1/2 whitespace-nowrap font-mono text-[11px] text-muted-foreground/70">
                 {mark.label}
               </div>
               {/* Price label */}
-              <div className="absolute top-full mt-[18px] -translate-x-1/2 whitespace-nowrap font-mono text-[8px] text-muted-foreground/50">
+              <div className="absolute top-full mt-[20px] -translate-x-1/2 whitespace-nowrap font-mono text-[10px] text-muted-foreground/50">
                 ${Math.round(mark.value)}
               </div>
             </div>
@@ -113,20 +113,25 @@ export function BrokerTargetBar({
           </div>
         )}
 
-        {/* Current price: white filled circle */}
+        {/* Current price: vertical white-gray line through bar + price label above */}
         {currentPrice !== null && (
           <div
-            className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+            className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
             style={{ left: `${pct(currentPrice)}%` }}
             title={`${t('pcpLegendCurrent', language)}: $${currentPrice.toFixed(2)}`}
           >
-            <div className="h-3 w-3 rounded-full bg-white ring-2 ring-background shadow-md" />
+            {/* Vertical line extending above and below the bar */}
+            <div className="h-12 w-[2px] -translate-y-1/2 rounded-full bg-white/85 shadow-[0_0_4px_rgba(255,255,255,0.4)]" />
+            {/* Price label above bar */}
+            <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[150%] whitespace-nowrap rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-[11px] font-bold text-white backdrop-blur-sm">
+              ${currentPrice.toFixed(2)}
+            </div>
           </div>
         )}
       </div>
 
       {/* Bottom sigma spacing — leave room for labels */}
-      <div className="mt-7" />
+      <div className="mt-8" />
     </div>
   );
 }

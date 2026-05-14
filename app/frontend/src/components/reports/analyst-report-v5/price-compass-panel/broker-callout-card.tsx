@@ -29,8 +29,8 @@ export function BrokerCalloutCard({
   const isStale = broker.days_ago > 90;
   const daysLabel = formatDaysAgo(broker.days_ago, language);
 
-  // Abbreviate broker name for compact view
-  const shortName = broker.name.length > 8 ? broker.name.slice(0, 8) : broker.name;
+  // Abbreviate broker name for compact view — 10 chars for readability
+  const shortName = broker.name.length > 10 ? broker.name.slice(0, 10) : broker.name;
 
   const signalLabel = broker.signal === 'BUY'
     ? t('pcpSignalBuy', language)
@@ -46,9 +46,9 @@ export function BrokerCalloutCard({
         'rounded-lg border bg-background transition-all duration-150 ease-out cursor-default select-none',
         isHovered
           ? `${tone.border} ${tone.bg} z-30 min-w-[180px] shadow-lg`
-          : 'border-border/60 z-10 w-24',
+          : 'border-border/60 z-10 w-28',
       ].join(' ')}
-      style={{ minHeight: '56px' }}
+      style={{ minHeight: '64px' }}
       onMouseEnter={() => onHoverChange(true)}
       onMouseLeave={() => onHoverChange(false)}
     >
@@ -57,16 +57,16 @@ export function BrokerCalloutCard({
         <div className="p-2 space-y-1">
           {/* Name + signal badge */}
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-semibold text-foreground truncate">{broker.name}</span>
-            <span className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase border ${tone.text} ${tone.border} ${tone.bg}`}>
+            <span className="text-sm font-semibold text-foreground truncate">{broker.name}</span>
+            <span className={`rounded px-1 py-0.5 text-[11px] font-bold uppercase border ${tone.text} ${tone.border} ${tone.bg}`}>
               {signalLabel}
             </span>
           </div>
           {/* Price + upside */}
           <div className="flex items-baseline gap-2">
-            <span className="font-mono text-sm font-semibold text-foreground">${broker.target_price.toFixed(0)}</span>
+            <span className="font-mono text-base font-bold text-foreground">${broker.target_price.toFixed(0)}</span>
             {upside !== null && (
-              <span className={`font-mono text-[10px] font-medium ${upsideClass(upside)}`}>
+              <span className={`font-mono text-xs font-medium ${upsideClass(upside)}`}>
                 {formatPct(upside)}
               </span>
             )}
@@ -74,48 +74,52 @@ export function BrokerCalloutCard({
           {/* Divider */}
           <div className="border-t border-border/40 my-1" />
           {/* Detail rows */}
-          <div className="space-y-0.5 text-[9px]">
+          <div className="space-y-0.5">
             <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">PER (TTM)</span>
-              <span className="font-mono text-foreground">{formatMultiple(trailingPe)}</span>
+              <span className="text-[11px] text-muted-foreground">PER (TTM)</span>
+              <span className="text-xs font-mono text-foreground">{formatMultiple(trailingPe)}</span>
             </div>
             <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">EPS (TTM)</span>
-              <span className="font-mono text-foreground">
+              <span className="text-[11px] text-muted-foreground">EPS (TTM)</span>
+              <span className="text-xs font-mono text-foreground">
                 {trailingEps != null ? `$${trailingEps.toFixed(2)}` : '—'}
               </span>
             </div>
             <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">{t('pcpBrokerFwdPer', language)}</span>
-              <span className="font-mono text-foreground">{formatMultiple(fwd_pe)}</span>
+              <span className="text-[11px] text-muted-foreground">{t('pcpBrokerFwdPer', language)}</span>
+              <span className="text-xs font-mono text-foreground">{formatMultiple(fwd_pe)}</span>
             </div>
             <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">FWD EPS</span>
-              <span className="font-mono text-foreground">
+              <span className="text-[11px] text-muted-foreground">FWD EPS</span>
+              <span className="text-xs font-mono text-foreground">
                 {forwardEps != null ? `$${forwardEps.toFixed(2)}` : '—'}
               </span>
             </div>
             <div className="flex justify-between gap-3 border-t border-border/30 pt-0.5 mt-0.5">
-              <span className="text-muted-foreground">Updated</span>
-              <span className={`font-mono ${isStale ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>
+              <span className="text-[11px] text-muted-foreground">Updated</span>
+              <span className={`text-xs font-mono ${isStale ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>
                 {daysLabel}
               </span>
             </div>
           </div>
         </div>
       ) : (
-        /* ── COLLAPSED (96×56) VIEW ── */
-        <div className="p-2 flex flex-col justify-between h-14">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-semibold text-foreground truncate leading-tight">{shortName}</span>
-            {/* Signal dot */}
-            <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${tone.dot}`} />
+        /* ── COLLAPSED (112×64) VIEW ── */
+        <div className="p-2 flex flex-col gap-0.5 h-16 w-28">
+          {/* Row 1: broker 이름 + signal dot */}
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-xs font-semibold text-foreground truncate leading-tight">
+              {shortName}
+            </span>
+            <span className={`h-2 w-2 flex-shrink-0 rounded-full ${tone.dot}`} />
           </div>
-          <span className="font-mono text-[11px] font-semibold text-foreground">
+          {/* Row 2: target price — 가장 큰 글씨 */}
+          <span className="font-mono text-sm font-bold text-foreground leading-tight">
             ${broker.target_price.toFixed(0)}
           </span>
+          {/* Row 3: upside % */}
           {upside !== null && (
-            <span className={`font-mono text-[9px] leading-tight ${upsideClass(upside)}`}>
+            <span className={`font-mono text-[11px] leading-tight ${upsideClass(upside)}`}>
               {formatPct(upside)}
             </span>
           )}

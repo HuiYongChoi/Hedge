@@ -16,8 +16,8 @@ interface BrokerCalloutsRowProps {
   language: ReportLanguage;
 }
 
-const ROW_HEIGHT_PX = 72;   // collapsed card height + gap
-const CALLOUT_PX = 96;
+const ROW_HEIGHT_PX = 80;   // collapsed card height + gap
+const CALLOUT_PX = 112;
 const GAP_PX = 8;
 
 export function BrokerCalloutsRow({

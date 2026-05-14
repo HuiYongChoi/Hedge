@@ -18,7 +18,7 @@ interface BarRowProps {
 function BarRow({ label, count, total, barClass }: BarRowProps) {
   const widthPct = total > 0 ? Math.round((count / total) * 100) : 0;
   return (
-    <div className="flex items-center gap-2 text-[10px]">
+    <div className="flex items-center gap-2 text-xs">
       <span className="w-12 flex-shrink-0 text-muted-foreground">{label}</span>
       <div className="flex-1 h-2 rounded-full bg-muted/30 overflow-hidden">
         <div
@@ -26,7 +26,7 @@ function BarRow({ label, count, total, barClass }: BarRowProps) {
           style={{ width: `${widthPct}%` }}
         />
       </div>
-      <span className="w-4 flex-shrink-0 text-right font-mono text-muted-foreground">{count}</span>
+      <span className="w-5 flex-shrink-0 text-right font-mono text-xs font-semibold text-muted-foreground">{count}</span>
     </div>
   );
 }
@@ -41,7 +41,7 @@ export function OpinionDistribution({ distribution, currentPrice, language }: Op
   return (
     <div className="rounded-xl border border-border/60 bg-muted/5 p-3 space-y-3">
       {/* Title */}
-      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {t('pcpOpinionTitle', language)}
         <span className="ml-1.5 font-normal normal-case text-muted-foreground/60">
           · n={distribution.total}
@@ -79,14 +79,14 @@ export function OpinionDistribution({ distribution, currentPrice, language }: Op
       {/* Footer stats */}
       <div className="grid grid-cols-3 gap-1 border-t border-border/40 pt-2">
         <div className="text-center">
-          <div className="text-[9px] uppercase tracking-wide text-muted-foreground">{t('pcpOpinionAvg', language)}</div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{t('pcpOpinionAvg', language)}</div>
           {distribution.average != null ? (
             <>
-              <div className="font-mono text-sm font-semibold text-foreground">
+              <div className="font-mono text-base font-bold text-foreground">
                 ${Math.round(distribution.average)}
               </div>
               {avgUpside != null && (
-                <div className={`font-mono text-[9px] ${upsideClass(avgUpside)}`}>
+                <div className={`font-mono text-[11px] ${upsideClass(avgUpside)}`}>
                   {formatPct(avgUpside)}
                 </div>
               )}
@@ -96,9 +96,9 @@ export function OpinionDistribution({ distribution, currentPrice, language }: Op
           )}
         </div>
         <div className="text-center">
-          <div className="text-[9px] uppercase tracking-wide text-muted-foreground">{t('pcpOpinionMedian', language)}</div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{t('pcpOpinionMedian', language)}</div>
           {distribution.median != null ? (
-            <div className="font-mono text-sm font-semibold text-foreground">
+            <div className="font-mono text-base font-bold text-foreground">
               ${Math.round(distribution.median)}
             </div>
           ) : (
@@ -106,13 +106,13 @@ export function OpinionDistribution({ distribution, currentPrice, language }: Op
           )}
         </div>
         <div className="text-center">
-          <div className="text-[9px] uppercase tracking-wide text-muted-foreground">{t('pcpOpinionStdev', language)}</div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{t('pcpOpinionStdev', language)}</div>
           {distribution.stdev != null ? (
             <>
-              <div className="font-mono text-sm font-semibold text-foreground">
+              <div className="font-mono text-base font-bold text-foreground">
                 ${Math.round(distribution.stdev)}
               </div>
-              <div className="text-[9px] text-muted-foreground/60">{t('pcpOpinionSpread', language)}</div>
+              <div className="text-[11px] text-muted-foreground/60">{t('pcpOpinionSpread', language)}</div>
             </>
           ) : (
             <div className="text-muted-foreground/50">—</div>

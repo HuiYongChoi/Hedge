@@ -117,18 +117,19 @@ export function PriceCompassPanel({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex items-baseline gap-2">
-            <h3 className="text-sm font-bold text-foreground">{t('pcpTitle', language)}</h3>
-            <span className="text-xs text-muted-foreground">·</span>
-            <span className="text-xs text-muted-foreground">{t('pcpSubtitle', language)}</span>
+            <h3 className="text-base font-bold text-foreground">{t('pcpTitle', language)}</h3>
+            <span className="text-sm text-muted-foreground">·</span>
+            <span className="text-sm text-muted-foreground">{t('pcpSubtitle', language)}</span>
           </div>
           {(beta != null || brokers.length > 0) && (
-            <p className="mt-0.5 text-[10px] text-muted-foreground/70">{helpText}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground/70">{helpText}</p>
           )}
         </div>
         {/* Legend */}
-        <div className="flex items-center gap-3 text-[10px] text-muted-foreground/70">
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground/70">
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-white/90" />
+            {/* Vertical line icon matches the actual current-price marker */}
+            <span className="h-3 w-[2px] rounded-sm bg-white/90" />
             {t('pcpLegendCurrent', language)}
           </span>
           {consensus && (
@@ -161,7 +162,7 @@ export function PriceCompassPanel({
 
       {/* ── No-broker notice OR callout rows ── */}
       {brokers.length === 0 ? (
-        <p className="text-[11px] text-muted-foreground/60">{t('pcpNoBrokers', language)}</p>
+        <p className="text-xs text-muted-foreground/60">{t('pcpNoBrokers', language)}</p>
       ) : (
         <BrokerCalloutsRow
           brokers={brokers}
