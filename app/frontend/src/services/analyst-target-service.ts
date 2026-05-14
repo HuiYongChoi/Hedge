@@ -39,7 +39,7 @@ export interface AnalystTarget {
   sigma_annual: number | null;
   brokers: BrokerTarget[];
   distribution: TargetDistribution | null;
-  source: 'FMP' | 'stub';
+  source: 'yfinance' | 'stub';
 }
 
 export const analystTargetService = {
