@@ -29,10 +29,33 @@ function normalizeDebtPercentSequences(text: string) {
   });
 }
 
+/** 1 bn = 10억 변환 */
+function bnToKorean(val: number): string {
+  const eok = val * 10;
+  if (eok >= 10000) {
+    const jo = Math.floor(eok / 10000);
+    const remEok = Math.round((eok - jo * 10000) / 100) * 100;
+    return remEok > 0 ? `${jo}조 ${remEok}억` : `${jo}조`;
+  }
+  if (eok >= 100) return `${Math.round(eok)}억`;
+  return `${Math.round(eok * 10) / 10}억`;
+}
+
+function normalizeBnToKorean(text: string): string {
+  return text.replace(
+    /([\d,]+(?:\.\d+)?)\s*bn\b/gi,
+    (_, numStr: string) => {
+      const val = parseFloat(numStr.replace(/,/g, ''));
+      if (!Number.isFinite(val)) return _;
+      return bnToKorean(val);
+    },
+  );
+}
+
 export function normalizeFinancialDisplayText(text: string) {
   if (typeof text !== 'string' || text.length === 0) return text;
 
-  return normalizeDebtPercentSequences(text)
+  return normalizeBnToKorean(normalizeDebtPercentSequences(text))
     .replace(/부채비율\s+10000%0%0%5%/g, '부채비율 5%')
     .replace(/Debt-To-Equity\(부채비율\)\s+10000%0%0%5%/g, 'Debt-To-Equity(부채비율) 5%')
     .replace(/(이자보상배율\s*)×\s*(\d)/g, '$1$2')
