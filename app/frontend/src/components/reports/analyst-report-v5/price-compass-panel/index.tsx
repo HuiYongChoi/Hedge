@@ -41,6 +41,7 @@ type FundamentalMetric = {
 interface FundamentalsGroupProps {
   title: string;
   items: FundamentalMetric[];
+  help: string;
   wide?: boolean;
 }
 
@@ -48,7 +49,7 @@ function compactMetrics(items: Array<FundamentalMetric | null>): FundamentalMetr
   return items.filter((item): item is FundamentalMetric => item !== null);
 }
 
-function FundamentalsGroup({ title, items, wide = false }: FundamentalsGroupProps) {
+function FundamentalsGroup({ title, items, help, wide = false }: FundamentalsGroupProps) {
   if (items.length === 0) return null;
   return (
     <div className={[
@@ -56,8 +57,13 @@ function FundamentalsGroup({ title, items, wide = false }: FundamentalsGroupProp
       wide ? 'min-w-[190px]' : 'min-w-[150px]',
     ].join(' ')}
     >
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
+      <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
         {title}
+        <span
+          className="inline-flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full border border-white/20 text-[9px] font-bold text-white/70"
+          title={help}
+          aria-label={help}
+        >!</span>
       </div>
       <div className="space-y-1">
         {items.map(item => (
@@ -82,12 +88,17 @@ function FundamentalsRow({
   highTarget,
   language,
 }: FundamentalsRowProps) {
+  const currentFyPe =
+    currentPrice != null && currentFyEps != null && currentFyEps > 0
+      ? currentPrice / currentFyEps
+      : null;
   const ttmItems = compactMetrics([
     trailingEps != null ? { label: t('pcpEpsTtm', language), value: `$${trailingEps.toFixed(2)}` } : null,
     trailingPe != null ? { label: t('pcpPerTtm', language), value: `${trailingPe.toFixed(1)}×` } : null,
   ]);
   const currentFyItems = compactMetrics([
     currentFyEps != null ? { label: t('pcpEpsCurFy', language), value: `$${currentFyEps.toFixed(2)}` } : null,
+    currentFyPe != null ? { label: t('pcpPerCurFy', language), value: `${currentFyPe.toFixed(1)}×` } : null,
   ]);
   const forwardItems = compactMetrics([
     forwardEps != null ? { label: t('pcpFwdEps', language), value: `$${forwardEps.toFixed(2)}` } : null,
@@ -101,10 +112,10 @@ function FundamentalsRow({
 
   return (
     <div className="flex flex-wrap items-stretch gap-2">
-      <FundamentalsGroup title="TTM" items={ttmItems} />
-      <FundamentalsGroup title={t('pcpGroupCurrentFy', language)} items={currentFyItems} />
-      <FundamentalsGroup title="Forward" items={forwardItems} />
-      <FundamentalsGroup title={t('pcpGroupTargets', language)} items={priceItems} wide />
+      <FundamentalsGroup title="TTM" items={ttmItems} help={t('pcpTtmHelp', language)} />
+      <FundamentalsGroup title={t('pcpGroupCurrentFy', language)} items={currentFyItems} help={t('pcpCurFyHelp', language)} />
+      <FundamentalsGroup title="Forward" items={forwardItems} help={t('pcpFwdHelp', language)} />
+      <FundamentalsGroup title={t('pcpGroupTargets', language)} items={priceItems} help={t('pcpTargetsHelp', language)} wide />
     </div>
   );
 }

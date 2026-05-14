@@ -102,7 +102,8 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
         for key in ["pcpTitle", "pcpSubtitle", "pcpLegendBear", "pcpLegendBull",
                     "pcpBetaFrameTitle", "pcpOpinionTitle", "pcpBrokerGridTitle",
                     "pcpSignalBuy", "pcpSignalSell", "pcpNoBrokers",
-                    "pcpPerTtm", "pcpEpsTtm", "pcpFwdEps", "pcpEpsCurFy", "pcpHighTarget"]:
+                    "pcpPerTtm", "pcpEpsTtm", "pcpFwdEps", "pcpEpsCurFy", "pcpPerCurFy",
+                    "pcpHighTarget", "pcpTtmHelp", "pcpCurFyHelp", "pcpFwdHelp", "pcpTargetsHelp"]:
             self.assertIn(f"{key}:", src, key)
 
     def test_fundamentals_row_in_header(self):
@@ -118,8 +119,26 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
         src = INDEX.read_text(encoding="utf-8")
         self.assertIn("FundamentalsGroup", src)
         self.assertRegex(src, r"const ttmItems[\s\S]*pcpEpsTtm[\s\S]*pcpPerTtm")
+        self.assertRegex(src, r"const currentFyItems[\s\S]*pcpEpsCurFy[\s\S]*pcpPerCurFy")
         self.assertRegex(src, r"const forwardItems[\s\S]*pcpFwdEps[\s\S]*pcpBrokerFwdPer")
         self.assertIn("pcpGroupTargets", src)
+
+    def test_fundamentals_groups_have_hover_help_badges(self):
+        """Each fundamentals group should expose a visible ! hover explanation."""
+        src = INDEX.read_text(encoding="utf-8")
+        self.assertIn("help:", src)
+        self.assertIn('title={help}', src)
+        self.assertIn('aria-label={help}', src)
+        self.assertIn(">!<", src)
+        for key in ["pcpTtmHelp", "pcpCurFyHelp", "pcpFwdHelp", "pcpTargetsHelp"]:
+            self.assertIn(key, src, key)
+
+    def test_sigma_labels_are_larger_and_white(self):
+        """Bar sigma labels and dollar labels should be white and easier to read."""
+        src = BAR.read_text(encoding="utf-8")
+        self.assertIn("text-sm font-bold text-white", src)
+        self.assertIn("text-xs font-semibold text-white/85", src)
+        self.assertIn("font-mono text-sm font-bold text-white", src)
 
     def test_no_per_eps_in_cards(self):
         """v5.1: broker cards/grid must not repeat ticker-level PER/EPS labels."""

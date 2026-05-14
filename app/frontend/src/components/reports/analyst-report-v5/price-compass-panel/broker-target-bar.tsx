@@ -51,11 +51,11 @@ export function BrokerTargetBar({
               {/* Tick line */}
               <div className="absolute inset-y-0 w-px -translate-x-px bg-background/40" />
               {/* Label below bar */}
-              <div className="absolute top-full mt-1 -translate-x-1/2 whitespace-nowrap font-mono text-xs text-white/75">
+              <div className="absolute top-full mt-1 -translate-x-1/2 whitespace-nowrap font-mono text-sm font-bold text-white">
                 {mark.label}
               </div>
               {/* Price label */}
-              <div className="absolute top-full mt-[20px] -translate-x-1/2 whitespace-nowrap font-mono text-[11px] text-white/55">
+              <div className="absolute top-full mt-[22px] -translate-x-1/2 whitespace-nowrap font-mono text-xs font-semibold text-white/85">
                 ${Math.round(mark.value)}
               </div>
             </div>
@@ -125,7 +125,7 @@ export function BrokerTargetBar({
             {/* Vertical line extending above and below the bar */}
             <div className="h-12 w-[2px] -translate-y-1/2 rounded-full bg-white/85 shadow-[0_0_4px_rgba(255,255,255,0.4)]" />
             {/* Price label above bar */}
-            <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[150%] whitespace-nowrap rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-[11px] font-bold text-white backdrop-blur-sm">
+            <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[150%] whitespace-nowrap rounded-md bg-white/10 px-2 py-0.5 font-mono text-sm font-bold text-white backdrop-blur-sm">
               ${currentPrice.toFixed(2)}
             </div>
           </div>
