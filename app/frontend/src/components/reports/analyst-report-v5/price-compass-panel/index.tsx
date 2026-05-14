@@ -33,6 +33,44 @@ interface FundamentalsRowProps {
   language: ReportLanguage;
 }
 
+type FundamentalMetric = {
+  label: string;
+  value: string;
+};
+
+interface FundamentalsGroupProps {
+  title: string;
+  items: FundamentalMetric[];
+  wide?: boolean;
+}
+
+function compactMetrics(items: Array<FundamentalMetric | null>): FundamentalMetric[] {
+  return items.filter((item): item is FundamentalMetric => item !== null);
+}
+
+function FundamentalsGroup({ title, items, wide = false }: FundamentalsGroupProps) {
+  if (items.length === 0) return null;
+  return (
+    <div className={[
+      'rounded-lg border border-border/40 bg-card/60 px-3 py-2',
+      wide ? 'min-w-[190px]' : 'min-w-[150px]',
+    ].join(' ')}
+    >
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
+        {title}
+      </div>
+      <div className="space-y-1">
+        {items.map(item => (
+          <div key={item.label} className="flex items-baseline justify-between gap-3">
+            <span className="text-[11px] text-foreground/65">{item.label}</span>
+            <span className="font-mono text-sm font-semibold text-white">{item.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function FundamentalsRow({
   trailingPe,
   trailingEps,
@@ -44,23 +82,29 @@ function FundamentalsRow({
   highTarget,
   language,
 }: FundamentalsRowProps) {
-  const chip = (label: string, value: string) => (
-    <div className="flex items-baseline gap-1 rounded-md border border-border/40 bg-card/60 px-2 py-1">
-      <span className="text-[11px] text-foreground/65">{label}</span>
-      <span className="font-mono text-sm font-semibold text-white">{value}</span>
-    </div>
-  );
+  const ttmItems = compactMetrics([
+    trailingEps != null ? { label: t('pcpEpsTtm', language), value: `$${trailingEps.toFixed(2)}` } : null,
+    trailingPe != null ? { label: t('pcpPerTtm', language), value: `${trailingPe.toFixed(1)}×` } : null,
+  ]);
+  const currentFyItems = compactMetrics([
+    currentFyEps != null ? { label: t('pcpEpsCurFy', language), value: `$${currentFyEps.toFixed(2)}` } : null,
+  ]);
+  const forwardItems = compactMetrics([
+    forwardEps != null ? { label: t('pcpFwdEps', language), value: `$${forwardEps.toFixed(2)}` } : null,
+    forwardPe != null ? { label: t('pcpBrokerFwdPer', language), value: `${forwardPe.toFixed(1)}×` } : null,
+  ]);
+  const priceItems = compactMetrics([
+    currentPrice != null ? { label: t('pcpLegendCurrent', language), value: `$${currentPrice.toFixed(2)}` } : null,
+    consensus != null ? { label: t('pcpLegendConsensus', language), value: `$${consensus.toFixed(0)}` } : null,
+    highTarget != null ? { label: t('pcpHighTarget', language), value: `$${highTarget.toFixed(0)}` } : null,
+  ]);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {trailingPe != null && chip(t('pcpPerTtm', language), `${trailingPe.toFixed(1)}×`)}
-      {trailingEps != null && chip(t('pcpEpsTtm', language), `$${trailingEps.toFixed(2)}`)}
-      {currentFyEps != null && chip(t('pcpEpsCurFy', language), `$${currentFyEps.toFixed(2)}`)}
-      {forwardEps != null && chip(t('pcpFwdEps', language), `$${forwardEps.toFixed(2)}`)}
-      {forwardPe != null && chip(t('pcpBrokerFwdPer', language), `${forwardPe.toFixed(1)}×`)}
-      {currentPrice != null && chip(t('pcpLegendCurrent', language), `$${currentPrice.toFixed(2)}`)}
-      {consensus != null && chip(t('pcpLegendConsensus', language), `$${consensus.toFixed(0)}`)}
-      {highTarget != null && chip(t('pcpHighTarget', language), `$${highTarget.toFixed(0)}`)}
+    <div className="flex flex-wrap items-stretch gap-2">
+      <FundamentalsGroup title="TTM" items={ttmItems} />
+      <FundamentalsGroup title={t('pcpGroupCurrentFy', language)} items={currentFyItems} />
+      <FundamentalsGroup title="Forward" items={forwardItems} />
+      <FundamentalsGroup title={t('pcpGroupTargets', language)} items={priceItems} wide />
     </div>
   );
 }

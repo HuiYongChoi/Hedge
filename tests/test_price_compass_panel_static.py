@@ -113,6 +113,14 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
                        "currentFyEps", "highTarget"]:
             self.assertIn(needle, src, needle)
 
+    def test_fundamentals_row_groups_related_eps_and_per(self):
+        """EPS/PER pairs should be vertically grouped for scanability."""
+        src = INDEX.read_text(encoding="utf-8")
+        self.assertIn("FundamentalsGroup", src)
+        self.assertRegex(src, r"const ttmItems[\s\S]*pcpEpsTtm[\s\S]*pcpPerTtm")
+        self.assertRegex(src, r"const forwardItems[\s\S]*pcpFwdEps[\s\S]*pcpBrokerFwdPer")
+        self.assertIn("pcpGroupTargets", src)
+
     def test_no_per_eps_in_cards(self):
         """v5.1: broker cards/grid must not repeat ticker-level PER/EPS labels."""
         for path in [CARD, GRID]:
