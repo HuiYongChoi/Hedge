@@ -21,7 +21,7 @@ import {
   listOtherAgents,
   pickDefaultAgent,
 } from './helpers';
-import { PriceCompassBar } from './price-compass-bar';
+import { PriceCompassPanel } from './price-compass-panel';
 import { ReportBody } from './report-body';
 import { ReportHeaderRibbon } from './report-header-ribbon';
 import { MobileToc, ReportTocSidebar } from './report-toc-sidebar';
@@ -241,7 +241,7 @@ export function ReportLayout({
         isSaving={isSaving}
       />
 
-      <PriceCompassBar
+      <PriceCompassPanel
         ticker={activeTicker}
         metrics={canonicalMetrics}
         language={language}
