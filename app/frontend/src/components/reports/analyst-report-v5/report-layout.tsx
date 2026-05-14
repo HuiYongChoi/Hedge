@@ -276,6 +276,9 @@ export function ReportLayout({
           otherAgents={otherAgents}
           language={language}
           onSwitchAgent={setActiveAgentKey}
+          report={activeReport}
+          ticker={activeTicker}
+          metrics={canonicalMetrics}
         />
       </div>
 

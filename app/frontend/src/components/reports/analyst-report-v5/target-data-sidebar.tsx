@@ -2,7 +2,8 @@ import { Button } from '@/components/ui/button';
 import { t } from '@/lib/language-preferences';
 import { ChevronRight } from 'lucide-react';
 import { toneToClasses } from './helpers';
-import type { OtherAgent, ReportLanguage, TargetTile } from './types';
+import { PriceCompassBar } from './price-compass-bar';
+import type { CanonicalMetrics, OtherAgent, ReportLanguage, TargetTile } from './types';
 
 interface TargetDataSidebarProps {
   tiles: TargetTile[];
@@ -11,6 +12,8 @@ interface TargetDataSidebarProps {
   onSwitchAgent: (agentKey: string) => void;
   className?: string;
   report?: Record<string, any> | null;
+  ticker?: string;
+  metrics?: CanonicalMetrics;
 }
 
 function shortTone(tone: OtherAgent['tone']) {
@@ -26,6 +29,8 @@ export function TargetDataSidebar({
   onSwitchAgent,
   className = '',
   report,
+  ticker,
+  metrics,
 }: TargetDataSidebarProps) {
   return (
     <aside className={`w-full flex-shrink-0 lg:sticky lg:top-4 lg:w-[280px] lg:self-start lg:overflow-y-auto lg:max-h-[calc(100vh-6rem)] ${className}`}>
@@ -116,6 +121,14 @@ export function TargetDataSidebar({
           {t('openConsensusMatrix', language)}
           <ChevronRight className="ml-auto h-3.5 w-3.5" />
         </Button>
+
+        {ticker && metrics && (
+          <PriceCompassBar
+            ticker={ticker}
+            metrics={metrics}
+            language={language}
+          />
+        )}
       </div>
     </aside>
   );

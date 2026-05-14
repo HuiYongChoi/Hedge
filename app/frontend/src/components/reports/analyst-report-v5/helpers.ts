@@ -978,6 +978,7 @@ export function buildCanonicalMetrics(
   const activeFirst = [activeAgentKey, 'valuation_analyst'];
   const metrics: CanonicalMetrics = {
     forwardEpsFy0: metricFromCandidates(reports, activeAgentKey, activeFirst, ['forward_eps_fy0']),
+    forwardEpsFy1: metricFromCandidates(reports, activeAgentKey, activeFirst, ['forward_eps_fy1']),
     forwardEpsTtm: metricFromCandidates(reports, activeAgentKey, activeFirst, ['forward_eps_ttm', 'forward_eps']),
     intrinsicValue: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'valuation_analyst', 'aswath_damodaran'], ['intrinsic_value', 'fair_value', 'dcf_value']),
     marginOfSafety: metricFromCandidates(reports, activeAgentKey, activeFirst, ['margin_of_safety']),
@@ -985,9 +986,17 @@ export function buildCanonicalMetrics(
     beta: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'fundamentals_analyst', 'charlie_munger', 'nassim_taleb'], ['beta']),
     wacc: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'valuation_analyst', 'aswath_damodaran'], ['wacc', 'discount_rate']),
     forwardPeFy0: metricFromCandidates(reports, activeAgentKey, activeFirst, ['forward_pe_fy0']),
+    forwardPeFy1: metricFromCandidates(reports, activeAgentKey, activeFirst, ['forward_pe_fy1']),
     forwardPe: metricFromCandidates(reports, activeAgentKey, activeFirst, ['forward_pe', 'forward_pe_ttm']),
     currentPrice: metricFromCandidates(reports, activeAgentKey, Object.keys(reports), ['current_price', 'price', 'close_price', 'market_price']),
   };
+
+  // Fiscal year labels (scalar integers, not CanonicalMetric)
+  const activeReport = reports[activeAgentKey];
+  const fy0Year = readMetricValue(activeReport, ['fy0_fiscal_year']);
+  const fy1Year = readMetricValue(activeReport, ['fy1_fiscal_year']);
+  metrics.fy0FiscalYear = fy0Year !== null ? Math.round(fy0Year) : null;
+  metrics.fy1FiscalYear = fy1Year !== null ? Math.round(fy1Year) : null;
 
   if (!metrics.marginOfSafety && metrics.intrinsicValue && metrics.currentPrice) {
     metrics.marginOfSafety = {

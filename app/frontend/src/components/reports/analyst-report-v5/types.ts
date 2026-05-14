@@ -104,6 +104,7 @@ export interface CanonicalMetric {
 
 export interface CanonicalMetrics {
   forwardEpsFy0?: CanonicalMetric;
+  forwardEpsFy1?: CanonicalMetric;      // ▣ FY+N EPS
   forwardEpsTtm?: CanonicalMetric;
   intrinsicValue?: CanonicalMetric;
   marginOfSafety?: CanonicalMetric;
@@ -111,8 +112,11 @@ export interface CanonicalMetrics {
   beta?: CanonicalMetric;
   wacc?: CanonicalMetric;
   forwardPeFy0?: CanonicalMetric;
+  forwardPeFy1?: CanonicalMetric;       // ▣ FY+N PER
   forwardPe?: CanonicalMetric;
   currentPrice?: CanonicalMetric;
+  fy0FiscalYear?: number | null;        // 예: 2026
+  fy1FiscalYear?: number | null;        // 예: 2027
 }
 
 export interface CompleteResult {

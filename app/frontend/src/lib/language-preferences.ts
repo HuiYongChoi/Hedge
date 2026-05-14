@@ -474,6 +474,18 @@ export const translations = {
     nullScoreTooltip: '이 항목은 원천 데이터가 부족해 점수를 계산하지 않았습니다.',
     targetDataCoverageLow: '데이터 커버리지가 낮아 핵심 타겟을 보류했습니다.',
     verdictOnHold: '판단 보류',
+    // Price Compass Bar
+    pcbTitle: '가격 나침반',
+    pcbCurrent: '현재가',
+    pcbDcf: 'DCF 내재가치',
+    pcbMosBuy: '안전마진 매수가 ({pct}%)',
+    pcbConsensus: '증권사 컨센서스',
+    pcbFwdPerFy0: '연간 함의가 (FY0)',
+    pcbFwdPerFyN: '연간 함의가 (FY+N)',
+    pcbBetaBand: '베타 ±1σ 범위 (β={beta})',
+    pcbEditPer: 'PER 편집',
+    pcbResetPer: 'PER 초기화',
+    pcbMissing: '표시할 가격 데이터 부족',
   },
   en: {
     // Settings Navigation
@@ -914,6 +926,18 @@ export const translations = {
     nullScoreTooltip: 'This axis was not scored because the underlying data is insufficient.',
     targetDataCoverageLow: 'Target data is on hold due to low coverage.',
     verdictOnHold: 'Verdict on hold',
+    // Price Compass Bar
+    pcbTitle: 'Price Compass',
+    pcbCurrent: 'Current',
+    pcbDcf: 'DCF Intrinsic',
+    pcbMosBuy: 'MoS Buy Price ({pct}%)',
+    pcbConsensus: 'Broker Consensus',
+    pcbFwdPerFy0: 'Annual Implied (FY0)',
+    pcbFwdPerFyN: 'Annual Implied (FY+N)',
+    pcbBetaBand: 'Beta ±1σ Range (β={beta})',
+    pcbEditPer: 'Edit PER',
+    pcbResetPer: 'Reset PER',
+    pcbMissing: 'Insufficient price data',
   }
 };
 
