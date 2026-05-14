@@ -21,6 +21,7 @@ import {
   listOtherAgents,
   pickDefaultAgent,
 } from './helpers';
+import { PriceCompassBar } from './price-compass-bar';
 import { ReportBody } from './report-body';
 import { ReportHeaderRibbon } from './report-header-ribbon';
 import { MobileToc, ReportTocSidebar } from './report-toc-sidebar';
@@ -240,6 +241,12 @@ export function ReportLayout({
         isSaving={isSaving}
       />
 
+      <PriceCompassBar
+        ticker={activeTicker}
+        metrics={canonicalMetrics}
+        language={language}
+      />
+
       <div className="flex flex-col gap-4 md:grid md:grid-cols-[minmax(0,1fr)_280px] md:gap-5 lg:flex lg:flex-row lg:items-start lg:gap-6">
         <ReportTocSidebar
           sections={SECTION_DEFS}
@@ -277,8 +284,6 @@ export function ReportLayout({
           language={language}
           onSwitchAgent={setActiveAgentKey}
           report={activeReport}
-          ticker={activeTicker}
-          metrics={canonicalMetrics}
         />
       </div>
 

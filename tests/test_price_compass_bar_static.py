@@ -37,15 +37,27 @@ class PriceCompassBarStaticTests(unittest.TestCase):
         self.assertIn("analystTargetService", src)
         self.assertIn("/analyst-targets/", src)
 
-    def test_sidebar_wires_pcb(self):
-        src = SIDEBAR.read_text(encoding="utf-8")
-        self.assertIn("PriceCompassBar", src)
-        self.assertIn("ticker", src)
-        self.assertIn("metrics", src)
+    def test_pcb_in_layout_not_sidebar(self):
+        """v3: PriceCompassBar must be in report-layout, NOT imported in sidebar."""
+        layout_src = LAYOUT.read_text(encoding="utf-8")
+        self.assertIn("PriceCompassBar", layout_src, "layout must import PriceCompassBar")
+        self.assertIn("metrics={canonicalMetrics}", layout_src, "layout must pass metrics to PriceCompassBar")
+        sidebar_src = SIDEBAR.read_text(encoding="utf-8")
+        self.assertNotIn("PriceCompassBar", sidebar_src, "sidebar must NOT render PriceCompassBar in v3")
 
-    def test_layout_passes_metrics(self):
-        src = LAYOUT.read_text(encoding="utf-8")
-        self.assertIn("metrics={canonicalMetrics}", src)
+    def test_pcb_responsive_grid(self):
+        """v3: marker list uses responsive grid instead of space-y-1."""
+        src = COMPONENT.read_text(encoding="utf-8")
+        self.assertIn("sm:grid-cols-2", src, "responsive 2-col grid must be present")
+        self.assertIn("lg:grid-cols-3", src, "responsive 3-col grid must be present")
+        self.assertNotIn("space-y-1", src, "old space-y-1 list must be replaced by grid")
+
+    def test_pcb_visual_polish(self):
+        """v3: bar height h-16, glyph text-lg, container padding p-4."""
+        src = COMPONENT.read_text(encoding="utf-8")
+        self.assertIn("h-16", src, "bar track height must be h-16")
+        self.assertIn("text-lg", src, "marker glyph must be text-lg")
+        self.assertIn("p-4", src, "container padding must be p-4")
 
     def test_backend_endpoint(self):
         self.assertTrue(BACKEND_ROUTE.exists())

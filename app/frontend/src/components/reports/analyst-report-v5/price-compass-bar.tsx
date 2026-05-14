@@ -164,7 +164,7 @@ export function PriceCompassBar({
   const pctFor = (v: number) => ((v - range.min) / (range.max - range.min)) * 100;
 
   return (
-    <div className="mt-3 rounded-xl border border-border/60 bg-background p-3 shadow-sm">
+    <div className="mt-3 rounded-xl border border-border/60 bg-background p-4 shadow-sm">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {t('pcbTitle', language)}
@@ -177,16 +177,15 @@ export function PriceCompassBar({
             type="button"
             onClick={resetPer}
             className="text-[10px] text-muted-foreground hover:text-foreground"
-            title={t('pcbResetPer', language)}
             aria-label={t('pcbResetPer', language)}
           >
-            ↺
+            ↺ {t('pcbResetPer', language)}
           </button>
         )}
       </div>
 
       {/* Bar */}
-      <div className="relative my-3 h-12">
+      <div className="relative my-3 h-16">
         {/* Range track */}
         <div className="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 bg-border/60" />
         {/* Range labels */}
@@ -211,7 +210,7 @@ export function PriceCompassBar({
         {markers.map(m => (
           <div
             key={m.key}
-            className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 text-base ${m.toneClass}`}
+            className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 text-lg ${m.toneClass}`}
             style={{ left: `${pctFor(m.value)}%` }}
             title={`${m.label}: $${m.value.toFixed(2)}`}
           >
@@ -221,7 +220,7 @@ export function PriceCompassBar({
       </div>
 
       {/* Marker list */}
-      <ul className="mt-4 space-y-1 text-[11px]">
+      <ul className="mt-4 grid grid-cols-1 gap-1 text-[11px] sm:grid-cols-2 lg:grid-cols-3">
         {markers.map(m => (
           <li key={m.key} className="flex items-baseline justify-between gap-2">
             <span className="flex items-center gap-1.5">
