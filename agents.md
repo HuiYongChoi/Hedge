@@ -114,7 +114,7 @@ Always tell the user to revoke/rotate a PAT that was pasted into a chat.
 Latest confirmed GitHub push through this flow:
 
 ```text
-dd649f4 fix(ui): keep exact ticker autocomplete visible
+ce56c89 feat(report): polish price compass and docs
 ```
 
 ### Fast Server Deploy
@@ -148,7 +148,7 @@ ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailD
 Latest confirmed server deploy:
 
 ```text
-a35f5c1 fix(ui): scope topbar controls
+ce56c89 feat(report): polish price compass and docs
 ```
 
 ### Bundle Deploy When GitHub Push Is Blocked
@@ -212,7 +212,7 @@ ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailD
   'cd /home/bitnami/ai-hedge-fund && git rev-parse --short HEAD && pgrep -af "uvicorn app.backend.main:app" | head -3'
 ```
 
-Latest deployed commit via this path:
+Last confirmed fallback bundle deploy via this path:
 
 ```text
 a35f5c1 fix(ui): scope topbar controls
