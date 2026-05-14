@@ -36,6 +36,8 @@ class PriceCompassBarStaticTests(unittest.TestCase):
         src = SERVICE.read_text(encoding="utf-8")
         self.assertIn("analystTargetService", src)
         self.assertIn("/analyst-targets/", src)
+        for needle in ["trailing_pe", "trailing_eps", "forward_eps", "forward_pe"]:
+            self.assertIn(f"{needle}: number | null", src, needle)
 
     def test_pcb_in_layout_not_sidebar(self):
         """v3: PriceCompassBar must be in report-layout, NOT imported in sidebar."""
@@ -45,25 +47,44 @@ class PriceCompassBarStaticTests(unittest.TestCase):
         sidebar_src = SIDEBAR.read_text(encoding="utf-8")
         self.assertNotIn("PriceCompassBar", sidebar_src, "sidebar must NOT render PriceCompassBar in v3")
 
-    def test_pcb_responsive_grid(self):
-        """v3: marker list uses responsive grid instead of space-y-1."""
+    def test_pcb_callout_labels_replace_old_glyph_legend(self):
+        """v4: markers render as vertical price ticks with adjacent callout labels."""
         src = COMPONENT.read_text(encoding="utf-8")
-        self.assertIn("sm:grid-cols-2", src, "responsive 2-col grid must be present")
-        self.assertIn("lg:grid-cols-3", src, "responsive 3-col grid must be present")
-        self.assertNotIn("space-y-1", src, "old space-y-1 list must be replaced by grid")
+        for needle in ["positionedMarkers", "labelSideClass", "w-px", "border-l", "text-right"]:
+            self.assertIn(needle, src, needle)
+        self.assertNotIn("glyph:", src, "floating glyph markers should not drive the design")
+        self.assertNotIn("text-lg", src, "old large floating glyph markers should be removed")
 
     def test_pcb_visual_polish(self):
-        """v3: bar height h-16, glyph text-lg, container padding p-4."""
+        """v4: bar uses a thick track, beta band, and compact polished container."""
         src = COMPONENT.read_text(encoding="utf-8")
-        self.assertIn("h-16", src, "bar track height must be h-16")
-        self.assertIn("text-lg", src, "marker glyph must be text-lg")
+        self.assertIn("h-9", src, "track must be visibly thicker than a hairline")
+        self.assertIn("rounded-full", src, "track must read as a polished bar")
+        self.assertIn("bg-gradient-to-r", src, "track must have range direction styling")
+        self.assertIn("shadow-inner", src, "track must have depth")
         self.assertIn("p-4", src, "container padding must be p-4")
+
+    def test_pcb_uses_yfinance_fundamentals_for_ttm_and_forward_markers(self):
+        """v4: yfinance PE/EPS fallback should populate TTM and forward PER markers."""
+        src = COMPONENT.read_text(encoding="utf-8")
+        for needle in [
+            "trailingPer",
+            "target?.trailing_pe",
+            "target?.trailing_eps",
+            "target?.forward_eps",
+            "target?.forward_pe",
+            "pcbTrailingPer",
+            "formatMultiple",
+        ]:
+            self.assertIn(needle, src, needle)
 
     def test_backend_endpoint(self):
         self.assertTrue(BACKEND_ROUTE.exists())
         src = BACKEND_ROUTE.read_text(encoding="utf-8")
         self.assertIn("analyst-targets", src)
         self.assertIn("def get_analyst_target", src)
+        for needle in ["trailing_pe", "trailing_eps", "forward_eps", "forward_pe"]:
+            self.assertIn(f'"{needle}": result.{needle}', src, needle)
 
     def test_tool_module(self):
         self.assertTrue(BACKEND_TOOL.exists())
@@ -77,7 +98,7 @@ class PriceCompassBarStaticTests(unittest.TestCase):
         for key in [
             "pcbTitle", "pcbCurrent", "pcbDcf", "pcbMosBuy",
             "pcbConsensus", "pcbFwdPerFy0", "pcbFwdPerFyN",
-            "pcbBetaBand", "pcbEditPer", "pcbResetPer", "pcbMissing",
+            "pcbTrailingPer", "pcbBetaBand", "pcbEditPer", "pcbResetPer", "pcbMissing",
         ]:
             self.assertIn(f"{key}:", src, key)
 

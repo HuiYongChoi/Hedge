@@ -43,16 +43,21 @@ class TopBarPolishStaticTests(unittest.TestCase):
     def test_top_bar_renders_workflow_button(self):
         src = TOP_BAR.read_text(encoding="utf-8")
         self.assertIn("<Workflow size={16}", src)
-        self.assertIn('disabled={!hasFlowTab || isFlowTabActive}', src)
+        self.assertIn('disabled={isOpeningFlow}', src)
         self.assertIn('aria-label="Focus flow tab"', src)
+        self.assertIn("최근 Flow를 열거나 기본 Flow를 생성합니다", src)
 
     def test_layout_wires_flow_props(self):
         src = LAYOUT.read_text(encoding="utf-8")
         self.assertIn("focusFirstFlowTab", src)
         self.assertIn("flowTabs", src)
+        self.assertIn("handleFlowClick", src)
+        self.assertIn("flowService.getFlows()", src)
+        self.assertIn("flowService.createDefaultFlow", src)
         self.assertIn("hasFlowTab={hasFlowTab}", src)
         self.assertIn("isFlowTabActive={isFlowTab}", src)
-        self.assertIn("onFlowClick={focusFirstFlowTab}", src)
+        self.assertIn("isOpeningFlow={isOpeningFlow}", src)
+        self.assertIn("onFlowClick={handleFlowClick}", src)
 
     # ── Part B: WorkspacePill text cleanup ──────────────────────────────────
 

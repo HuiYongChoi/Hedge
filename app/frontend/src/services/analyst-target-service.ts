@@ -12,6 +12,10 @@ export interface AnalystTarget {
   median: number | null;
   analyst_count: number | null;
   current_price: number | null;
+  trailing_pe: number | null;
+  trailing_eps: number | null;
+  forward_eps: number | null;
+  forward_pe: number | null;
   source: 'FMP' | 'stub';
 }
 

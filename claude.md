@@ -39,22 +39,136 @@
 - 서버 의존성 충돌 문제로 인해 `shadcn/ui`의 무거운 컴포넌트(Label, RadioGroup 등) 대신 가급적 순수 HTML 태그(`<label>`, `<input type="radio">`, `<div>` dropdown)로 풀어쓰는 방식을 선호합니다 (예: `ticker-input.tsx`).
 - 검색 탭 등 모든 UI는 반응형보다는 넓은 화면의 대시보드 구조에 최적화되어 있습니다.
 
-## 4. 서버 배포 절차
-- **SSH 키**: `/Users/huiyong/Desktop/Vibe Investment/LightsailDefaultKey-ap-northeast-2.pem` 사용 (Hedge Fund 폴더 내 동명 키는 인증 안 됨)
-- **서버**: `bitnami@54.116.99.19`, 웹 루트: `/opt/bitnami/apache/htdocs/hedge/`
+## 4. 로컬 커밋 / 깃 푸시 / 서버 배포 절차
+- **로컬 프로젝트 경로**: `/Users/huiyong/Desktop/Hedge Fund/ai-hedge-fund`
+- **SSH 키**: `/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem`
+- **서버**: `bitnami@54.116.99.19`
 - **서버 내 프로젝트 경로**: `/home/bitnami/ai-hedge-fund/`
+- **웹 루트**: `/opt/bitnami/apache/htdocs/hedge/`
 
+### A. 커밋 전 원칙
+- 워크트리에 사용자 작업이 섞여 있는 경우가 많으므로 `git add .` 금지. 반드시 명시 경로만 stage.
+- unrelated dirty 파일은 보존한다. 자주 남아 있는 예: `docs/forward_per/README.md`, `docs/ui/`, `docs/agents/`, `tmp/`.
+- 커밋 전 최소 검증으로 `git diff --check`와 관련 테스트를 실행한다.
+- 로컬 시스템 `npm`/`python`이 없을 수 있으므로 Codex 번들 런타임을 우선 사용한다.
+
+```bash
+# Python tests
+/Users/huiyong/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 -m pytest tests/ --ignore=tests/backtesting -q
+
+# Frontend build equivalent to npm run build when local npm is unavailable
+cd app/frontend
+/Users/huiyong/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node ./node_modules/typescript/bin/tsc
+/Users/huiyong/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node ./node_modules/vite/bin/vite.js build
 ```
-# Step 1. 로컬 커밋 & 푸시
-git add <파일> && git commit -m "메시지" && git push origin main
 
-# Step 2. 서버 pull & 빌드 (하나의 명령으로)
-ssh -i "/Users/huiyong/Desktop/Vibe Investment/LightsailDefaultKey-ap-northeast-2.pem" bitnami@54.116.99.19 \
-  "cd /home/bitnami/ai-hedge-fund && git pull origin main && cd app/frontend && npm run build"
+```bash
+git add path/to/changed-file path/to/test-file
+git diff --cached --check
+git commit -m "fix(scope): short summary"
+```
 
-# Step 3. 배포
-ssh -i "/Users/huiyong/Desktop/Vibe Investment/LightsailDefaultKey-ap-northeast-2.pem" bitnami@54.116.99.19 \
-  "sudo cp -r /home/bitnami/ai-hedge-fund/app/frontend/dist/* /opt/bitnami/apache/htdocs/hedge/"
+### B. GitHub 푸시
+`origin`은 HTTPS remote다. 가능하면 `gh auth login && gh auth setup-git` 후 일반 푸시를 사용한다.
+
+```bash
+git fetch origin
+git rev-list --left-right --count origin/main...HEAD
+git push origin main
+git fetch origin
+git rev-list --left-right --count origin/main...HEAD
+```
+
+푸시 성공 후 `0  0`이면 로컬 `HEAD`와 `origin/main`이 동기화된 상태다.
+
+사용자가 PAT를 제공한 경우:
+- 토큰을 remote URL, 커맨드 문자열, repo 파일, 커밋에 남기지 않는다.
+- 임시 `GIT_ASKPASS` 또는 `gh auth login --with-token`만 사용한다.
+- 대화에 토큰이 노출된 경우 푸시 후 즉시 revoke/rotate 안내.
+
+임시 `GIT_ASKPASS` 패턴:
+
+```bash
+read -rsp "GitHub PAT: " GITHUB_TOKEN; echo
+export GITHUB_TOKEN
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"; unset GITHUB_TOKEN' EXIT
+cat > "$tmpdir/askpass.sh" <<'SH'
+#!/bin/sh
+case "$1" in
+  *Username*) printf '%s\n' 'x-access-token' ;;
+  *) printf '%s\n' "$GITHUB_TOKEN" ;;
+esac
+SH
+chmod 700 "$tmpdir/askpass.sh"
+GIT_ASKPASS="$tmpdir/askpass.sh" GIT_TERMINAL_PROMPT=0 git push origin main
+```
+
+### C. 서버 배포
+GitHub push는 서버 배포가 아니다. 서버 반영은 로컬 머신에서 deploy script를 실행해야 한다.
+
+```bash
+./deploy_aws.sh
+```
+
+이 스크립트는 로컬에서 실행해야 한다. 서버에 SSH로 들어간 뒤 `/home/bitnami/ai-hedge-fund` 안에서 실행하면 로컬 SSH 키 경로를 찾지 못해 실패한다.
+
+스크립트가 하는 일:
+- 서버에서 `git fetch origin && git pull origin main`
+- `8000/tcp` backend 종료 후 `uvicorn app.backend.main:app` 재시작
+- `app/frontend`에서 `npm install`
+- `NODE_OPTIONS=--max-old-space-size=4096 npm run build -- --base=/hedge/`
+- `dist/*`를 `/opt/bitnami/apache/htdocs/hedge/`로 복사
+
+성공 신호:
+
+```text
+Backend restarted.
+✓ built in ...
+Frontend built and copied.
+```
+
+배포 후 smoke check:
+
+```bash
+curl -I --max-time 10 http://54.116.99.19/hedge/
+ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem" bitnami@54.116.99.19 \
+  'cd /home/bitnami/ai-hedge-fund && git rev-parse --short HEAD && pgrep -af "uvicorn app.backend.main:app" | head -3'
+```
+
+### D. GitHub 푸시가 막힌 경우의 빠른 서버 반영
+GitHub 인증이 안 되어 `origin/main`에 못 올리는 경우에는 git bundle로 서버 checkout만 fast-forward하고, 다시 로컬에서 `./deploy_aws.sh`를 실행한다.
+
+```bash
+ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem" bitnami@54.116.99.19 \
+  'cd /home/bitnami/ai-hedge-fund && git rev-parse --short HEAD && git status --short'
+
+git merge-base --is-ancestor <server-head> HEAD
+git bundle create /tmp/hedge-deploy.bundle main ^<server-head>
+git bundle verify /tmp/hedge-deploy.bundle
+scp -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem" \
+  /tmp/hedge-deploy.bundle bitnami@54.116.99.19:/tmp/hedge-deploy.bundle
+```
+
+```bash
+ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem" bitnami@54.116.99.19 << 'EOF'
+set -euo pipefail
+cd /home/bitnami/ai-hedge-fund
+if [ -n "$(git status --porcelain)" ]; then
+  git stash push -u -m "pre-deploy-$(date +%Y%m%d%H%M%S)"
+fi
+git bundle verify /tmp/hedge-deploy.bundle
+git fetch /tmp/hedge-deploy.bundle main
+git merge --ff-only FETCH_HEAD
+git rev-parse --short HEAD
+git status --short
+EOF
+```
+
+그 다음 로컬에서:
+
+```bash
+./deploy_aws.sh
 ```
 
 ## 5. Troubleshooting Checklist (유의사항)
