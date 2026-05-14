@@ -1,21 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { stackCallouts } from './stacking-layout';
 import { BrokerCalloutCard } from './broker-callout-card';
-import type { BrokerTarget, ReportLanguage } from './types';
+import type { BrokerTarget } from './types';
 
 interface BrokerCalloutsRowProps {
   brokers: BrokerTarget[];
   range: { min: number; max: number };
   currentPrice: number | null;
-  forwardEps: number | null;
-  trailingPe: number | null;
-  trailingEps: number | null;
   hoveredBroker: string | null;
   onHoverChange: (name: string | null) => void;
-  language: ReportLanguage;
 }
 
-const ROW_HEIGHT_PX = 80;   // collapsed card height + gap
+const ROW_HEIGHT_PX = 68;   // single-state card height + gap
 const CALLOUT_PX = 112;
 const GAP_PX = 8;
 
@@ -23,12 +19,8 @@ export function BrokerCalloutsRow({
   brokers,
   range,
   currentPrice,
-  forwardEps,
-  trailingPe,
-  trailingEps,
   hoveredBroker,
   onHoverChange,
-  language,
 }: BrokerCalloutsRowProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerPx, setContainerPx] = useState(1200);
@@ -80,12 +72,8 @@ export function BrokerCalloutsRow({
             <BrokerCalloutCard
               broker={broker}
               currentPrice={currentPrice}
-              forwardEps={forwardEps}
-              trailingPe={trailingPe}
-              trailingEps={trailingEps}
               isHovered={isHovered}
               onHoverChange={hovered => onHoverChange(hovered ? broker.name : null)}
-              language={language}
             />
           </div>
         );

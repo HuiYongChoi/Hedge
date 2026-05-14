@@ -40,39 +40,39 @@ export function BetaVolatilityFrame({
   return (
     <div className="rounded-xl border border-border/60 bg-muted/5 p-3 space-y-3">
       {/* Title */}
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
         {t('pcpBetaFrameTitle', language)}
       </h4>
 
       {/* Metric tiles */}
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-lg border border-border/40 bg-background/50 p-2">
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{t('pcpBetaLabel', language)}</div>
+          <div className="text-[11px] uppercase tracking-wide text-foreground/70">{t('pcpBetaLabel', language)}</div>
           {beta != null ? (
-            <div className="font-mono text-2xl font-bold text-foreground">{beta.toFixed(2)}</div>
+            <div className="font-mono text-2xl font-bold text-white">{beta.toFixed(2)}</div>
           ) : (
-            <div className="font-mono text-sm text-muted-foreground/50">—</div>
+            <div className="font-mono text-sm text-foreground/45">—</div>
           )}
-          <div className="text-[10px] text-muted-foreground/70">{t('pcpBetaSub', language)}</div>
+          <div className="text-[10px] text-foreground/60">{t('pcpBetaSub', language)}</div>
         </div>
         <div className="rounded-lg border border-border/40 bg-background/50 p-2">
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{t('pcpSigmaLabel', language)}</div>
+          <div className="text-[11px] uppercase tracking-wide text-foreground/70">{t('pcpSigmaLabel', language)}</div>
           {sigmaAnnual != null ? (
-            <div className="font-mono text-2xl font-bold text-foreground">
+            <div className="font-mono text-2xl font-bold text-white">
               {(sigmaAnnual * 100).toFixed(1)}%
             </div>
           ) : (
-            <div className="font-mono text-sm text-muted-foreground/50">—</div>
+            <div className="font-mono text-sm text-foreground/45">—</div>
           )}
-          <div className="text-[10px] text-muted-foreground/70">{t('pcpSigmaSub', language)}</div>
+          <div className="text-[10px] text-foreground/60">{t('pcpSigmaSub', language)}</div>
         </div>
       </div>
 
       {/* Slider */}
       <div className="space-y-1">
-        <div className="flex items-center justify-between text-[11px] text-muted-foreground/70">
+        <div className="flex items-center justify-between text-[11px] text-foreground/65">
           <span>β 0.0</span>
-          <span className="text-xs font-semibold text-foreground">β {simBeta.toFixed(2)}</span>
+          <span className="text-xs font-semibold text-white">β {simBeta.toFixed(2)}</span>
           <span>β {sliderMax.toFixed(1)}</span>
         </div>
         <input
@@ -90,12 +90,12 @@ export function BetaVolatilityFrame({
 
       {/* Explanation */}
       {explainText && (
-        <p className="rounded-md border border-border/30 bg-muted/10 px-2 py-1.5 text-xs leading-relaxed text-muted-foreground">
+        <p className="rounded-md border border-border/30 bg-muted/10 px-2 py-1.5 text-xs leading-relaxed text-foreground/75">
           {explainText}
         </p>
       )}
       {beta == null && (
-        <p className="text-xs text-muted-foreground/50">β 데이터 없음</p>
+        <p className="text-xs text-foreground/45">β 데이터 없음</p>
       )}
     </div>
   );

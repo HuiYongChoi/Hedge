@@ -51,11 +51,11 @@ export function BrokerTargetBar({
               {/* Tick line */}
               <div className="absolute inset-y-0 w-px -translate-x-px bg-background/40" />
               {/* Label below bar */}
-              <div className="absolute top-full mt-1 -translate-x-1/2 whitespace-nowrap font-mono text-[11px] text-muted-foreground/70">
+              <div className="absolute top-full mt-1 -translate-x-1/2 whitespace-nowrap font-mono text-xs text-white/75">
                 {mark.label}
               </div>
               {/* Price label */}
-              <div className="absolute top-full mt-[20px] -translate-x-1/2 whitespace-nowrap font-mono text-[10px] text-muted-foreground/50">
+              <div className="absolute top-full mt-[20px] -translate-x-1/2 whitespace-nowrap font-mono text-[11px] text-white/55">
                 ${Math.round(mark.value)}
               </div>
             </div>

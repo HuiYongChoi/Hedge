@@ -35,6 +35,7 @@ export interface AnalystTarget {
   trailing_eps: number | null;
   forward_eps: number | null;
   forward_pe: number | null;
+  current_fy_eps: number | null;
   beta: number | null;
   sigma_annual: number | null;
   brokers: BrokerTarget[];

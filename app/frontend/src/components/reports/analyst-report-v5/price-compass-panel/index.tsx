@@ -21,6 +21,50 @@ interface PriceCompassPanelProps {
 const MARKET_SIGMA_DEFAULT = 0.14;
 const MOS_BUFFER_DEFAULT = 0.25;
 
+interface FundamentalsRowProps {
+  trailingPe: number | null;
+  trailingEps: number | null;
+  currentFyEps: number | null;
+  forwardPe: number | null;
+  forwardEps: number | null;
+  currentPrice: number | null;
+  consensus: number | null;
+  highTarget: number | null;
+  language: ReportLanguage;
+}
+
+function FundamentalsRow({
+  trailingPe,
+  trailingEps,
+  currentFyEps,
+  forwardPe,
+  forwardEps,
+  currentPrice,
+  consensus,
+  highTarget,
+  language,
+}: FundamentalsRowProps) {
+  const chip = (label: string, value: string) => (
+    <div className="flex items-baseline gap-1 rounded-md border border-border/40 bg-card/60 px-2 py-1">
+      <span className="text-[11px] text-foreground/65">{label}</span>
+      <span className="font-mono text-sm font-semibold text-white">{value}</span>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {trailingPe != null && chip(t('pcpPerTtm', language), `${trailingPe.toFixed(1)}×`)}
+      {trailingEps != null && chip(t('pcpEpsTtm', language), `$${trailingEps.toFixed(2)}`)}
+      {currentFyEps != null && chip(t('pcpEpsCurFy', language), `$${currentFyEps.toFixed(2)}`)}
+      {forwardEps != null && chip(t('pcpFwdEps', language), `$${forwardEps.toFixed(2)}`)}
+      {forwardPe != null && chip(t('pcpBrokerFwdPer', language), `${forwardPe.toFixed(1)}×`)}
+      {currentPrice != null && chip(t('pcpLegendCurrent', language), `$${currentPrice.toFixed(2)}`)}
+      {consensus != null && chip(t('pcpLegendConsensus', language), `$${consensus.toFixed(0)}`)}
+      {highTarget != null && chip(t('pcpHighTarget', language), `$${highTarget.toFixed(0)}`)}
+    </div>
+  );
+}
+
 export function PriceCompassPanel({
   ticker,
   metrics,
@@ -57,10 +101,13 @@ export function PriceCompassPanel({
     target?.forward_eps ??
     null;
 
-  const trailingPe = target?.trailing_pe ?? metrics.forwardPe?.value ?? null;
+  const forwardPe = target?.forward_pe ?? metrics.forwardPe?.value ?? null;
+  const trailingPe = target?.trailing_pe ?? null;
   const trailingEps = target?.trailing_eps ?? null;
+  const currentFyEps = target?.current_fy_eps ?? null;
 
   const consensus = target?.consensus ?? null;
+  const highTarget = target?.high ?? null;
   const brokers = target?.brokers ?? [];
   const distribution = target?.distribution ?? null;
 
@@ -118,15 +165,15 @@ export function PriceCompassPanel({
         <div>
           <div className="flex items-baseline gap-2">
             <h3 className="text-base font-bold text-foreground">{t('pcpTitle', language)}</h3>
-            <span className="text-sm text-muted-foreground">·</span>
-            <span className="text-sm text-muted-foreground">{t('pcpSubtitle', language)}</span>
+            <span className="text-sm text-foreground/40">·</span>
+            <span className="text-sm text-foreground/70">{t('pcpSubtitle', language)}</span>
           </div>
           {(beta != null || brokers.length > 0) && (
-            <p className="mt-0.5 text-[11px] text-muted-foreground/70">{helpText}</p>
+            <p className="mt-0.5 text-[11px] text-foreground/65">{helpText}</p>
           )}
         </div>
         {/* Legend */}
-        <div className="flex items-center gap-3 text-[11px] text-muted-foreground/70">
+        <div className="flex items-center gap-3 text-[11px] text-foreground/70">
           <span className="flex items-center gap-1">
             {/* Vertical line icon matches the actual current-price marker */}
             <span className="h-3 w-[2px] rounded-sm bg-white/90" />
@@ -147,6 +194,19 @@ export function PriceCompassPanel({
         </div>
       </div>
 
+      {/* ── Fundamentals chips row ── */}
+      <FundamentalsRow
+        trailingPe={trailingPe}
+        trailingEps={trailingEps}
+        currentFyEps={currentFyEps}
+        forwardPe={forwardPe}
+        forwardEps={forwardEps}
+        currentPrice={currentPrice}
+        consensus={consensus}
+        highTarget={highTarget}
+        language={language}
+      />
+
       {/* ── Price gradient bar ── */}
       <BrokerTargetBar
         range={range}
@@ -162,18 +222,14 @@ export function PriceCompassPanel({
 
       {/* ── No-broker notice OR callout rows ── */}
       {brokers.length === 0 ? (
-        <p className="text-xs text-muted-foreground/60">{t('pcpNoBrokers', language)}</p>
+        <p className="text-xs text-foreground/60">{t('pcpNoBrokers', language)}</p>
       ) : (
         <BrokerCalloutsRow
           brokers={brokers}
           range={range}
           currentPrice={currentPrice}
-          forwardEps={forwardEps}
-          trailingPe={trailingPe}
-          trailingEps={trailingEps}
           hoveredBroker={hoveredBroker}
           onHoverChange={setHoveredBroker}
-          language={language}
         />
       )}
 
@@ -202,7 +258,6 @@ export function PriceCompassPanel({
           <BrokerDetailGrid
             brokers={brokers}
             currentPrice={currentPrice}
-            forwardEps={forwardEps}
             hoveredBroker={hoveredBroker}
             onHoverChange={setHoveredBroker}
             language={language}
