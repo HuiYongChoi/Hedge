@@ -55,14 +55,15 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
 
     def test_card_default_and_hover_states(self):
         src = CARD.read_text(encoding="utf-8")
-        # Collapsed width 112px (w-28) referenced
-        self.assertIn("w-28", src, "collapsed width w-28 (112px) should be referenced")
-        # Hover identifiers
+        self.assertIn("width: '112px'", src, "single-state card width should be fixed at 112px")
+        self.assertIn("minHeight: '60px'", src, "single-state card min height should be compact")
         self.assertIn("isHovered", src)
         self.assertIn("onHoverChange", src)
-        # Detail fields shown on hover (camelCase props, checked after lowercasing)
-        for needle in ["fwd_pe", "trailingpe", "trailingeps", "upside"]:
-            self.assertIn(needle, src.lower(), needle)
+        self.assertIn("shadow-lg", src, "hover should only add visual emphasis")
+        for needle in ["shortName", "broker.target_price", "upside"]:
+            self.assertIn(needle, src, needle)
+        for removed in ["min-w-[180px]", "EXPANDED VIEW", "trailingPe", "trailingEps", "forwardEps"]:
+            self.assertNotIn(removed, src, removed)
 
     def test_beta_frame_has_slider(self):
         src = BETA.read_text(encoding="utf-8")
@@ -80,27 +81,44 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
     def test_service_has_broker_types(self):
         src = SERVICE.read_text(encoding="utf-8")
         for needle in ["BrokerTarget", "TargetDistribution", "brokers:", "distribution:",
-                       "beta:", "sigma_annual:"]:
+                       "beta:", "sigma_annual:", "current_fy_eps:"]:
             self.assertIn(needle, src, needle)
 
     def test_backend_response_includes_new_fields(self):
         src = BACKEND_ROUTE.read_text(encoding="utf-8")
-        for needle in ['"beta":', '"sigma_annual":', '"brokers":', '"distribution":']:
+        for needle in ['"beta":', '"sigma_annual":', '"brokers":', '"distribution":', '"current_fy_eps":']:
             self.assertIn(needle, src, needle)
 
     def test_tool_module_has_new_helpers(self):
         """v5: yfinance-only helpers. FMP helpers gone."""
         src = BACKEND_TOOL.read_text(encoding="utf-8")
         for needle in ["BrokerTarget", "TargetDistribution", "_fetch_yfinance_analyst",
-                       "_fetch_beta_sigma_yf", "_compute_distribution_v5"]:
+                       "_fetch_beta_sigma_yf", "_compute_distribution_v5",
+                       "_compute_ttm_eps_from_quarterly", "_fetch_current_fy_eps"]:
             self.assertIn(needle, src, needle)
 
     def test_i18n_keys_present(self):
         src = LANG.read_text(encoding="utf-8")
         for key in ["pcpTitle", "pcpSubtitle", "pcpLegendBear", "pcpLegendBull",
                     "pcpBetaFrameTitle", "pcpOpinionTitle", "pcpBrokerGridTitle",
-                    "pcpSignalBuy", "pcpSignalSell", "pcpNoBrokers"]:
+                    "pcpSignalBuy", "pcpSignalSell", "pcpNoBrokers",
+                    "pcpPerTtm", "pcpEpsTtm", "pcpFwdEps", "pcpEpsCurFy", "pcpHighTarget"]:
             self.assertIn(f"{key}:", src, key)
+
+    def test_fundamentals_row_in_header(self):
+        """v5.1: repeated fundamentals move from broker cards to the panel header."""
+        src = INDEX.read_text(encoding="utf-8")
+        for needle in ["FundamentalsRow", "pcpPerTtm", "pcpEpsTtm",
+                       "pcpEpsCurFy", "pcpFwdEps", "pcpHighTarget",
+                       "currentFyEps", "highTarget"]:
+            self.assertIn(needle, src, needle)
+
+    def test_no_per_eps_in_cards(self):
+        """v5.1: broker cards/grid must not repeat ticker-level PER/EPS labels."""
+        for path in [CARD, GRID]:
+            src = path.read_text(encoding="utf-8")
+            for removed in ["PER (TTM)", "EPS (TTM)", "FWD EPS"]:
+                self.assertNotIn(removed, src, f"{path.name}: {removed}")
 
     # ── v5 new tests ────────────────────────────────────────────────────────────
 
