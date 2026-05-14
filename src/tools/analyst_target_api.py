@@ -1,4 +1,4 @@
-"""증권사 컨센서스 목표가 + 현재가 fetcher (FMP)."""
+"""증권사 컨센서스 목표가 + 현재가 fetcher (FMP + yfinance)."""
 from __future__ import annotations
 import logging
 import time
@@ -23,8 +23,21 @@ class AnalystTarget:
     low: Optional[float]
     median: Optional[float]
     analyst_count: Optional[int]
-    current_price: Optional[float]   # 현재 주가 (FMP quote)
+    current_price: Optional[float]   # 현재 주가 (yfinance fallback)
     source: str  # "FMP" / "stub"
+
+
+def _fetch_current_price_yfinance(ticker: str) -> Optional[float]:
+    """yfinance로 현재가 fetch. 실패하면 None."""
+    try:
+        import yfinance as yf
+        fast_info = yf.Ticker(ticker).fast_info
+        price = getattr(fast_info, "last_price", None)
+        if price and price > 0:
+            return float(price)
+    except Exception as e:
+        logger.debug("yfinance price fetch failed for %s: %s", ticker, e)
+    return None
 
 
 def fetch_analyst_target(ticker: str) -> AnalystTarget:
@@ -44,26 +57,24 @@ def fetch_analyst_target(ticker: str) -> AnalystTarget:
             params={"symbol": ticker, "apikey": _FMP_KEY},
             timeout=8,
         )
-        r_quote = requests.get(
-            f"{_FMP_BASE}/quote",
-            params={"symbol": ticker, "apikey": _FMP_KEY},
-            timeout=8,
-        )
         consensus_data = r_consensus.json()[0] if r_consensus.ok and r_consensus.json() else {}
         summary_data = r_summary.json()[0] if r_summary.ok and r_summary.json() else {}
-        quote_data = r_quote.json()[0] if r_quote.ok and r_quote.json() else {}
+
+        current_price = _fetch_current_price_yfinance(ticker)
+
         result = AnalystTarget(
             consensus=consensus_data.get("targetConsensus"),
             high=consensus_data.get("targetHigh"),
             low=consensus_data.get("targetLow"),
             median=consensus_data.get("targetMedian"),
             analyst_count=summary_data.get("lastQuarter") or summary_data.get("lastMonth"),
-            current_price=quote_data.get("price"),
+            current_price=current_price,
             source="FMP",
         )
     except Exception as e:
         logger.debug("analyst target fetch failed for %s: %s", ticker, e)
-        result = AnalystTarget(None, None, None, None, None, None, source="stub")
+        current_price = _fetch_current_price_yfinance(ticker)
+        result = AnalystTarget(None, None, None, None, None, current_price, source="stub")
 
     _CACHE[ticker] = (now, result)
     return result
