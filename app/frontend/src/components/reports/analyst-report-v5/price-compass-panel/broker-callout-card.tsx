@@ -43,10 +43,10 @@ export function BrokerCalloutCard({
   return (
     <div
       className={[
-        'rounded-lg border bg-background transition-all duration-150 ease-out cursor-default select-none',
+        'rounded-lg border transition-all duration-150 ease-out cursor-default select-none',
         isHovered
-          ? `${tone.border} ${tone.bg} z-30 min-w-[180px] shadow-lg`
-          : 'border-border/60 z-10 w-28',
+          ? `${tone.border} bg-card z-30 min-w-[180px] shadow-xl`
+          : 'border-border/60 bg-card z-10 w-28',
       ].join(' ')}
       style={{ minHeight: '64px' }}
       onMouseEnter={() => onHoverChange(true)}

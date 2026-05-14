@@ -1,5 +1,4 @@
 import { t } from '@/lib/language-preferences';
-import { signalTone } from './utils';
 import type { BrokerTarget, SigmaMark, ReportLanguage } from './types';
 
 interface BrokerTargetBarProps {
@@ -63,10 +62,9 @@ export function BrokerTargetBar({
           );
         })}
 
-        {/* Broker tick marks (thin coloured lines on bar) */}
+        {/* Broker tick marks — neutral subtle lines so they don't compete with bar gradient */}
         {brokers.map(broker => {
           const x = pct(broker.target_price);
-          const tone = signalTone(broker.signal);
           const isHovered = hoveredBroker === broker.name;
           return (
             <div
@@ -76,7 +74,11 @@ export function BrokerTargetBar({
               title={`${broker.name}: $${broker.target_price}`}
             >
               <div
-                className={`absolute inset-y-0 ${isHovered ? 'w-1' : 'w-0.5'} -translate-x-1/2 rounded-full transition-all duration-150 ${tone.dot} opacity-90`}
+                className={`absolute inset-y-0 -translate-x-1/2 rounded-full transition-all duration-150 ${
+                  isHovered
+                    ? 'w-[3px] bg-white/80'
+                    : 'w-px bg-white/30'
+                }`}
               />
             </div>
           );

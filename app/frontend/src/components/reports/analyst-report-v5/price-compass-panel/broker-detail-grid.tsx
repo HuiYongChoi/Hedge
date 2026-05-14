@@ -48,8 +48,8 @@ export function BrokerDetailGrid({
               className={[
                 'rounded-lg border p-2.5 cursor-default transition-all duration-150',
                 isHovered
-                  ? `${tone.border} ${tone.bg}`
-                  : 'border-border/50 hover:border-border/80 bg-background',
+                  ? `${tone.border} bg-card`
+                  : 'border-border/50 hover:border-border/80 bg-card',
               ].join(' ')}
               onMouseEnter={() => onHoverChange(broker.name)}
               onMouseLeave={() => onHoverChange(null)}

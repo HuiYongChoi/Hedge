@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { stackCallouts } from './stacking-layout';
 import { BrokerCalloutCard } from './broker-callout-card';
-import { signalTone } from './utils';
 import type { BrokerTarget, ReportLanguage } from './types';
 
 interface BrokerCalloutsRowProps {
@@ -59,7 +58,6 @@ export function BrokerCalloutsRow({
       style={{ height: `${containerHeight}px` }}
     >
       {positioned.map(({ broker, leftPct, rowIndex }) => {
-        const tone = signalTone(broker.signal);
         const isHovered = hoveredBroker === broker.name;
         const topPx = rowIndex * ROW_HEIGHT_PX + 8;
 
@@ -74,9 +72,9 @@ export function BrokerCalloutsRow({
               zIndex: isHovered ? 30 : 10,
             }}
           >
-            {/* Connecting line upward to the bar */}
+            {/* Connecting line — neutral gray, behind cards (z-index managed by parent) */}
             <div
-              className={`absolute left-1/2 -translate-x-1/2 w-px ${tone.dot} opacity-30`}
+              className="absolute left-1/2 -translate-x-1/2 w-px bg-muted-foreground/20"
               style={{ top: `-${topPx + 8}px`, height: `${topPx + 8}px` }}
             />
             <BrokerCalloutCard
