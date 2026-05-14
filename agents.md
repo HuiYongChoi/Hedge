@@ -111,7 +111,7 @@ Expected verification after a successful push:
 
 Always tell the user to revoke/rotate a PAT that was pasted into a chat.
 
-Latest confirmed GitHub push through this flow:
+Recent successful GitHub push example through this flow:
 
 ```text
 ce56c89 feat(report): polish price compass and docs
@@ -145,7 +145,7 @@ ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailD
   'cd /home/bitnami/ai-hedge-fund && git rev-parse --short HEAD && pgrep -af "uvicorn app.backend.main:app" | head -3'
 ```
 
-Latest confirmed server deploy:
+Recent successful server deploy example through this flow:
 
 ```text
 ce56c89 feat(report): polish price compass and docs
