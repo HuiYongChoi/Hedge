@@ -4,6 +4,25 @@ const API_BASE_URL = import.meta.env.VITE_API_URL ||
     ? 'http://localhost:8000'
     : '/hedge-api');
 
+export interface BrokerTarget {
+  name: string;
+  target_price: number;
+  signal: 'BUY' | 'HOLD' | 'NEUTRAL' | 'SELL';
+  published_date: string;
+  days_ago: number;
+}
+
+export interface TargetDistribution {
+  buy: number;
+  hold: number;
+  neutral: number;
+  sell: number;
+  total: number;
+  average: number | null;
+  median: number | null;
+  stdev: number | null;
+}
+
 export interface AnalystTarget {
   ticker: string;
   consensus: number | null;
@@ -16,6 +35,10 @@ export interface AnalystTarget {
   trailing_eps: number | null;
   forward_eps: number | null;
   forward_pe: number | null;
+  beta: number | null;
+  sigma_annual: number | null;
+  brokers: BrokerTarget[];
+  distribution: TargetDistribution | null;
   source: 'FMP' | 'stub';
 }
 
