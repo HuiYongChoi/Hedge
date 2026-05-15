@@ -66,8 +66,7 @@ function splitEvidenceBodyBlocks(body: string): string[] {
       .replace(/\s+/g, ' ')
       .trim())
     .filter(Boolean)
-    .flatMap(splitReadableChunk)
-    .slice(0, 4);
+    .flatMap(splitReadableChunk);
 }
 
 export function EvidenceItem({
@@ -85,6 +84,7 @@ export function EvidenceItem({
     : inferCitationLetters(item.rawText, sectionId);
   const keyNumbers = extractKeyNumbers(item.rawText, language);
   const bodyBlocks = splitEvidenceBodyBlocks(item.body);
+  const visibleBodyBlocks = bodyBlocks.length > 0 ? bodyBlocks : [item.body.trim()].filter(Boolean);
 
   return (
     <article className={`rounded-lg border ${classes.border} ${classes.bg} p-4 sm:p-5`}>
@@ -103,7 +103,7 @@ export function EvidenceItem({
             )}
           </div>
           <div className="space-y-2.5 text-sm leading-7 text-foreground/90">
-            {bodyBlocks.map((block, blockIndex) => (
+            {visibleBodyBlocks.map((block, blockIndex) => (
               <p key={`${item.id}-body-${blockIndex}`} className="leading-7">
                 <TextWithDataChips
                   text={block}

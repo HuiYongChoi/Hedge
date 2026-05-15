@@ -124,8 +124,10 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         self.assertIn("prepareEvidenceLayoutText", helpers)
         self.assertIn("splitLongEvidenceBlock", helpers)
+        self.assertIn("mergeOrphanEvidenceHeadings", helpers)
+        self.assertIn("isBlankEvidenceItem", helpers)
         self.assertIn("inline headings", helpers)
-        self.assertIn("slice(0, 7)", helpers)
+        self.assertNotIn("source.slice(0, 7)", helpers)
 
     def test_evidence_cards_render_body_as_blocks(self):
         evidence = (V5_DIR / "evidence-item.tsx").read_text(encoding="utf-8")
@@ -134,6 +136,8 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("space-y-2.5", evidence)
         self.assertIn("leading-7", evidence)
         self.assertIn("inlineCitations={false}", evidence)
+        self.assertIn("visibleBodyBlocks", evidence)
+        self.assertNotIn(".slice(0, 4)", evidence)
         self.assertIn("inlineCitations", inline)
 
     def test_stock_tab_exports_reusable_report_helpers(self):

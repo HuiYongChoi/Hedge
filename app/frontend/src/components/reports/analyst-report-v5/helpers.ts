@@ -656,31 +656,67 @@ function splitLongEvidenceBlock(block: string): string[] {
   return chunks.length > 0 ? chunks : [block];
 }
 
+function isOrphanEvidenceHeading(block: string) {
+  const clean = block
+    .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*)/u, '')
+    .trim();
+  return /^\[[+\-~?]\]\s*[^.!?。？！\n]{2,90}[:：]\s*$/u.test(clean)
+    || /^#{2,3}\s*[^.!?。？！\n]{2,90}[:：]\s*$/u.test(clean);
+}
+
+function mergeOrphanEvidenceHeadings(blocks: string[]) {
+  const merged: string[] = [];
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    const next = blocks[index + 1];
+    if (next && isOrphanEvidenceHeading(block)) {
+      merged.push(`${block} ${next}`);
+      index += 1;
+      continue;
+    }
+    merged.push(block);
+  }
+  return merged;
+}
+
+function buildEvidenceItem(raw: string, index: number): EvidenceItem {
+  const clean = raw
+    .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*)/u, '')
+    .trim();
+  const { heading, body } = extractItemHeading(clean);
+  return {
+    id: `evidence-${index + 1}`,
+    rawText: clean,
+    heading,
+    body,
+    tone: classifyItemTone(clean),
+    citationLetters: [],
+  };
+}
+
+function isBlankEvidenceItem(item: EvidenceItem) {
+  const body = item.body
+    .replace(/^\s*\[[+\-~?]\]\s*$/u, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return body.length === 0;
+}
+
 export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
   const normalized = prepareEvidenceLayoutText(sectionText);
   if (!normalized) return [];
 
-  const blocks = normalized
+  const rawBlocks = normalized
     .split(/\n{2,}|\n(?=\s*(?:#{2,3}\s+|\d+[.)]|[-*•]\s+|\[[+\-~?]\]))/u)
     .map(item => item.trim())
-    .flatMap(splitLongEvidenceBlock)
     .filter(Boolean);
 
-  const source = blocks.length > 0 ? blocks : [normalized];
-  return source.slice(0, 7).map((raw, index) => {
-    const clean = raw
-      .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*)/u, '')
-      .trim();
-    const { heading, body } = extractItemHeading(clean);
-    return {
-      id: `evidence-${index + 1}`,
-      rawText: clean,
-      heading,
-      body,
-      tone: classifyItemTone(clean),
-      citationLetters: [],
-    };
-  });
+  const source = (rawBlocks.length > 0 ? mergeOrphanEvidenceHeadings(rawBlocks) : [normalized])
+    .flatMap(splitLongEvidenceBlock);
+
+  return source
+    .map(buildEvidenceItem)
+    .filter((item): item is EvidenceItem => !isBlankEvidenceItem(item));
 }
 
 export function classifyItemTone(itemText: string): ReportTone {
@@ -705,6 +741,9 @@ export function extractItemHeading(itemText: string): { heading: string | null; 
   const marker = normalizedItemText.match(/^\[[+\-~?]\]\s*(.+)$/su);
   if (marker) {
     const bodyText = marker[1].trim();
+    if (/[:：]\s*$/u.test(bodyText)) {
+      return { heading: bodyText.replace(/[:：]\s*$/u, '').trim(), body: '' };
+    }
     return { heading: deriveMarkerHeading(bodyText), body: bodyText };
   }
 
