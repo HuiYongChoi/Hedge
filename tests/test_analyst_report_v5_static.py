@@ -120,6 +120,22 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("annotateTextWithCitations", inline)
         self.assertIn("CitationChip", evidence)
 
+    def test_report_readability_splits_dense_agent_output(self):
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("prepareEvidenceLayoutText", helpers)
+        self.assertIn("splitLongEvidenceBlock", helpers)
+        self.assertIn("inline headings", helpers)
+        self.assertIn("slice(0, 7)", helpers)
+
+    def test_evidence_cards_render_body_as_blocks(self):
+        evidence = (V5_DIR / "evidence-item.tsx").read_text(encoding="utf-8")
+        inline = (V5_DIR / "inline-data-chip.tsx").read_text(encoding="utf-8")
+        self.assertIn("splitEvidenceBodyBlocks", evidence)
+        self.assertIn("space-y-2.5", evidence)
+        self.assertIn("leading-7", evidence)
+        self.assertIn("inlineCitations={false}", evidence)
+        self.assertIn("inlineCitations", inline)
+
     def test_stock_tab_exports_reusable_report_helpers(self):
         src = STOCK_TAB.read_text(encoding="utf-8")
         for signature in [

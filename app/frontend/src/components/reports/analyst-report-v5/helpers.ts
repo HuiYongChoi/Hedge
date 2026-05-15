@@ -622,20 +622,54 @@ export function buildSourceTrackingText(report: AgentReport | null | undefined) 
   ].join('\n');
 }
 
+export function prepareEvidenceLayoutText(sectionText: string) {
+  return normalizeFinancialDisplayText(sectionText)
+    .replace(/\r\n?/g, '\n')
+    // Restore breaks before inline headings and verdict markers produced by dense model output.
+    .replace(/([^\n])\s+(?=#{2,3}\s+)/gu, '$1\n\n')
+    .replace(/\s+(?=(?:\d+[.)]\s+)?\[[+\-~?]\])/gu, '\n\n')
+    .replace(/\s+(?=[-*•]\s+\[[+\-~?]\])/gu, '\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function splitLongEvidenceBlock(block: string): string[] {
+  if (block.length <= 620) return [block];
+
+  const sentences = splitSentences(block);
+  if (sentences.length <= 1) return [block];
+
+  const chunks: string[] = [];
+  let current = '';
+
+  sentences.forEach(sentence => {
+    const next = current ? `${current} ${sentence}` : sentence;
+    if (current && next.length > 520) {
+      chunks.push(current);
+      current = sentence;
+      return;
+    }
+    current = next;
+  });
+
+  if (current) chunks.push(current);
+  return chunks.length > 0 ? chunks : [block];
+}
+
 export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
-  const normalized = normalizeFinancialDisplayText(sectionText).trim();
+  const normalized = prepareEvidenceLayoutText(sectionText);
   if (!normalized) return [];
 
   const blocks = normalized
-    .replace(/\r\n?/g, '\n')
-    .split(/\n{2,}|\n(?=\s*(?:\d+[.)]|[-*•]\s+|\[[+\-~?]\]))/u)
+    .split(/\n{2,}|\n(?=\s*(?:#{2,3}\s+|\d+[.)]|[-*•]\s+|\[[+\-~?]\]))/u)
     .map(item => item.trim())
+    .flatMap(splitLongEvidenceBlock)
     .filter(Boolean);
 
   const source = blocks.length > 0 ? blocks : [normalized];
-  return source.slice(0, 5).map((raw, index) => {
+  return source.slice(0, 7).map((raw, index) => {
     const clean = raw
-      .replace(/^\s*(?:[-*•]\s+|\d+[.)]\s*)/u, '')
+      .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*)/u, '')
       .trim();
     const { heading, body } = extractItemHeading(clean);
     return {

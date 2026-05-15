@@ -17,6 +17,7 @@ interface TextWithDataChipsProps {
   tone: ReportTone;
   sectionId?: SectionId;
   citations?: Citation[];
+  inlineCitations?: boolean;
   language: ReportLanguage;
   onCitationHover?: (letter: string | null) => void;
   onCitationClick?: (citation: Citation) => void;
@@ -39,13 +40,14 @@ export function TextWithDataChips({
   tone,
   sectionId,
   citations = [],
+  inlineCitations = true,
   language,
   onCitationHover,
   onCitationClick,
 }: TextWithDataChipsProps) {
   void language;
   const normalizedText = normalizeFinancialDisplayText(text);
-  if (!sectionId) return <TokenizedSentence sentence={normalizedText} tone={tone} />;
+  if (!sectionId || !inlineCitations) return <TokenizedSentence sentence={normalizedText} tone={tone} />;
 
   const annotated = annotateTextWithCitations(normalizedText, sectionId);
   if (annotated.length === 0) return <TokenizedSentence sentence={normalizedText} tone={tone} />;
