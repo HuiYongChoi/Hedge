@@ -221,7 +221,8 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
         src = STOCK_TAB.read_text(encoding="utf-8")
         self.assertIn("isJapaneseStock", src)
         self.assertIn("EDINET", src)
-        self.assertIn("有価証券報告書", src)
+        # UI now uses Korean label (per user preference: no Japanese in UI)
+        self.assertIn("유가증권보고서", src)
 
 
 if __name__ == "__main__":

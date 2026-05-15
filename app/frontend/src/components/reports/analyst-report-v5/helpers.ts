@@ -597,7 +597,7 @@ function buildFallbackCrossCheckGuideFromReport(
   const sourceRef = isKorean
     ? 'DART 사업보고서의 「사업의 내용」, 「재무에 관한 사항」'
     : isJapan
-      ? 'EDINET 有価証券報告書의 「事業の状況」, 「経理の状況」'
+      ? 'EDINET 유가증권보고서(사업 현황, 재무 현황 섹션)'
       : '사업보고서/10-K의 MD&A, 재무제표 주석';
   const snippets = pickMetricSummary(report, ['signal', 'confidence', 'intrinsic_value', 'wacc', 'forward_pe', 'margin_of_safety']);
   if (snippets) {
@@ -828,12 +828,12 @@ export function buildCitations(
   const reportLabelKo = isKoreanStock
     ? '사업보고서 · 재무에 관한 사항'
     : isJapan
-      ? '有価証券報告書 · 経理の状況'
+      ? '유가증권보고서 · 재무현황'
       : '10-K · MD&A';
   const reportLabelEn = isKoreanStock
     ? 'Korean Annual Report (DART)'
     : isJapan
-      ? 'Yūhō · EDINET Securities Report'
+      ? 'EDINET Securities Report'
       : '10-K · MD&A';
   const reportTypeKo = isKoreanStock ? 'DART' : isJapan ? 'EDINET' : 'SEC';
   const reportTypeEn = isKoreanStock ? 'DART' : isJapan ? 'EDINET' : 'SEC';

@@ -294,11 +294,11 @@ export function getResearchLinks(ticker: string) {
     const code = normalized.split('.')[0];
     return [
       {
-        label: 'EDINET 有価証券報告書',
+        label: 'EDINET 유가증권보고서',
         href: `https://disclosure2.edinet-fsa.go.jp/WEEK0010.aspx`,
       },
       {
-        label: 'Yahoo!ファイナンス',
+        label: 'Yahoo Finance Japan',
         href: `https://finance.yahoo.co.jp/quote/${encodeURIComponent(code)}.T`,
       },
     ];
@@ -553,7 +553,7 @@ export function buildFallbackCrossCheckGuide(result: AgentResult) {
     ? metrics.join(', ')
     : '전처리 데이터에서 제공된 신호, 신뢰도, 핵심 재무/시장 지표(N/A 포함)';
   const sourceSections = ticker && isJapaneseStock(ticker)
-    ? 'EDINET 有価証券報告書의 「事業の状況」, 「経理の状況」, 「業績等の概要」, 「事業等のリスク」, 주요 주석을 우선 확인하십시오.'
+    ? 'EDINET 유가증권보고서(사업 현황, 재무 현황, 업적 개요, 리스크 섹션)를 우선 확인하십시오.'
     : ticker && isKoreanStock(ticker)
       ? 'DART 사업보고서의 「사업의 내용」, 「재무에 관한 사항」, 「이사의 경영진단 및 분석의견」, 주요 주석을 우선 확인하십시오.'
       : 'SEC 10-K의 MD&A, Risk Factors, Financial Statements, Notes to Financial Statements를 우선 확인하십시오.';
