@@ -362,6 +362,71 @@ class AnalystTargetApiTests(unittest.TestCase):
         self.assertAlmostEqual(result, 58.11, places=2)
 
 
+class YahooJapanBrokerTests(unittest.TestCase):
+    def setUp(self):
+        _CACHE.clear()
+
+    @patch("src.tools.analyst_target_api.requests.get")
+    def test_yahoo_jp_parses_broker_table(self, mock_get):
+        """Yahoo Finance Japan analyst-info 페이지를 mock HTML로 파싱."""
+        from src.tools.analyst_target_api import _fetch_yahoo_japan_brokers
+        html = """
+        <html><body>
+          <table>
+            <tr><th>証券会社</th><th>投資判断</th><th>目標株価</th><th>発表日</th></tr>
+            <tr><td>野村證券</td><td>買い</td><td>4,500</td><td>2026/05/13</td></tr>
+            <tr><td>大和証券</td><td>中立</td><td>3,800</td><td>2026/05/10</td></tr>
+            <tr><td>みずほ証券</td><td>強気</td><td>4,200</td><td>2026/04/28</td></tr>
+          </table>
+        </body></html>
+        """
+
+        class Resp:
+            ok = True
+            text = html
+
+        mock_get.return_value = Resp()
+        result = _fetch_yahoo_japan_brokers("7203.T")
+        self.assertEqual(len(result["brokers"]), 3)
+        self.assertEqual(result["brokers"][0].name, "野村證券")
+        self.assertEqual(result["brokers"][0].target_price, 4500.0)
+        self.assertEqual(result["brokers"][0].signal, "BUY")
+        self.assertEqual(result["high"], 4500.0)
+        self.assertEqual(result["low"], 3800.0)
+        self.assertEqual(result["analyst_count"], 3)
+        self.assertAlmostEqual(result["consensus"], (4500 + 3800 + 4200) / 3, places=1)
+
+    @patch("src.tools.analyst_target_api._fetch_yahoo_japan_brokers")
+    @patch("src.tools.analyst_target_api._fetch_yfinance_analyst")
+    @patch("src.tools.analyst_target_api._fetch_beta_sigma_yf", return_value=(0.33, 0.18))
+    @patch("src.tools.analyst_target_api._fetch_yfinance_data")
+    def test_japanese_ticker_merges_yahoo_jp_brokers(self, mock_fund, _bs, mock_an, mock_yjp):
+        """일본 종목에서 yfinance broker는 비어 있고 Yahoo JP가 채워지면 머지됨."""
+        mock_fund.return_value = {
+            "current_price": 3085.0, "currency": "JPY", "trailing_eps": 295.39,
+        }
+        mock_an.return_value = {
+            "consensus": 3849.67, "high": 4500.0, "low": 3050.0, "median": 3900.0,
+            "analyst_count": 18, "brokers": [],
+            "rec_summary_row": {"strongBuy": 5, "buy": 8, "hold": 4, "sell": 1, "strongSell": 0},
+            "current_fy_eps": 307.63,
+        }
+        mock_yjp.return_value = {
+            "consensus": 4166.67, "high": 4500.0, "low": 3800.0, "median": 4200.0,
+            "analyst_count": 3,
+            "brokers": [
+                BrokerTarget("野村證券", 4500.0, "BUY", "2026-05-13", 2),
+                BrokerTarget("大和証券", 3800.0, "HOLD", "2026-05-10", 5),
+                BrokerTarget("みずほ証券", 4200.0, "BUY", "2026-04-28", 17),
+            ],
+        }
+        result = fetch_analyst_target("7203.T")
+        self.assertEqual(len(result.brokers), 3)
+        self.assertEqual(result.brokers[0].name, "野村證券")
+        self.assertEqual(result.currency, "JPY")
+        self.assertEqual(result.source, "yahoo-jp+yfinance")
+
+
 class JapaneseTickerTests(unittest.TestCase):
     def setUp(self):
         _CACHE.clear()

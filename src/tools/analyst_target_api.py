@@ -127,6 +127,141 @@ def _yahoo_japan_symbol(ticker: str) -> str:
     return t
 
 
+# ── Yahoo Finance Japan 증권사별 분석가 데이터 ─────────────────────────────────
+
+_YAHOO_JP_ANALYST_URL = "https://finance.yahoo.co.jp/quote/{symbol}/analyst-info"
+
+YAHOO_JP_RATING_MAP: dict[str, str] = {
+    # 일본어
+    "買い": "BUY", "強気": "BUY", "オーバーウエート": "BUY", "オーバーウェイト": "BUY",
+    "中立": "HOLD", "ホールド": "HOLD", "ニュートラル": "HOLD",
+    "売り": "SELL", "弱気": "SELL", "アンダーウエート": "SELL", "アンダーウェイト": "SELL",
+    # 영어 (소문자로 매핑, 비교 시 lower() 사용)
+    "buy": "BUY", "outperform": "BUY", "overweight": "BUY",
+    "hold": "HOLD", "neutral": "HOLD", "market perform": "HOLD",
+    "sell": "SELL", "underperform": "SELL", "underweight": "SELL",
+}
+
+
+def _normalize_yahoo_jp_signal(value: Optional[str]) -> str:
+    """Yahoo Finance Japan 투자판단 문자열 → BUY / HOLD / SELL."""
+    if not value:
+        return "NEUTRAL"
+    v = value.strip()
+    # 일본어 그대로 시도
+    if v in YAHOO_JP_RATING_MAP:
+        return YAHOO_JP_RATING_MAP[v]
+    # 소문자로 재시도
+    return YAHOO_JP_RATING_MAP.get(v.lower(), "NEUTRAL")
+
+
+def _days_ago_from_jp_date(value: str) -> int:
+    """'2026/05/13', '2026年5月13日', '2026-05-13' 형식 → days_ago."""
+    s = value.strip()
+    for fmt in ("%Y/%m/%d", "%Y年%m月%d日", "%Y-%m-%d", "%Y年%-m月%-d日"):
+        try:
+            published = datetime.strptime(s, fmt).date()
+            return max(0, (date.today() - published).days)
+        except Exception:
+            continue
+    return 0
+
+
+def _fetch_yahoo_japan_brokers(ticker: str) -> dict:
+    """Yahoo Finance Japan analyst-info 페이지에서 증권사별 목표가 + 투자판단 fetch.
+    반환 형식은 _fetch_fnguide_consensus와 호환 (dict with brokers/consensus/high/low/median/analyst_count).
+    """
+    out: dict = {
+        "consensus": None, "high": None, "low": None, "median": None,
+        "analyst_count": None,
+        "brokers": [],
+    }
+    if not _is_japanese_ticker(ticker):
+        return out
+
+    symbol = _yahoo_japan_symbol(ticker)  # '7203.T'
+    url = _YAHOO_JP_ANALYST_URL.format(symbol=symbol)
+    try:
+        response = requests.get(
+            url,
+            timeout=8,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) "
+                              "Chrome/124.0.0.0 Safari/537.36",
+                "Accept-Language": "ja,en;q=0.8",
+            },
+        )
+        if not response.ok:
+            logger.debug("Yahoo JP analyst-info HTTP %s for %s", response.status_code, symbol)
+            return out
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        brokers: list[BrokerTarget] = []
+        prices: list[float] = []
+
+        # ── 테이블 탐색: 헤더에 '目標株価' 또는 '投資判断' 포함된 표 ──
+        for table in soup.find_all("table"):
+            header_text = table.get_text(" ", strip=True)
+            if "目標株価" not in header_text and "投資判断" not in header_text:
+                continue
+            rows = table.find_all("tr")
+            for tr in rows:
+                cells = [c.get_text(" ", strip=True) for c in tr.find_all(["th", "td"])]
+                if len(cells) < 3:
+                    continue
+                name = cells[0].strip()
+                # 헤더 행 skip
+                if not name or any(kw in name for kw in (
+                    "証券会社", "目標株価", "投資判断", "発表日", "機関名", "レーティング"
+                )):
+                    continue
+                # 가격 후보: 콤마/숫자 포함 셀
+                price: Optional[float] = None
+                rating: Optional[str] = None
+                pub: str = ""
+                for c in cells[1:]:
+                    stripped = c.strip()
+                    if price is None:
+                        candidate = _parse_num(stripped)
+                        if candidate and candidate > 50:  # 日本株 최소 단위
+                            price = candidate
+                            continue
+                    if rating is None and (
+                        any(k in stripped for k in YAHOO_JP_RATING_MAP)
+                        or stripped.lower() in YAHOO_JP_RATING_MAP
+                    ):
+                        rating = stripped
+                        continue
+                    if not pub and ("/" in stripped or "年" in stripped or "-" in stripped):
+                        pub = stripped
+                if price is None:
+                    continue
+                brokers.append(BrokerTarget(
+                    name=name,
+                    target_price=price,
+                    signal=_normalize_yahoo_jp_signal(rating),
+                    published_date=pub if pub else "",
+                    days_ago=_days_ago_from_jp_date(pub) if pub else 0,
+                ))
+                prices.append(price)
+            if brokers:
+                break  # 첫 매칭 테이블만 사용
+
+        if prices:
+            brokers.sort(key=lambda b: (b.days_ago, b.name))
+            out["brokers"] = brokers[:20]
+            out["high"] = max(prices)
+            out["low"] = min(prices)
+            out["median"] = float(statistics.median(prices))
+            out["analyst_count"] = len(brokers)
+            out["consensus"] = float(statistics.mean(prices))
+
+    except Exception as e:
+        logger.debug("Yahoo JP analyst fetch failed for %s: %s", ticker, e)
+    return out
+
+
 def _krx_code(ticker: str) -> str:
     return ticker.strip().upper().split(".")[0]
 
@@ -508,6 +643,8 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
     yf_fund    = _fetch_yfinance_data(yf_symbol)     # current price + PE/EPS/beta
     yf_an      = _fetch_yfinance_analyst(yf_symbol)  # consensus + brokers + dist
     fg_an      = _fetch_fnguide_consensus(ticker) if is_kr else {}
+    # 일본은 yfinance가 broker별 리스트만 비워서 줌 → Yahoo JP analyst-info로 보강
+    yjp_an     = _fetch_yahoo_japan_brokers(ticker) if is_jp and not yf_an["brokers"] else {}
     beta_hist, sigma_hist = _fetch_beta_sigma_yf(yf_symbol)
 
     beta_final  = beta_hist or yf_fund.get("beta")
@@ -530,14 +667,17 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
     if current_price and forward_pe and (forward_eps is None or is_kr):
         forward_eps = current_price / forward_pe
 
-    brokers = fg_an.get("brokers") or yf_an["brokers"]
-    consensus = fg_an.get("consensus") or yf_an["consensus"]
-    high_candidates = [v for v in [fg_an.get("high"), yf_an["high"]] if v is not None]
-    low_candidates = [v for v in [fg_an.get("low"), yf_an["low"]] if v is not None]
+    brokers = fg_an.get("brokers") or yjp_an.get("brokers") or yf_an["brokers"]
+    consensus = fg_an.get("consensus") or yf_an["consensus"] or yjp_an.get("consensus")
+    high_candidates = [v for v in [fg_an.get("high"), yf_an["high"], yjp_an.get("high")] if v is not None]
+    low_candidates  = [v for v in [fg_an.get("low"),  yf_an["low"],  yjp_an.get("low")]  if v is not None]
     high = max(high_candidates) if high_candidates else None
-    low = min(low_candidates) if low_candidates else None
-    median = fg_an.get("median") or yf_an["median"]
-    analyst_count = max([v for v in [fg_an.get("analyst_count"), yf_an["analyst_count"]] if v is not None], default=None)
+    low  = min(low_candidates)  if low_candidates  else None
+    median = fg_an.get("median") or yf_an["median"] or yjp_an.get("median")
+    analyst_count = max(
+        [v for v in [fg_an.get("analyst_count"), yf_an["analyst_count"], yjp_an.get("analyst_count")] if v is not None],
+        default=None,
+    )
 
     # Distribution
     distribution = _compute_distribution_v5(
@@ -549,6 +689,8 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
     has_data = (consensus is not None) or len(brokers) > 0
     if fg_an.get("brokers"):
         source = "fnguide+naver+yfinance" if naver_current_price is not None else "fnguide+yfinance"
+    elif yjp_an.get("brokers"):
+        source = "yahoo-jp+yfinance"
     else:
         source = "yfinance" if has_data else "stub"
     result = AnalystTarget(
