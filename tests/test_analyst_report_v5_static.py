@@ -139,6 +139,9 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("inlineCitations={false}", evidence)
         self.assertIn("visibleBodyBlocks", evidence)
         self.assertIn("isMarkerOnlyBodyBlock", evidence)
+        self.assertIn("readableTextStyle", evidence)
+        self.assertIn("wordBreak: 'keep-all'", evidence)
+        self.assertIn("overflowWrap: 'break-word'", evidence)
         self.assertNotIn(".slice(0, 4)", evidence)
         self.assertIn("inlineCitations", inline)
 

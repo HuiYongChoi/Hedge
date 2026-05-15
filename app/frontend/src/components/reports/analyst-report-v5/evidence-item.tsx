@@ -9,6 +9,7 @@ import {
 import { CitationChip, findCitation } from './citation-chip';
 import { KeyNumbersStrip } from './key-numbers-strip';
 import { TextWithDataChips } from './inline-data-chip';
+import type { CSSProperties } from 'react';
 import type { Citation, EvidenceItem as EvidenceItemType, ReportLanguage, SectionId } from './types';
 
 interface EvidenceItemProps {
@@ -32,6 +33,11 @@ function ToneMark({ tone }: { tone: EvidenceItemType['tone'] }) {
   if (tone === 'bearish') return <span className="font-mono">✕</span>;
   return <span className="font-mono">-</span>;
 }
+
+const readableTextStyle: CSSProperties = {
+  wordBreak: 'keep-all',
+  overflowWrap: 'break-word',
+};
 
 function splitReadableChunk(block: string): string[] {
   if (block.length <= 460) return [block];
@@ -108,12 +114,12 @@ export function EvidenceItem({
               {toneLabel(item.tone, language)}
             </Badge>
             {item.heading && (
-              <h4 className="text-sm font-semibold text-foreground">{item.heading}</h4>
+              <h4 className="text-sm font-semibold text-foreground" style={readableTextStyle}>{item.heading}</h4>
             )}
           </div>
-          <div className="space-y-2.5 text-sm leading-7 text-foreground/90">
+          <div className="space-y-2.5 text-sm leading-7 text-foreground/90" style={readableTextStyle}>
             {visibleBodyBlocks.map((block, blockIndex) => (
-              <p key={`${item.id}-body-${blockIndex}`} className="leading-7">
+              <p key={`${item.id}-body-${blockIndex}`} className="leading-7" style={readableTextStyle}>
                 <TextWithDataChips
                   text={block}
                   tone={item.tone}
