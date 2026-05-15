@@ -108,6 +108,25 @@ def _is_korean_ticker(ticker: str) -> bool:
     return (t.endswith(".KS") or t.endswith(".KQ") or (code.isdigit() and len(code) == 6))
 
 
+def _is_japanese_ticker(ticker: str) -> bool:
+    """TSE 4자리 숫자 코드 또는 Yahoo의 .T 접미사를 일본 종목으로 판정."""
+    t = ticker.strip().upper()
+    code = t.split(".")[0]
+    return (t.endswith(".T") or (code.isdigit() and len(code) == 4))
+
+
+def _yahoo_japan_symbol(ticker: str) -> str:
+    """일본 종목을 Yahoo가 받아들이는 'NNNN.T' 형식으로 정규화.
+    이미 .T가 있으면 그대로, 4자리 숫자면 .T 부착."""
+    t = ticker.strip().upper()
+    if t.endswith(".T"):
+        return t
+    code = t.split(".")[0]
+    if code.isdigit() and len(code) == 4:
+        return f"{code}.T"
+    return t
+
+
 def _krx_code(ticker: str) -> str:
     return ticker.strip().upper().split(".")[0]
 
@@ -184,6 +203,12 @@ def _fetch_yfinance_data(ticker: str) -> dict:
 
         # 펀더멘털: info dict
         info = t.info or {}
+
+        # 통화 추출 (info.currency가 가장 신뢰할 수 있음)
+        cur = info.get("currency")
+        if cur and isinstance(cur, str):
+            out["currency"] = cur.upper()
+
         mapping = [
             ("trailingPE",  "trailing_pe"),
             ("forwardPE",   "forward_pe"),
@@ -465,32 +490,44 @@ def _compute_distribution_v5(
 # ──────────────────────────────────────────────────────────────────────────────
 
 def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTarget:
-    cached = _CACHE.get(ticker)
+    is_kr = _is_korean_ticker(ticker)
+    is_jp = _is_japanese_ticker(ticker)
+
+    # Yahoo 기호 정규화 (일본: 7203 → 7203.T)
+    if is_jp:
+        yf_symbol = _yahoo_japan_symbol(ticker)
+    else:
+        yf_symbol = ticker.strip().upper()
+
+    # 캐시 키는 정규화된 yf_symbol 기준 (7203과 7203.T 동일 entry)
+    cached = _CACHE.get(yf_symbol)
     now = time.time()
     if not force_refresh and cached and now - cached[0] < _TTL_SECONDS:
         return cached[1]
 
-    yf_fund    = _fetch_yfinance_data(ticker)     # current price + PE/EPS/beta
-    yf_an      = _fetch_yfinance_analyst(ticker)  # consensus + brokers + dist
-    fg_an      = _fetch_fnguide_consensus(ticker) if _is_korean_ticker(ticker) else {}
-    beta_hist, sigma_hist = _fetch_beta_sigma_yf(ticker)
+    yf_fund    = _fetch_yfinance_data(yf_symbol)     # current price + PE/EPS/beta
+    yf_an      = _fetch_yfinance_analyst(yf_symbol)  # consensus + brokers + dist
+    fg_an      = _fetch_fnguide_consensus(ticker) if is_kr else {}
+    beta_hist, sigma_hist = _fetch_beta_sigma_yf(yf_symbol)
 
     beta_final  = beta_hist or yf_fund.get("beta")
     sigma_final = sigma_hist
-    currency = "KRW" if _is_korean_ticker(ticker) else "USD"
+
+    # 통화 결정: yfinance info.currency 우선, 없으면 ticker 패턴으로 추론
+    currency = yf_fund.get("currency") or ("KRW" if is_kr else "JPY" if is_jp else "USD")
 
     current_price = yf_fund.get("current_price")
     naver_current_price = None
-    if current_price is None and _is_korean_ticker(ticker):
+    if current_price is None and is_kr:
         naver_current_price = _fetch_naver_current_price(ticker)
         current_price = naver_current_price
     trailing_pe = fg_an.get("trailing_pe") or yf_fund.get("trailing_pe")
     forward_pe = fg_an.get("forward_pe") or yf_fund.get("forward_pe")
     trailing_eps = yf_fund.get("trailing_eps")
-    if current_price and trailing_pe and (trailing_eps is None or _is_korean_ticker(ticker)):
+    if current_price and trailing_pe and (trailing_eps is None or is_kr):
         trailing_eps = current_price / trailing_pe
     forward_eps = yf_fund.get("forward_eps")
-    if current_price and forward_pe and (forward_eps is None or _is_korean_ticker(ticker)):
+    if current_price and forward_pe and (forward_eps is None or is_kr):
         forward_eps = current_price / forward_pe
 
     brokers = fg_an.get("brokers") or yf_an["brokers"]
@@ -533,5 +570,5 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
         distribution=distribution,
         source=source,
     )
-    _CACHE[ticker] = (now, result)
+    _CACHE[yf_symbol] = (now, result)
     return result

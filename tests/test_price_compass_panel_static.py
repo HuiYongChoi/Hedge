@@ -91,12 +91,13 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
             self.assertIn(needle, src, needle)
 
     def test_tool_module_has_new_helpers(self):
-        """v5: yfinance-only helpers. FMP helpers gone."""
+        """v5: yfinance-only helpers. FMP helpers gone. JP helpers added."""
         src = BACKEND_TOOL.read_text(encoding="utf-8")
         for needle in ["BrokerTarget", "TargetDistribution", "_fetch_yfinance_analyst",
                        "_fetch_beta_sigma_yf", "_compute_distribution_v5",
                        "_compute_ttm_eps_from_quarterly", "_fetch_current_fy_eps",
-                       "_fetch_fnguide_consensus", "_fetch_naver_current_price"]:
+                       "_fetch_fnguide_consensus", "_fetch_naver_current_price",
+                       "_is_japanese_ticker", "_yahoo_japan_symbol"]:
             self.assertIn(needle, src, needle)
 
     def test_i18n_keys_present(self):

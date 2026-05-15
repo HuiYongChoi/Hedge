@@ -362,5 +362,81 @@ class AnalystTargetApiTests(unittest.TestCase):
         self.assertAlmostEqual(result, 58.11, places=2)
 
 
+class JapaneseTickerTests(unittest.TestCase):
+    def setUp(self):
+        _CACHE.clear()
+
+    def test_is_japanese_ticker_with_dot_t(self):
+        from src.tools.analyst_target_api import _is_japanese_ticker
+        self.assertTrue(_is_japanese_ticker("7203.T"))
+        self.assertTrue(_is_japanese_ticker("6758.T"))
+        self.assertTrue(_is_japanese_ticker("9984.T"))
+
+    def test_is_japanese_ticker_with_4digit_code(self):
+        from src.tools.analyst_target_api import _is_japanese_ticker
+        self.assertTrue(_is_japanese_ticker("7203"))
+        self.assertTrue(_is_japanese_ticker("6758"))
+
+    def test_is_japanese_ticker_negative(self):
+        from src.tools.analyst_target_api import _is_japanese_ticker
+        self.assertFalse(_is_japanese_ticker("AAPL"))
+        self.assertFalse(_is_japanese_ticker("005930"))    # 6자리 → 한국
+        self.assertFalse(_is_japanese_ticker("005930.KS")) # 한국
+        self.assertFalse(_is_japanese_ticker(""))
+        self.assertFalse(_is_japanese_ticker("MSFT"))
+
+    def test_yahoo_japan_symbol_normalization(self):
+        from src.tools.analyst_target_api import _yahoo_japan_symbol
+        self.assertEqual(_yahoo_japan_symbol("7203"),   "7203.T")
+        self.assertEqual(_yahoo_japan_symbol("7203.T"), "7203.T")
+        self.assertEqual(_yahoo_japan_symbol("7203.t"), "7203.T")  # case-insensitive
+
+    @patch("src.tools.analyst_target_api._fetch_yfinance_analyst")
+    @patch("src.tools.analyst_target_api._fetch_beta_sigma_yf", return_value=(0.33, 0.18))
+    @patch("src.tools.analyst_target_api._fetch_yfinance_data")
+    def test_japanese_ticker_uses_yfinance_with_jpy(self, mock_fund, _bs, mock_an):
+        mock_fund.return_value = {
+            "current_price": 3085.0,
+            "trailing_pe": 10.44,
+            "trailing_eps": 295.39,
+            "forward_pe": 9.52,
+            "forward_eps": 324.22,
+            "beta": 0.33,
+            "currency": "JPY",
+        }
+        mock_an.return_value = {
+            "consensus": 3849.67, "high": 4500.0, "low": 3050.0, "median": 3900.0,
+            "analyst_count": 18,
+            "brokers": [],   # yfinance가 일본은 broker별 안 줌
+            "rec_summary_row": {"strongBuy": 5, "buy": 8, "hold": 4, "sell": 1, "strongSell": 0},
+            "current_fy_eps": 307.63,
+        }
+
+        result = fetch_analyst_target("7203.T")
+        self.assertEqual(result.currency, "JPY")
+        self.assertEqual(result.current_price, 3085.0)
+        self.assertEqual(result.consensus, 3849.67)
+        self.assertEqual(result.brokers, [])           # 일본은 비어도 OK
+        self.assertIsNotNone(result.distribution)      # rec_summary로 distribution 구성됨
+        self.assertEqual(result.distribution.total, 18)
+        self.assertEqual(result.source, "yfinance")
+
+    @patch("src.tools.analyst_target_api._fetch_yfinance_analyst")
+    @patch("src.tools.analyst_target_api._fetch_beta_sigma_yf", return_value=(None, None))
+    @patch("src.tools.analyst_target_api._fetch_yfinance_data")
+    def test_japanese_ticker_4digit_normalized_to_dot_t(self, mock_fund, _bs, mock_an):
+        """사용자가 '7203'만 입력해도 내부적으로 '7203.T'로 yfinance 호출."""
+        mock_fund.return_value = {"currency": "JPY"}
+        mock_an.return_value = {
+            "consensus": None, "high": None, "low": None, "median": None,
+            "analyst_count": None, "brokers": [], "rec_summary_row": None,
+            "current_fy_eps": None,
+        }
+        fetch_analyst_target("7203")
+        # _fetch_yfinance_data가 정규화된 '7203.T'로 호출됐는지
+        mock_fund.assert_called_with("7203.T")
+        mock_an.assert_called_with("7203.T")
+
+
 if __name__ == "__main__":
     unittest.main()

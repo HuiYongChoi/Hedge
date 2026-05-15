@@ -60,11 +60,16 @@ export function formatMoney(
 ): string {
   if (value == null || !Number.isFinite(value)) return '—';
   const normalized = currency.toUpperCase();
-  const maximumFractionDigits = options.maximumFractionDigits ?? (normalized === 'KRW' ? 0 : 2);
-  const minimumFractionDigits = normalized === 'KRW' ? 0 : Math.min(maximumFractionDigits, 2);
+  const isZeroDecimal = normalized === 'KRW' || normalized === 'JPY';
+  const maximumFractionDigits = options.maximumFractionDigits ?? (isZeroDecimal ? 0 : 2);
+  const minimumFractionDigits = isZeroDecimal ? 0 : Math.min(maximumFractionDigits, 2);
 
   if (normalized === 'KRW') {
     return `₩${value.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}`;
+  }
+
+  if (normalized === 'JPY') {
+    return `¥${value.toLocaleString('ja-JP', { maximumFractionDigits: 0 })}`;
   }
 
   return `$${value.toLocaleString(undefined, {
