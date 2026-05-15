@@ -2,6 +2,8 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+HELPERS = ROOT / "app/frontend/src/components/reports/analyst-report-v5/helpers.ts"
+STOCK_TAB = ROOT / "app/frontend/src/components/tabs/stock-search-tab.tsx"
 PANEL_DIR = ROOT / "app/frontend/src/components/reports/analyst-report-v5/price-compass-panel"
 INDEX = PANEL_DIR / "index.tsx"
 BAR = PANEL_DIR / "broker-target-bar.tsx"
@@ -196,6 +198,30 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
                 has_readable,
                 f"{path.name} must contain at least one of text-sm/text-xs/text-base"
             )
+
+
+    # ── Phase J2 new tests ───────────────────────────────────────────────────────
+
+    def test_japanese_helpers_present_in_tool(self):
+        """Phase J2-A: Yahoo JP scraper helpers exist in backend tool."""
+        src = BACKEND_TOOL.read_text(encoding="utf-8")
+        for needle in ["_fetch_yahoo_japan_brokers", "YAHOO_JP_RATING_MAP",
+                       "_normalize_yahoo_jp_signal", "_days_ago_from_jp_date"]:
+            self.assertIn(needle, src, needle)
+
+    def test_citation_regex_includes_japanese_report(self):
+        """Phase J2-B: citation 'a' regex covers 有価証券報告書."""
+        src = HELPERS.read_text(encoding="utf-8")
+        self.assertIn("有価証券報告書", src)
+        self.assertIn("有報", src)
+        self.assertIn("isJapaneseTicker", src)
+
+    def test_stock_search_tab_has_edinet_link(self):
+        """Phase J2-B: stock-search-tab.tsx exposes EDINET link for JP tickers."""
+        src = STOCK_TAB.read_text(encoding="utf-8")
+        self.assertIn("isJapaneseStock", src)
+        self.assertIn("EDINET", src)
+        self.assertIn("有価証券報告書", src)
 
 
 if __name__ == "__main__":

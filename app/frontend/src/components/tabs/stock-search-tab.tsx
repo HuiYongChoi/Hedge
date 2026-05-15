@@ -268,6 +268,13 @@ export function isKoreanStock(ticker: string) {
   return /^[0-9][0-9A-Z._-]*$/.test(normalized);
 }
 
+export function isJapaneseStock(ticker: string) {
+  const t = (ticker || '').trim().toUpperCase();
+  const code = t.split('.')[0];
+  // .T 접미사 또는 TSE 4자리 숫자 코드 (한국 6자리와 구분)
+  return t.endsWith('.T') || /^\d{4}$/.test(code);
+}
+
 export function getKoreanStockCode(ticker: string) {
   const trimmed = ticker.trim();
   // 한글 기업명이면 숫자 코드 추출을 위해 resolveTickerValue로 먼저 변환
@@ -281,6 +288,21 @@ export function getKoreanStockCode(ticker: string) {
 
 export function getResearchLinks(ticker: string) {
   const normalized = normalizeTicker(ticker);
+
+  // 일본 종목 먼저 확인 (4자리 코드가 isKoreanStock 수 패턴에도 걸리므로 우선 처리)
+  if (isJapaneseStock(normalized)) {
+    const code = normalized.split('.')[0];
+    return [
+      {
+        label: 'EDINET 有価証券報告書',
+        href: `https://disclosure2.edinet-fsa.go.jp/WEEK0010.aspx`,
+      },
+      {
+        label: 'Yahoo!ファイナンス',
+        href: `https://finance.yahoo.co.jp/quote/${encodeURIComponent(code)}.T`,
+      },
+    ];
+  }
 
   if (isKoreanStock(normalized)) {
     const code = getKoreanStockCode(normalized);
@@ -530,9 +552,11 @@ export function buildFallbackCrossCheckGuide(result: AgentResult) {
   const targetData = metrics.length > 0
     ? metrics.join(', ')
     : '전처리 데이터에서 제공된 신호, 신뢰도, 핵심 재무/시장 지표(N/A 포함)';
-  const sourceSections = ticker && isKoreanStock(ticker)
-    ? 'DART 사업보고서의 「사업의 내용」, 「재무에 관한 사항」, 「이사의 경영진단 및 분석의견」, 주요 주석을 우선 확인하십시오.'
-    : 'SEC 10-K의 MD&A, Risk Factors, Financial Statements, Notes to Financial Statements를 우선 확인하십시오.';
+  const sourceSections = ticker && isJapaneseStock(ticker)
+    ? 'EDINET 有価証券報告書의 「事業の状況」, 「経理の状況」, 「業績等の概要」, 「事業等のリスク」, 주요 주석을 우선 확인하십시오.'
+    : ticker && isKoreanStock(ticker)
+      ? 'DART 사업보고서의 「사업의 내용」, 「재무에 관한 사항」, 「이사의 경영진단 및 분석의견」, 주요 주석을 우선 확인하십시오.'
+      : 'SEC 10-K의 MD&A, Risk Factors, Financial Statements, Notes to Financial Statements를 우선 확인하십시오.';
 
   return `### 🔍 원문 대조 체크리스트
 

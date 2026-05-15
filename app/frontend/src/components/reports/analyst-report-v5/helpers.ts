@@ -125,7 +125,7 @@ export const CITATION_RULES: Array<{
 }> = [
   {
     letter: 'a',
-    highRegex: /\b10-K\b|MD&A|사업보고서|annual report|연간보고서/i,
+    highRegex: /\b10-K\b|\b10-Q\b|MD&A|사업보고서|annual report|연간보고서|有価証券報告書|有報|四半期報告書|securities report/i,
     mediumRegex: /DCF|FCFF|내재가치|intrinsic|discounted|운전자본|capex/i,
   },
   {
@@ -158,6 +158,12 @@ export function isKoreanTicker(ticker: string) {
   const trimmed = ticker.trim();
   if (/[\uAC00-\uD7A3]/.test(trimmed)) return true;
   return /^[0-9][0-9A-Z._-]*$/.test(normalizeTicker(trimmed));
+}
+
+export function isJapaneseTicker(ticker: string) {
+  const t = ticker.trim().toUpperCase();
+  const code = t.split('.')[0];
+  return t.endsWith('.T') || /^\d{4}$/.test(code);
 }
 
 export function getKoreanCode(ticker: string) {
@@ -582,12 +588,22 @@ function pickMetricSummary(report: AgentReport | null | undefined, keys: string[
   return values.length > 0 ? values.join('\n') : '';
 }
 
-function buildFallbackCrossCheckGuideFromReport(report: AgentReport | null | undefined) {
+function buildFallbackCrossCheckGuideFromReport(
+  report: AgentReport | null | undefined,
+  ticker?: string,
+) {
+  const isKorean = ticker ? isKoreanTicker(ticker) : false;
+  const isJapan  = ticker ? isJapaneseTicker(ticker) : false;
+  const sourceRef = isKorean
+    ? 'DART 사업보고서의 「사업의 내용」, 「재무에 관한 사항」'
+    : isJapan
+      ? 'EDINET 有価証券報告書의 「事業の状況」, 「経理の状況」'
+      : '사업보고서/10-K의 MD&A, 재무제표 주석';
   const snippets = pickMetricSummary(report, ['signal', 'confidence', 'intrinsic_value', 'wacc', 'forward_pe', 'margin_of_safety']);
   if (snippets) {
-    return `1. **핵심 타겟 데이터:** ${snippets}.\n2. **원문 추적 섹션:** 사업보고서/10-K의 MD&A, 재무제표 주석, 리스크 요인을 대조하십시오.\n3. **경영진 멘트 검증:** 숫자 변화가 경영진 설명과 일치하는지 확인하십시오.`;
+    return `1. **핵심 타겟 데이터:** ${snippets}.\n2. **원문 추적 섹션:** ${sourceRef}, 리스크 요인을 대조하십시오.\n3. **경영진 멘트 검증:** 숫자 변화가 경영진 설명과 일치하는지 확인하십시오.`;
   }
-  return '1. **핵심 타겟 데이터:** 전처리 데이터의 신호, 신뢰도, 밸류에이션 가정을 확인하십시오.\n2. **원문 추적 섹션:** 사업보고서/10-K와 최근 어닝콜을 대조하십시오.\n3. **경영진 멘트 검증:** 투자 논거와 리스크 문구가 원문과 일치하는지 확인하십시오.';
+  return `1. **핵심 타겟 데이터:** 전처리 데이터의 신호, 신뢰도, 밸류에이션 가정을 확인하십시오.\n2. **원문 추적 섹션:** ${sourceRef}와 최근 어닝콜을 대조하십시오.\n3. **경영진 멘트 검증:** 투자 논거와 리스크 문구가 원문과 일치하는지 확인하십시오.`;
 }
 
 export function buildSourceTrackingText(report: AgentReport | null | undefined) {
@@ -806,16 +822,35 @@ export function buildCitations(
 ): Citation[] {
   const code = getKoreanCode(ticker);
   const normalized = normalizeTicker(ticker);
+  const isJapan = isJapaneseTicker(ticker);
+
+  // citation 'a' 라벨은 시장별로 분기
+  const reportLabelKo = isKoreanStock
+    ? '사업보고서 · 재무에 관한 사항'
+    : isJapan
+      ? '有価証券報告書 · 経理の状況'
+      : '10-K · MD&A';
+  const reportLabelEn = isKoreanStock
+    ? 'Korean Annual Report (DART)'
+    : isJapan
+      ? 'Yūhō · EDINET Securities Report'
+      : '10-K · MD&A';
+  const reportTypeKo = isKoreanStock ? 'DART' : isJapan ? 'EDINET' : 'SEC';
+  const reportTypeEn = isKoreanStock ? 'DART' : isJapan ? 'EDINET' : 'SEC';
+  const reportHref = isKoreanStock
+    ? `https://dart.fss.or.kr/dsab001/main.do?textCrpNm=${encodeURIComponent(code)}`
+    : isJapan
+      ? `https://disclosure2.edinet-fsa.go.jp/WEEK0010.aspx`
+      : `https://www.sec.gov/edgar/browse/?CIK=${encodeURIComponent(normalized)}&owner=exclude`;
+
   const labels = [
     {
       letter: 'a',
-      labelKo: '10-K · MD&A',
-      labelEn: '10-K · MD&A',
-      typeKo: isKoreanStock ? 'DART' : 'SEC',
-      typeEn: isKoreanStock ? 'DART' : 'SEC',
-      href: isKoreanStock
-        ? `https://dart.fss.or.kr/dsab001/main.do?textCrpNm=${encodeURIComponent(code)}`
-        : `https://www.sec.gov/edgar/browse/?CIK=${encodeURIComponent(normalized)}&owner=exclude`,
+      labelKo: reportLabelKo,
+      labelEn: reportLabelEn,
+      typeKo: reportTypeKo,
+      typeEn: reportTypeEn,
+      href: reportHref,
     },
     {
       letter: 'b',
@@ -825,7 +860,9 @@ export function buildCitations(
       typeEn: 'IR',
       href: isKoreanStock
         ? `https://finance.naver.com/item/news.naver?code=${encodeURIComponent(code)}`
-        : `https://seekingalpha.com/symbol/${encodeURIComponent(normalized)}/earnings/transcripts`,
+        : isJapan
+          ? `https://finance.yahoo.co.jp/quote/${encodeURIComponent(normalized)}/news`
+          : `https://seekingalpha.com/symbol/${encodeURIComponent(normalized)}/earnings/transcripts`,
     },
     {
       letter: 'c',
@@ -1209,7 +1246,7 @@ export function listOtherAgents(
 export function getDetailReportMarkdown(report: AgentReport | null, agentMeta: AgentMeta, ticker: string) {
   const reasoning = extractReasoningText(report?.reasoning || report);
   if (reasoning) return reasoning;
-  return `# ${ticker} · ${agentMeta.name}\n\n${buildFallbackCrossCheckGuideFromReport(report)}`;
+  return `# ${ticker} · ${agentMeta.name}\n\n${buildFallbackCrossCheckGuideFromReport(report, ticker)}`;
 }
 
 export function extractCrossCheckGuideText(report: AgentReport | null | undefined) {
