@@ -14,6 +14,7 @@ import {
   SECTION_DEFS,
   buildCanonicalMetrics,
   buildCitations,
+  buildValuationDeepDive,
   calcMarginOfSafety,
   chooseIntrinsicReferencePrice,
   extractMetricValue,
@@ -271,6 +272,10 @@ export function ReportLayout({
   }, [canonicalMetrics, effectiveCurrentPrice, effectiveMarginOfSafety, intrinsicValue]);
   const tiles = extractTargetTiles(effectiveMetrics, activeAgentKey, language, effectiveCurrency);
   const otherAgents = listOtherAgents(completeResult, activeAgentKey, activeTicker, agentMetaMap, language);
+  const valuationDeepDive = useMemo(
+    () => buildValuationDeepDive(activeReport, effectiveCurrentPrice),
+    [activeReport, effectiveCurrentPrice],
+  );
 
   const handleTickerChange = (nextTicker: string) => {
     if (nextTicker === activeTicker) return;
@@ -367,6 +372,9 @@ export function ReportLayout({
             language={language}
             onCitationHover={setActiveCitationLetter}
             onCitationClick={handleCitationClick}
+            valuationDeepDive={valuationDeepDive}
+            currentPrice={effectiveCurrentPrice}
+            currency={effectiveCurrency}
           />
         </div>
         <TargetDataSidebar

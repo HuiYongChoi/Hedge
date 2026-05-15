@@ -1513,6 +1513,144 @@ export function getDetailReportMarkdown(report: AgentReport | null, agentMeta: A
   return `# ${ticker} · ${agentMeta.name}\n\n${buildFallbackCrossCheckGuideFromReport(report, ticker)}`;
 }
 
+// ---------------------------------------------------------------------------
+// Valuation Deep-Dive (RIM + PBR Band)
+// ---------------------------------------------------------------------------
+
+import type { PbrBand, RimBreakdown, ValuationDeepDive, ValuationModel } from './types';
+
+function safeNum(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function safeStr(v: unknown): string {
+  return typeof v === 'string' ? v : '';
+}
+
+function parseSignal(v: unknown): 'bullish' | 'neutral' | 'bearish' {
+  if (v === 'bullish' || v === 'bearish') return v;
+  return 'neutral';
+}
+
+function parseRimBreakdown(raw: Record<string, unknown>): RimBreakdown | null {
+  const bookValue = safeNum(raw.book_value);
+  if (bookValue === null || bookValue <= 0) return null;
+  return {
+    bookValue,
+    bookValuePerShare: safeNum(raw.book_value_per_share),
+    roeImplied: safeNum(raw.roe_implied) ?? 0,
+    costOfEquity: safeNum(raw.cost_of_equity) ?? 0.10,
+    spreadRoeKe: safeNum(raw.spread_roe_ke) ?? 0,
+    bookValueGrowth: safeNum(raw.book_value_growth) ?? 0.03,
+    presentValueRi: safeNum(raw.present_value_ri) ?? 0,
+    terminalPvRi: safeNum(raw.terminal_pv_ri) ?? 0,
+    intrinsicTotal: safeNum(raw.intrinsic_total) ?? bookValue,
+    intrinsicPerShare: safeNum(raw.intrinsic_per_share),
+    weightUsed: safeNum(raw.weight_used) ?? 0,
+    signal: parseSignal(raw.signal),
+    details: safeStr(raw.details),
+  };
+}
+
+function parsePbrBand(raw: Record<string, unknown>): PbrBand | null {
+  const currentPbr = safeNum(raw.current_pbr);
+  if (currentPbr === null) return null;
+  const pcts = raw.percentiles as Record<string, unknown> | undefined;
+  if (!pcts) return null;
+  const p10 = safeNum(pcts.p10), p25 = safeNum(pcts.p25), p50 = safeNum(pcts.p50),
+        p75 = safeNum(pcts.p75), p90 = safeNum(pcts.p90);
+  if (p10 === null || p25 === null || p50 === null || p75 === null || p90 === null) return null;
+
+  const rawHistory = Array.isArray(raw.history) ? raw.history : [];
+  const history = rawHistory
+    .map((h: unknown) => {
+      const ho = h as Record<string, unknown>;
+      const pbr = safeNum(ho.pbr);
+      return pbr !== null ? { period: safeStr(ho.period), pbr } : null;
+    })
+    .filter((h): h is { period: string; pbr: number } => h !== null);
+
+  const posLabel = raw.position_label as string | undefined;
+  const positionLabel = (
+    posLabel === 'below_p25' || posLabel === 'p25_p50' ||
+    posLabel === 'p50_p75' || posLabel === 'above_p75'
+  ) ? posLabel : 'p50_p75';
+
+  return {
+    currentPbr,
+    percentiles: { p10, p25, p50, p75, p90 },
+    history,
+    bvps: safeNum(raw.bvps),
+    fairPriceP10: safeNum(raw.fair_price_p10),
+    fairPriceP25: safeNum(raw.fair_price_p25),
+    fairPriceP50: safeNum(raw.fair_price_p50),
+    fairPriceP75: safeNum(raw.fair_price_p75),
+    fairPriceP90: safeNum(raw.fair_price_p90),
+    currentPrice: safeNum(raw.current_price),
+    positionLabel,
+    reratingNote: typeof raw.rerating_note === 'string' ? raw.rerating_note : null,
+    weightUsed: safeNum(raw.weight_used) ?? 0,
+    signal: parseSignal(raw.signal),
+    details: safeStr(raw.details),
+  };
+}
+
+const MODEL_LABEL_MAP: Record<string, string> = {
+  dcf: 'valuationModelDcf',
+  owner_earnings: 'valuationModelOwner',
+  ev_ebitda: 'valuationModelEvEbitda',
+  residual_income: 'valuationModelRim',
+  pbr_band: 'valuationModelPbrMid',
+};
+
+export function buildValuationDeepDive(
+  activeReport: AgentReport | null,
+  currentPrice: number | null,
+): ValuationDeepDive | null {
+  const rawReasoning = activeReport?.reasoning;
+  if (!rawReasoning || typeof rawReasoning !== 'object') return null;
+  const r = rawReasoning as Record<string, unknown>;
+
+  const regime = r.regime === 'capex_heavy' ? 'capex_heavy' : 'default';
+  const regimeNote = typeof r.regime_note === 'string' ? r.regime_note : null;
+
+  const rim: RimBreakdown | null = r.rim_analysis && typeof r.rim_analysis === 'object'
+    ? parseRimBreakdown(r.rim_analysis as Record<string, unknown>)
+    : null;
+
+  const pbr: PbrBand | null = r.pbr_band_analysis && typeof r.pbr_band_analysis === 'object'
+    ? parsePbrBand(r.pbr_band_analysis as Record<string, unknown>)
+    : null;
+
+  const MODEL_KEYS = ['dcf', 'owner_earnings', 'ev_ebitda', 'residual_income', 'pbr_band'] as const;
+  const models: ValuationModel[] = [];
+
+  for (const key of MODEL_KEYS) {
+    const analysisKey = `${key}_analysis`;
+    const raw = r[analysisKey] as Record<string, unknown> | undefined;
+    if (!raw) continue;
+    const intrinsicPerShare = safeNum(raw.intrinsic_per_share);
+    if (intrinsicPerShare === null) continue;
+    const gapToMarket = (currentPrice && currentPrice > 0)
+      ? (intrinsicPerShare - currentPrice) / currentPrice
+      : null;
+    models.push({
+      key,
+      labelKey: MODEL_LABEL_MAP[key] ?? key,
+      intrinsicPerShare,
+      intrinsicTotal: safeNum(raw.intrinsic_total ?? raw.value),
+      weight: safeNum(raw.weight_used) ?? 0,
+      signal: parseSignal(raw.signal),
+      gapToMarket,
+    });
+  }
+
+  if (models.length === 0 && rim === null && pbr === null) return null;
+
+  return { regime, regimeNote, rim, pbr, models };
+}
+
 export function extractCrossCheckGuideText(report: AgentReport | null | undefined) {
   const text = extractReasoningText(report?.reasoning || report);
   if (!text) return null;

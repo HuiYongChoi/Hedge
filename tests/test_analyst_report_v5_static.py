@@ -209,5 +209,58 @@ class AnalystReportV5StaticTests(unittest.TestCase):
             self.assertIn(signature, src)
 
 
+    def test_valuation_panel_files_exist(self):
+        base = V5_DIR / "valuation-panel"
+        for fname in [
+            "index.tsx",
+            "valuation-comparison.tsx",
+            "rim-detail-card.tsx",
+            "pbr-band-card.tsx",
+            "pbr-thermometer.tsx",
+            "utils.ts",
+            "types.ts",
+        ]:
+            self.assertTrue((base / fname).exists(), f"valuation-panel/{fname} missing")
+
+    def test_valuation_panel_i18n_keys_present(self):
+        src = LANG_PREFS.read_text(encoding="utf-8")
+        for key in [
+            "valuationCompareTitle",
+            "rimPanelTitle",
+            "pbrPanelTitle",
+            "pbrReratingBanner",
+            "rimStatSpread",
+        ]:
+            self.assertIn(f"{key}:", src, f"i18n key '{key}' missing in language-preferences.ts")
+
+    def test_valuation_panel_i18n_keys_in_both_languages(self):
+        src = LANG_PREFS.read_text(encoding="utf-8")
+        # Both ko and en sections must have these keys
+        count = src.count("valuationCompareTitle:")
+        self.assertGreaterEqual(count, 2, "valuationCompareTitle should appear in both ko and en")
+        count_rim = src.count("rimPanelTitle:")
+        self.assertGreaterEqual(count_rim, 2, "rimPanelTitle should appear in both ko and en")
+
+    def test_report_section_imports_valuation_panel(self):
+        src = (V5_DIR / "report-section.tsx").read_text(encoding="utf-8")
+        self.assertIn("ValuationDeepDivePanel", src)
+        self.assertIn("valuation-panel", src)
+
+    def test_report_layout_calls_build_valuation_deep_dive(self):
+        src = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
+        self.assertIn("buildValuationDeepDive", src)
+        self.assertIn("valuationDeepDive", src)
+
+    def test_helpers_exports_build_valuation_deep_dive(self):
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("export function buildValuationDeepDive", src)
+
+    def test_types_exports_valuation_deep_dive(self):
+        src = (V5_DIR / "types.ts").read_text(encoding="utf-8")
+        self.assertIn("ValuationDeepDive", src)
+        self.assertIn("RimBreakdown", src)
+        self.assertIn("PbrBand", src)
+
+
 if __name__ == "__main__":
     unittest.main()
