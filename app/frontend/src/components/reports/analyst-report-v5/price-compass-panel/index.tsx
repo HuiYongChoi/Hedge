@@ -159,7 +159,14 @@ export function PriceCompassPanel({
     target?.forward_eps ??
     null;
 
-  const forwardPe = target?.forward_pe ?? metrics.forwardPe?.value ?? null;
+  // forward_pe 폴백: yfinance가 forward_pe/forward_eps 없는 종목(신생 일본 alphanumeric 등)에서도
+  // consensus와 current_fy_eps가 있으면 분석가 컨센서스 멀티플을 표시.
+  const forwardPe =
+    target?.forward_pe ??
+    metrics.forwardPe?.value ??
+    (target?.consensus != null && target?.current_fy_eps != null && target.current_fy_eps > 0
+      ? target.consensus / target.current_fy_eps
+      : null);
   const trailingPe = target?.trailing_pe ?? null;
   const trailingEps = target?.trailing_eps ?? null;
   const currentFyEps = target?.current_fy_eps ?? null;
