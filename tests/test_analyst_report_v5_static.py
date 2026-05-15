@@ -164,6 +164,9 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("mergeOrphanEvidenceHeadings", helpers)
         self.assertIn("isBlankEvidenceItem", helpers)
         self.assertIn("isMarkerOnlyEvidenceText", helpers)
+        self.assertIn("isHeadingOnlyEvidenceText", helpers)
+        self.assertIn("핵심 판단", helpers)
+        self.assertIn("포워드 아웃룩", helpers)
         self.assertIn("inline headings", helpers)
         self.assertNotIn("source.slice(0, 7)", helpers)
 
@@ -176,6 +179,8 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("inlineCitations={false}", evidence)
         self.assertIn("visibleBodyBlocks", evidence)
         self.assertIn("isMarkerOnlyBodyBlock", evidence)
+        self.assertIn("isHeadingOnlyBodyBlock", evidence)
+        self.assertIn("HEADING_ONLY_BODY_PATTERNS", evidence)
         self.assertIn("readableTextStyle", evidence)
         self.assertIn("wordBreak: 'keep-all'", evidence)
         self.assertIn("overflowWrap: 'break-word'", evidence)

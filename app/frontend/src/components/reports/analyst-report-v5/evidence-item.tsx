@@ -70,6 +70,67 @@ function isMarkerOnlyBodyBlock(block: string) {
   return /^(?:\d+[.)]?|[.)]+)$/u.test(clean);
 }
 
+const HEADING_ONLY_BODY_PATTERNS = [
+  /^핵심\s*(판단|가치|결론|수치|숫자|타겟\s*데이터)$/u,
+  /^결론(?:\s*요약)?$/u,
+  /^포워드\s*아웃룩(?:\s*\([^)]*\))?$/iu,
+  /^forward\s*outlook(?:\s*\([^)]*\))?$/iu,
+  /^상대가치\s*sanity\s*check$/iu,
+  /^sanity\s*check$/iu,
+  /^원문\s*(?:대조\s*)?체크리스트$/u,
+  /^원문\s*추적\s*섹션$/u,
+  /^경영진\s*멘트\s*검증$/u,
+  /^불확실성의\s*핵심$/u,
+  /^제\s*가치\s*\([^)]*\)\s*와\s*해석$/u,
+];
+
+const HEADING_ONLY_BODY_LABELS = new Set([
+  '핵심 판단',
+  '핵심판단',
+  '핵심 가치',
+  '핵심가치',
+  '핵심 결론',
+  '핵심결론',
+  '핵심 수치',
+  '핵심수치',
+  '핵심 숫자',
+  '핵심숫자',
+  '핵심 타겟 데이터',
+  '핵심타겟데이터',
+  '결론',
+  '결론 요약',
+  '포워드 아웃룩',
+  '포워드아웃룩',
+  '상대가치 sanity check',
+  'sanity check',
+  '원문 대조 체크리스트',
+  '원문대조체크리스트',
+  '원문 체크리스트',
+  '원문체크리스트',
+  '원문 추적 섹션',
+  '원문추적섹션',
+  '경영진 멘트 검증',
+  '경영진멘트검증',
+  '불확실성의 핵심',
+  '불확실성의핵심',
+]);
+
+function isHeadingOnlyBodyBlock(block: string) {
+  const clean = block
+    .replace(/^\s*\[[+\-~?]\]\s*/u, '')
+    .replace(/\*\*/g, '')
+    .replace(/[:：.!?。？！]+$/u, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!clean) return false;
+  if (HEADING_ONLY_BODY_LABELS.has(clean)) return true;
+  if (HEADING_ONLY_BODY_PATTERNS.some(pattern => pattern.test(clean))) return true;
+  return clean.length <= 24
+    && /[\uAC00-\uD7A3]/u.test(clean)
+    && !/[.!?。？！\d%$₩¥]/u.test(clean)
+    && !/(다|요|임|함|됨|한다|했다|된다|이다|입니다|합니다|있습니다|없습니다|보입니다|낮습니다|높습니다)$/u.test(clean);
+}
+
 function splitEvidenceBodyBlocks(body: string): string[] {
   return body
     .replace(/\r\n?/g, '\n')
@@ -79,7 +140,7 @@ function splitEvidenceBodyBlocks(body: string): string[] {
       .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*|\[[+\-~?]\]\s*)/u, '')
       .replace(/\s+/g, ' ')
       .trim())
-    .filter(block => Boolean(block) && !isMarkerOnlyBodyBlock(block))
+    .filter(block => Boolean(block) && !isMarkerOnlyBodyBlock(block) && !isHeadingOnlyBodyBlock(block))
     .flatMap(splitReadableChunk);
 }
 
@@ -98,7 +159,9 @@ export function EvidenceItem({
     : inferCitationLetters(item.rawText, sectionId);
   const keyNumbers = extractKeyNumbers(item.rawText, language);
   const bodyBlocks = splitEvidenceBodyBlocks(item.body);
-  const fallbackBodyBlocks = [item.body.trim()].filter(block => Boolean(block) && !isMarkerOnlyBodyBlock(block));
+  const fallbackBodyBlocks = [item.body.trim()].filter(block => (
+    Boolean(block) && !isMarkerOnlyBodyBlock(block) && !isHeadingOnlyBodyBlock(block)
+  ));
   const visibleBodyBlocks = bodyBlocks.length > 0 ? bodyBlocks : fallbackBodyBlocks;
 
   return (
