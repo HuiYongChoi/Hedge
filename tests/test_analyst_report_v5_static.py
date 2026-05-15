@@ -76,6 +76,43 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("onRefreshMarketData", header)
         self.assertIn("RefreshCw", header)
 
+    def test_header_uses_company_display_name_and_reference_margin(self):
+        layout = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
+        header = (V5_DIR / "report-header-ribbon.tsx").read_text(encoding="utf-8")
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+
+        self.assertIn("getDisplayTickerLabel", helpers)
+        self.assertIn("000660.KS", helpers)
+        self.assertIn("SK하이닉스", helpers)
+        self.assertIn("displayTickerLabel", layout)
+        self.assertIn("displayTicker={displayTickerLabel}", layout)
+        self.assertIn("displayTicker: string", header)
+        self.assertIn("{displayTicker} · {activeAgent.name}", header)
+
+    def test_margin_of_safety_recomputes_from_reference_price(self):
+        layout = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
+        header = (V5_DIR / "report-header-ribbon.tsx").read_text(encoding="utf-8")
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+
+        self.assertIn("resolveMarginOfSafetySnapshot", helpers)
+        self.assertIn("normalizePerShareReferencePrice", helpers)
+        self.assertIn("marginSnapshot", layout)
+        self.assertIn("marginReferencePrice={marginSnapshot.referencePrice}", layout)
+        self.assertIn("marginReferencePrice", header)
+        self.assertIn("function formatMargin(", header)
+        self.assertIn("value: number | null", header)
+        self.assertIn("referencePrice", header)
+        self.assertIn("formatMoney(referencePrice", header)
+
+    def test_target_margin_tile_shows_reference_price(self):
+        layout = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+
+        self.assertIn("extractTargetTiles(effectiveMetrics, activeAgentKey, language, effectiveCurrency)", layout)
+        self.assertIn("formatMarginTarget", helpers)
+        self.assertIn("metrics.intrinsicValue?.value", helpers)
+        self.assertIn("formatCurrency(referencePrice, currency)", helpers)
+
     def test_header_metric_chips_have_tooltips(self):
         header = (V5_DIR / "report-header-ribbon.tsx").read_text(encoding="utf-8")
         prefs = LANG_PREFS.read_text(encoding="utf-8")

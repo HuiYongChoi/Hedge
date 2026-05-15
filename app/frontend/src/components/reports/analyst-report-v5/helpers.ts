@@ -69,6 +69,17 @@ export const AGENT_META: Record<string, { categoryKo: string; categoryEn: string
   valuation_analyst: { categoryKo: '기술 및 분석', categoryEn: 'Technical & Analysis', nameKo: '밸류에이션', nameEn: 'Valuation' },
 };
 
+const KOREAN_TICKER_DISPLAY_NAMES: Record<string, string> = {
+  '000660.KS': 'SK하이닉스',
+  '005930.KS': '삼성전자',
+  '035420.KS': 'NAVER',
+  '035720.KS': '카카오',
+  '005380.KS': '현대자동차',
+  '000270.KS': '기아',
+  '373220.KS': 'LG에너지솔루션',
+  '247540.KQ': '에코프로비엠',
+};
+
 const DATA_TOKEN_PATTERN = /(\$\d[\d,]*(?:\.\d+)?[BMK]?|\d[\d,]*(?:\.\d+)?\s?(?:%|배|x|X|B|M|K)|-\d[\d,]*(?:\.\d+)?%)/g;
 
 const LABEL_CANDIDATES: Array<{ pattern: RegExp; ko: string; en: string }> = [
@@ -175,6 +186,27 @@ export function isKoreanTicker(ticker: string) {
 
 export function getKoreanCode(ticker: string) {
   return ticker.trim().match(/\d+/)?.[0] || ticker.trim();
+}
+
+function cleanCompanyDisplayName(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const clean = value
+    .replace(/\s*\(주\)\s*/g, '')
+    .replace(/\s*주식회사\s*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return clean || null;
+}
+
+export function getDisplayTickerLabel(ticker: string, report?: AgentReport | null) {
+  const normalized = normalizeTicker(ticker);
+  const mapped = KOREAN_TICKER_DISPLAY_NAMES[normalized];
+  if (mapped) return mapped;
+
+  const companyName = cleanCompanyDisplayName(
+    report?.company_name || report?.companyName || report?.company || report?.name,
+  );
+  return companyName || ticker;
 }
 
 export function displayAgentName(agentKey: string, fallback?: string, language: ReportLanguage = 'ko') {
@@ -1057,8 +1089,8 @@ const marginOfSafetyPatterns = [
 ];
 
 const perShareIntrinsicValuePatterns = [
-  /(?:내재가치\s*1주당|1주당\s*내재가치|intrinsic\s*value\s*per\s*share|per-share\s*intrinsic\s*value)[^-\d$]{0,80}\$?(-?\d[\d,]*(?:\.\d+)?)(?=\s*(?:달러|원|krw|usd|,|\.|$))/gi,
-  /(?:fair\s*value\s*per\s*share|dcf\s*value\s*per\s*share|1주당\s*적정가)[^-\d$]{0,80}\$?(-?\d[\d,]*(?:\.\d+)?)(?=\s*(?:달러|원|krw|usd|,|\.|$))/gi,
+  /(?:내재가치\s*1주당|내재가치\s*\/\s*주당|1주당\s*내재가치|주당\s*내재가치|intrinsic\s*value\s*per\s*share|per-share\s*intrinsic\s*value)[^-\d$₩¥]{0,80}[$₩¥]?(-?\d[\d,]*(?:\.\d+)?)(?=\s*(?:달러|원|엔|krw|usd|jpy|,|\.|$))/gi,
+  /(?:fair\s*value\s*per\s*share|dcf\s*value\s*per\s*share|1주당\s*적정가|주당\s*적정가)[^-\d$₩¥]{0,80}[$₩¥]?(-?\d[\d,]*(?:\.\d+)?)(?=\s*(?:달러|원|엔|krw|usd|jpy|,|\.|$))/gi,
 ];
 
 function extractPatternValue(
@@ -1098,6 +1130,57 @@ export function extractMetricValue(report: AgentReport | null | undefined, keys:
 export function calcMarginOfSafety(intrinsic: number | null, current: number | null): number | null {
   if (intrinsic === null || current === null || current === 0) return null;
   return (intrinsic - current) / current;
+}
+
+function finiteNumber(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+export function normalizePerShareReferencePrice(
+  value: number | null | undefined,
+  currentPrice: number | null | undefined,
+): number | null {
+  const n = finiteNumber(value);
+  if (n === null || n <= 0) return null;
+
+  const current = finiteNumber(currentPrice);
+  if (current !== null && current > 0 && Math.abs(n / current) > 1000) return null;
+  return n;
+}
+
+export function chooseIntrinsicReferencePrice(
+  candidates: Array<number | null | undefined>,
+  currentPrice: number | null | undefined,
+): number | null {
+  for (const candidate of candidates) {
+    const normalized = normalizePerShareReferencePrice(candidate, currentPrice);
+    if (normalized !== null) return normalized;
+  }
+  return null;
+}
+
+export function resolveMarginOfSafetySnapshot({
+  currentPrice,
+  intrinsicValue,
+  reportedMargin,
+  reasoningMargin,
+  calculatedMarginOfSafety,
+}: {
+  currentPrice: number | null | undefined;
+  intrinsicValue: number | null | undefined;
+  reportedMargin?: number | null;
+  reasoningMargin?: number | null;
+  calculatedMarginOfSafety?: number | null;
+}): { referencePrice: number | null; margin: number | null } {
+  const referencePrice = normalizePerShareReferencePrice(intrinsicValue, currentPrice);
+  const calculated = finiteNumber(calculatedMarginOfSafety)
+    ?? calcMarginOfSafety(referencePrice, finiteNumber(currentPrice));
+  if (calculated !== null) {
+    return { referencePrice, margin: calculated };
+  }
+
+  const fallbackMargin = finiteNumber(reasoningMargin) ?? finiteNumber(reportedMargin);
+  return { referencePrice: null, margin: fallbackMargin };
 }
 
 function metricFromReport(
@@ -1191,11 +1274,12 @@ export function extractTargetTiles(
   metrics: CanonicalMetrics,
   activeAgentKey: string,
   _language: ReportLanguage,
+  currency = 'USD',
 ): TargetTile[] {
   const candidates: Array<{ labelKey: string; sublabelKey: string; metric?: CanonicalMetric; tone: ReportTone; formatter?: (value: number) => string }> = [
     { labelKey: 'targetEpsLabel', sublabelKey: 'targetEpsSubtitle', metric: metrics.forwardEpsFy0 || metrics.forwardEpsTtm, tone: 'neutral', formatter: formatPlain },
-    { labelKey: 'targetIntrinsicLabel', sublabelKey: 'targetIntrinsicSubtitle', metric: metrics.intrinsicValue, tone: intrinsicTone(metrics.intrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: formatCurrency },
-    { labelKey: 'targetMarginLabel', sublabelKey: 'targetMarginSubtitle', metric: metrics.marginOfSafety, tone: marginTone(metrics.marginOfSafety?.value ?? null), formatter: formatPercentWithRaw },
+    { labelKey: 'targetIntrinsicLabel', sublabelKey: 'targetIntrinsicSubtitle', metric: metrics.intrinsicValue, tone: intrinsicTone(metrics.intrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatCurrency(value, currency) },
+    { labelKey: 'targetMarginLabel', sublabelKey: 'targetMarginSubtitle', metric: metrics.marginOfSafety, tone: marginTone(metrics.marginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.intrinsicValue?.value ?? null, currency) },
     { labelKey: 'targetCoverageLabel', sublabelKey: 'targetCoverageSubtitle', metric: metrics.interestCoverage, tone: coverageTone(metrics.interestCoverage?.value ?? null), formatter: formatMultiple },
     { labelKey: 'targetBetaLabel', sublabelKey: 'targetBetaSubtitle', metric: metrics.beta, tone: 'neutral', formatter: formatPlain },
     { labelKey: 'targetWaccLabel', sublabelKey: 'targetWaccSubtitle', metric: metrics.wacc, tone: 'neutral', formatter: formatPercentSmart },
@@ -1242,11 +1326,22 @@ function coverageTone(value: number | null): ReportTone {
   return 'neutral';
 }
 
-function formatCurrency(value: number) {
+function formatCurrency(value: number, currency = 'USD') {
+  const normalized = currency.toUpperCase();
+  if (normalized === 'KRW') return `₩${value.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}`;
+  if (normalized === 'JPY') return `¥${value.toLocaleString('ja-JP', { maximumFractionDigits: 0 })}`;
   const abs = Math.abs(value);
   if (abs >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(2)}B`;
   if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
   return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+function formatMarginTarget(value: number, referencePrice: number | null | undefined, currency: string) {
+  const pct = `${value > 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
+  if (referencePrice !== null && referencePrice !== undefined && Number.isFinite(referencePrice)) {
+    return `${formatCurrency(referencePrice, currency)} (${pct})`;
+  }
+  return formatPercentWithRaw(value);
 }
 
 function formatPercentWithRaw(value: number) {

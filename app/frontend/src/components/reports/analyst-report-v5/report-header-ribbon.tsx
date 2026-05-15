@@ -11,11 +11,13 @@ import type { AgentMeta, AgentReport, ReportLanguage } from './types';
 
 interface ReportHeaderRibbonProps {
   ticker: string;
+  displayTicker: string;
   activeAgent: AgentMeta;
   activeReport: AgentReport | null;
   compositeScore: number;
   currentPrice: number | null;
   marginOfSafety: number | null;
+  marginReferencePrice: number | null;
   currency?: string;
   analysisGeneratedAt?: string | null;
   marketDataUpdatedAt?: string | null;
@@ -61,9 +63,24 @@ function formatCurrentPrice(value: number | null, language: ReportLanguage, curr
   return `${language === 'ko' ? '현재가' : 'Price'} ${formatMoney(value, currency)}`;
 }
 
-function formatMargin(value: number | null, language: ReportLanguage) {
-  if (value === null) return language === 'ko' ? '안전마진 N/A' : 'Margin N/A';
-  return `${language === 'ko' ? '안전마진' : 'Margin'} ${(value * 100).toFixed(1)}%`;
+function formatSignedPercent(value: number) {
+  const pct = value * 100;
+  return `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`;
+}
+
+function formatMargin(
+  value: number | null,
+  language: ReportLanguage,
+  currency = 'USD',
+  referencePrice: number | null = null,
+) {
+  if (value === null && referencePrice === null) return language === 'ko' ? '안전마진 N/A' : 'Margin N/A';
+  if (referencePrice !== null) {
+    const label = language === 'ko' ? '안전가' : 'Safety Price';
+    const pct = value !== null ? ` · ${formatSignedPercent(value)}` : '';
+    return `${label} ${formatMoney(referencePrice, currency, { maximumFractionDigits: 0 })}${pct}`;
+  }
+  return `${language === 'ko' ? '안전마진' : 'Margin'} ${formatSignedPercent(value as number)}`;
 }
 
 function formatTimestamp(
@@ -122,11 +139,13 @@ function MetricChip({
 
 export function ReportHeaderRibbon({
   ticker,
+  displayTicker,
   activeAgent,
   activeReport,
   compositeScore,
   currentPrice,
   marginOfSafety,
+  marginReferencePrice,
   currency = 'USD',
   analysisGeneratedAt,
   marketDataUpdatedAt,
@@ -180,8 +199,8 @@ export function ReportHeaderRibbon({
                 </Badge>
               )}
             </div>
-            <h2 className="text-xl font-semibold tracking-tight text-foreground">
-              {ticker} · {activeAgent.name}
+            <h2 className="text-xl font-semibold tracking-tight text-foreground" title={ticker}>
+              {displayTicker} · {activeAgent.name}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {language === 'ko'
@@ -194,7 +213,7 @@ export function ReportHeaderRibbon({
                   {formatCurrentPrice(currentPrice, language, currency)}
                 </MetricChip>
                 <MetricChip help={t('marginOfSafetyHelp', language)} mono>
-                  {formatMargin(marginOfSafety, language)}
+                  {formatMargin(marginOfSafety, language, currency, marginReferencePrice)}
                 </MetricChip>
                 <MetricChip help={t('reportGeneratedAtHelp', language)}>
                   {formatTimestamp(analysisGeneratedAt, language, 'reportGeneratedAtLabel', 'N/A', 'N/A')}

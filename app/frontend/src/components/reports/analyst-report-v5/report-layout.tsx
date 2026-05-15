@@ -15,15 +15,18 @@ import {
   buildCanonicalMetrics,
   buildCitations,
   calcMarginOfSafety,
+  chooseIntrinsicReferencePrice,
   extractMetricValue,
   extractReasoningMetricValue,
   extractTargetTiles,
   getAgentMeta,
   getAgentReport,
   getDetailReportMarkdown,
+  getDisplayTickerLabel,
   isKoreanTicker,
   listOtherAgents,
   pickDefaultAgent,
+  resolveMarginOfSafetySnapshot,
 } from './helpers';
 import { PriceCompassPanel } from './price-compass-panel';
 import { ReportBody } from './report-body';
@@ -225,19 +228,38 @@ export function ReportLayout({
     ?? extractMetricValue(activeReport, ['current_price', 'price', 'close_price', 'market_price']);
   const effectiveCurrentPrice = liveTarget?.current_price ?? reportCurrentPrice;
   const effectiveCurrency = liveTarget?.currency ?? (isKoreanTicker(activeTicker) ? 'KRW' : 'USD');
-  const intrinsicValue = canonicalMetrics.intrinsicValue?.value
-    ?? extractMetricValue(activeReport, ['intrinsic_value', 'fair_value', 'dcf_value'])
-    ?? extractReasoningMetricValue(activeReport, ['intrinsic_value', 'fair_value', 'dcf_value']);
+  const reportPerShareIntrinsicValue = extractMetricValue(activeReport, [
+    'intrinsic_value_per_share',
+    'fair_value_per_share',
+    'dcf_value_per_share',
+    'per_share_intrinsic_value',
+  ]) ?? extractReasoningMetricValue(activeReport, ['intrinsic_value', 'fair_value', 'dcf_value']);
+  const reportedIntrinsicValue = canonicalMetrics.intrinsicValue?.value
+    ?? extractMetricValue(activeReport, ['intrinsic_value', 'fair_value', 'dcf_value']);
+  const intrinsicValue = chooseIntrinsicReferencePrice(
+    [reportPerShareIntrinsicValue, reportedIntrinsicValue],
+    effectiveCurrentPrice,
+  );
   const calculatedMarginOfSafety = calcMarginOfSafety(intrinsicValue, effectiveCurrentPrice);
   const reasoningMarginOfSafety = extractReasoningMetricValue(activeReport, ['margin_of_safety', 'safety_margin']);
-  const effectiveMarginOfSafety = canonicalMetrics.marginOfSafety?.value
-    ?? extractMetricValue(activeReport, ['margin_of_safety'])
-    ?? reasoningMarginOfSafety
-    ?? calculatedMarginOfSafety;
+  const reportedMarginOfSafety = canonicalMetrics.marginOfSafety?.value
+    ?? extractMetricValue(activeReport, ['margin_of_safety']);
+  const marginSnapshot = resolveMarginOfSafetySnapshot({
+    currentPrice: effectiveCurrentPrice,
+    intrinsicValue,
+    reportedMargin: reportedMarginOfSafety,
+    reasoningMargin: reasoningMarginOfSafety,
+    calculatedMarginOfSafety,
+  });
+  const effectiveMarginOfSafety = marginSnapshot.margin;
+  const displayTickerLabel = getDisplayTickerLabel(activeTicker, activeReport);
   const effectiveMetrics = useMemo(() => {
     const nextMetrics = { ...canonicalMetrics };
     if (effectiveCurrentPrice !== null) {
       nextMetrics.currentPrice = marketDataMetric(effectiveCurrentPrice, canonicalMetrics.currentPrice);
+    }
+    if (intrinsicValue !== null) {
+      nextMetrics.intrinsicValue = marketDataMetric(intrinsicValue, canonicalMetrics.intrinsicValue);
     }
     if (effectiveMarginOfSafety !== null) {
       nextMetrics.marginOfSafety = marketDataMetric(
@@ -246,8 +268,8 @@ export function ReportLayout({
       );
     }
     return nextMetrics;
-  }, [canonicalMetrics, effectiveCurrentPrice, effectiveMarginOfSafety]);
-  const tiles = extractTargetTiles(effectiveMetrics, activeAgentKey, language);
+  }, [canonicalMetrics, effectiveCurrentPrice, effectiveMarginOfSafety, intrinsicValue]);
+  const tiles = extractTargetTiles(effectiveMetrics, activeAgentKey, language, effectiveCurrency);
   const otherAgents = listOtherAgents(completeResult, activeAgentKey, activeTicker, agentMetaMap, language);
 
   const handleTickerChange = (nextTicker: string) => {
@@ -292,11 +314,13 @@ export function ReportLayout({
 
       <ReportHeaderRibbon
         ticker={activeTicker}
+        displayTicker={displayTickerLabel}
         activeAgent={activeAgent}
         activeReport={activeReport}
         compositeScore={compositeScore}
         currentPrice={effectiveCurrentPrice}
         marginOfSafety={effectiveMarginOfSafety}
+        marginReferencePrice={marginSnapshot.referencePrice}
         currency={effectiveCurrency}
         analysisGeneratedAt={analysisGeneratedAt}
         marketDataUpdatedAt={marketDataUpdatedAt}

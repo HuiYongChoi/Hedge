@@ -34,6 +34,7 @@ import {
   ReportToneLegend,
 } from '@/components/reports/report-sentiment-dashboard';
 import { AnalystReportDashboard } from '@/components/reports/analyst-report-dashboard';
+import { getDisplayTickerLabel } from '@/components/reports/analyst-report-v5/helpers';
 import { Bot, ChevronDown, ChevronUp, Database, Loader2, PanelLeftClose, PanelLeftOpen, Play, Search, Square } from 'lucide-react';
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -411,27 +412,35 @@ function ResearchQuickLinks({ tickers, language }: { tickers: string[]; language
         {language === 'ko' ? '참고 자료 및 원본 공시' : 'Reference filings and market data'}
       </div>
       <div className="flex flex-wrap gap-2">
-        {normalizedTickers.map((ticker) => (
-          <div key={ticker} className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs font-semibold text-muted-foreground">{ticker}</span>
-            {getResearchLinks(ticker).map((link, index) => (
-              <a
-                key={`${ticker}-${link.label}`}
-                href={link.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={
-                  index === 0
-                    ? 'inline-flex items-center rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 transition-colors hover:bg-emerald-500/15 dark:text-emerald-300'
-                    : 'inline-flex items-center rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-primary'
-                }
-              >
-                {link.label}
-                <span className="ml-1 text-[10px]" aria-hidden="true">↗</span>
-              </a>
-            ))}
-          </div>
-        ))}
+        {normalizedTickers.map((ticker) => {
+          const displayTicker = getDisplayTickerLabel(ticker);
+          return (
+            <div key={ticker} className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-muted-foreground">
+                {displayTicker}
+                {displayTicker !== ticker && (
+                  <span className="ml-1 font-mono font-normal opacity-70">({ticker})</span>
+                )}
+              </span>
+              {getResearchLinks(ticker).map((link, index) => (
+                <a
+                  key={`${ticker}-${link.label}`}
+                  href={link.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={
+                    index === 0
+                      ? 'inline-flex items-center rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 transition-colors hover:bg-emerald-500/15 dark:text-emerald-300'
+                      : 'inline-flex items-center rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-primary'
+                  }
+                >
+                  {link.label}
+                  <span className="ml-1 text-[10px]" aria-hidden="true">↗</span>
+                </a>
+              ))}
+            </div>
+          );
+        })}
       </div>
     </section>
   );
