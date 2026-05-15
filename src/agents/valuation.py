@@ -147,13 +147,48 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         # Implied Equity Value
         ev_ebitda_val = calculate_ev_ebitda_value(financial_metrics)
 
-        # Residual Income Model
-        rim_val = calculate_residual_income_value(
+        # shares_outstanding: most_recent_metrics first, li_curr fallback
+        shares_outstanding: float | None = (
+            most_recent_metrics.outstanding_shares
+            or getattr(li_curr, "outstanding_shares", None)
+        )
+        if shares_outstanding is not None and shares_outstanding <= 0:
+            shares_outstanding = None
+
+        # Residual Income Model — breakdown version
+        rim_breakdown = calculate_residual_income_breakdown(
+            market_cap=most_recent_metrics.market_cap,
+            net_income=li_curr.net_income,
+            price_to_book_ratio=most_recent_metrics.price_to_book_ratio,
+            shares_outstanding=shares_outstanding,
+            book_value_growth=most_recent_metrics.book_value_growth or 0.03,
+        )
+        rim_val = rim_breakdown["intrinsic_with_mos"] if rim_breakdown else calculate_residual_income_value(
             market_cap=most_recent_metrics.market_cap,
             net_income=li_curr.net_income,
             price_to_book_ratio=most_recent_metrics.price_to_book_ratio,
             book_value_growth=most_recent_metrics.book_value_growth or 0.03,
         )
+
+        # PBR Band
+        pbr_band_result = calculate_pbr_band(
+            financial_metrics=financial_metrics,
+            current_price=most_recent_metrics.market_cap / shares_outstanding if (most_recent_metrics.market_cap and shares_outstanding) else None,
+            shares_outstanding=shares_outstanding,
+            revenue_growth=most_recent_metrics.revenue_growth,
+        )
+
+        # CapEx-aware regime
+        regime = detect_capex_regime(
+            capex=li_curr.capital_expenditure,
+            revenue=li_curr.revenue,
+            fcf_history=fcf_history,
+        )
+
+        # PBR equity value: fair_price_p50 * shares_outstanding
+        pbr_equity_val = 0.0
+        if pbr_band_result and pbr_band_result.get("fair_price_p50") and shares_outstanding:
+            pbr_equity_val = pbr_band_result["fair_price_p50"] * shares_outstanding
 
         # ------------------------------------------------------------------
         # Aggregate & signal
@@ -163,12 +198,28 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             progress.update_status(agent_id, ticker, "Failed: Market cap unavailable")
             continue
 
+        # Regime-aware weights
+        if regime == "capex_heavy":
+            base_weights = {"dcf": 0.20, "owner_earnings": 0.25, "ev_ebitda": 0.20,
+                            "residual_income": 0.20, "pbr_band": 0.15}
+        else:
+            base_weights = {"dcf": 0.30, "owner_earnings": 0.30, "ev_ebitda": 0.15,
+                            "residual_income": 0.10, "pbr_band": 0.15}
+
+        # If PBR band unavailable, drop its weight and redistribute proportionally
+        if pbr_equity_val <= 0:
+            dropped_w = base_weights.pop("pbr_band")
+            total_remaining = sum(base_weights.values())
+            base_weights = {k: v + v / total_remaining * dropped_w for k, v in base_weights.items()}
+
         method_values = {
-            "dcf": {"value": dcf_val, "weight": 0.35},
-            "owner_earnings": {"value": owner_val, "weight": 0.35},
-            "ev_ebitda": {"value": ev_ebitda_val, "weight": 0.20},
-            "residual_income": {"value": rim_val, "weight": 0.10},
+            "dcf":             {"value": dcf_val,        "weight": base_weights["dcf"]},
+            "owner_earnings":  {"value": owner_val,      "weight": base_weights["owner_earnings"]},
+            "ev_ebitda":       {"value": ev_ebitda_val,  "weight": base_weights["ev_ebitda"]},
+            "residual_income": {"value": rim_val,        "weight": base_weights["residual_income"]},
         }
+        if pbr_equity_val > 0:
+            method_values["pbr_band"] = {"value": pbr_equity_val, "weight": base_weights["pbr_band"]}
 
         total_weight = sum(v["weight"] for v in method_values.values() if v["value"] > 0)
         if total_weight == 0:
@@ -185,15 +236,33 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         signal = "bullish" if weighted_gap > 0.15 else "bearish" if weighted_gap < -0.15 else "neutral"
         confidence = round(min(abs(weighted_gap) / 0.30 * 100, 100))
 
+        # Regime note for UI
+        capex_ratio = abs(li_curr.capital_expenditure or 0) / li_curr.revenue if li_curr.revenue else 0
+        fcf_vol = calculate_fcf_volatility(fcf_history) if fcf_history else 0
+        if regime == "capex_heavy":
+            regime_note = (
+                f"CapEx/매출 {capex_ratio:.0%}, FCF 변동성 {fcf_vol:.2f} "
+                f"→ RIM/PBR 가중 상향 (DCF {base_weights['dcf']:.0%} / RIM {base_weights['residual_income']:.0%})"
+            )
+        else:
+            regime_note = None
+
         # Enhanced reasoning with DCF scenario details
-        reasoning = {}
+        reasoning = {
+            "regime": regime,
+            "regime_note": regime_note,
+        }
         for m, vals in method_values.items():
             if vals["value"] > 0:
+                intrinsic_per_share = (
+                    vals["value"] / shares_outstanding if shares_outstanding else None
+                )
                 base_details = (
                     f"Value: ${vals['value']:,.2f}, Market Cap: ${market_cap:,.2f}, "
                     f"Gap: {vals['gap']:.1%}, Weight: {vals['weight']*100:.0f}%"
+                    + (f", Per-share: {intrinsic_per_share:,.2f}" if intrinsic_per_share else "")
                 )
-                
+
                 # Add enhanced DCF details
                 if m == "dcf" and 'dcf_results' in locals():
                     enhanced_details = (
@@ -203,23 +272,63 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                     )
                 else:
                     enhanced_details = base_details
-                
+
                 reasoning[f"{m}_analysis"] = {
                     "signal": (
                         "bullish" if vals["gap"] and vals["gap"] > 0.15 else
                         "bearish" if vals["gap"] and vals["gap"] < -0.15 else "neutral"
                     ),
                     "details": enhanced_details,
+                    "intrinsic_per_share": intrinsic_per_share,
+                    "weight_used": vals["weight"],
                 }
         
         # Add overall DCF scenario summary if available
         if 'dcf_results' in locals():
             reasoning["dcf_scenario_analysis"] = {
                 "bear_case": f"${dcf_results['downside']:,.2f}",
-                "base_case": f"${dcf_results['scenarios']['base']:,.2f}",  
+                "base_case": f"${dcf_results['scenarios']['base']:,.2f}",
                 "bull_case": f"${dcf_results['upside']:,.2f}",
                 "wacc_used": f"{wacc:.1%}",
                 "fcf_periods_analyzed": len(fcf_history)
+            }
+
+        # RIM full breakdown for frontend
+        if rim_breakdown:
+            rim_gap = (rim_breakdown["intrinsic_with_mos"] - market_cap) / market_cap if market_cap else None
+            rim_signal = (
+                "bullish" if rim_gap and rim_gap > 0.15 else
+                "bearish" if rim_gap and rim_gap < -0.15 else "neutral"
+            )
+            rim_per_share = rim_breakdown.get("intrinsic_per_share")
+            reasoning["rim_analysis"] = {
+                "signal": rim_signal,
+                "details": (
+                    f"Equity intrinsic: {rim_breakdown['intrinsic_total']:,.0f}, "
+                    f"Per-share: {rim_per_share:,.0f}" if rim_per_share else
+                    f"Equity intrinsic: {rim_breakdown['intrinsic_total']:,.0f}"
+                ) + (f", Gap: {rim_gap:.1%}" if rim_gap is not None else "") + f", Weight: {base_weights['residual_income']:.0%}",
+                "book_value": rim_breakdown["book_value"],
+                "book_value_per_share": rim_breakdown.get("book_value_per_share"),
+                "roe_implied": rim_breakdown["roe_implied"],
+                "cost_of_equity": rim_breakdown["cost_of_equity"],
+                "spread_roe_ke": rim_breakdown["spread_roe_ke"],
+                "book_value_growth": rim_breakdown["book_value_growth"],
+                "ri_year_1": rim_breakdown["ri_year_1"],
+                "present_value_ri": rim_breakdown["present_value_ri"],
+                "terminal_pv_ri": rim_breakdown["terminal_pv_ri"],
+                "intrinsic_total": rim_breakdown["intrinsic_total"],
+                "intrinsic_per_share": rim_per_share,
+                "weight_used": base_weights["residual_income"],
+            }
+        else:
+            reasoning["rim_analysis"] = {"signal": "neutral", "details": "데이터 부족"}
+
+        # PBR band for frontend (only add if data present)
+        if pbr_band_result:
+            reasoning["pbr_band_analysis"] = {
+                **pbr_band_result,
+                "weight_used": base_weights.get("pbr_band", 0),
             }
 
         trailing_pe = most_recent_metrics.price_to_earnings_ratio
@@ -622,3 +731,180 @@ def calculate_dcf_scenarios(
         'upside': results['bull'],
         'downside': results['bear']
     }
+
+
+####################################
+# RIM Breakdown / PBR Band / Regime
+####################################
+
+def calculate_residual_income_breakdown(
+    market_cap: float | None,
+    net_income: float | None,
+    price_to_book_ratio: float | None,
+    shares_outstanding: float | None,
+    book_value_growth: float = 0.03,
+    cost_of_equity: float = 0.10,
+    terminal_growth_rate: float = 0.03,
+    num_years: int = 5,
+) -> dict | None:
+    """Residual Income Model with full breakdown dict for frontend rendering."""
+    if not (market_cap and market_cap > 0 and net_income is not None
+            and price_to_book_ratio and price_to_book_ratio > 0):
+        return None
+
+    book_val = market_cap / price_to_book_ratio
+    if book_val <= 0:
+        return None
+
+    roe_implied = net_income / book_val
+    ri0 = net_income - cost_of_equity * book_val
+
+    # Clamp terminal growth so denominator stays positive
+    effective_tg = terminal_growth_rate
+    if cost_of_equity <= effective_tg:
+        effective_tg = max(cost_of_equity - 0.005, 0.005)
+
+    if ri0 <= 0:
+        # BV-only fallback — stacked bar will show 100% BV
+        intrinsic_total = book_val
+        intrinsic_with_mos = book_val * 0.8
+        pv_ri = 0.0
+        pv_term = 0.0
+        ri_year_1 = 0.0
+    else:
+        pv_ri = sum(
+            ri0 * (1 + book_value_growth) ** t / (1 + cost_of_equity) ** t
+            for t in range(1, num_years + 1)
+        )
+        term_ri = (ri0 * (1 + book_value_growth) ** (num_years + 1)
+                   / ((cost_of_equity - effective_tg) * (1 + cost_of_equity) ** num_years))
+        pv_term = term_ri
+        intrinsic_total = book_val + pv_ri + pv_term
+        intrinsic_with_mos = intrinsic_total * 0.8
+        ri_year_1 = ri0 * (1 + book_value_growth)
+
+    bvps = (
+        book_val / shares_outstanding
+        if shares_outstanding and shares_outstanding > 0 else None
+    )
+    intrinsic_per_share = (
+        intrinsic_with_mos / shares_outstanding
+        if shares_outstanding and shares_outstanding > 0 else None
+    )
+    gap = (intrinsic_with_mos - market_cap) / market_cap if market_cap else None
+
+    return {
+        "book_value": book_val,
+        "book_value_per_share": bvps,
+        "roe_implied": roe_implied,
+        "cost_of_equity": cost_of_equity,
+        "spread_roe_ke": roe_implied - cost_of_equity,
+        "book_value_growth": book_value_growth,
+        "ri_year_1": ri_year_1,
+        "present_value_ri": pv_ri,
+        "terminal_pv_ri": pv_term,
+        "intrinsic_total": intrinsic_total,
+        "intrinsic_with_mos": intrinsic_with_mos,
+        "intrinsic_per_share": intrinsic_per_share,
+        "gap_to_market_cap": gap,
+    }
+
+
+def _percentile_manual(sorted_vals: list[float], pct: float) -> float:
+    """Linear-interpolation percentile (0–100) without numpy."""
+    n = len(sorted_vals)
+    if n == 1:
+        return sorted_vals[0]
+    idx = pct / 100 * (n - 1)
+    lo = int(idx)
+    hi = min(lo + 1, n - 1)
+    frac = idx - lo
+    return sorted_vals[lo] + frac * (sorted_vals[hi] - sorted_vals[lo])
+
+
+def calculate_pbr_band(
+    financial_metrics: list,
+    current_price: float | None,
+    shares_outstanding: float | None,
+    revenue_growth: float | None = None,
+) -> dict | None:
+    """PBR Band using trailing history of price_to_book_ratio."""
+    import math
+
+    pbr_history: list[tuple[str, float]] = []
+    for m in financial_metrics:
+        pbr = getattr(m, "price_to_book_ratio", None)
+        if pbr is not None and math.isfinite(pbr) and pbr > 0:
+            period = getattr(m, "report_period", "") or ""
+            pbr_history.append((period, pbr))
+
+    if len(pbr_history) < 4:
+        return None
+
+    bvps: float | None = getattr(financial_metrics[0], "book_value_per_share", None)
+    if bvps is None or bvps <= 0:
+        return None
+
+    current_pbr = pbr_history[0][1]
+    vals = sorted(v for _, v in pbr_history)
+
+    p10  = _percentile_manual(vals, 10)
+    p25  = _percentile_manual(vals, 25)
+    p50  = _percentile_manual(vals, 50)
+    p75  = _percentile_manual(vals, 75)
+    p90  = _percentile_manual(vals, 90)
+
+    if current_pbr < p25:
+        position_label = "below_p25"
+        band_signal = "bullish"
+    elif current_pbr <= p50:
+        position_label = "p25_p50"
+        band_signal = "neutral"
+    elif current_pbr <= p75:
+        position_label = "p50_p75"
+        band_signal = "neutral"
+    else:
+        position_label = "above_p75"
+        band_signal = "bearish"
+
+    rerating_note: str | None = None
+    if revenue_growth and revenue_growth > 0.20 and current_pbr >= p50:
+        rerating_note = "HBM/구조적 성장 — 상단 밴드 +25% 확장 고려"
+
+    history = [{"period": period, "pbr": pbr} for period, pbr in pbr_history]
+
+    def _implied(pval: float) -> float | None:
+        return bvps * pval if bvps else None
+
+    return {
+        "current_pbr": current_pbr,
+        "percentiles": {"p10": p10, "p25": p25, "p50": p50, "p75": p75, "p90": p90},
+        "history": history,
+        "bvps": bvps,
+        "fair_price_p10": _implied(p10),
+        "fair_price_p25": _implied(p25),
+        "fair_price_p50": _implied(p50),
+        "fair_price_p75": _implied(p75),
+        "fair_price_p90": _implied(p90),
+        "current_price": current_price,
+        "position_label": position_label,
+        "rerating_note": rerating_note,
+        "signal": band_signal,
+        "details": (
+            f"현재 PBR {current_pbr:.2f}x · P50 {p50:.2f}x · "
+            f"역사적 {position_label} 구간"
+        ),
+    }
+
+
+def detect_capex_regime(
+    capex: float | None,
+    revenue: float | None,
+    fcf_history: list[float],
+) -> str:
+    """Returns 'capex_heavy' | 'default'."""
+    capex_ratio = abs(capex or 0) / revenue if (revenue and revenue > 0) else 0
+    vol = calculate_fcf_volatility(fcf_history) if fcf_history else 0
+    if capex_ratio >= 0.25 or vol >= 0.5:
+        return "capex_heavy"
+    return "default"
