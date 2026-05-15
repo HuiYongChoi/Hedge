@@ -251,6 +251,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         reasoning = {
             "regime": regime,
             "regime_note": regime_note,
+            "wacc": wacc,
         }
         for m, vals in method_values.items():
             if vals["value"] > 0:
@@ -393,10 +394,20 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         if sensitivity_matrix:
             reasoning["sensitivity_matrix"] = sensitivity_matrix
 
+        weighted_intrinsic = sum(
+            v["value"] * v["weight"] for v in method_values.values() if v["value"] > 0
+        ) / total_weight if total_weight > 0 else 0
+        intrinsic_value_per_share = (
+            weighted_intrinsic / shares_outstanding
+            if shares_outstanding and weighted_intrinsic > 0
+            else None
+        )
+
         valuation_analysis[ticker] = {
             "signal": signal,
             "confidence": confidence,
             "reasoning": reasoning,
+            "intrinsic_value": intrinsic_value_per_share,
         }
         progress.update_status(agent_id, ticker, "Done", analysis=json.dumps(reasoning, indent=4))
 

@@ -5,7 +5,6 @@ import { SensitivityHeatmap } from './sensitivity-heatmap';
 import { ValuationDeepDivePanel } from './valuation-panel';
 import type { AgentReport, Citation, ReportLanguage, SectionDef, ValuationDeepDive } from './types';
 
-const VALUATION_AGENTS = new Set(['valuation_analyst', 'aswath_damodaran']);
 
 interface ReportSectionProps {
   section: SectionDef;
@@ -43,7 +42,6 @@ export function ReportSection({
   const centerCell = centerRow?.[Math.floor(centerRow.length / 2)];
   const showDeepDive =
     section.id === 'section-02' &&
-    VALUATION_AGENTS.has(activeAgentKey) &&
     valuationDeepDive !== null;
 
   return (

@@ -306,6 +306,27 @@ export function extractReasoningText(reasoning: unknown): string {
     const fields = ['reasoning', 'summary', 'analysis', 'details', 'explanation', 'detail_report', 'cross_check_guide'];
     const chunks = fields.map(field => extractReasoningText(record[field])).filter(Boolean);
     if (chunks.length > 0) return chunks.join('\n\n');
+
+    // Fallback for valuation analyst's structured reasoning dict:
+    // extract `details` from *_analysis sub-objects and format with section headings
+    // so splitByMarkdownHeadings can correctly assign content to sections 02/03.
+    const valuationKeys = ['dcf_analysis', 'owner_earnings_analysis', 'ev_ebitda_analysis', 'residual_income_analysis', 'rim_analysis', 'pbr_band_analysis'];
+    const valuationLines: string[] = [];
+    if (record.regime_note && typeof record.regime_note === 'string') {
+      valuationLines.push(record.regime_note);
+    }
+    for (const key of valuationKeys) {
+      const sub = record[key] as Record<string, unknown> | undefined;
+      if (sub && typeof sub.details === 'string') valuationLines.push(sub.details);
+    }
+    const fwdPer = record.forward_per_analysis as Record<string, unknown> | undefined;
+    const fwdDetails = fwdPer && typeof fwdPer.details === 'string' ? fwdPer.details : null;
+    if (valuationLines.length > 0 || fwdDetails) {
+      const parts: string[] = [];
+      if (valuationLines.length > 0) parts.push(`## 밸류에이션\n${valuationLines.join('\n')}`);
+      if (fwdDetails) parts.push(`## 멀티플\n${fwdDetails}`);
+      return parts.join('\n\n');
+    }
   }
   return '';
 }

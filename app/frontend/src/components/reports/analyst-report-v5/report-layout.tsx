@@ -272,9 +272,13 @@ export function ReportLayout({
   }, [canonicalMetrics, effectiveCurrentPrice, effectiveMarginOfSafety, intrinsicValue]);
   const tiles = extractTargetTiles(effectiveMetrics, activeAgentKey, language, effectiveCurrency);
   const otherAgents = listOtherAgents(completeResult, activeAgentKey, activeTicker, agentMetaMap, language);
+  const valuationReport = useMemo(
+    () => getAgentReport(completeResult.analyst_signals, 'valuation_analyst', activeTicker),
+    [completeResult.analyst_signals, activeTicker],
+  );
   const valuationDeepDive = useMemo(
-    () => buildValuationDeepDive(activeReport, effectiveCurrentPrice),
-    [activeReport, effectiveCurrentPrice],
+    () => buildValuationDeepDive(valuationReport ?? activeReport, effectiveCurrentPrice),
+    [valuationReport, activeReport, effectiveCurrentPrice],
   );
 
   const handleTickerChange = (nextTicker: string) => {
