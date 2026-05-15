@@ -140,6 +140,16 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertNotIn(".slice(0, 4)", evidence)
         self.assertIn("inlineCitations", inline)
 
+    def test_v5_report_body_does_not_truncate_conclusion_text(self):
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("buildConciseConclusion", helpers)
+        self.assertIn("joinConclusionParts", helpers)
+        self.assertNotIn("function truncateSummary", helpers)
+        self.assertNotIn("return truncateSummary(parts.slice", helpers)
+        self.assertNotIn("parts.slice(0, 3)", helpers)
+        self.assertNotIn("|| truncateSummary(stripMarkdownNoise(reasoning))", helpers)
+        self.assertNotIn("compact.slice(0, 57)", helpers)
+
     def test_stock_tab_exports_reusable_report_helpers(self):
         src = STOCK_TAB.read_text(encoding="utf-8")
         for signature in [

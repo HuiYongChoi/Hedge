@@ -391,9 +391,11 @@ function isWeakConclusion(text: string | null | undefined) {
   return withoutLabels.length < 14 || /^(없음|none|n\/a|na|[-–—]+)$/i.test(withoutLabels);
 }
 
-function truncateSummary(text: string, maxLength = 320) {
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength - 1).replace(/\s+\S*$/u, '').trim()}…`;
+function joinConclusionParts(parts: string[]) {
+  return parts
+    .map(part => part.trim())
+    .filter(Boolean)
+    .join(' · ');
 }
 
 function selectMeaningfulSentence(
@@ -444,7 +446,7 @@ function buildConciseConclusion(
     }
   });
 
-  return truncateSummary(parts.slice(0, 3).join(' · '));
+  return joinConclusionParts(parts);
 }
 
 function keywordMatches(sentence: string, keywords: string[]) {
@@ -523,7 +525,7 @@ export function normalizeAgentReport(
     return {
       ...normalizedEmpty(),
       conclusion: buildConciseConclusion(report, fallbackSections, reasoning, language)
-        || truncateSummary(stripMarkdownNoise(reasoning)),
+        || stripMarkdownNoise(reasoning),
       sources: buildSourceTrackingText(report),
     };
   }
@@ -776,7 +778,7 @@ function deriveMarkerHeading(bodyText: string) {
     .trim();
   if (!compact) return null;
   if (compact.length <= 60) return compact;
-  return `${compact.slice(0, 57).replace(/\s+\S*$/u, '').trim()}...`;
+  return null;
 }
 
 export function getDataTokenPattern() {
