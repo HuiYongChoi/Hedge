@@ -82,12 +82,12 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
     def test_service_has_broker_types(self):
         src = SERVICE.read_text(encoding="utf-8")
         for needle in ["BrokerTarget", "TargetDistribution", "brokers:", "distribution:",
-                       "beta:", "sigma_annual:", "current_fy_eps:"]:
+                       "beta:", "sigma_annual:", "current_fy_eps:", "currency:"]:
             self.assertIn(needle, src, needle)
 
     def test_backend_response_includes_new_fields(self):
         src = BACKEND_ROUTE.read_text(encoding="utf-8")
-        for needle in ['"beta":', '"sigma_annual":', '"brokers":', '"distribution":', '"current_fy_eps":']:
+        for needle in ['"beta":', '"sigma_annual":', '"brokers":', '"distribution":', '"current_fy_eps":', '"currency":']:
             self.assertIn(needle, src, needle)
 
     def test_tool_module_has_new_helpers(self):
@@ -95,7 +95,8 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
         src = BACKEND_TOOL.read_text(encoding="utf-8")
         for needle in ["BrokerTarget", "TargetDistribution", "_fetch_yfinance_analyst",
                        "_fetch_beta_sigma_yf", "_compute_distribution_v5",
-                       "_compute_ttm_eps_from_quarterly", "_fetch_current_fy_eps"]:
+                       "_compute_ttm_eps_from_quarterly", "_fetch_current_fy_eps",
+                       "_fetch_fnguide_consensus", "_fetch_naver_current_price"]:
             self.assertIn(needle, src, needle)
 
     def test_i18n_keys_present(self):
@@ -140,6 +141,18 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
         self.assertIn("text-sm font-bold text-white", src)
         self.assertIn("text-xs font-semibold text-white/85", src)
         self.assertIn("font-mono text-sm font-bold text-white", src)
+
+    def test_currency_flows_through_price_compass(self):
+        """KRX tickers must render KRW instead of hard-coded dollars."""
+        index_src = INDEX.read_text(encoding="utf-8")
+        utils_src = UTILS.read_text(encoding="utf-8")
+        self.assertIn("currency={currency}", index_src)
+        self.assertIn("formatMoney", index_src)
+        self.assertIn("₩", utils_src)
+        for path in [BAR, CARD, GRID, OPINION, BETA]:
+            src = path.read_text(encoding="utf-8")
+            self.assertIn("currency", src, f"{path.name} must accept currency")
+            self.assertIn("formatMoney", src, f"{path.name} must format money via currency")
 
     def test_no_per_eps_in_cards(self):
         """v5.1: broker cards/grid must not repeat ticker-level PER/EPS labels."""

@@ -1,5 +1,6 @@
 import { t } from '@/lib/language-preferences';
 import type { ReportLanguage } from './types';
+import { formatMoney } from './utils';
 
 interface BetaVolatilityFrameProps {
   beta: number | null;
@@ -8,6 +9,7 @@ interface BetaVolatilityFrameProps {
   ticker: string;
   simBeta: number;
   onSimBetaChange: (next: number) => void;
+  currency: string;
   language: ReportLanguage;
 }
 
@@ -20,6 +22,7 @@ export function BetaVolatilityFrame({
   ticker,
   simBeta,
   onSimBetaChange,
+  currency,
   language,
 }: BetaVolatilityFrameProps) {
   const sliderMax = beta != null ? Math.max(2.5, Math.ceil((beta * 1.3) / 0.5) * 0.5) : 2.5;
@@ -33,8 +36,8 @@ export function BetaVolatilityFrame({
     ? t('pcpBetaExplain', language)
         .replace(/{beta}/g, simBeta.toFixed(2))
         .replace('{ticker}', ticker)
-        .replace('{low}', `${lo}`)
-        .replace('{high}', `${hi}`)
+        .replace('{low}', formatMoney(lo, currency, { maximumFractionDigits: 0 }))
+        .replace('{high}', formatMoney(hi, currency, { maximumFractionDigits: 0 }))
     : '';
 
   return (

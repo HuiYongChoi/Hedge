@@ -224,6 +224,7 @@ export function ReportLayout({
     ?? completeResult.current_prices?.[activeTicker.toUpperCase()]
     ?? extractMetricValue(activeReport, ['current_price', 'price', 'close_price', 'market_price']);
   const effectiveCurrentPrice = liveTarget?.current_price ?? reportCurrentPrice;
+  const effectiveCurrency = liveTarget?.currency ?? (isKoreanTicker(activeTicker) ? 'KRW' : 'USD');
   const intrinsicValue = canonicalMetrics.intrinsicValue?.value
     ?? extractMetricValue(activeReport, ['intrinsic_value', 'fair_value', 'dcf_value'])
     ?? extractReasoningMetricValue(activeReport, ['intrinsic_value', 'fair_value', 'dcf_value']);
@@ -296,6 +297,7 @@ export function ReportLayout({
         compositeScore={compositeScore}
         currentPrice={effectiveCurrentPrice}
         marginOfSafety={effectiveMarginOfSafety}
+        currency={effectiveCurrency}
         analysisGeneratedAt={analysisGeneratedAt}
         marketDataUpdatedAt={marketDataUpdatedAt}
         language={language}

@@ -1,11 +1,12 @@
 import { t } from '@/lib/language-preferences';
-import { signalTone, formatPct, upsideClass, upsidePct, formatDaysAgo } from './utils';
+import { signalTone, formatMoney, formatPct, upsideClass, upsidePct, formatDaysAgo } from './utils';
 import type { BrokerTarget, ReportLanguage } from './types';
 
 interface BrokerDetailGridProps {
   brokers: BrokerTarget[];
   currentPrice: number | null;
   hoveredBroker: string | null;
+  currency: string;
   onHoverChange: (name: string | null) => void;
   language: ReportLanguage;
 }
@@ -14,6 +15,7 @@ export function BrokerDetailGrid({
   brokers,
   currentPrice,
   hoveredBroker,
+  currency,
   onHoverChange,
   language,
 }: BrokerDetailGridProps) {
@@ -62,7 +64,7 @@ export function BrokerDetailGrid({
               {/* Row 2: price + upside */}
               <div className="mt-1 flex items-baseline justify-between gap-1">
                 <span className="font-mono text-base font-bold text-white">
-                  ${broker.target_price.toFixed(0)}
+                  {formatMoney(broker.target_price, currency, { maximumFractionDigits: 0 })}
                 </span>
                 {upside !== null && (
                   <span className={`font-mono text-xs ${upsideClass(upside)}`}>

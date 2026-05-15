@@ -52,6 +52,27 @@ export function formatMultiple(pe: number | null | undefined): string {
   return `${pe.toFixed(1)}×`;
 }
 
+/** Format price/EPS using the market currency carried by the backend. */
+export function formatMoney(
+  value: number | null | undefined,
+  currency = 'USD',
+  options: { maximumFractionDigits?: number } = {},
+): string {
+  if (value == null || !Number.isFinite(value)) return '—';
+  const normalized = currency.toUpperCase();
+  const maximumFractionDigits = options.maximumFractionDigits ?? (normalized === 'KRW' ? 0 : 2);
+  const minimumFractionDigits = normalized === 'KRW' ? 0 : Math.min(maximumFractionDigits, 2);
+
+  if (normalized === 'KRW') {
+    return `₩${value.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}`;
+  }
+
+  return `$${value.toLocaleString(undefined, {
+    minimumFractionDigits,
+    maximumFractionDigits,
+  })}`;
+}
+
 /** Format percent with optional sign: 12.0 → "+12.0%", -9.4 → "-9.4%" */
 export function formatPct(p: number | null | undefined, signed = true): string {
   if (p == null || !Number.isFinite(p)) return '—';

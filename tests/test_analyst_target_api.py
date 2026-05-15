@@ -1,7 +1,8 @@
 import unittest
 from unittest.mock import patch
 from src.tools.analyst_target_api import (
-    fetch_analyst_target, _CACHE, _compute_distribution_v5, BrokerTarget
+    fetch_analyst_target, _CACHE, _compute_distribution_v5, _fetch_fnguide_consensus,
+    _fetch_naver_current_price, BrokerTarget
 )
 
 
@@ -201,6 +202,98 @@ class AnalystTargetApiTests(unittest.TestCase):
         response = asyncio.run(get_analyst_target("MU", refresh=True))
         for key in ["beta", "sigma_annual", "brokers", "distribution", "current_fy_eps"]:
             self.assertIn(key, response, key)
+        self.assertIn("currency", response)
+
+    @patch("src.tools.analyst_target_api.requests.get")
+    def test_fnguide_consensus_parses_korean_broker_targets(self, mock_get):
+        """FnGuide broker table fills Korean per-broker target list."""
+        html = """
+        <html><body>
+        <table class="us_table_ty1 h_fix">
+          <tr><th>추정기관</th><th>추정일자</th><th>적정주가</th><th>투자의견</th></tr>
+          <tr><th>적정주가</th><th>직전 적정주가</th><th>증감율</th><th>투자의견</th><th>직전 투자의견</th></tr>
+          <tr><td>Consensus</td><td></td><td>2,003,200</td><td>1,564,800</td><td>28.02</td><td>4.00</td><td>3.96</td></tr>
+          <tr><td>현대차증권</td><td>2026/05/13</td><td>2,650,000</td><td>1,650,000</td><td>60.61</td><td>4.00</td><td>4.00</td></tr>
+          <tr><td>BNK투자증권</td><td>2026/05/12</td><td>1,850,000</td><td>1,300,000</td><td>42.31</td><td>3.00</td><td>3.00</td></tr>
+          <tr><td>SK증권</td><td>2026/05/07</td><td>3,000,000</td><td>2,000,000</td><td>50.00</td><td>5.00</td><td>4.00</td></tr>
+        </table>
+        </body></html>
+        """
+
+        class Resp:
+            ok = True
+            text = html
+
+        mock_get.return_value = Resp()
+
+        result = _fetch_fnguide_consensus("000660.KS")
+
+        self.assertEqual(result["consensus"], 2003200.0)
+        self.assertEqual(result["high"], 3000000.0)
+        self.assertEqual(result["low"], 1850000.0)
+        self.assertEqual(result["analyst_count"], 3)
+        self.assertEqual(len(result["brokers"]), 3)
+        self.assertEqual(result["brokers"][0].name, "현대차증권")
+        self.assertEqual(result["brokers"][0].target_price, 2650000.0)
+        self.assertEqual(result["brokers"][0].signal, "BUY")
+
+    @patch("src.tools.analyst_target_api.requests.get")
+    def test_naver_current_price_parses_korean_quote(self, mock_get):
+        """Naver Finance current quote fills Korean current_price when yfinance misses."""
+        html = """
+        <html><body>
+          <p class="no_today"><span class="blind">1,901,000</span></p>
+        </body></html>
+        """
+
+        class Resp:
+            ok = True
+            text = html
+            encoding = "EUC-KR"
+
+        mock_get.return_value = Resp()
+
+        self.assertEqual(_fetch_naver_current_price("000660.KS"), 1901000.0)
+
+    @patch("src.tools.analyst_target_api._fetch_fnguide_consensus")
+    @patch("src.tools.analyst_target_api._fetch_naver_current_price", return_value=1895000.0)
+    @patch("src.tools.analyst_target_api._fetch_yfinance_analyst")
+    @patch("src.tools.analyst_target_api._fetch_beta_sigma_yf", return_value=(2.03, 0.67))
+    @patch("src.tools.analyst_target_api._fetch_yfinance_data")
+    def test_korean_ticker_prefers_fnguide_brokers_and_krw_currency(self, mock_fund, _bs, mock_an, _naver, mock_fg):
+        mock_fund.return_value = {"trailing_pe": 40.5, "trailing_eps": 46765.0}
+        mock_an.return_value = {
+            "consensus": 1946076.9, "high": 3100000.0, "low": 1030000.0, "median": 1850000.0,
+            "analyst_count": 38,
+            "current_fy_eps": 294399.22,
+            "brokers": [],
+            "rec_summary_row": {"strongBuy": 16, "buy": 20, "hold": 2, "sell": 0, "strongSell": 0},
+        }
+        mock_fg.return_value = {
+            "consensus": 2003200.0,
+            "high": 3000000.0,
+            "low": 1850000.0,
+            "median": 2650000.0,
+            "analyst_count": 3,
+            "trailing_pe": 33.52,
+            "forward_pe": 6.01,
+            "brokers": [
+                BrokerTarget("현대차증권", 2650000.0, "BUY", "2026-05-13", 2),
+                BrokerTarget("BNK투자증권", 1850000.0, "HOLD", "2026-05-12", 3),
+            ],
+        }
+
+        result = fetch_analyst_target("000660.KS")
+
+        self.assertEqual(result.currency, "KRW")
+        self.assertEqual(result.source, "fnguide+naver+yfinance")
+        self.assertEqual(len(result.brokers), 2)
+        self.assertEqual(result.consensus, 2003200.0)
+        self.assertEqual(result.high, 3100000.0)
+        self.assertEqual(result.trailing_pe, 33.52)
+        self.assertAlmostEqual(result.trailing_eps, 56533.4, places=1)
+        self.assertEqual(result.forward_pe, 6.01)
+        self.assertAlmostEqual(result.forward_eps, 315307.8, places=1)
 
     @patch("src.tools.analyst_target_api._fetch_yfinance_analyst")
     @patch("src.tools.analyst_target_api._fetch_beta_sigma_yf", return_value=(1.5, 0.21))

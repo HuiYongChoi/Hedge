@@ -1,10 +1,11 @@
-import { signalTone, formatPct, upsideClass, upsidePct } from './utils';
+import { signalTone, formatMoney, formatPct, upsideClass, upsidePct } from './utils';
 import type { BrokerTarget } from './types';
 
 interface BrokerCalloutCardProps {
   broker: BrokerTarget;
   currentPrice: number | null;
   isHovered: boolean;
+  currency: string;
   onHoverChange: (hovered: boolean) => void;
 }
 
@@ -12,6 +13,7 @@ export function BrokerCalloutCard({
   broker,
   currentPrice,
   isHovered,
+  currency,
   onHoverChange,
 }: BrokerCalloutCardProps) {
   const tone = signalTone(broker.signal);
@@ -38,7 +40,7 @@ export function BrokerCalloutCard({
           <span className={`h-2 w-2 flex-shrink-0 rounded-full ${tone.dot}`} />
         </div>
         <span className="font-mono text-base font-bold text-white leading-tight">
-          ${broker.target_price.toFixed(0)}
+          {formatMoney(broker.target_price, currency, { maximumFractionDigits: 0 })}
         </span>
         {upside !== null && (
           <span className={`font-mono text-xs leading-tight ${upsideClass(upside)}`}>

@@ -1,5 +1,6 @@
 import { t } from '@/lib/language-preferences';
 import type { BrokerTarget, SigmaMark, ReportLanguage } from './types';
+import { formatMoney } from './utils';
 
 interface BrokerTargetBarProps {
   range: { min: number; max: number };
@@ -10,6 +11,7 @@ interface BrokerTargetBarProps {
   brokers: BrokerTarget[];
   sigmaMarks: SigmaMark[];
   hoveredBroker: string | null;
+  currency: string;
   language: ReportLanguage;
 }
 
@@ -22,6 +24,7 @@ export function BrokerTargetBar({
   brokers,
   sigmaMarks,
   hoveredBroker,
+  currency,
   language,
 }: BrokerTargetBarProps) {
   const span = range.max - range.min;
@@ -56,7 +59,7 @@ export function BrokerTargetBar({
               </div>
               {/* Price label */}
               <div className="absolute top-full mt-[22px] -translate-x-1/2 whitespace-nowrap font-mono text-xs font-semibold text-white/85">
-                ${Math.round(mark.value)}
+                {formatMoney(mark.value, currency, { maximumFractionDigits: 0 })}
               </div>
             </div>
           );
@@ -71,7 +74,7 @@ export function BrokerTargetBar({
               key={broker.name}
               className="absolute top-0 h-full"
               style={{ left: `${x}%` }}
-              title={`${broker.name}: $${broker.target_price}`}
+              title={`${broker.name}: ${formatMoney(broker.target_price, currency, { maximumFractionDigits: 0 })}`}
             >
               <div
                 className={`absolute inset-y-0 -translate-x-1/2 rounded-full transition-all duration-150 ${
@@ -89,7 +92,7 @@ export function BrokerTargetBar({
           <div
             className="absolute -top-5 -translate-x-1/2 text-[11px] text-emerald-300"
             style={{ left: `${pct(mos)}%` }}
-            title={`${t('pcpMos', language).replace('{pct}', '25')}: $${mos.toFixed(0)}`}
+            title={`${t('pcpMos', language).replace('{pct}', '25')}: ${formatMoney(mos, currency, { maximumFractionDigits: 0 })}`}
           >
             ★
           </div>
@@ -98,7 +101,7 @@ export function BrokerTargetBar({
           <div
             className="absolute -top-5 -translate-x-1/2 text-[11px] text-emerald-400"
             style={{ left: `${pct(intrinsic)}%` }}
-            title={`${t('pcpDcf', language)}: $${intrinsic.toFixed(0)}`}
+            title={`${t('pcpDcf', language)}: ${formatMoney(intrinsic, currency, { maximumFractionDigits: 0 })}`}
           >
             ▲
           </div>
@@ -109,7 +112,7 @@ export function BrokerTargetBar({
           <div
             className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
             style={{ left: `${pct(consensus)}%` }}
-            title={`${t('pcpLegendConsensus', language)}: $${Math.round(consensus)}`}
+            title={`${t('pcpLegendConsensus', language)}: ${formatMoney(consensus, currency, { maximumFractionDigits: 0 })}`}
           >
             <div className="h-4 w-4 rounded-full border-2 border-amber-400 bg-amber-400/20" />
           </div>
@@ -120,13 +123,13 @@ export function BrokerTargetBar({
           <div
             className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
             style={{ left: `${pct(currentPrice)}%` }}
-            title={`${t('pcpLegendCurrent', language)}: $${currentPrice.toFixed(2)}`}
+            title={`${t('pcpLegendCurrent', language)}: ${formatMoney(currentPrice, currency)}`}
           >
             {/* Vertical line extending above and below the bar */}
             <div className="h-12 w-[2px] -translate-y-1/2 rounded-full bg-white/85 shadow-[0_0_4px_rgba(255,255,255,0.4)]" />
             {/* Price label above bar */}
             <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[150%] whitespace-nowrap rounded-md bg-white/10 px-2 py-0.5 font-mono text-sm font-bold text-white backdrop-blur-sm">
-              ${currentPrice.toFixed(2)}
+              {formatMoney(currentPrice, currency)}
             </div>
           </div>
         )}

@@ -6,6 +6,7 @@ import { t } from '@/lib/language-preferences';
 import { Database, FileText, Loader2, RefreshCw, SearchCode } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { dataCoverageLabel, getScoreBand, getSignalTone, signalToVerdict, toneToClasses } from './helpers';
+import { formatMoney } from './price-compass-panel/utils';
 import type { AgentMeta, AgentReport, ReportLanguage } from './types';
 
 interface ReportHeaderRibbonProps {
@@ -15,6 +16,7 @@ interface ReportHeaderRibbonProps {
   compositeScore: number;
   currentPrice: number | null;
   marginOfSafety: number | null;
+  currency?: string;
   analysisGeneratedAt?: string | null;
   marketDataUpdatedAt?: string | null;
   language: ReportLanguage;
@@ -54,9 +56,9 @@ export function ScoreGaugeCompact({ score }: { score: number }) {
   );
 }
 
-function formatCurrentPrice(value: number | null, language: ReportLanguage) {
+function formatCurrentPrice(value: number | null, language: ReportLanguage, currency = 'USD') {
   if (value === null) return language === 'ko' ? '현재가 N/A' : 'Price N/A';
-  return `${language === 'ko' ? '현재가' : 'Price'} $${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return `${language === 'ko' ? '현재가' : 'Price'} ${formatMoney(value, currency)}`;
 }
 
 function formatMargin(value: number | null, language: ReportLanguage) {
@@ -125,6 +127,7 @@ export function ReportHeaderRibbon({
   compositeScore,
   currentPrice,
   marginOfSafety,
+  currency = 'USD',
   analysisGeneratedAt,
   marketDataUpdatedAt,
   language,
@@ -188,7 +191,7 @@ export function ReportHeaderRibbon({
             <TooltipProvider delayDuration={120}>
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
                 <MetricChip help={t('currentPriceHelp', language)} mono>
-                  {formatCurrentPrice(currentPrice, language)}
+                  {formatCurrentPrice(currentPrice, language, currency)}
                 </MetricChip>
                 <MetricChip help={t('marginOfSafetyHelp', language)} mono>
                   {formatMargin(marginOfSafety, language)}

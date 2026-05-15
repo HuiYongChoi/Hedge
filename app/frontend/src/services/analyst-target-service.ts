@@ -36,11 +36,12 @@ export interface AnalystTarget {
   forward_eps: number | null;
   forward_pe: number | null;
   current_fy_eps: number | null;
+  currency: string;
   beta: number | null;
   sigma_annual: number | null;
   brokers: BrokerTarget[];
   distribution: TargetDistribution | null;
-  source: 'yfinance' | 'stub';
+  source: string;
 }
 
 interface AnalystTargetFetchOptions {

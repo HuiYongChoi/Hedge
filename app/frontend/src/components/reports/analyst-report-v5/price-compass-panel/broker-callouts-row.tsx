@@ -8,6 +8,7 @@ interface BrokerCalloutsRowProps {
   range: { min: number; max: number };
   currentPrice: number | null;
   hoveredBroker: string | null;
+  currency: string;
   onHoverChange: (name: string | null) => void;
 }
 
@@ -20,6 +21,7 @@ export function BrokerCalloutsRow({
   range,
   currentPrice,
   hoveredBroker,
+  currency,
   onHoverChange,
 }: BrokerCalloutsRowProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -73,6 +75,7 @@ export function BrokerCalloutsRow({
               broker={broker}
               currentPrice={currentPrice}
               isHovered={isHovered}
+              currency={currency}
               onHoverChange={hovered => onHoverChange(hovered ? broker.name : null)}
             />
           </div>

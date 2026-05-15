@@ -6,12 +6,16 @@ import statistics
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Optional
+import requests
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
 # In-memory cache: ticker → (timestamp, result)
 _CACHE: dict[str, tuple[float, "AnalystTarget"]] = {}
 _TTL_SECONDS = 6 * 3600  # 6 hours
+_FNGUIDE_CONSENSUS_URL = "https://wcomp.fnguide.com/CompanyInfo/Consensus"
+_NAVER_ITEM_URL = "https://finance.naver.com/item/main.naver"
 
 GRADE_TO_SIGNAL: dict[str, str] = {
     "strong buy": "BUY", "buy": "BUY", "outperform": "BUY",
@@ -62,6 +66,7 @@ class AnalystTarget:
     beta: Optional[float]            # beta (yfinance info)
     sigma_annual: Optional[float]    # annualised σ (historical or derived)
     current_fy_eps: Optional[float] = None  # Current fiscal-year EPS estimate
+    currency: str = "USD"
     brokers: list[BrokerTarget] = field(default_factory=list)
     distribution: Optional[TargetDistribution] = None
     source: str = "stub"
@@ -82,12 +87,57 @@ def _coerce_pos_float(v) -> Optional[float]:
         return None
 
 
+def _parse_num(v) -> Optional[float]:
+    """콤마/공백이 섞인 숫자 문자열을 float으로 변환."""
+    try:
+        if v is None:
+            return None
+        cleaned = str(v).replace(",", "").replace("%", "").strip()
+        if cleaned in {"", "-", "N/A", "nan"}:
+            return None
+        f = float(cleaned)
+        return f if f > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_korean_ticker(ticker: str) -> bool:
+    """KRX 숫자 티커 또는 Yahoo의 .KS/.KQ 접미사를 한국 종목으로 판정."""
+    t = ticker.strip().upper()
+    code = t.split(".")[0]
+    return (t.endswith(".KS") or t.endswith(".KQ") or (code.isdigit() and len(code) == 6))
+
+
+def _krx_code(ticker: str) -> str:
+    return ticker.strip().upper().split(".")[0]
+
+
 def _normalize_signal(grade: Optional[str]) -> str:
     """등급 문자열 → BUY / HOLD / NEUTRAL / SELL."""
     if not grade:
         return "NEUTRAL"
     key = grade.strip().lower()
     return GRADE_TO_SIGNAL.get(key, "NEUTRAL")
+
+
+def _normalize_fnguide_signal(value: Optional[str]) -> str:
+    """FnGuide numeric rating: 5/4=BUY, 3=HOLD, 1/2=SELL."""
+    n = _parse_num(value)
+    if n is None:
+        return "NEUTRAL"
+    if n >= 3.5:
+        return "BUY"
+    if n >= 2.5:
+        return "HOLD"
+    return "SELL"
+
+
+def _days_ago_from_yyyymmdd(value: str) -> int:
+    try:
+        published = datetime.strptime(value.strip(), "%Y/%m/%d").date()
+        return max(0, (date.today() - published).days)
+    except Exception:
+        return 0
 
 
 def _compute_ttm_eps_from_quarterly(ticker_obj) -> Optional[float]:
@@ -269,6 +319,112 @@ def _fetch_yfinance_analyst(ticker: str) -> dict:
     return out
 
 
+def _fetch_fnguide_consensus(ticker: str) -> dict:
+    """FnGuide에서 한국 종목의 증권사별 목표가/투자의견 + 요약 PER를 fetch."""
+    out: dict = {
+        "consensus": None,
+        "high": None,
+        "low": None,
+        "median": None,
+        "analyst_count": None,
+        "trailing_pe": None,
+        "forward_pe": None,
+        "brokers": [],
+    }
+    if not _is_korean_ticker(ticker):
+        return out
+
+    code = _krx_code(ticker)
+    try:
+        response = requests.get(
+            _FNGUIDE_CONSENSUS_URL,
+            params={"cmp_cd": code},
+            timeout=8,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if not response.ok:
+            return out
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        text_lines = [line.strip() for line in soup.get_text("\n").splitlines() if line.strip()]
+        for idx, line in enumerate(text_lines):
+            if line == "PER" and idx + 1 < len(text_lines):
+                out["trailing_pe"] = out["trailing_pe"] or _parse_num(text_lines[idx + 1])
+            elif line == "PER(Fwd.12M)" and idx + 1 < len(text_lines):
+                out["forward_pe"] = out["forward_pe"] or _parse_num(text_lines[idx + 1])
+
+        brokers: list[BrokerTarget] = []
+        consensus = None
+        for table in soup.find_all("table"):
+            rows = [
+                [cell.get_text(" ", strip=True) for cell in tr.find_all(["th", "td"])]
+                for tr in table.find_all("tr")
+            ]
+            if not any(row and row[0] == "Consensus" for row in rows):
+                continue
+
+            for row in rows:
+                if len(row) < 3:
+                    continue
+                name = row[0].strip()
+                if not name or name in {"추정기관", "적정주가"}:
+                    continue
+                if name == "Consensus":
+                    consensus = _parse_num(row[2])
+                    continue
+
+                published_date = row[1].strip() if len(row) > 1 else ""
+                target_price = _parse_num(row[2])
+                if target_price is None:
+                    continue
+                rating = row[5] if len(row) > 5 else None
+                brokers.append(BrokerTarget(
+                    name=name,
+                    target_price=target_price,
+                    signal=_normalize_fnguide_signal(rating),
+                    published_date=published_date.replace("/", "-"),
+                    days_ago=_days_ago_from_yyyymmdd(published_date),
+                ))
+            break
+
+        brokers.sort(key=lambda b: (b.days_ago, b.name))
+        prices = [b.target_price for b in brokers]
+        if prices:
+            out["brokers"] = brokers[:20]
+            out["high"] = max(prices)
+            out["low"] = min(prices)
+            out["median"] = float(statistics.median(prices))
+            out["analyst_count"] = len(brokers)
+            out["consensus"] = consensus or float(statistics.mean(prices))
+        elif consensus:
+            out["consensus"] = consensus
+    except Exception as e:
+        logger.debug("FnGuide consensus fetch failed for %s: %s", ticker, e)
+    return out
+
+
+def _fetch_naver_current_price(ticker: str) -> Optional[float]:
+    """Naver Finance 현재가 백업. yfinance가 한국 티커 현재가를 못 줄 때 사용."""
+    if not _is_korean_ticker(ticker):
+        return None
+    try:
+        response = requests.get(
+            _NAVER_ITEM_URL,
+            params={"code": _krx_code(ticker)},
+            timeout=8,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if not response.ok:
+            return None
+        response.encoding = response.encoding or "EUC-KR"
+        soup = BeautifulSoup(response.text, "html.parser")
+        node = soup.select_one("p.no_today span.blind")
+        return _parse_num(node.get_text(strip=True) if node else None)
+    except Exception as e:
+        logger.debug("Naver current price fetch failed for %s: %s", ticker, e)
+        return None
+
+
 def _compute_distribution_v5(
     brokers: list[BrokerTarget],
     rec_summary: Optional[dict],
@@ -316,36 +472,66 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
 
     yf_fund    = _fetch_yfinance_data(ticker)     # current price + PE/EPS/beta
     yf_an      = _fetch_yfinance_analyst(ticker)  # consensus + brokers + dist
+    fg_an      = _fetch_fnguide_consensus(ticker) if _is_korean_ticker(ticker) else {}
     beta_hist, sigma_hist = _fetch_beta_sigma_yf(ticker)
 
     beta_final  = beta_hist or yf_fund.get("beta")
     sigma_final = sigma_hist
+    currency = "KRW" if _is_korean_ticker(ticker) else "USD"
+
+    current_price = yf_fund.get("current_price")
+    naver_current_price = None
+    if current_price is None and _is_korean_ticker(ticker):
+        naver_current_price = _fetch_naver_current_price(ticker)
+        current_price = naver_current_price
+    trailing_pe = fg_an.get("trailing_pe") or yf_fund.get("trailing_pe")
+    forward_pe = fg_an.get("forward_pe") or yf_fund.get("forward_pe")
+    trailing_eps = yf_fund.get("trailing_eps")
+    if current_price and trailing_pe and (trailing_eps is None or _is_korean_ticker(ticker)):
+        trailing_eps = current_price / trailing_pe
+    forward_eps = yf_fund.get("forward_eps")
+    if current_price and forward_pe and (forward_eps is None or _is_korean_ticker(ticker)):
+        forward_eps = current_price / forward_pe
+
+    brokers = fg_an.get("brokers") or yf_an["brokers"]
+    consensus = fg_an.get("consensus") or yf_an["consensus"]
+    high_candidates = [v for v in [fg_an.get("high"), yf_an["high"]] if v is not None]
+    low_candidates = [v for v in [fg_an.get("low"), yf_an["low"]] if v is not None]
+    high = max(high_candidates) if high_candidates else None
+    low = min(low_candidates) if low_candidates else None
+    median = fg_an.get("median") or yf_an["median"]
+    analyst_count = max([v for v in [fg_an.get("analyst_count"), yf_an["analyst_count"]] if v is not None], default=None)
 
     # Distribution
     distribution = _compute_distribution_v5(
-        brokers=yf_an["brokers"],
+        brokers=brokers,
         rec_summary=yf_an["rec_summary_row"],
-        consensus=yf_an["consensus"],
+        consensus=consensus,
     )
 
-    has_data = (yf_an["consensus"] is not None) or len(yf_an["brokers"]) > 0
+    has_data = (consensus is not None) or len(brokers) > 0
+    if fg_an.get("brokers"):
+        source = "fnguide+naver+yfinance" if naver_current_price is not None else "fnguide+yfinance"
+    else:
+        source = "yfinance" if has_data else "stub"
     result = AnalystTarget(
-        consensus=yf_an["consensus"],
-        high=yf_an["high"],
-        low=yf_an["low"],
-        median=yf_an["median"],
-        analyst_count=yf_an["analyst_count"],
-        current_price=yf_fund.get("current_price"),
-        trailing_pe=yf_fund.get("trailing_pe"),
-        trailing_eps=yf_fund.get("trailing_eps"),
-        forward_eps=yf_fund.get("forward_eps"),
-        forward_pe=yf_fund.get("forward_pe"),
+        consensus=consensus,
+        high=high,
+        low=low,
+        median=median,
+        analyst_count=analyst_count,
+        current_price=current_price,
+        trailing_pe=trailing_pe,
+        trailing_eps=trailing_eps,
+        forward_eps=forward_eps,
+        forward_pe=forward_pe,
         beta=beta_final,
         sigma_annual=sigma_final,
         current_fy_eps=yf_an.get("current_fy_eps"),
-        brokers=yf_an["brokers"],
+        currency=currency,
+        brokers=brokers,
         distribution=distribution,
-        source="yfinance" if has_data else "stub",
+        source=source,
     )
     _CACHE[ticker] = (now, result)
     return result

@@ -9,6 +9,7 @@ import { BetaVolatilityFrame } from './beta-volatility-frame';
 import { OpinionDistribution } from './opinion-distribution';
 import { BrokerDetailGrid } from './broker-detail-grid';
 import type { SigmaMark } from './types';
+import { formatMoney } from './utils';
 
 interface PriceCompassPanelProps {
   ticker: string;
@@ -30,6 +31,7 @@ interface FundamentalsRowProps {
   currentPrice: number | null;
   consensus: number | null;
   highTarget: number | null;
+  currency: string;
   language: ReportLanguage;
 }
 
@@ -86,6 +88,7 @@ function FundamentalsRow({
   currentPrice,
   consensus,
   highTarget,
+  currency,
   language,
 }: FundamentalsRowProps) {
   const currentFyPe =
@@ -93,21 +96,21 @@ function FundamentalsRow({
       ? currentPrice / currentFyEps
       : null;
   const ttmItems = compactMetrics([
-    trailingEps != null ? { label: t('pcpEpsTtm', language), value: `$${trailingEps.toFixed(2)}` } : null,
+    trailingEps != null ? { label: t('pcpEpsTtm', language), value: formatMoney(trailingEps, currency) } : null,
     trailingPe != null ? { label: t('pcpPerTtm', language), value: `${trailingPe.toFixed(1)}×` } : null,
   ]);
   const currentFyItems = compactMetrics([
-    currentFyEps != null ? { label: t('pcpEpsCurFy', language), value: `$${currentFyEps.toFixed(2)}` } : null,
+    currentFyEps != null ? { label: t('pcpEpsCurFy', language), value: formatMoney(currentFyEps, currency) } : null,
     currentFyPe != null ? { label: t('pcpPerCurFy', language), value: `${currentFyPe.toFixed(1)}×` } : null,
   ]);
   const forwardItems = compactMetrics([
-    forwardEps != null ? { label: t('pcpFwdEps', language), value: `$${forwardEps.toFixed(2)}` } : null,
+    forwardEps != null ? { label: t('pcpFwdEps', language), value: formatMoney(forwardEps, currency) } : null,
     forwardPe != null ? { label: t('pcpBrokerFwdPer', language), value: `${forwardPe.toFixed(1)}×` } : null,
   ]);
   const priceItems = compactMetrics([
-    currentPrice != null ? { label: t('pcpLegendCurrent', language), value: `$${currentPrice.toFixed(2)}` } : null,
-    consensus != null ? { label: t('pcpLegendConsensus', language), value: `$${consensus.toFixed(0)}` } : null,
-    highTarget != null ? { label: t('pcpHighTarget', language), value: `$${highTarget.toFixed(0)}` } : null,
+    currentPrice != null ? { label: t('pcpLegendCurrent', language), value: formatMoney(currentPrice, currency) } : null,
+    consensus != null ? { label: t('pcpLegendConsensus', language), value: formatMoney(consensus, currency, { maximumFractionDigits: 0 }) } : null,
+    highTarget != null ? { label: t('pcpHighTarget', language), value: formatMoney(highTarget, currency, { maximumFractionDigits: 0 }) } : null,
   ]);
 
   return (
@@ -160,6 +163,7 @@ export function PriceCompassPanel({
   const trailingPe = target?.trailing_pe ?? null;
   const trailingEps = target?.trailing_eps ?? null;
   const currentFyEps = target?.current_fy_eps ?? null;
+  const currency = target?.currency ?? (ticker.toUpperCase().endsWith('.KS') || ticker.toUpperCase().endsWith('.KQ') ? 'KRW' : 'USD');
 
   const consensus = target?.consensus ?? null;
   const highTarget = target?.high ?? null;
@@ -259,6 +263,7 @@ export function PriceCompassPanel({
         currentPrice={currentPrice}
         consensus={consensus}
         highTarget={highTarget}
+        currency={currency}
         language={language}
       />
 
@@ -272,6 +277,7 @@ export function PriceCompassPanel({
         brokers={brokers}
         sigmaMarks={sigmaMarks}
         hoveredBroker={hoveredBroker}
+        currency={currency}
         language={language}
       />
 
@@ -284,6 +290,7 @@ export function PriceCompassPanel({
           range={range}
           currentPrice={currentPrice}
           hoveredBroker={hoveredBroker}
+          currency={currency}
           onHoverChange={setHoveredBroker}
         />
       )}
@@ -300,11 +307,13 @@ export function PriceCompassPanel({
               ticker={ticker}
               simBeta={simBeta}
               onSimBetaChange={setSimBeta}
+              currency={currency}
               language={language}
             />
             <OpinionDistribution
               distribution={distribution}
               currentPrice={currentPrice}
+              currency={currency}
               language={language}
             />
           </div>
@@ -314,6 +323,7 @@ export function PriceCompassPanel({
             brokers={brokers}
             currentPrice={currentPrice}
             hoveredBroker={hoveredBroker}
+            currency={currency}
             onHoverChange={setHoveredBroker}
             language={language}
           />

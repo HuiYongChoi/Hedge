@@ -1,10 +1,11 @@
 import { t } from '@/lib/language-preferences';
-import { formatPct, upsideClass } from './utils';
+import { formatMoney, formatPct, upsideClass } from './utils';
 import type { TargetDistribution, ReportLanguage } from './types';
 
 interface OpinionDistributionProps {
   distribution: TargetDistribution | null;
   currentPrice: number | null;
+  currency: string;
   language: ReportLanguage;
 }
 
@@ -31,7 +32,7 @@ function BarRow({ label, count, total, barClass }: BarRowProps) {
   );
 }
 
-export function OpinionDistribution({ distribution, currentPrice, language }: OpinionDistributionProps) {
+export function OpinionDistribution({ distribution, currentPrice, currency, language }: OpinionDistributionProps) {
   if (!distribution) return null;
 
   const avgUpside = distribution.average != null && currentPrice
@@ -83,7 +84,7 @@ export function OpinionDistribution({ distribution, currentPrice, language }: Op
           {distribution.average != null ? (
             <>
               <div className="font-mono text-base font-bold text-white">
-                ${Math.round(distribution.average)}
+                {formatMoney(distribution.average, currency, { maximumFractionDigits: 0 })}
               </div>
               {avgUpside != null && (
                 <div className={`font-mono text-[11px] ${upsideClass(avgUpside)}`}>
@@ -99,7 +100,7 @@ export function OpinionDistribution({ distribution, currentPrice, language }: Op
           <div className="text-[11px] uppercase tracking-wide text-foreground/70">{t('pcpOpinionMedian', language)}</div>
           {distribution.median != null ? (
             <div className="font-mono text-base font-bold text-white">
-              ${Math.round(distribution.median)}
+              {formatMoney(distribution.median, currency, { maximumFractionDigits: 0 })}
             </div>
           ) : (
             <div className="text-foreground/45">—</div>
@@ -110,7 +111,7 @@ export function OpinionDistribution({ distribution, currentPrice, language }: Op
           {distribution.stdev != null ? (
             <>
               <div className="font-mono text-base font-bold text-white">
-                ${Math.round(distribution.stdev)}
+                {formatMoney(distribution.stdev, currency, { maximumFractionDigits: 0 })}
               </div>
               <div className="text-[11px] text-foreground/55">{t('pcpOpinionSpread', language)}</div>
             </>
