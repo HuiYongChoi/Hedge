@@ -260,19 +260,24 @@ function normalizeTicker(ticker: string) {
   return ticker.trim().toUpperCase();
 }
 
+export function isJapaneseStock(ticker: string) {
+  const t = (ticker || '').trim().toUpperCase();
+  const code = t.split('.')[0];
+  // .T 접미사이거나, TSE 4자리 숫자 코드, 또는 신규 TSE 영숫자 코드(예: 285A)
+  if (t.endsWith('.T')) return true;
+  if (/^\d{4}$/.test(code)) return true;
+  if (/^\d{1,3}[A-Z]$/.test(code) || /^[A-Z]\d{1,3}$/.test(code) || /^\d{1,3}[A-Z]\d?$/.test(code)) return true;
+  return false;
+}
+
 export function isKoreanStock(ticker: string) {
   const trimmed = ticker.trim();
   // 한글 기업명 또는 숫자로 시작하는 KS/KQ 티커
   if (/[\uAC00-\uD7A3]/.test(trimmed)) return true;
+  // 일본 티커(.T, TSE 4자리, 신규 영숫자 코드)는 한국으로 분류하지 않는다
+  if (isJapaneseStock(trimmed)) return false;
   const normalized = normalizeTicker(trimmed);
   return /^[0-9][0-9A-Z._-]*$/.test(normalized);
-}
-
-export function isJapaneseStock(ticker: string) {
-  const t = (ticker || '').trim().toUpperCase();
-  const code = t.split('.')[0];
-  // .T 접미사 또는 TSE 4자리 숫자 코드 (한국 6자리와 구분)
-  return t.endsWith('.T') || /^\d{4}$/.test(code);
 }
 
 export function getKoreanStockCode(ticker: string) {

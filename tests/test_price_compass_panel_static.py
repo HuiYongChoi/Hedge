@@ -224,6 +224,32 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
         # UI now uses Korean label (per user preference: no Japanese in UI)
         self.assertIn("유가증권보고서", src)
 
+    def test_korean_ticker_excludes_japanese_alphanumeric(self):
+        """Phase J2-C: 285A.T 등 영숫자 JP 티커가 한국으로 오분류되면 안 됨."""
+        helpers_src = HELPERS.read_text(encoding="utf-8")
+        stock_src = STOCK_TAB.read_text(encoding="utf-8")
+        # isKorean* must early-return false for JP tickers
+        self.assertIn("if (isJapaneseTicker(trimmed)) return false;", helpers_src)
+        self.assertIn("if (isJapaneseStock(trimmed)) return false;", stock_src)
+        # isJapanese* must recognise alphanumeric TSE codes (e.g. 285A)
+        for src in (helpers_src, stock_src):
+            self.assertIn(r"/^\d{1,3}[A-Z]$/", src)
+            self.assertIn(r"/^[A-Z]\d{1,3}$/", src)
+            self.assertIn(r"/^\d{1,3}[A-Z]\d?$/", src)
+
+
+class FinancialTextNormalizerTests(unittest.TestCase):
+    NORMALIZER = ROOT / "app/frontend/src/lib/financial-text-normalizer.ts"
+
+    def test_pick_debt_percent_recovers_when_first_value_too_large(self):
+        """Phase J2-C: 첫 값이 >500이면 십진수 슬라이드로 정상 범위 복원."""
+        src = self.NORMALIZER.read_text(encoding="utf-8")
+        # New heuristic: slide decimal until value <= 500, with power-of-ten guard
+        self.assertIn("if (first > 500)", src)
+        self.assertIn("isPowerOfTen", src)
+        self.assertIn("while (val > 500) val /= 10", src)
+        self.assertIn("val.toFixed(1)", src)
+
 
 if __name__ == "__main__":
     unittest.main()

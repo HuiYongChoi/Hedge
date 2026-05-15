@@ -11,6 +11,22 @@ function pickDebtPercent(sequence: string) {
     .filter(Number.isFinite);
   if (values.length === 0) return sequence;
 
+  // 첫 번째 값이 비현실적으로 크면(>500), 원본 비율이 자릿수 깨짐으로 정수처럼 보이는 것이
+  // 가능성 높다. 예) D/E ratio 1.3269 → "132.7%"가 "1326000%0%0%9%"로 깨진 경우
+  // 십진수 위치를 슬라이드해 0–500% 범위로 복원한다.
+  // 단, 10의 거듭제곱(예: 10000)은 단순 스케일 노이즈 패턴이므로 마지막 정상 후보를 우선한다.
+  const first = values[0];
+  if (first > 500) {
+    const isPowerOfTen = /^10+$/.test(String(Math.round(first)));
+    if (!isPowerOfTen) {
+      let val = first;
+      while (val > 500) val /= 10;
+      if (val > 0 && val <= 500) {
+        return `${val.toFixed(1)}%`;
+      }
+    }
+  }
+
   const normalCandidates = values.filter(value => value > 0 && value <= 500);
   const picked = normalCandidates.at(-1) ?? values.at(-1) ?? 0;
   return `${Number.isInteger(picked) ? picked.toFixed(0) : picked.toFixed(1)}%`;

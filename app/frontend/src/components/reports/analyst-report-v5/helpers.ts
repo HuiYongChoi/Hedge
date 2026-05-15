@@ -154,16 +154,23 @@ export function normalizeTicker(ticker: string) {
   return ticker.trim().toUpperCase();
 }
 
-export function isKoreanTicker(ticker: string) {
-  const trimmed = ticker.trim();
-  if (/[\uAC00-\uD7A3]/.test(trimmed)) return true;
-  return /^[0-9][0-9A-Z._-]*$/.test(normalizeTicker(trimmed));
-}
-
 export function isJapaneseTicker(ticker: string) {
   const t = ticker.trim().toUpperCase();
   const code = t.split('.')[0];
-  return t.endsWith('.T') || /^\d{4}$/.test(code);
+  // .T \uC811\uBBF8\uC0AC\uC774\uAC70\uB098, 4\uC790\uB9AC \uC22B\uC790 \uCF54\uB4DC, \uB610\uB294 \uC601\uC22B\uC790 \uD63C\uD569 \uCF54\uB4DC(\uC608: 285A)
+  if (t.endsWith('.T')) return true;
+  if (/^\d{4}$/.test(code)) return true;
+  // \uC601\uBB38\uC774 \uC11E\uC778 4\uC790 \uCF54\uB4DC (TSE \uC2E0\uADDC \uC601\uC22B\uC790 \uCF54\uB4DC) \u2014 \uD55C\uAD6D 6\uC790\uB9AC \uCF54\uB4DC\uC640 \uAD6C\uBD84
+  if (/^\d{1,3}[A-Z]$/.test(code) || /^[A-Z]\d{1,3}$/.test(code) || /^\d{1,3}[A-Z]\d?$/.test(code)) return true;
+  return false;
+}
+
+export function isKoreanTicker(ticker: string) {
+  const trimmed = ticker.trim();
+  if (/[\uAC00-\uD7A3]/.test(trimmed)) return true;
+  // \uC77C\uBCF8 \uD2F0\uCEE4(.T, TSE 4\uC790\uB9AC, \uC601\uC22B\uC790 \uCF54\uB4DC)\uB294 \uD55C\uAD6D\uC73C\uB85C \uBD84\uB958\uD558\uC9C0 \uC54A\uB294\uB2E4.
+  if (isJapaneseTicker(trimmed)) return false;
+  return /^[0-9][0-9A-Z._-]*$/.test(normalizeTicker(trimmed));
 }
 
 export function getKoreanCode(ticker: string) {
