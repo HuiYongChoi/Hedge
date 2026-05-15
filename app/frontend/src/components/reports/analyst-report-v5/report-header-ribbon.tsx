@@ -2,7 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/language-preferences';
-import { Database, FileText, Loader2, SearchCode } from 'lucide-react';
+import { Database, FileText, Loader2, RefreshCw, SearchCode } from 'lucide-react';
 import { dataCoverageLabel, getScoreBand, getSignalTone, signalToVerdict, toneToClasses } from './helpers';
 import type { AgentMeta, AgentReport, ReportLanguage } from './types';
 
@@ -13,7 +13,11 @@ interface ReportHeaderRibbonProps {
   compositeScore: number;
   currentPrice: number | null;
   marginOfSafety: number | null;
+  analysisGeneratedAt?: string | null;
+  marketDataUpdatedAt?: string | null;
   language: ReportLanguage;
+  onRefreshMarketData?: () => void;
+  isRefreshingMarketData?: boolean;
   onCompareSourceClick: () => void;
   onSave?: () => void;
   isSaving?: boolean;
@@ -58,6 +62,27 @@ function formatMargin(value: number | null, language: ReportLanguage) {
   return `${language === 'ko' ? '안전마진' : 'Margin'} ${(value * 100).toFixed(1)}%`;
 }
 
+function formatTimestamp(
+  value: string | null | undefined,
+  language: ReportLanguage,
+  labelKey: string,
+  fallbackKo: string,
+  fallbackEn: string,
+) {
+  const label = t(labelKey, language);
+  if (!value) return `${label} ${language === 'ko' ? fallbackKo : fallbackEn}`;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return `${label} ${language === 'ko' ? fallbackKo : fallbackEn}`;
+  return `${label} ${date.toLocaleString(language === 'ko' ? 'ko-KR' : 'en-US', {
+    year: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })}`;
+}
+
 export function ReportHeaderRibbon({
   ticker,
   activeAgent,
@@ -65,7 +90,11 @@ export function ReportHeaderRibbon({
   compositeScore,
   currentPrice,
   marginOfSafety,
+  analysisGeneratedAt,
+  marketDataUpdatedAt,
   language,
+  onRefreshMarketData,
+  isRefreshingMarketData,
   onCompareSourceClick,
   onSave,
   isSaving,
@@ -129,13 +158,33 @@ export function ReportHeaderRibbon({
                 {formatMargin(marginOfSafety, language)}
               </span>
               <span className="rounded-full border border-border/60 bg-background/70 px-2 py-1">
-                {t('periodLabelHeader', language)} · {language === 'ko' ? '최근 분석' : 'Latest run'}
+                {formatTimestamp(analysisGeneratedAt, language, 'reportGeneratedAtLabel', 'N/A', 'N/A')}
               </span>
+              {marketDataUpdatedAt && (
+                <span className="rounded-full border border-border/60 bg-background/70 px-2 py-1">
+                  {formatTimestamp(marketDataUpdatedAt, language, 'marketDataUpdatedAtLabel', 'N/A', 'N/A')}
+                </span>
+              )}
             </div>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+          {onRefreshMarketData && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="min-h-[44px]"
+              onClick={onRefreshMarketData}
+              disabled={isRefreshingMarketData}
+            >
+              {isRefreshingMarketData
+                ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+              {t('refreshMarketDataButton', language)}
+            </Button>
+          )}
           <Button variant="outline" size="sm" className="min-h-[44px]" disabled aria-disabled="true" title={t('comingSoonLabel', language)}>
             <FileText className="mr-1.5 h-3.5 w-3.5" />
             {t('pdfExportButton', language)}

@@ -92,6 +92,23 @@ class AnalystTargetApiTests(unittest.TestCase):
         self.assertEqual(mock_an.call_count, first_an_count, "second call must hit cache (an)")
 
     @patch("src.tools.analyst_target_api._fetch_yfinance_analyst")
+    @patch("src.tools.analyst_target_api._fetch_beta_sigma_yf", return_value=(1.0, 0.14))
+    @patch("src.tools.analyst_target_api._fetch_yfinance_data")
+    def test_fetch_force_refresh_bypasses_cache(self, mock_fund, _bs, mock_an):
+        mock_fund.side_effect = [
+            {"current_price": 100.0},
+            {"current_price": 110.0},
+        ]
+        mock_an.return_value = {**self._AN_BASE, "brokers": []}
+
+        first = fetch_analyst_target("MU")
+        second = fetch_analyst_target("MU", force_refresh=True)
+
+        self.assertEqual(first.current_price, 100.0)
+        self.assertEqual(second.current_price, 110.0)
+        self.assertEqual(mock_fund.call_count, 2)
+
+    @patch("src.tools.analyst_target_api._fetch_yfinance_analyst")
     @patch("src.tools.analyst_target_api._fetch_beta_sigma_yf", return_value=(1.92, 0.269))
     @patch("src.tools.analyst_target_api._fetch_yfinance_data")
     def test_fetch_brokers_parsed(self, mock_fund, _bs, mock_an):
@@ -181,7 +198,7 @@ class AnalystTargetApiTests(unittest.TestCase):
             "consensus": None, "high": None, "low": None, "median": None,
             "analyst_count": None, "current_fy_eps": None, "brokers": [], "rec_summary_row": None,
         }
-        response = asyncio.run(get_analyst_target("MU"))
+        response = asyncio.run(get_analyst_target("MU", refresh=True))
         for key in ["beta", "sigma_annual", "brokers", "distribution", "current_fy_eps"]:
             self.assertIn(key, response, key)
 

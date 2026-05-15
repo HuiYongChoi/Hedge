@@ -33,7 +33,8 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
         src = LAYOUT.read_text(encoding="utf-8")
         self.assertIn("PriceCompassPanel", src)
         self.assertNotIn("PriceCompassBar", src, "old bar reference must be gone")
-        self.assertIn("metrics={canonicalMetrics}", src)
+        self.assertIn("effectiveMetrics", src)
+        self.assertIn("metrics={effectiveMetrics}", src)
 
     def test_bar_gradient_low_to_high(self):
         """Bar gradient must run green (cheap, left) → red (expensive, right)."""

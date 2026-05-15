@@ -43,10 +43,15 @@ export interface AnalystTarget {
   source: 'yfinance' | 'stub';
 }
 
+interface AnalystTargetFetchOptions {
+  refresh?: boolean;
+}
+
 export const analystTargetService = {
-  fetch: async (ticker: string): Promise<AnalystTarget | null> => {
+  fetch: async (ticker: string, options: AnalystTargetFetchOptions = {}): Promise<AnalystTarget | null> => {
     try {
-      const res = await fetch(`${API_BASE_URL}/analyst-targets/${encodeURIComponent(ticker)}`);
+      const params = options.refresh ? '?refresh=1' : '';
+      const res = await fetch(`${API_BASE_URL}/analyst-targets/${encodeURIComponent(ticker)}${params}`);
       if (!res.ok) return null;
       return await res.json() as AnalystTarget;
     } catch {

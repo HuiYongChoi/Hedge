@@ -20,6 +20,7 @@ export function SavedStockDetail({ detail, language }: Props) {
 
   const completeResult = result.complete_result ?? null;
   const agentResultsArr: AgentResult[] = result.agent_results ?? [];
+  const analysisGeneratedAt = result.analysis_generated_at ?? result.analysisGeneratedAt ?? detail.created_at;
   const agentResultsMap = useMemo(
     () => new Map(agentResultsArr.map((r: AgentResult) => [r.agentKey, r])),
     [agentResultsArr],
@@ -55,6 +56,7 @@ export function SavedStockDetail({ detail, language }: Props) {
       agentResults={agentResultsMap}
       language={language}
       compositeScore={compositeScore}
+      analysisGeneratedAt={analysisGeneratedAt}
       onSave={undefined}
       isSaving={false}
     />

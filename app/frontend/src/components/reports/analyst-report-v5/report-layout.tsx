@@ -6,12 +6,15 @@ import {
   renderMarkdownBlocks,
 } from '@/lib/markdown-blocks';
 import { t } from '@/lib/language-preferences';
+import { analystTargetService } from '@/services/analyst-target-service';
+import type { AnalystTarget } from '@/services/analyst-target-service';
 import { X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   SECTION_DEFS,
   buildCanonicalMetrics,
   buildCitations,
+  calcMarginOfSafety,
   extractMetricValue,
   extractTargetTiles,
   getAgentMeta,
@@ -26,7 +29,7 @@ import { ReportBody } from './report-body';
 import { ReportHeaderRibbon } from './report-header-ribbon';
 import { MobileToc, ReportTocSidebar } from './report-toc-sidebar';
 import { TargetDataSidebar } from './target-data-sidebar';
-import type { AgentMeta, AnalystReportDashboardProps, Citation, SectionId } from './types';
+import type { AgentMeta, AnalystReportDashboardProps, CanonicalMetric, Citation, SectionId } from './types';
 
 interface DetailReportState {
   agentName: string;
@@ -110,12 +113,23 @@ function resolveTickers(ticker: string, completeResult: AnalystReportDashboardPr
   return [ticker].filter(Boolean);
 }
 
+function marketDataMetric(value: number, fallback?: CanonicalMetric): CanonicalMetric {
+  return {
+    value,
+    sourceAgentKey: fallback?.sourceAgentKey ?? 'market_data',
+    sourceAgentNameKo: fallback?.sourceAgentNameKo ?? '시장 데이터',
+    sourceAgentNameEn: fallback?.sourceAgentNameEn ?? 'Market Data',
+    isFromActiveAgent: fallback?.isFromActiveAgent ?? false,
+  };
+}
+
 export function ReportLayout({
   ticker,
   completeResult,
   agentResults,
   language,
   compositeScore,
+  analysisGeneratedAt,
   onSave,
   isSaving,
 }: AnalystReportDashboardProps) {
@@ -125,6 +139,9 @@ export function ReportLayout({
   const [activeSectionId, setActiveSectionId] = useState<SectionId>(SECTION_DEFS[0].id);
   const [activeCitationLetter, setActiveCitationLetter] = useState<string | null>(null);
   const [selectedDetailReport, setSelectedDetailReport] = useState<DetailReportState | null>(null);
+  const [liveTarget, setLiveTarget] = useState<AnalystTarget | null>(null);
+  const [marketDataUpdatedAt, setMarketDataUpdatedAt] = useState<string | null>(null);
+  const [isRefreshingMarketData, setIsRefreshingMarketData] = useState(false);
   const { info } = useToastManager();
 
   useEffect(() => {
@@ -181,11 +198,49 @@ export function ReportLayout({
     () => buildCanonicalMetrics(activeAgentKey, completeResult, activeTicker),
     [activeAgentKey, activeTicker, completeResult],
   );
-  const currentPrice = canonicalMetrics.currentPrice?.value
+  const refreshMarketData = useCallback(async (forceRefresh = false) => {
+    if (!activeTicker) return;
+    setIsRefreshingMarketData(true);
+    try {
+      const target = await analystTargetService.fetch(activeTicker, { refresh: forceRefresh });
+      if (target) {
+        setLiveTarget(target);
+        setMarketDataUpdatedAt(new Date().toISOString());
+      }
+    } finally {
+      setIsRefreshingMarketData(false);
+    }
+  }, [activeTicker]);
+
+  useEffect(() => {
+    setLiveTarget(null);
+    setMarketDataUpdatedAt(null);
+    refreshMarketData(false);
+  }, [refreshMarketData]);
+
+  const reportCurrentPrice = canonicalMetrics.currentPrice?.value
     ?? extractMetricValue(activeReport, ['current_price', 'price', 'close_price', 'market_price']);
-  const marginOfSafety = canonicalMetrics.marginOfSafety?.value
+  const effectiveCurrentPrice = liveTarget?.current_price ?? reportCurrentPrice;
+  const intrinsicValue = canonicalMetrics.intrinsicValue?.value
+    ?? extractMetricValue(activeReport, ['intrinsic_value', 'fair_value', 'dcf_value']);
+  const calculatedMarginOfSafety = calcMarginOfSafety(intrinsicValue, effectiveCurrentPrice);
+  const effectiveMarginOfSafety = calculatedMarginOfSafety
+    ?? canonicalMetrics.marginOfSafety?.value
     ?? extractMetricValue(activeReport, ['margin_of_safety']);
-  const tiles = extractTargetTiles(canonicalMetrics, activeAgentKey, language);
+  const effectiveMetrics = useMemo(() => {
+    const nextMetrics = { ...canonicalMetrics };
+    if (effectiveCurrentPrice !== null) {
+      nextMetrics.currentPrice = marketDataMetric(effectiveCurrentPrice, canonicalMetrics.currentPrice);
+    }
+    if (effectiveMarginOfSafety !== null) {
+      nextMetrics.marginOfSafety = marketDataMetric(
+        effectiveMarginOfSafety,
+        canonicalMetrics.intrinsicValue ?? canonicalMetrics.marginOfSafety,
+      );
+    }
+    return nextMetrics;
+  }, [canonicalMetrics, effectiveCurrentPrice, effectiveMarginOfSafety]);
+  const tiles = extractTargetTiles(effectiveMetrics, activeAgentKey, language);
   const otherAgents = listOtherAgents(completeResult, activeAgentKey, activeTicker, agentMetaMap, language);
 
   const handleTickerChange = (nextTicker: string) => {
@@ -233,9 +288,13 @@ export function ReportLayout({
         activeAgent={activeAgent}
         activeReport={activeReport}
         compositeScore={compositeScore}
-        currentPrice={currentPrice}
-        marginOfSafety={marginOfSafety}
+        currentPrice={effectiveCurrentPrice}
+        marginOfSafety={effectiveMarginOfSafety}
+        analysisGeneratedAt={analysisGeneratedAt}
+        marketDataUpdatedAt={marketDataUpdatedAt}
         language={language}
+        onRefreshMarketData={() => refreshMarketData(true)}
+        isRefreshingMarketData={isRefreshingMarketData}
         onCompareSourceClick={openDetailReport}
         onSave={onSave}
         isSaving={isSaving}
@@ -243,7 +302,7 @@ export function ReportLayout({
 
       <PriceCompassPanel
         ticker={activeTicker}
-        metrics={canonicalMetrics}
+        metrics={effectiveMetrics}
         language={language}
       />
 

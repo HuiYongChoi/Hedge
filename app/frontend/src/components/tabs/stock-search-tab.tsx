@@ -70,6 +70,7 @@ interface DetailReportState {
 interface StockAnalysisSavedState {
   agentResults: AgentResult[];
   completeResult: CompleteResult | null;
+  analysisGeneratedAt: string | null;
   expandedAgentKeys: string[];
   selectedDetailReport: DetailReportState | null;
   errorMessage: string | null;
@@ -98,6 +99,7 @@ interface SavedStockAnalysisInputState {
 function serializeStockAnalysisState(state: {
   agentResults: Map<string, AgentResult>;
   completeResult: CompleteResult | null;
+  analysisGeneratedAt: string | null;
   expandedAgents: Set<string>;
   selectedDetailReport: DetailReportState | null;
   errorMessage: string | null;
@@ -105,6 +107,7 @@ function serializeStockAnalysisState(state: {
   return {
     agentResults: Array.from(state.agentResults.values()),
     completeResult: state.completeResult,
+    analysisGeneratedAt: state.analysisGeneratedAt,
     expandedAgentKeys: Array.from(state.expandedAgents),
     selectedDetailReport: state.selectedDetailReport,
     errorMessage: state.errorMessage,
@@ -119,6 +122,7 @@ function restoreStockAnalysisState(
   return {
     agentResults: new Map((state.agentResults || []).map(result => [result.agentKey, result])),
     completeResult: state.completeResult || null,
+    analysisGeneratedAt: state.analysisGeneratedAt || null,
     expandedAgents: new Set(state.expandedAgentKeys || []),
     selectedDetailReport: state.selectedDetailReport || null,
     errorMessage: state.errorMessage || null,
@@ -560,6 +564,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [agentResults, setAgentResults] = useState<Map<string, AgentResult>>(new Map());
   const [completeResult, setCompleteResult] = useState<CompleteResult | null>(null);
+  const [analysisGeneratedAt, setAnalysisGeneratedAt] = useState<string | null>(null);
   const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
   const [selectedDetailReport, setSelectedDetailReport] = useState<DetailReportState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -610,6 +615,12 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
             const restoredState = restoreStockAnalysisState(latestRun.ui_state);
             setAgentResults(restoredState.agentResults);
             setCompleteResult(restoredState.completeResult);
+            setAnalysisGeneratedAt(
+              restoredState.analysisGeneratedAt
+              || latestRun.result_data?.analysis_generated_at
+              || latestRun.created_at
+              || null,
+            );
             setExpandedAgents(restoredState.expandedAgents);
             setSelectedDetailReport(restoredState.selectedDetailReport);
             setErrorMessage(restoredState.errorMessage);
@@ -683,6 +694,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
     const uiState = serializeStockAnalysisState({
       agentResults,
       completeResult,
+      analysisGeneratedAt,
       expandedAgents,
       selectedDetailReport,
       errorMessage,
@@ -703,6 +715,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
       result_data: {
         completeResult,
         agentResults: uiState.agentResults,
+        analysis_generated_at: analysisGeneratedAt,
       },
       ui_state: uiState,
       error_message: errorMessage,
@@ -719,6 +732,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
     }
   }, [
     agentResults,
+    analysisGeneratedAt,
     completeResult,
     endDate,
     errorMessage,
@@ -750,6 +764,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
     };
   }, [
     agentResults,
+    analysisGeneratedAt,
     completeResult,
     endDate,
     errorMessage,
@@ -823,6 +838,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
     setIsRunning(true);
     setErrorMessage(null);
     setCompleteResult(null);
+    setAnalysisGeneratedAt(null);
     setSelectedDetailReport(null);
 
     // Build initial agent results map
@@ -946,7 +962,9 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
               });
             } else if (eventType === 'complete') {
               const completeData = eventData.data || eventData;
+              const completedAt = new Date().toISOString();
               setCompleteResult(completeData);
+              setAnalysisGeneratedAt(completedAt);
               setAgentResults(prev => {
                 const next = new Map(prev);
                 const analystSignals = completeData.analyst_signals || {};
@@ -1048,6 +1066,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
         {
           agent_results: agentResultList,
           complete_result: completeResult,
+          analysis_generated_at: analysisGeneratedAt,
         },
       );
 
@@ -1369,6 +1388,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
                 agentResults={agentResults}
                 language={language}
                 compositeScore={score}
+                analysisGeneratedAt={analysisGeneratedAt}
                 onSave={handleSaveAnalysis}
                 isSaving={isSavingAnalysis}
               />

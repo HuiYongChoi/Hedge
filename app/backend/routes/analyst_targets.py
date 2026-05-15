@@ -28,11 +28,11 @@ def _distribution_to_dict(d: TargetDistribution) -> dict:
 
 
 @router.get("/{ticker}")
-async def get_analyst_target(ticker: str):
+async def get_analyst_target(ticker: str, refresh: bool = False):
     ticker_clean = ticker.strip().upper()
     if not ticker_clean or len(ticker_clean) > 10:
         raise HTTPException(status_code=400, detail="invalid ticker")
-    result = fetch_analyst_target(ticker_clean)
+    result = fetch_analyst_target(ticker_clean, force_refresh=refresh)
     return {
         "ticker": ticker_clean,
         "consensus": result.consensus,

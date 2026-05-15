@@ -149,6 +149,7 @@ export interface AnalystReportDashboardProps {
   agentResults: Map<string, AgentResult>;
   language: ReportLanguage;
   compositeScore: number;
+  analysisGeneratedAt?: string | null;
   onSave?: () => void;
   isSaving?: boolean;
 }

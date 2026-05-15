@@ -308,10 +308,10 @@ def _compute_distribution_v5(
 # Public API
 # ──────────────────────────────────────────────────────────────────────────────
 
-def fetch_analyst_target(ticker: str) -> AnalystTarget:
+def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTarget:
     cached = _CACHE.get(ticker)
     now = time.time()
-    if cached and now - cached[0] < _TTL_SECONDS:
+    if not force_refresh and cached and now - cached[0] < _TTL_SECONDS:
         return cached[1]
 
     yf_fund    = _fetch_yfinance_data(ticker)     # current price + PE/EPS/beta

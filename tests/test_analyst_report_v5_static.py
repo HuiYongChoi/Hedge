@@ -58,6 +58,25 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("w-[200px]", (V5_DIR / "report-toc-sidebar.tsx").read_text(encoding="utf-8"))
         self.assertIn("w-[280px]", (V5_DIR / "target-data-sidebar.tsx").read_text(encoding="utf-8"))
 
+    def test_header_uses_live_market_data_for_price_and_margin(self):
+        layout = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
+        header = (V5_DIR / "report-header-ribbon.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("analystTargetService", layout)
+        self.assertIn("effectiveCurrentPrice", layout)
+        self.assertIn("calcMarginOfSafety", layout)
+        self.assertIn("refreshMarketData", layout)
+        self.assertIn("analysisGeneratedAt", header)
+        self.assertIn("marketDataUpdatedAt", header)
+        self.assertIn("onRefreshMarketData", header)
+        self.assertIn("RefreshCw", header)
+
+    def test_stock_tab_passes_report_generated_timestamp(self):
+        src = STOCK_TAB.read_text(encoding="utf-8")
+        self.assertIn("analysisGeneratedAt", src)
+        self.assertIn("setAnalysisGeneratedAt", src)
+        self.assertIn("analysisGeneratedAt={analysisGeneratedAt}", src)
+
     def test_dashboard_delegates_to_v5(self):
         src = DASHBOARD.read_text(encoding="utf-8")
         self.assertIn("from './analyst-report-v5/report-layout'", src)
