@@ -16,6 +16,7 @@ import {
   buildCitations,
   calcMarginOfSafety,
   extractMetricValue,
+  extractReasoningMetricValue,
   extractTargetTiles,
   getAgentMeta,
   getAgentReport,
@@ -219,14 +220,19 @@ export function ReportLayout({
   }, [refreshMarketData]);
 
   const reportCurrentPrice = canonicalMetrics.currentPrice?.value
+    ?? completeResult.current_prices?.[activeTicker]
+    ?? completeResult.current_prices?.[activeTicker.toUpperCase()]
     ?? extractMetricValue(activeReport, ['current_price', 'price', 'close_price', 'market_price']);
   const effectiveCurrentPrice = liveTarget?.current_price ?? reportCurrentPrice;
   const intrinsicValue = canonicalMetrics.intrinsicValue?.value
-    ?? extractMetricValue(activeReport, ['intrinsic_value', 'fair_value', 'dcf_value']);
+    ?? extractMetricValue(activeReport, ['intrinsic_value', 'fair_value', 'dcf_value'])
+    ?? extractReasoningMetricValue(activeReport, ['intrinsic_value', 'fair_value', 'dcf_value']);
   const calculatedMarginOfSafety = calcMarginOfSafety(intrinsicValue, effectiveCurrentPrice);
-  const effectiveMarginOfSafety = calculatedMarginOfSafety
-    ?? canonicalMetrics.marginOfSafety?.value
-    ?? extractMetricValue(activeReport, ['margin_of_safety']);
+  const reasoningMarginOfSafety = extractReasoningMetricValue(activeReport, ['margin_of_safety', 'safety_margin']);
+  const effectiveMarginOfSafety = canonicalMetrics.marginOfSafety?.value
+    ?? extractMetricValue(activeReport, ['margin_of_safety'])
+    ?? reasoningMarginOfSafety
+    ?? calculatedMarginOfSafety;
   const effectiveMetrics = useMemo(() => {
     const nextMetrics = { ...canonicalMetrics };
     if (effectiveCurrentPrice !== null) {

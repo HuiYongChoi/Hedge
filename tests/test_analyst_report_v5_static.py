@@ -61,15 +61,30 @@ class AnalystReportV5StaticTests(unittest.TestCase):
     def test_header_uses_live_market_data_for_price_and_margin(self):
         layout = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
         header = (V5_DIR / "report-header-ribbon.tsx").read_text(encoding="utf-8")
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
 
         self.assertIn("analystTargetService", layout)
         self.assertIn("effectiveCurrentPrice", layout)
         self.assertIn("calcMarginOfSafety", layout)
+        self.assertIn("extractReasoningMetricValue", layout)
         self.assertIn("refreshMarketData", layout)
+        self.assertIn("export function extractReasoningMetricValue", helpers)
+        self.assertIn("marginOfSafetyPatterns", helpers)
+        self.assertIn("안전마진", helpers)
         self.assertIn("analysisGeneratedAt", header)
         self.assertIn("marketDataUpdatedAt", header)
         self.assertIn("onRefreshMarketData", header)
         self.assertIn("RefreshCw", header)
+
+    def test_header_metric_chips_have_tooltips(self):
+        header = (V5_DIR / "report-header-ribbon.tsx").read_text(encoding="utf-8")
+        prefs = LANG_PREFS.read_text(encoding="utf-8")
+
+        for needle in ["TooltipProvider", "TooltipTrigger", "TooltipContent", "MetricChip"]:
+            self.assertIn(needle, header)
+        for key in ["currentPriceHelp", "marginOfSafetyHelp", "reportGeneratedAtHelp", "marketDataUpdatedAtHelp"]:
+            self.assertIn(key, header)
+            self.assertIn(f"{key}:", prefs)
 
     def test_stock_tab_passes_report_generated_timestamp(self):
         src = STOCK_TAB.read_text(encoding="utf-8")

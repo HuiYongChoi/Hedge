@@ -122,6 +122,7 @@ export interface CanonicalMetrics {
 export interface CompleteResult {
   decisions?: Record<string, any>;
   analyst_signals?: Record<string, any>;
+  current_prices?: Record<string, number>;
   reasoning?: string;
 }
 

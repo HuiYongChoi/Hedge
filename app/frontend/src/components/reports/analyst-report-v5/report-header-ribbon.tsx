@@ -1,8 +1,10 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/language-preferences';
 import { Database, FileText, Loader2, RefreshCw, SearchCode } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { dataCoverageLabel, getScoreBand, getSignalTone, signalToVerdict, toneToClasses } from './helpers';
 import type { AgentMeta, AgentReport, ReportLanguage } from './types';
 
@@ -83,6 +85,39 @@ function formatTimestamp(
   })}`;
 }
 
+function MetricChip({
+  children,
+  help,
+  mono = false,
+}: {
+  children: ReactNode;
+  help: string;
+  mono?: boolean;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          tabIndex={0}
+          className={cn(
+            'inline-flex cursor-help items-center rounded-full border border-border/60 bg-background/70 px-2 py-1 outline-none transition-colors hover:border-primary/40 hover:bg-muted/35 focus-visible:ring-2 focus-visible:ring-primary/50',
+            mono && 'font-mono',
+          )}
+        >
+          {children}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent
+        side="bottom"
+        align="start"
+        className="max-w-sm border border-border bg-popover px-3 py-2 text-left text-xs leading-relaxed text-popover-foreground shadow-lg"
+      >
+        {help}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function ReportHeaderRibbon({
   ticker,
   activeAgent,
@@ -150,22 +185,24 @@ export function ReportHeaderRibbon({
                 ? '문서형 분석 리포트 · 숫자 칩과 출처 추적 포함'
                 : 'Document-style analyst report with data chips and source tracing'}
             </p>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border border-border/60 bg-background/70 px-2 py-1 font-mono">
-                {formatCurrentPrice(currentPrice, language)}
-              </span>
-              <span className="rounded-full border border-border/60 bg-background/70 px-2 py-1 font-mono">
-                {formatMargin(marginOfSafety, language)}
-              </span>
-              <span className="rounded-full border border-border/60 bg-background/70 px-2 py-1">
-                {formatTimestamp(analysisGeneratedAt, language, 'reportGeneratedAtLabel', 'N/A', 'N/A')}
-              </span>
-              {marketDataUpdatedAt && (
-                <span className="rounded-full border border-border/60 bg-background/70 px-2 py-1">
-                  {formatTimestamp(marketDataUpdatedAt, language, 'marketDataUpdatedAtLabel', 'N/A', 'N/A')}
-                </span>
-              )}
-            </div>
+            <TooltipProvider delayDuration={120}>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                <MetricChip help={t('currentPriceHelp', language)} mono>
+                  {formatCurrentPrice(currentPrice, language)}
+                </MetricChip>
+                <MetricChip help={t('marginOfSafetyHelp', language)} mono>
+                  {formatMargin(marginOfSafety, language)}
+                </MetricChip>
+                <MetricChip help={t('reportGeneratedAtHelp', language)}>
+                  {formatTimestamp(analysisGeneratedAt, language, 'reportGeneratedAtLabel', 'N/A', 'N/A')}
+                </MetricChip>
+                {marketDataUpdatedAt && (
+                  <MetricChip help={t('marketDataUpdatedAtHelp', language)}>
+                    {formatTimestamp(marketDataUpdatedAt, language, 'marketDataUpdatedAtLabel', 'N/A', 'N/A')}
+                  </MetricChip>
+                )}
+              </div>
+            </TooltipProvider>
           </div>
         </div>
 

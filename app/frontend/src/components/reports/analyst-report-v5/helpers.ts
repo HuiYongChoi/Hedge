@@ -915,6 +915,55 @@ function readMetricValue(report: AgentReport | null | undefined, keys: string[])
   return null;
 }
 
+function normalizeExtractedNumber(raw: string | undefined, isPercent: boolean | undefined, scalePercentLike = false) {
+  if (!raw) return null;
+  const n = Number(raw.replace(/[$,]/g, ''));
+  if (!Number.isFinite(n)) return null;
+  if (isPercent) return n / 100;
+  if (scalePercentLike && Math.abs(n) > 2 && Math.abs(n) <= 100) return n / 100;
+  return n;
+}
+
+const marginOfSafetyPatterns = [
+  /(?:margin[_\s-]?of[_\s-]?safety|safety\s*margin|안전마진|마진\s*오브\s*세이프티)[^-\d%$]{0,120}(-?\d[\d,]*(?:\.\d+)?)\s*(%)?(?=\s*(?:로|으로|입니다|임|,|\.|$))/gi,
+  /(-?\d[\d,]*(?:\.\d+)?)\s*(%)?[^.\n]{0,80}(?:margin[_\s-]?of[_\s-]?safety|safety\s*margin|안전마진|마진\s*오브\s*세이프티)/gi,
+];
+
+const perShareIntrinsicValuePatterns = [
+  /(?:내재가치\s*1주당|1주당\s*내재가치|intrinsic\s*value\s*per\s*share|per-share\s*intrinsic\s*value)[^-\d$]{0,80}\$?(-?\d[\d,]*(?:\.\d+)?)(?=\s*(?:달러|원|krw|usd|,|\.|$))/gi,
+  /(?:fair\s*value\s*per\s*share|dcf\s*value\s*per\s*share|1주당\s*적정가)[^-\d$]{0,80}\$?(-?\d[\d,]*(?:\.\d+)?)(?=\s*(?:달러|원|krw|usd|,|\.|$))/gi,
+];
+
+function extractPatternValue(
+  text: string,
+  patterns: RegExp[],
+  scalePercentLike = false,
+): number | null {
+  for (const pattern of patterns) {
+    pattern.lastIndex = 0;
+    for (const match of text.matchAll(pattern)) {
+      const value = normalizeExtractedNumber(match[1], match[2] === '%', scalePercentLike);
+      if (value !== null) return value;
+    }
+  }
+  return null;
+}
+
+export function extractReasoningMetricValue(report: AgentReport | null | undefined, keys: string[]): number | null {
+  if (!report) return null;
+  const text = extractReasoningText(report.reasoning || report);
+  if (!text) return null;
+  const normalizedText = text.replace(/\u2212/g, '-');
+
+  if (keys.some(key => ['margin_of_safety', 'safety_margin'].includes(key))) {
+    return extractPatternValue(normalizedText, marginOfSafetyPatterns, true);
+  }
+  if (keys.some(key => ['intrinsic_value', 'fair_value', 'dcf_value'].includes(key))) {
+    return extractPatternValue(normalizedText, perShareIntrinsicValuePatterns);
+  }
+  return null;
+}
+
 export function extractMetricValue(report: AgentReport | null | undefined, keys: string[]): number | null {
   return readMetricValue(report, keys);
 }
@@ -930,7 +979,7 @@ function metricFromReport(
   sourceAgentKey: string,
   keys: string[],
 ): CanonicalMetric | undefined {
-  const value = readMetricValue(report, keys);
+  const value = readMetricValue(report, keys) ?? extractReasoningMetricValue(report, keys);
   if (value === null) return undefined;
   return {
     value,
