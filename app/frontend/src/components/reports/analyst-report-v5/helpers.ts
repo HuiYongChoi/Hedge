@@ -696,12 +696,20 @@ function buildEvidenceItem(raw: string, index: number): EvidenceItem {
   };
 }
 
+function isMarkerOnlyEvidenceText(text: string) {
+  const clean = text
+    .replace(/^\s*\[[+\-~?]\]\s*/u, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return /^(?:\d+[.)]?|[.)]+)$/u.test(clean);
+}
+
 function isBlankEvidenceItem(item: EvidenceItem) {
   const body = item.body
     .replace(/^\s*\[[+\-~?]\]\s*$/u, '')
     .replace(/\s+/g, ' ')
     .trim();
-  return body.length === 0;
+  return body.length === 0 || isMarkerOnlyEvidenceText(body);
 }
 
 export function parseEvidenceItems(sectionText: string): EvidenceItem[] {

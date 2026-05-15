@@ -56,6 +56,14 @@ function splitReadableChunk(block: string): string[] {
   return chunks.length > 0 ? chunks : [block];
 }
 
+function isMarkerOnlyBodyBlock(block: string) {
+  const clean = block
+    .replace(/^\s*\[[+\-~?]\]\s*/u, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return /^(?:\d+[.)]?|[.)]+)$/u.test(clean);
+}
+
 function splitEvidenceBodyBlocks(body: string): string[] {
   return body
     .replace(/\r\n?/g, '\n')
@@ -65,7 +73,7 @@ function splitEvidenceBodyBlocks(body: string): string[] {
       .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*|\[[+\-~?]\]\s*)/u, '')
       .replace(/\s+/g, ' ')
       .trim())
-    .filter(Boolean)
+    .filter(block => Boolean(block) && !isMarkerOnlyBodyBlock(block))
     .flatMap(splitReadableChunk);
 }
 
@@ -84,7 +92,8 @@ export function EvidenceItem({
     : inferCitationLetters(item.rawText, sectionId);
   const keyNumbers = extractKeyNumbers(item.rawText, language);
   const bodyBlocks = splitEvidenceBodyBlocks(item.body);
-  const visibleBodyBlocks = bodyBlocks.length > 0 ? bodyBlocks : [item.body.trim()].filter(Boolean);
+  const fallbackBodyBlocks = [item.body.trim()].filter(block => Boolean(block) && !isMarkerOnlyBodyBlock(block));
+  const visibleBodyBlocks = bodyBlocks.length > 0 ? bodyBlocks : fallbackBodyBlocks;
 
   return (
     <article className={`rounded-lg border ${classes.border} ${classes.bg} p-4 sm:p-5`}>

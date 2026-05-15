@@ -126,6 +126,7 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("splitLongEvidenceBlock", helpers)
         self.assertIn("mergeOrphanEvidenceHeadings", helpers)
         self.assertIn("isBlankEvidenceItem", helpers)
+        self.assertIn("isMarkerOnlyEvidenceText", helpers)
         self.assertIn("inline headings", helpers)
         self.assertNotIn("source.slice(0, 7)", helpers)
 
@@ -137,6 +138,7 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("leading-7", evidence)
         self.assertIn("inlineCitations={false}", evidence)
         self.assertIn("visibleBodyBlocks", evidence)
+        self.assertIn("isMarkerOnlyBodyBlock", evidence)
         self.assertNotIn(".slice(0, 4)", evidence)
         self.assertIn("inlineCitations", inline)
 
