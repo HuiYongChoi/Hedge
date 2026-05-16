@@ -89,10 +89,13 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             limit=8,
             api_key=api_key,
         )
-        if len(line_items) < 2:
+        if not line_items:
             progress.update_status(agent_id, ticker, "Failed: Insufficient financial line items")
             continue
-        li_curr, li_prev = line_items[0], line_items[1]
+        li_curr = line_items[0]
+        li_prev = line_items[1] if len(line_items) > 1 else li_curr
+        if len(line_items) == 1:
+            progress.update_status(agent_id, ticker, "Using current line item snapshot only")
 
         # ------------------------------------------------------------------
         # Valuation models
