@@ -7,6 +7,7 @@ V5_DIR = ROOT / "app/frontend/src/components/reports/analyst-report-v5"
 DASHBOARD = ROOT / "app/frontend/src/components/reports/analyst-report-dashboard.tsx"
 LANG_PREFS = ROOT / "app/frontend/src/lib/language-preferences.ts"
 STOCK_TAB = ROOT / "app/frontend/src/components/tabs/stock-search-tab.tsx"
+SENTIMENT_DASHBOARD = ROOT / "app/frontend/src/components/reports/report-sentiment-dashboard.tsx"
 
 
 class AnalystReportV5StaticTests(unittest.TestCase):
@@ -295,6 +296,20 @@ class AnalystReportV5StaticTests(unittest.TestCase):
 
         self.assertIn("stripSuffix(key)", snippet)
         self.assertIn("!isNarrativeAgentKey(baseKey)", snippet)
+
+    def test_sentiment_dashboard_has_toggle(self):
+        """ReportSentimentDashboard cards must have expand/collapse toggle.
+        Each tone card limits items to maxItemsPerTone with line-clamp-2 by default;
+        a button must let users see all items in full text."""
+        src = SENTIMENT_DASHBOARD.read_text(encoding="utf-8")
+        self.assertIn("useState", src)
+        self.assertIn("expandedTones", src)
+        self.assertIn("toggleTone", src)
+        self.assertIn("자세히 보기", src)
+        self.assertIn("접기", src)
+        # conditional line-clamp: only applied when !isExpanded
+        self.assertIn("!isExpanded", src)
+        self.assertIn("line-clamp-2", src)
 
 if __name__ == "__main__":
     unittest.main()

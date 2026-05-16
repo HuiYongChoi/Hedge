@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 export type ReportSentimentTone = 'positive' | 'negative' | 'neutral' | 'unknown' | null;
 
@@ -230,7 +230,18 @@ export function ReportSentimentDashboard({
   maxItemsPerTone?: number;
 }) {
   const items = collectReportSentimentItems(markdown);
+  const [expandedTones, setExpandedTones] = useState<Set<string>>(new Set());
+
   if (items.length === 0) return null;
+
+  const toggleTone = (tone: string) => {
+    setExpandedTones(prev => {
+      const next = new Set(prev);
+      if (next.has(tone)) next.delete(tone);
+      else next.add(tone);
+      return next;
+    });
+  };
 
   return (
     <section className={cn('rounded-xl border border-border/70 bg-background/70 p-3 shadow-sm', className)}>
@@ -254,6 +265,9 @@ export function ReportSentimentDashboard({
         {TONE_META.map(({ tone, titleKo, titleEn, summaryKo, summaryEn }) => {
           const toneItems = items.filter(item => item.tone === tone);
           const style = REPORT_TONE_STYLES[tone];
+          const isExpanded = expandedTones.has(tone);
+          const visibleItems = isExpanded ? toneItems : toneItems.slice(0, maxItemsPerTone);
+          const hiddenCount = Math.max(0, toneItems.length - maxItemsPerTone);
 
           return (
             <article key={tone} className={cn('rounded-lg border border-border/60 bg-muted/10 p-3', toneItems.length > 0 && style.bg)}>
@@ -272,13 +286,33 @@ export function ReportSentimentDashboard({
                 {language === 'ko' ? summaryKo : summaryEn}
               </p>
               {toneItems.length > 0 && (
-                <ul className="mt-2 space-y-1.5">
-                  {toneItems.slice(0, maxItemsPerTone).map((item, index) => (
-                    <li key={`${tone}-${index}`} className="line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
-                      {renderDefaultInlineMarkdown(item.rest)}
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <ul className="mt-2 space-y-1.5">
+                    {visibleItems.map((item, index) => (
+                      <li
+                        key={`${tone}-${index}`}
+                        className={cn(
+                          'text-[11px] leading-relaxed text-muted-foreground',
+                          !isExpanded && 'line-clamp-2',
+                        )}
+                      >
+                        {renderDefaultInlineMarkdown(item.rest)}
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    onClick={() => toggleTone(tone)}
+                    aria-expanded={isExpanded}
+                    className="mt-2 rounded text-[11px] font-medium text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
+                  >
+                    {isExpanded
+                      ? (language === 'ko' ? '▲ 접기' : '▲ Collapse')
+                      : (language === 'ko'
+                          ? `▼ 자세히 보기${hiddenCount > 0 ? ` (+${hiddenCount})` : ''}`
+                          : `▼ Show details${hiddenCount > 0 ? ` (+${hiddenCount})` : ''}`)}
+                  </button>
+                </>
               )}
             </article>
           );
