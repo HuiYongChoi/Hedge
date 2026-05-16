@@ -402,6 +402,64 @@ export function getAgentReport(
   return null;
 }
 
+export function hasRenderableAgentReport(report: AgentReport | null | undefined): boolean {
+  if (!report) return false;
+
+  const reasoning = normalizeFinancialDisplayText(extractReasoningText(report.reasoning || report)).trim();
+  if (reasoning.length >= 12) return true;
+
+  const structured = report.structured_view || report.sections;
+  if (!structured || typeof structured !== 'object') return false;
+  return Object.values(structured as Record<string, unknown>).some(value => (
+    typeof value === 'string' && stripMarkdownNoise(value).length >= 12
+  ));
+}
+
+function getRenderableReportForAgent(
+  completeResult: CompleteResult | undefined,
+  agentKey: string,
+  ticker: string,
+  agentResult?: AgentResult,
+): AgentReport | null {
+  const report = getAgentReport(completeResult?.analyst_signals, agentKey, ticker, agentResult);
+  return hasRenderableAgentReport(report) ? report : null;
+}
+
+export function findFirstRenderableAgentKey(
+  completeResult: CompleteResult | undefined,
+  activeAgentKey: string,
+  ticker: string,
+  agentResults?: Map<string, AgentResult>,
+): string {
+  const activeReport = getRenderableReportForAgent(
+    completeResult,
+    activeAgentKey,
+    ticker,
+    agentResults?.get(activeAgentKey),
+  );
+  if (activeReport && isNarrativeAgentKey(activeAgentKey)) return activeAgentKey;
+
+  const entries = agentResults
+    ? Array.from(agentResults.entries()).filter(([key, result]) => (
+      result.status === 'complete'
+      && isNarrativeAgentKey(key)
+      && (!result.ticker || normalizeTicker(result.ticker) === normalizeTicker(ticker))
+    ))
+    : [];
+  for (const [key, result] of entries) {
+    if (getRenderableReportForAgent(completeResult, key, ticker, result)) return key;
+  }
+
+  for (const [key, value] of Object.entries(completeResult?.analyst_signals || {})) {
+    const baseKey = stripSuffix(key);
+    if (!isNarrativeAgentKey(baseKey)) continue;
+    const report = pickTickerReport(value, ticker);
+    if (hasRenderableAgentReport(report)) return key;
+  }
+
+  return activeAgentKey;
+}
+
 export function pickDefaultAgent(agentResults: Map<string, AgentResult>, activeTicker: string): string {
   // risk_management nodes expose portfolio limit metrics, not analyst narrative text.
   const completeForTicker = Array.from(agentResults.entries()).filter(([key, result]) => (
@@ -409,14 +467,21 @@ export function pickDefaultAgent(agentResults: Map<string, AgentResult>, activeT
     && isNarrativeAgentKey(key)
     && (!result.ticker || normalizeTicker(result.ticker) === normalizeTicker(activeTicker))
   ));
-  const scopedValuation = completeForTicker.find(([key]) => stripSuffix(key) === 'valuation_analyst');
-  if (scopedValuation) return scopedValuation[0];
+  const renderableForTicker = completeForTicker.find(([key, result]) => (
+    hasRenderableAgentReport(getAgentReport(undefined, key, activeTicker, result))
+  ));
+  if (renderableForTicker) return renderableForTicker[0];
 
   const complete = completeForTicker.length > 0
     ? completeForTicker
     : Array.from(agentResults.entries()).filter(([key, result]) => (
       result.status === 'complete' && isNarrativeAgentKey(key)
     ));
+  const renderable = complete.find(([key, result]) => (
+    hasRenderableAgentReport(getAgentReport(undefined, key, activeTicker, result))
+  ));
+  if (renderable) return renderable[0];
+
   if (complete.length === 0) return Array.from(agentResults.keys())[0] || 'valuation_analyst';
   return complete[0][0];
 }

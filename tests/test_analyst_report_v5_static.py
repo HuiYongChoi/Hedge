@@ -108,7 +108,7 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         layout = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
 
-        self.assertIn("extractTargetTiles(effectiveMetrics, activeAgentKey, language, effectiveCurrency)", layout)
+        self.assertIn("extractTargetTiles(effectiveMetrics, displayAgentKey, language, effectiveCurrency)", layout)
         self.assertIn("formatMarginTarget", helpers)
         self.assertIn("SAFETY_MARGIN_PRICE_BUFFER = 0.25", helpers)
         self.assertIn("safetyMarginPrice", helpers)
@@ -255,6 +255,38 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("isNarrativeAgentKey", src)
         self.assertIn("risk_management", snippet)
         self.assertIn("isNarrativeAgentKey(key)", snippet)
+
+    def test_pick_default_agent_skips_empty_valuation_report(self):
+        """valuation_analyst can complete with an empty report while persona agents have the body."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        fn_start = src.index("export function pickDefaultAgent")
+        snippet = src[fn_start:fn_start + 3200]
+
+        self.assertIn("hasRenderableAgentReport", src)
+        self.assertIn("findFirstRenderableAgentKey", src)
+        self.assertIn("hasRenderableAgentReport", snippet)
+        self.assertNotIn("const scopedValuation = completeForTicker.find", snippet)
+        self.assertNotIn("if (scopedValuation) return scopedValuation[0]", snippet)
+
+    def test_report_layout_uses_renderable_report_fallback(self):
+        """If the active agent is empty, ReportBody must render the first non-empty narrative report."""
+        layout = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("findFirstRenderableAgentKey", layout)
+        self.assertIn("displayAgentKey", layout)
+        self.assertIn("displayReport", layout)
+        self.assertIn("activeReport={displayReport}", layout)
+        self.assertIn("activeAgentKey={displayAgentKey}", layout)
+        self.assertIn("report={displayReport}", layout)
+        self.assertIn("setActiveAgentKey(displayAgentKey)", layout)
+
+    def test_report_body_falls_back_to_reasoning_text_per_empty_section(self):
+        """No section should render the empty-data placeholder while the report has reasoning text."""
+        body = (V5_DIR / "report-body.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("extractReasoningText", body)
+        self.assertIn("fallbackSectionText", body)
+        self.assertIn("sectionText(normalizedReport, section.id) || fallbackSectionText", body)
 
     def test_list_other_agents_excludes_risk_manager_suffix_keys(self):
         src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")

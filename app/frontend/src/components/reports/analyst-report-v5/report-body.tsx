@@ -1,4 +1,4 @@
-import { normalizeAgentReport } from './helpers';
+import { extractReasoningText, normalizeAgentReport } from './helpers';
 import { ReportSection } from './report-section';
 import type { AgentReport, Citation, NormalizedReport, ReportLanguage, SectionDef, SectionId } from './types';
 
@@ -23,6 +23,15 @@ function sectionText(report: NormalizedReport, sectionId: SectionId) {
   return report.sources;
 }
 
+function fallbackSectionText(report: AgentReport | null, normalizedReport: NormalizedReport, sectionId: SectionId) {
+  const reasoning = extractReasoningText(report?.reasoning || report).trim();
+  if (!reasoning) return '';
+  if (sectionId === 'section-01') return normalizedReport.conclusion || reasoning;
+  if (sectionId === 'section-05') return normalizedReport.crossCheck || normalizedReport.sources || reasoning;
+  if (sectionId === 'section-06') return normalizedReport.sources || reasoning;
+  return reasoning;
+}
+
 export function ReportBody({
   sections,
   activeReport,
@@ -42,7 +51,7 @@ export function ReportBody({
         <ReportSection
           key={section.id}
           section={section}
-          sectionText={sectionText(normalizedReport, section.id)}
+          sectionText={sectionText(normalizedReport, section.id) || fallbackSectionText(activeReport, normalizedReport, section.id)}
           activeReport={activeReport}
           activeAgentKey={activeAgentKey}
           citations={citations}

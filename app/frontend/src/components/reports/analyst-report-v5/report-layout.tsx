@@ -19,6 +19,7 @@ import {
   extractMetricValue,
   extractReasoningMetricValue,
   extractTargetTiles,
+  findFirstRenderableAgentKey,
   getAgentMeta,
   getAgentReport,
   getDetailReportMarkdown,
@@ -190,17 +191,37 @@ export function ReportLayout({
   }, [agentResults]);
 
   const activeAgentResult = agentResults.get(activeAgentKey);
-  const activeAgent = agentMetaMap.get(activeAgentKey) || getAgentMeta(activeAgentKey, activeAgentResult);
   const activeReport = getAgentReport(
     completeResult.analyst_signals,
     activeAgentKey,
     activeTicker,
     activeAgentResult,
   );
+  const displayAgentKey = findFirstRenderableAgentKey(
+    completeResult,
+    activeAgentKey,
+    activeTicker,
+    agentResults,
+  );
+  const displayAgentResult = agentResults.get(displayAgentKey);
+  const displayAgent = agentMetaMap.get(displayAgentKey) || getAgentMeta(displayAgentKey, displayAgentResult);
+  const displayReport = getAgentReport(
+    completeResult.analyst_signals,
+    displayAgentKey,
+    activeTicker,
+    displayAgentResult,
+  ) || activeReport;
+
+  useEffect(() => {
+    if (displayAgentKey !== activeAgentKey) {
+      setActiveAgentKey(displayAgentKey);
+    }
+  }, [activeAgentKey, displayAgentKey]);
+
   const citations = useMemo(() => buildCitations(activeTicker, isKoreanTicker(activeTicker), language), [activeTicker, language]);
   const canonicalMetrics = useMemo(
-    () => buildCanonicalMetrics(activeAgentKey, completeResult, activeTicker),
-    [activeAgentKey, activeTicker, completeResult],
+    () => buildCanonicalMetrics(displayAgentKey, completeResult, activeTicker),
+    [activeTicker, completeResult, displayAgentKey],
   );
   const refreshMarketData = useCallback(async (forceRefresh = false) => {
     if (!activeTicker) return;
@@ -225,25 +246,25 @@ export function ReportLayout({
   const reportCurrentPrice = canonicalMetrics.currentPrice?.value
     ?? completeResult.current_prices?.[activeTicker]
     ?? completeResult.current_prices?.[activeTicker.toUpperCase()]
-    ?? extractMetricValue(activeReport, ['current_price', 'price', 'close_price', 'market_price']);
+    ?? extractMetricValue(displayReport, ['current_price', 'price', 'close_price', 'market_price']);
   const effectiveCurrentPrice = liveTarget?.current_price ?? reportCurrentPrice;
   const effectiveCurrency = liveTarget?.currency ?? (isKoreanTicker(activeTicker) ? 'KRW' : 'USD');
-  const reportPerShareIntrinsicValue = extractMetricValue(activeReport, [
+  const reportPerShareIntrinsicValue = extractMetricValue(displayReport, [
     'intrinsic_value_per_share',
     'fair_value_per_share',
     'dcf_value_per_share',
     'per_share_intrinsic_value',
-  ]) ?? extractReasoningMetricValue(activeReport, ['intrinsic_value', 'fair_value', 'dcf_value']);
+  ]) ?? extractReasoningMetricValue(displayReport, ['intrinsic_value', 'fair_value', 'dcf_value']);
   const reportedIntrinsicValue = canonicalMetrics.intrinsicValue?.value
-    ?? extractMetricValue(activeReport, ['intrinsic_value', 'fair_value', 'dcf_value']);
+    ?? extractMetricValue(displayReport, ['intrinsic_value', 'fair_value', 'dcf_value']);
   const intrinsicValue = chooseIntrinsicReferencePrice(
     [reportPerShareIntrinsicValue, reportedIntrinsicValue],
     effectiveCurrentPrice,
   );
   const calculatedMarginOfSafety = calcMarginOfSafety(intrinsicValue, effectiveCurrentPrice);
-  const reasoningMarginOfSafety = extractReasoningMetricValue(activeReport, ['margin_of_safety', 'safety_margin']);
+  const reasoningMarginOfSafety = extractReasoningMetricValue(displayReport, ['margin_of_safety', 'safety_margin']);
   const reportedMarginOfSafety = canonicalMetrics.marginOfSafety?.value
-    ?? extractMetricValue(activeReport, ['margin_of_safety']);
+    ?? extractMetricValue(displayReport, ['margin_of_safety']);
   const marginSnapshot = resolveMarginOfSafetySnapshot({
     currentPrice: effectiveCurrentPrice,
     intrinsicValue,
@@ -252,7 +273,7 @@ export function ReportLayout({
     calculatedMarginOfSafety,
   });
   const effectiveMarginOfSafety = marginSnapshot.margin;
-  const displayTickerLabel = getDisplayTickerLabel(activeTicker, activeReport);
+  const displayTickerLabel = getDisplayTickerLabel(activeTicker, displayReport);
   const effectiveMetrics = useMemo(() => {
     const nextMetrics = { ...canonicalMetrics };
     if (effectiveCurrentPrice !== null) {
@@ -269,8 +290,8 @@ export function ReportLayout({
     }
     return nextMetrics;
   }, [canonicalMetrics, effectiveCurrentPrice, effectiveMarginOfSafety, intrinsicValue]);
-  const tiles = extractTargetTiles(effectiveMetrics, activeAgentKey, language, effectiveCurrency);
-  const otherAgents = listOtherAgents(completeResult, activeAgentKey, activeTicker, agentMetaMap, language);
+  const tiles = extractTargetTiles(effectiveMetrics, displayAgentKey, language, effectiveCurrency);
+  const otherAgents = listOtherAgents(completeResult, displayAgentKey, activeTicker, agentMetaMap, language);
 
   const handleTickerChange = (nextTicker: string) => {
     if (nextTicker === activeTicker) return;
@@ -298,8 +319,8 @@ export function ReportLayout({
 
   const openDetailReport = () => {
     setSelectedDetailReport({
-      agentName: activeAgent.name,
-      markdown: getDetailReportMarkdown(activeReport, activeAgent, activeTicker),
+      agentName: displayAgent.name,
+      markdown: getDetailReportMarkdown(displayReport, displayAgent, activeTicker),
     });
   };
 
@@ -315,8 +336,8 @@ export function ReportLayout({
       <ReportHeaderRibbon
         ticker={activeTicker}
         displayTicker={displayTickerLabel}
-        activeAgent={activeAgent}
-        activeReport={activeReport}
+        activeAgent={displayAgent}
+        activeReport={displayReport}
         compositeScore={compositeScore}
         currentPrice={effectiveCurrentPrice}
         marginOfSafety={effectiveMarginOfSafety}
@@ -360,8 +381,8 @@ export function ReportLayout({
           />
           <ReportBody
             sections={SECTION_DEFS}
-            activeReport={activeReport}
-            activeAgentKey={activeAgentKey}
+            activeReport={displayReport}
+            activeAgentKey={displayAgentKey}
             ticker={activeTicker}
             citations={citations}
             language={language}
@@ -374,7 +395,7 @@ export function ReportLayout({
           otherAgents={otherAgents}
           language={language}
           onSwitchAgent={setActiveAgentKey}
-          report={activeReport}
+          report={displayReport}
         />
       </div>
 
