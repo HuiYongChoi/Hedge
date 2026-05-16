@@ -119,58 +119,6 @@ export interface CanonicalMetrics {
   fy1FiscalYear?: number | null;        // 예: 2027
 }
 
-export interface RimBreakdown {
-  bookValue: number;
-  bookValuePerShare: number | null;
-  roeImplied: number;
-  costOfEquity: number;
-  spreadRoeKe: number;
-  bookValueGrowth: number;
-  presentValueRi: number;
-  terminalPvRi: number;
-  intrinsicTotal: number;
-  intrinsicPerShare: number | null;
-  weightUsed: number;
-  signal: 'bullish' | 'neutral' | 'bearish';
-  details: string;
-}
-
-export interface PbrBand {
-  currentPbr: number;
-  percentiles: { p10: number; p25: number; p50: number; p75: number; p90: number };
-  history: Array<{ period: string; pbr: number }>;
-  bvps: number | null;
-  fairPriceP10: number | null;
-  fairPriceP25: number | null;
-  fairPriceP50: number | null;
-  fairPriceP75: number | null;
-  fairPriceP90: number | null;
-  currentPrice: number | null;
-  positionLabel: 'below_p25' | 'p25_p50' | 'p50_p75' | 'above_p75';
-  reratingNote: string | null;
-  weightUsed: number;
-  signal: 'bullish' | 'neutral' | 'bearish';
-  details: string;
-}
-
-export interface ValuationModel {
-  key: 'dcf' | 'owner_earnings' | 'ev_ebitda' | 'residual_income' | 'pbr_band';
-  labelKey: string;
-  intrinsicPerShare: number | null;
-  intrinsicTotal: number | null;
-  weight: number;
-  signal: 'bullish' | 'neutral' | 'bearish';
-  gapToMarket: number | null;
-}
-
-export interface ValuationDeepDive {
-  regime: 'capex_heavy' | 'default';
-  regimeNote: string | null;
-  rim: RimBreakdown | null;
-  pbr: PbrBand | null;
-  models: ValuationModel[];
-}
-
 export interface CompleteResult {
   decisions?: Record<string, any>;
   analyst_signals?: Record<string, any>;

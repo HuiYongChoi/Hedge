@@ -1,6 +1,6 @@
 import { normalizeAgentReport } from './helpers';
 import { ReportSection } from './report-section';
-import type { AgentReport, Citation, NormalizedReport, ReportLanguage, SectionDef, SectionId, ValuationDeepDive } from './types';
+import type { AgentReport, Citation, NormalizedReport, ReportLanguage, SectionDef, SectionId } from './types';
 
 interface ReportBodyProps {
   sections: SectionDef[];
@@ -12,9 +12,6 @@ interface ReportBodyProps {
   className?: string;
   onCitationHover?: (letter: string | null) => void;
   onCitationClick?: (citation: Citation) => void;
-  valuationDeepDive?: ValuationDeepDive | null;
-  currentPrice?: number | null;
-  currency?: string;
 }
 
 function sectionText(report: NormalizedReport, sectionId: SectionId) {
@@ -36,9 +33,6 @@ export function ReportBody({
   className = '',
   onCitationHover,
   onCitationClick,
-  valuationDeepDive = null,
-  currentPrice = null,
-  currency = 'USD',
 }: ReportBodyProps) {
   const normalizedReport = normalizeAgentReport(activeReport, ticker, language);
 
@@ -55,9 +49,6 @@ export function ReportBody({
           language={language}
           onCitationHover={onCitationHover}
           onCitationClick={onCitationClick}
-          valuationDeepDive={valuationDeepDive}
-          currentPrice={currentPrice}
-          currency={currency}
         />
       ))}
     </main>

@@ -2,9 +2,7 @@ import { t } from '@/lib/language-preferences';
 import { extractSensitivityMatrix, parseEvidenceItems, shouldShowSensitivity } from './helpers';
 import { EvidenceItem } from './evidence-item';
 import { SensitivityHeatmap } from './sensitivity-heatmap';
-import { ValuationDeepDivePanel } from './valuation-panel';
-import type { AgentReport, Citation, ReportLanguage, SectionDef, ValuationDeepDive } from './types';
-
+import type { AgentReport, Citation, ReportLanguage, SectionDef } from './types';
 
 interface ReportSectionProps {
   section: SectionDef;
@@ -15,9 +13,6 @@ interface ReportSectionProps {
   language: ReportLanguage;
   onCitationHover?: (letter: string | null) => void;
   onCitationClick?: (citation: Citation) => void;
-  valuationDeepDive?: ValuationDeepDive | null;
-  currentPrice?: number | null;
-  currency?: string;
 }
 
 export function ReportSection({
@@ -29,9 +24,6 @@ export function ReportSection({
   language,
   onCitationHover,
   onCitationClick,
-  valuationDeepDive = null,
-  currentPrice = null,
-  currency = 'USD',
 }: ReportSectionProps) {
   const title = language === 'ko' ? section.titleKo : section.titleEn;
   const items = parseEvidenceItems(sectionText);
@@ -40,9 +32,6 @@ export function ReportSection({
   const showSensitivity = section.id === 'section-02' && shouldShowSensitivity(activeAgentKey, matrix);
   const centerRow = matrix?.[Math.floor(matrix.length / 2)];
   const centerCell = centerRow?.[Math.floor(centerRow.length / 2)];
-  const showDeepDive =
-    section.id === 'section-02' &&
-    valuationDeepDive !== null;
 
   return (
     <section
@@ -86,14 +75,6 @@ export function ReportSection({
           matrix={matrix}
           currentWacc={centerCell?.wacc ?? 0}
           currentGrowth={centerCell?.growth ?? 0}
-          language={language}
-        />
-      )}
-      {showDeepDive && valuationDeepDive && (
-        <ValuationDeepDivePanel
-          dive={valuationDeepDive}
-          currentPrice={currentPrice}
-          currency={currency}
           language={language}
         />
       )}

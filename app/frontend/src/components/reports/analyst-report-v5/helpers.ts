@@ -165,14 +165,6 @@ export function normalizeTicker(ticker: string) {
   return ticker.trim().toUpperCase();
 }
 
-export function stripSuffix(k: string): string {
-  const noAgent = k.replace(/_agent$/, '');
-  const parts = noAgent.split('_');
-  const last = parts[parts.length - 1];
-  if (parts.length > 1 && /^[a-z0-9]{6}$/i.test(last)) return parts.slice(0, -1).join('_');
-  return noAgent;
-}
-
 export function isJapaneseTicker(ticker: string) {
   const t = ticker.trim().toUpperCase();
   const code = t.split('.')[0];
@@ -314,41 +306,6 @@ export function extractReasoningText(reasoning: unknown): string {
     const fields = ['reasoning', 'summary', 'analysis', 'details', 'explanation', 'detail_report', 'cross_check_guide'];
     const chunks = fields.map(field => extractReasoningText(record[field])).filter(Boolean);
     if (chunks.length > 0) return chunks.join('\n\n');
-
-    // Fallback for valuation analyst's structured reasoning dict:
-    // extract `details` from *_analysis sub-objects and format with section headings
-    // so splitByMarkdownHeadings can correctly assign content to sections 02/03.
-    const valuationKeys = ['dcf_analysis', 'owner_earnings_analysis', 'ev_ebitda_analysis', 'residual_income_analysis', 'rim_analysis', 'pbr_band_analysis'];
-    const valuationLines: string[] = [];
-    if (record.regime_note && typeof record.regime_note === 'string') {
-      valuationLines.push(record.regime_note);
-    }
-    for (const key of valuationKeys) {
-      const sub = record[key] as Record<string, unknown> | undefined;
-      if (sub && typeof sub.details === 'string') valuationLines.push(sub.details);
-    }
-    const fwdPer = record.forward_per_analysis as Record<string, unknown> | undefined;
-    const fwdDetails = fwdPer && typeof fwdPer.details === 'string' ? fwdPer.details : null;
-    if (valuationLines.length > 0 || fwdDetails) {
-      const parts: string[] = [];
-      if (valuationLines.length > 0) parts.push(`## 밸류에이션\n${valuationLines.join('\n')}`);
-      if (fwdDetails) parts.push(`## 멀티플\n${fwdDetails}`);
-      return parts.join('\n\n');
-    }
-
-    // Last-resort fallback: any dict shape with primitive (string/number/boolean) values
-    // gets rendered as `key: value` lines. Covers agents like risk_management whose
-    // `reasoning` is a metrics dict (portfolio_value, risk_adjustment, …).
-    const primitiveLines: string[] = [];
-    for (const [k, v] of Object.entries(record)) {
-      if (v === null || v === undefined) continue;
-      if (typeof v === 'string' && v.trim()) {
-        primitiveLines.push(`- ${k.replace(/_/g, ' ')}: ${v}`);
-      } else if (typeof v === 'number' || typeof v === 'boolean') {
-        primitiveLines.push(`- ${k.replace(/_/g, ' ')}: ${v}`);
-      }
-    }
-    if (primitiveLines.length > 0) return primitiveLines.join('\n');
   }
   return '';
 }
@@ -368,24 +325,11 @@ export function getAgentReport(
       const report = signals[ticker] || signals[normalized];
       if (report && typeof report === 'object') return report as AgentReport;
     }
-    // Suffix-aware fallback: scan analystSignals keys, match by base name
-    const wantedBase = stripSuffix(agentKey);
-    for (const key of Object.keys(analystSignals)) {
-      if (stripSuffix(key) !== wantedBase) continue;
-      const signals = analystSignals[key];
-      if (!signals || typeof signals !== 'object') continue;
-      const report = signals[ticker] || signals[normalized];
-      if (report && typeof report === 'object') return report as AgentReport;
-    }
   }
 
-  // agentResult fallback — handle string analysis (Case D: stale progress event data)
-  let analysisObj: Record<string, any> | null = agentResult?.analysis as Record<string, any> | null;
-  if (typeof analysisObj === 'string') {
-    try { analysisObj = JSON.parse(analysisObj as string); } catch { analysisObj = null; }
-  }
-  if (analysisObj && typeof analysisObj === 'object') {
-    const report = analysisObj[ticker] || analysisObj[normalized];
+  const analysis = agentResult?.analysis;
+  if (analysis && typeof analysis === 'object') {
+    const report = analysis[ticker] || analysis[normalized];
     if (report && typeof report === 'object') return report as AgentReport;
   }
   if (agentResult?.report && typeof agentResult.report === 'object') return agentResult.report as AgentReport;
@@ -393,27 +337,17 @@ export function getAgentReport(
 }
 
 export function pickDefaultAgent(agentResults: Map<string, AgentResult>, activeTicker: string): string {
-  // risk_management is a portfolio-constraint calculator; its `reasoning` is a metrics dict
-  // (portfolio_value, position_limit, …) without analyst narrative. Excluding it from the
-  // default active selection prevents the report from rendering empty sections.
-  const isReportable = (key: string) => key !== 'risk_management';
-
-  const completeForTicker = Array.from(agentResults.entries()).filter(([key, result]) => (
-    result.status === 'complete' && isReportable(key)
-    && (!result.ticker || normalizeTicker(result.ticker) === normalizeTicker(activeTicker))
+  const completeForTicker = Array.from(agentResults.entries()).filter(([, result]) => (
+    result.status === 'complete' && (!result.ticker || normalizeTicker(result.ticker) === normalizeTicker(activeTicker))
   ));
   const scopedValuation = completeForTicker.find(([key]) => key === 'valuation_analyst');
   if (scopedValuation) return scopedValuation[0];
 
   const complete = completeForTicker.length > 0
     ? completeForTicker
-    : Array.from(agentResults.entries()).filter(([key, result]) => result.status === 'complete' && isReportable(key));
-  if (complete.length > 0) return complete[0][0];
-
-  // Last resort: fall back to any complete agent (including risk_management) or any keyed entry.
-  const anyComplete = Array.from(agentResults.entries()).find(([, result]) => result.status === 'complete');
-  if (anyComplete) return anyComplete[0];
-  return Array.from(agentResults.keys())[0] || 'valuation_analyst';
+    : Array.from(agentResults.entries()).filter(([, result]) => result.status === 'complete');
+  if (complete.length === 0) return Array.from(agentResults.keys())[0] || 'valuation_analyst';
+  return complete[0][0];
 }
 
 export function splitSentences(text: string): string[] {
@@ -1238,6 +1172,8 @@ const perShareIntrinsicValuePatterns = [
   /(?:fair\s*value\s*per\s*share|dcf\s*value\s*per\s*share|1주당\s*적정가|주당\s*적정가)[^-\d$₩¥]{0,80}[$₩¥]?(-?\d[\d,]*(?:\.\d+)?)(?=\s*(?:달러|원|엔|krw|usd|jpy|,|\.|$))/gi,
 ];
 
+const SAFETY_MARGIN_PRICE_BUFFER = 0.25;
+
 function extractPatternValue(
   text: string,
   patterns: RegExp[],
@@ -1316,16 +1252,19 @@ export function resolveMarginOfSafetySnapshot({
   reportedMargin?: number | null;
   reasoningMargin?: number | null;
   calculatedMarginOfSafety?: number | null;
-}): { referencePrice: number | null; margin: number | null } {
+}): { referencePrice: number | null; safetyMarginPrice: number | null; margin: number | null } {
   const referencePrice = normalizePerShareReferencePrice(intrinsicValue, currentPrice);
+  const safetyMarginPrice = referencePrice !== null
+    ? referencePrice * (1 - SAFETY_MARGIN_PRICE_BUFFER)
+    : null;
   const calculated = finiteNumber(calculatedMarginOfSafety)
     ?? calcMarginOfSafety(referencePrice, finiteNumber(currentPrice));
   if (calculated !== null) {
-    return { referencePrice, margin: calculated };
+    return { referencePrice, safetyMarginPrice, margin: calculated };
   }
 
   const fallbackMargin = finiteNumber(reasoningMargin) ?? finiteNumber(reportedMargin);
-  return { referencePrice: null, margin: fallbackMargin };
+  return { referencePrice: null, safetyMarginPrice: null, margin: fallbackMargin };
 }
 
 function metricFromReport(
@@ -1421,10 +1360,11 @@ export function extractTargetTiles(
   _language: ReportLanguage,
   currency = 'USD',
 ): TargetTile[] {
+  const safetyMarginPrice = buildSafetyMarginPrice(metrics);
   const candidates: Array<{ labelKey: string; sublabelKey: string; metric?: CanonicalMetric; tone: ReportTone; formatter?: (value: number) => string }> = [
     { labelKey: 'targetEpsLabel', sublabelKey: 'targetEpsSubtitle', metric: metrics.forwardEpsFy0 || metrics.forwardEpsTtm, tone: 'neutral', formatter: formatPlain },
     { labelKey: 'targetIntrinsicLabel', sublabelKey: 'targetIntrinsicSubtitle', metric: metrics.intrinsicValue, tone: intrinsicTone(metrics.intrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatCurrency(value, currency) },
-    { labelKey: 'targetMarginLabel', sublabelKey: 'targetMarginSubtitle', metric: metrics.marginOfSafety, tone: marginTone(metrics.marginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.intrinsicValue?.value ?? null, currency) },
+    { labelKey: 'targetMarginLabel', sublabelKey: 'targetMarginSubtitle', metric: safetyMarginPrice, tone: marginTone(metrics.marginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, metrics.marginOfSafety?.value ?? null, currency) },
     { labelKey: 'targetCoverageLabel', sublabelKey: 'targetCoverageSubtitle', metric: metrics.interestCoverage, tone: coverageTone(metrics.interestCoverage?.value ?? null), formatter: formatMultiple },
     { labelKey: 'targetBetaLabel', sublabelKey: 'targetBetaSubtitle', metric: metrics.beta, tone: 'neutral', formatter: formatPlain },
     { labelKey: 'targetWaccLabel', sublabelKey: 'targetWaccSubtitle', metric: metrics.wacc, tone: 'neutral', formatter: formatPercentSmart },
@@ -1449,6 +1389,15 @@ export function extractTargetTiles(
         isFromActiveAgent: metric.sourceAgentKey === activeAgentKey && metric.isFromActiveAgent,
       };
     });
+}
+
+function buildSafetyMarginPrice(metrics: CanonicalMetrics): CanonicalMetric | undefined {
+  const intrinsic = metrics.intrinsicValue;
+  if (!intrinsic || !Number.isFinite(intrinsic.value) || intrinsic.value <= 0) return undefined;
+  return {
+    ...intrinsic,
+    value: intrinsic.value * (1 - SAFETY_MARGIN_PRICE_BUFFER),
+  };
 }
 
 function intrinsicTone(intrinsic: number | null, current: number | null): ReportTone {
@@ -1481,16 +1430,29 @@ function formatCurrency(value: number, currency = 'USD') {
   return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
-function formatMarginTarget(value: number, referencePrice: number | null | undefined, currency: string) {
-  const pct = `${value > 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
-  if (referencePrice !== null && referencePrice !== undefined && Number.isFinite(referencePrice)) {
-    return `${formatCurrency(referencePrice, currency)} (${pct})`;
-  }
-  return formatPercentWithRaw(value);
+function formatMarginTarget(
+  safetyMarginPrice: number,
+  currentPrice: number | null | undefined,
+  rawMarginOfSafety: number | null | undefined,
+  currency: string,
+) {
+  return formatSafetyMarginTarget(safetyMarginPrice, currentPrice, rawMarginOfSafety, currency);
 }
 
-function formatPercentWithRaw(value: number) {
-  return `${value.toFixed(4)} (${(value * 100).toFixed(2)}%)`;
+function formatSafetyMarginTarget(
+  safetyMarginPrice: number,
+  currentPrice: number | null | undefined,
+  rawMarginOfSafety: number | null | undefined,
+  currency: string,
+) {
+  const current = finiteNumber(currentPrice);
+  const relativeToCurrent = current !== null && current > 0
+    ? (safetyMarginPrice - current) / current
+    : finiteNumber(rawMarginOfSafety);
+  const pct = relativeToCurrent !== null
+    ? ` (${relativeToCurrent > 0 ? '+' : ''}${(relativeToCurrent * 100).toFixed(1)}%)`
+    : '';
+  return `${formatCurrency(safetyMarginPrice, currency)}${pct}`;
 }
 
 function formatPercentSmart(value: number) {
@@ -1549,8 +1511,8 @@ export function listOtherAgents(
   const signals = completeResult.analyst_signals || {};
   return Object.entries(signals)
     .map(([key, value]) => {
-      const baseKey = stripSuffix(key);
-      if (baseKey === stripSuffix(activeAgentKey) || baseKey === 'risk_management') return null;
+      const baseKey = key.replace(/_agent$/, '');
+      if (baseKey === activeAgentKey.replace(/_agent$/, '') || baseKey === 'risk_management') return null;
       const report = value && typeof value === 'object' ? (value as Record<string, any>)[ticker] : null;
       if (!report || typeof report !== 'object') return null;
       const meta = agentMetaMap.get(baseKey) || getAgentMeta(baseKey);
@@ -1577,144 +1539,6 @@ export function getDetailReportMarkdown(report: AgentReport | null, agentMeta: A
   const reasoning = extractReasoningText(report?.reasoning || report);
   if (reasoning) return reasoning;
   return `# ${ticker} · ${agentMeta.name}\n\n${buildFallbackCrossCheckGuideFromReport(report, ticker)}`;
-}
-
-// ---------------------------------------------------------------------------
-// Valuation Deep-Dive (RIM + PBR Band)
-// ---------------------------------------------------------------------------
-
-import type { PbrBand, RimBreakdown, ValuationDeepDive, ValuationModel } from './types';
-
-function safeNum(v: unknown): number | null {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
-function safeStr(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
-
-function parseSignal(v: unknown): 'bullish' | 'neutral' | 'bearish' {
-  if (v === 'bullish' || v === 'bearish') return v;
-  return 'neutral';
-}
-
-function parseRimBreakdown(raw: Record<string, unknown>): RimBreakdown | null {
-  const bookValue = safeNum(raw.book_value);
-  if (bookValue === null || bookValue <= 0) return null;
-  return {
-    bookValue,
-    bookValuePerShare: safeNum(raw.book_value_per_share),
-    roeImplied: safeNum(raw.roe_implied) ?? 0,
-    costOfEquity: safeNum(raw.cost_of_equity) ?? 0.10,
-    spreadRoeKe: safeNum(raw.spread_roe_ke) ?? 0,
-    bookValueGrowth: safeNum(raw.book_value_growth) ?? 0.03,
-    presentValueRi: safeNum(raw.present_value_ri) ?? 0,
-    terminalPvRi: safeNum(raw.terminal_pv_ri) ?? 0,
-    intrinsicTotal: safeNum(raw.intrinsic_total) ?? bookValue,
-    intrinsicPerShare: safeNum(raw.intrinsic_per_share),
-    weightUsed: safeNum(raw.weight_used) ?? 0,
-    signal: parseSignal(raw.signal),
-    details: safeStr(raw.details),
-  };
-}
-
-function parsePbrBand(raw: Record<string, unknown>): PbrBand | null {
-  const currentPbr = safeNum(raw.current_pbr);
-  if (currentPbr === null) return null;
-  const pcts = raw.percentiles as Record<string, unknown> | undefined;
-  if (!pcts) return null;
-  const p10 = safeNum(pcts.p10), p25 = safeNum(pcts.p25), p50 = safeNum(pcts.p50),
-        p75 = safeNum(pcts.p75), p90 = safeNum(pcts.p90);
-  if (p10 === null || p25 === null || p50 === null || p75 === null || p90 === null) return null;
-
-  const rawHistory = Array.isArray(raw.history) ? raw.history : [];
-  const history = rawHistory
-    .map((h: unknown) => {
-      const ho = h as Record<string, unknown>;
-      const pbr = safeNum(ho.pbr);
-      return pbr !== null ? { period: safeStr(ho.period), pbr } : null;
-    })
-    .filter((h): h is { period: string; pbr: number } => h !== null);
-
-  const posLabel = raw.position_label as string | undefined;
-  const positionLabel = (
-    posLabel === 'below_p25' || posLabel === 'p25_p50' ||
-    posLabel === 'p50_p75' || posLabel === 'above_p75'
-  ) ? posLabel : 'p50_p75';
-
-  return {
-    currentPbr,
-    percentiles: { p10, p25, p50, p75, p90 },
-    history,
-    bvps: safeNum(raw.bvps),
-    fairPriceP10: safeNum(raw.fair_price_p10),
-    fairPriceP25: safeNum(raw.fair_price_p25),
-    fairPriceP50: safeNum(raw.fair_price_p50),
-    fairPriceP75: safeNum(raw.fair_price_p75),
-    fairPriceP90: safeNum(raw.fair_price_p90),
-    currentPrice: safeNum(raw.current_price),
-    positionLabel,
-    reratingNote: typeof raw.rerating_note === 'string' ? raw.rerating_note : null,
-    weightUsed: safeNum(raw.weight_used) ?? 0,
-    signal: parseSignal(raw.signal),
-    details: safeStr(raw.details),
-  };
-}
-
-const MODEL_LABEL_MAP: Record<string, string> = {
-  dcf: 'valuationModelDcf',
-  owner_earnings: 'valuationModelOwner',
-  ev_ebitda: 'valuationModelEvEbitda',
-  residual_income: 'valuationModelRim',
-  pbr_band: 'valuationModelPbrMid',
-};
-
-export function buildValuationDeepDive(
-  activeReport: AgentReport | null,
-  currentPrice: number | null,
-): ValuationDeepDive | null {
-  const rawReasoning = activeReport?.reasoning;
-  if (!rawReasoning || typeof rawReasoning !== 'object') return null;
-  const r = rawReasoning as Record<string, unknown>;
-
-  const regime = r.regime === 'capex_heavy' ? 'capex_heavy' : 'default';
-  const regimeNote = typeof r.regime_note === 'string' ? r.regime_note : null;
-
-  const rim: RimBreakdown | null = r.rim_analysis && typeof r.rim_analysis === 'object'
-    ? parseRimBreakdown(r.rim_analysis as Record<string, unknown>)
-    : null;
-
-  const pbr: PbrBand | null = r.pbr_band_analysis && typeof r.pbr_band_analysis === 'object'
-    ? parsePbrBand(r.pbr_band_analysis as Record<string, unknown>)
-    : null;
-
-  const MODEL_KEYS = ['dcf', 'owner_earnings', 'ev_ebitda', 'residual_income', 'pbr_band'] as const;
-  const models: ValuationModel[] = [];
-
-  for (const key of MODEL_KEYS) {
-    const analysisKey = `${key}_analysis`;
-    const raw = r[analysisKey] as Record<string, unknown> | undefined;
-    if (!raw) continue;
-    const intrinsicPerShare = safeNum(raw.intrinsic_per_share);
-    if (intrinsicPerShare === null) continue;
-    const gapToMarket = (currentPrice && currentPrice > 0)
-      ? (intrinsicPerShare - currentPrice) / currentPrice
-      : null;
-    models.push({
-      key,
-      labelKey: MODEL_LABEL_MAP[key] ?? key,
-      intrinsicPerShare,
-      intrinsicTotal: safeNum(raw.intrinsic_total ?? raw.value),
-      weight: safeNum(raw.weight_used) ?? 0,
-      signal: parseSignal(raw.signal),
-      gapToMarket,
-    });
-  }
-
-  if (models.length === 0 && rim === null && pbr === null) return null;
-
-  return { regime, regimeNote, rim, pbr, models };
 }
 
 export function extractCrossCheckGuideText(report: AgentReport | null | undefined) {
