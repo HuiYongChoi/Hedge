@@ -15,14 +15,18 @@ CACHE_KEY = "forward_metrics_cache"
 FORWARD_OUTLOOK_SYSTEM_INSTRUCTION = (
     "FORWARD OUTLOOK REQUIREMENT: If `forward_outlook` is provided in the analysis "
     "data and `available` is true, you MUST weigh forward consensus when discussing "
-    "valuation. Compare forward P/E to trailing P/E and explain whether the consensus "
-    "implies earnings expansion or contraction. Quote the next-quarter consensus EPS "
+    "valuation. Use `forward_outlook.canonical_multiples.price_compass_fwd_per` as the "
+    "only canonical FwdPER shown in Price Compass. Compare that FwdPER to trailing P/E "
+    "and explain whether the consensus implies earnings expansion or contraction. "
+    "Quote the next-quarter consensus EPS "
     "value explicitly. Never ignore forward_outlook even if it conflicts with your "
     "trailing-based narrative; explicitly reconcile the two views. If "
     "`forward_outlook.available` is false or `confidence` is 'low', acknowledge the "
     "limitation in one sentence and continue with trailing analysis. "
     "When `forward_pe_fy0` or `forward_pe_fy1` is present, treat them as the **annual** "
-    "anchor and quote them alongside the TTM splice; do not average silently."
+    "anchor and quote them alongside the TTM splice; do not average silently. Never "
+    "label FY0 annual P/E, FY+1 annual P/E, or a manually computed EPS multiple as "
+    "Price Compass FwdPER."
 )
 
 
@@ -107,6 +111,16 @@ def build_forward_outlook_block(
         "confidence": forward_metrics.confidence,
         "composition": composition,
         "notes": list(forward_metrics.notes),
+        "canonical_multiples": {
+            "price_compass_fwd_per": forward_pe,
+            "ttm_per": trailing_pe,
+            "current_fy_per": fy0_pe,
+            "next_fy_per": fy1_pe,
+            "fwd_eps_ttm": forward_metrics.forward_eps_ttm,
+            "current_fy_eps": getattr(forward_metrics, "forward_eps_fy0", None),
+            "next_fy_eps": getattr(forward_metrics, "forward_eps_fy1", None),
+            "formula": "Price Compass FwdPER = current_price / forward_eps_ttm",
+        },
         "interpretation_hint": _build_interpretation_hint(
             forward_metrics,
             trailing_pe,
@@ -149,11 +163,11 @@ def _build_interpretation_hint(
     if forward_pe is not None and trailing_pe is not None and pe_change_pct is not None:
         direction = "earnings expansion" if pe_change_pct < 0 else "earnings contraction or valuation pressure"
         parts.append(
-            f"Forward P/E {forward_pe:.2f}x vs trailing {trailing_pe:.2f}x "
+            f"Price Compass FwdPER {forward_pe:.2f}x vs TTM PER {trailing_pe:.2f}x "
             f"({pe_change_pct:+.1f}%) - consensus implies {direction}."
         )
     elif forward_pe is not None:
-        parts.append(f"Forward P/E {forward_pe:.2f}x; no trailing P/E is available for direct comparison.")
+        parts.append(f"Price Compass FwdPER {forward_pe:.2f}x; no TTM PER is available for direct comparison.")
 
     consensus_quarter = next(
         (quarter for quarter in forward_metrics.composition if quarter.source.startswith("consensus")),
@@ -179,9 +193,9 @@ def _build_interpretation_hint(
         fy0_year = fy0_est.fiscal_year if fy0_est else "FY"
         if forward_pe is not None:
             parts.append(
-                f"Annual forward P/E (FY{fy0_year}): {fy0_pe:.2f}x vs TTM {forward_pe:.2f}x."
+                f"Current FY PER {fy0_pe:.2f}x (FY{fy0_year}) is an annual anchor, not Price Compass FwdPER."
             )
         else:
-            parts.append(f"Annual forward P/E (FY{fy0_year}): {fy0_pe:.2f}x.")
+            parts.append(f"Current FY PER (FY{fy0_year}) {fy0_pe:.2f}x.")
 
     return " ".join(parts) if parts else "No interpretive hint available."

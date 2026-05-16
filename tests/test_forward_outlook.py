@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from src.data.models_forward import ForwardMetrics, QuarterlyEPS
+from src.data.models_forward import AnnualEPSEstimate, ForwardMetrics, QuarterlyEPS
 
 
 def _quarter(period: str, year: int, month: int, eps: float, source: str = "actual") -> QuarterlyEPS:
@@ -81,6 +81,36 @@ def test_build_forward_outlook_serializes_standard_block_and_delta():
     }
     assert "4.00" in block["interpretation_hint"]
     assert "earnings expansion" in block["interpretation_hint"]
+
+
+def test_forward_outlook_locks_price_compass_forward_per_as_canonical():
+    from src.utils.forward_outlook import build_forward_outlook_block
+
+    metrics = _forward_metrics()
+    metrics.forward_eps_ttm = 330127.04174228676
+    metrics.forward_pe = 5.51
+    metrics.current_price = 1819000.0
+    metrics.forward_eps_fy0 = 294628.56
+    metrics.forward_pe_fy0 = 6.17
+    metrics.fy0_estimate = AnnualEPSEstimate(
+        fiscal_year=2026,
+        fiscal_year_end=date(2026, 12, 31),
+        eps=294628.56,
+        source="consensus",
+        provider="Fixture",
+        as_of=date(2026, 5, 10),
+        analyst_count=20,
+        confidence="high",
+    )
+
+    block = build_forward_outlook_block(metrics, trailing_pe=30.85)
+
+    assert block["canonical_multiples"]["price_compass_fwd_per"] == 5.51
+    assert block["canonical_multiples"]["ttm_per"] == 30.85
+    assert block["canonical_multiples"]["current_fy_per"] == 6.17
+    assert "Price Compass FwdPER 5.51x" in block["interpretation_hint"]
+    assert "Current FY PER 6.17x" in block["interpretation_hint"]
+    assert "36.05" not in block["interpretation_hint"]
 
 
 def test_build_forward_outlook_warns_when_confidence_low():

@@ -2,6 +2,7 @@ import type {
   AgentMeta,
   AgentReport,
   AgentResult,
+  CanonicalForwardSnapshot,
   CanonicalMetric,
   CanonicalMetrics,
   Citation,
@@ -12,12 +13,16 @@ import type {
   KeyNumber,
   NormalizedReport,
   OtherAgent,
+  PbrBand,
   ReportLanguage,
   ReportTone,
+  RimBreakdown,
   SectionDef,
   SectionId,
   SentenceClassification,
   TargetTile,
+  ValuationDeepDive,
+  ValuationModel,
 } from './types';
 import { normalizeFinancialDisplayText } from '@/lib/financial-text-normalizer';
 
@@ -323,6 +328,17 @@ export function extractReasoningText(reasoning: unknown): string {
     const fields = ['reasoning', 'summary', 'analysis', 'details', 'explanation', 'detail_report', 'cross_check_guide'];
     const chunks = fields.map(field => extractReasoningText(record[field])).filter(Boolean);
     if (chunks.length > 0) return chunks.join('\n\n');
+
+    const nestedDetailLines = Object.entries(record)
+      .map(([key, value]) => {
+        if (!value || typeof value !== 'object') return '';
+        const nested = value as Record<string, unknown>;
+        const detail = extractReasoningText(nested.details || nested.summary || nested.explanation).trim();
+        if (!detail) return '';
+        return `### ${key.replace(/_/g, ' ')}\n${detail}`;
+      })
+      .filter(Boolean);
+    if (nestedDetailLines.length > 0) return nestedDetailLines.join('\n\n');
 
     const primitiveLines: string[] = [];
     for (const [key, value] of Object.entries(record)) {
@@ -1509,6 +1525,190 @@ export function buildCanonicalMetrics(
   }
 
   return metrics;
+}
+
+function formatOneDecimalMultiple(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)}x` : null;
+}
+
+export function sanitizeForwardPeNarrative(
+  text: string,
+  snapshot: CanonicalForwardSnapshot | null | undefined,
+  language: ReportLanguage,
+): string {
+  if (!text || !snapshot?.fwdPer || !Number.isFinite(snapshot.fwdPer)) return text;
+
+  const fwd = formatOneDecimalMultiple(snapshot.fwdPer);
+  const ttm = formatOneDecimalMultiple(snapshot.ttmPer);
+  const curFy = formatOneDecimalMultiple(snapshot.currentFyPer);
+  if (!fwd) return text;
+
+  let next = text.replace(
+    /\b(?:forward\s*p\/?e|fwd\s*p\/?e|fwdper|포워드\s*p\/?e|포워드\s*per)\s*(?:\(ttm\)\s*)?[:=]?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?/giu,
+    `FwdPER ${fwd}`,
+  );
+
+  if (ttm) {
+    next = next.replace(
+      /\s+vs\s+(?:trailing|ttm)\s*p\/?e\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?\s*(?:\([^)]+\))?/giu,
+      ` vs TTM PER ${ttm}`,
+    );
+    next = next.replace(
+      /\s+대비\s*(?:트레일링|ttm)\s*(?:p\/?e|per)\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?/giu,
+      ` 대비 TTM PER ${ttm}`,
+    );
+  }
+
+  const mentionsForward = /FwdPER|forward\s*p\/?e|fwd\s*p\/?e|포워드\s*p\/?e|포워드\s*per/iu.test(text);
+  const alreadyHasLock = /Price Compass\s*기준|Price Compass baseline/iu.test(next);
+  if (mentionsForward && !alreadyHasLock) {
+    const bits = [
+      ttm ? `TTM PER ${ttm}` : null,
+      curFy ? (language === 'ko' ? `현FY PER ${curFy}` : `Current FY PER ${curFy}`) : null,
+      `FwdPER ${fwd}`,
+    ].filter(Boolean).join(', ');
+    const note = language === 'ko'
+      ? `기준값: ${bits} (Price Compass 기준).`
+      : `Baseline: ${bits} (Price Compass baseline).`;
+    next = `${next.trim()}\n\n${note}`;
+  }
+
+  return next;
+}
+
+function safeNum(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = typeof v === 'number'
+    ? v
+    : Number(String(v).replace(/[,%$₩¥]/g, '').trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+function safeStr(v: unknown): string {
+  return typeof v === 'string' ? v : '';
+}
+
+function parseValuationSignal(v: unknown): 'bullish' | 'neutral' | 'bearish' {
+  if (v === 'bullish' || v === 'bearish') return v;
+  return 'neutral';
+}
+
+function parseRimBreakdown(raw: Record<string, unknown>): RimBreakdown | null {
+  const bookValue = safeNum(raw.book_value);
+  if (bookValue === null || bookValue <= 0) return null;
+  return {
+    bookValue,
+    bookValuePerShare: safeNum(raw.book_value_per_share),
+    roeImplied: safeNum(raw.roe_implied) ?? 0,
+    costOfEquity: safeNum(raw.cost_of_equity) ?? 0.10,
+    spreadRoeKe: safeNum(raw.spread_roe_ke) ?? 0,
+    bookValueGrowth: safeNum(raw.book_value_growth) ?? 0.03,
+    presentValueRi: safeNum(raw.present_value_ri) ?? 0,
+    terminalPvRi: safeNum(raw.terminal_pv_ri) ?? 0,
+    intrinsicTotal: safeNum(raw.intrinsic_total) ?? bookValue,
+    intrinsicPerShare: safeNum(raw.intrinsic_per_share),
+    weightUsed: safeNum(raw.weight_used) ?? 0,
+    signal: parseValuationSignal(raw.signal),
+    details: safeStr(raw.details),
+  };
+}
+
+function parsePbrBand(raw: Record<string, unknown>): PbrBand | null {
+  const currentPbr = safeNum(raw.current_pbr);
+  if (currentPbr === null) return null;
+  const pcts = raw.percentiles as Record<string, unknown> | undefined;
+  if (!pcts) return null;
+  const p10 = safeNum(pcts.p10);
+  const p25 = safeNum(pcts.p25);
+  const p50 = safeNum(pcts.p50);
+  const p75 = safeNum(pcts.p75);
+  const p90 = safeNum(pcts.p90);
+  if (p10 === null || p25 === null || p50 === null || p75 === null || p90 === null) return null;
+
+  const history = (Array.isArray(raw.history) ? raw.history : [])
+    .map((item: unknown) => {
+      const record = item as Record<string, unknown>;
+      const pbr = safeNum(record.pbr);
+      return pbr !== null ? { period: safeStr(record.period), pbr } : null;
+    })
+    .filter((item): item is { period: string; pbr: number } => item !== null);
+
+  const posLabel = raw.position_label as string | undefined;
+  const positionLabel = (
+    posLabel === 'below_p25' || posLabel === 'p25_p50' ||
+    posLabel === 'p50_p75' || posLabel === 'above_p75'
+  ) ? posLabel : 'p50_p75';
+
+  return {
+    currentPbr,
+    percentiles: { p10, p25, p50, p75, p90 },
+    history,
+    bvps: safeNum(raw.bvps),
+    fairPriceP10: safeNum(raw.fair_price_p10),
+    fairPriceP25: safeNum(raw.fair_price_p25),
+    fairPriceP50: safeNum(raw.fair_price_p50),
+    fairPriceP75: safeNum(raw.fair_price_p75),
+    fairPriceP90: safeNum(raw.fair_price_p90),
+    currentPrice: safeNum(raw.current_price),
+    positionLabel,
+    reratingNote: typeof raw.rerating_note === 'string' ? raw.rerating_note : null,
+    weightUsed: safeNum(raw.weight_used) ?? 0,
+    signal: parseValuationSignal(raw.signal),
+    details: safeStr(raw.details),
+  };
+}
+
+const MODEL_LABEL_MAP: Record<string, string> = {
+  dcf: 'DCF',
+  owner_earnings: 'Owner Earnings',
+  ev_ebitda: 'EV/EBITDA',
+  residual_income: 'RIM',
+  pbr_band: 'PBR Band',
+};
+
+export function buildValuationDeepDive(
+  valuationReport: AgentReport | null,
+  currentPrice: number | null,
+): ValuationDeepDive | null {
+  const rawReasoning = valuationReport?.reasoning;
+  if (!rawReasoning || typeof rawReasoning !== 'object') return null;
+  const reasoning = rawReasoning as Record<string, unknown>;
+
+  const rim = reasoning.rim_analysis && typeof reasoning.rim_analysis === 'object'
+    ? parseRimBreakdown(reasoning.rim_analysis as Record<string, unknown>)
+    : null;
+  const pbr = reasoning.pbr_band_analysis && typeof reasoning.pbr_band_analysis === 'object'
+    ? parsePbrBand(reasoning.pbr_band_analysis as Record<string, unknown>)
+    : null;
+
+  const models: ValuationModel[] = [];
+  (['dcf', 'owner_earnings', 'ev_ebitda', 'residual_income', 'pbr_band'] as const).forEach(key => {
+    const raw = reasoning[`${key}_analysis`] as Record<string, unknown> | undefined;
+    if (!raw || typeof raw !== 'object') return;
+    const intrinsicPerShare = safeNum(raw.intrinsic_per_share);
+    const intrinsicTotal = safeNum(raw.intrinsic_total ?? raw.value);
+    if (intrinsicPerShare === null && intrinsicTotal === null) return;
+    models.push({
+      key,
+      labelKey: MODEL_LABEL_MAP[key] ?? key,
+      intrinsicPerShare,
+      intrinsicTotal,
+      weight: safeNum(raw.weight_used) ?? 0,
+      signal: parseValuationSignal(raw.signal),
+      gapToMarket: currentPrice && currentPrice > 0 && intrinsicPerShare !== null
+        ? (intrinsicPerShare - currentPrice) / currentPrice
+        : safeNum(raw.gap_to_market ?? raw.gap),
+    });
+  });
+
+  if (models.length === 0 && !rim && !pbr) return null;
+  return {
+    regime: reasoning.regime === 'capex_heavy' ? 'capex_heavy' : 'default',
+    regimeNote: typeof reasoning.regime_note === 'string' ? reasoning.regime_note : null,
+    rim,
+    pbr,
+    models,
+  };
 }
 
 export function extractTargetTiles(

@@ -154,9 +154,10 @@ export function PriceCompassPanel({
   const sigmaAnnual = target?.sigma_annual ?? (beta != null ? beta * marketSigma : null);
 
   const forwardEps =
-    metrics.forwardEpsFy0?.value ??
-    metrics.forwardEpsTtm?.value ??
     target?.forward_eps ??
+    metrics.forwardEpsTtm?.value ??
+    metrics.forwardEpsFy1?.value ??
+    metrics.forwardEpsFy0?.value ??
     null;
 
   // forward_pe 폴백: yfinance가 forward_pe/forward_eps 없는 종목(신생 일본 alphanumeric 등)에서도

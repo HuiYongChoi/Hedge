@@ -212,20 +212,48 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         ]:
             self.assertIn(signature, src)
 
-    def test_rim_pbr_deep_dive_regression_is_removed_until_reintroduced_safely(self):
+    def test_rim_pbr_deep_dive_is_sidebar_only_and_does_not_drive_body_sections(self):
         src = (V5_DIR / "report-section.tsx").read_text(encoding="utf-8")
         layout = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         types = (V5_DIR / "types.ts").read_text(encoding="utf-8")
-        prefs = LANG_PREFS.read_text(encoding="utf-8")
+        sidebar = (V5_DIR / "target-data-sidebar.tsx").read_text(encoding="utf-8")
 
-        self.assertFalse((V5_DIR / "valuation-panel").exists(), "RIM/PBR panel must stay removed in strategy A")
-        for src_text in [src, layout, helpers, types, prefs]:
-            self.assertNotIn("ValuationDeepDive", src_text)
-            self.assertNotIn("valuation-panel", src_text)
-            self.assertNotIn("buildValuationDeepDive", src_text)
-            self.assertNotIn("pbrBand", src_text)
-            self.assertNotIn("RimBreakdown", src_text)
+        self.assertFalse((V5_DIR / "valuation-panel").exists(), "Do not restore the old body-level valuation panel")
+        self.assertIn("ValuationDeepDive", types)
+        self.assertIn("RimBreakdown", types)
+        self.assertIn("PbrBand", types)
+        self.assertIn("buildValuationDeepDive", helpers)
+        self.assertIn("rim_analysis", helpers)
+        self.assertIn("pbr_band_analysis", helpers)
+        self.assertIn("valuationDeepDive", layout)
+        self.assertIn("valuationDeepDive={valuationDeepDive}", layout)
+        self.assertIn("ValuationSidebarPanel", sidebar)
+        self.assertIn("valuationDeepDive", sidebar)
+        self.assertNotIn("ValuationDeepDivePanel", src)
+        self.assertNotIn("valuation-panel", src)
+
+    def test_forward_per_narrative_is_sanitized_against_price_compass_snapshot(self):
+        body = (V5_DIR / "report-body.tsx").read_text(encoding="utf-8")
+        layout = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        price_compass = (V5_DIR / "price-compass-panel/index.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("sanitizeForwardPeNarrative", helpers)
+        self.assertIn("canonicalForwardSnapshot", layout)
+        self.assertIn("canonicalForwardSnapshot={canonicalForwardSnapshot}", layout)
+        self.assertIn("canonicalForwardSnapshot", body)
+        self.assertIn("sanitizeForwardPeNarrative", body)
+        self.assertLess(
+            price_compass.index("target?.forward_eps"),
+            price_compass.index("metrics.forwardEpsFy0"),
+            "Price Compass FwdEPS must prefer live next-year EPS over current-FY EPS",
+        )
+        self.assertLess(
+            price_compass.index("target?.forward_pe"),
+            price_compass.index("metrics.forwardPe"),
+            "Price Compass FwdPER must prefer live analyst-target forward_pe",
+        )
 
     def test_get_agent_report_is_suffix_aware_for_live_sse_keys(self):
         """Live SSE uses keys like aswath_damodaran_codx01."""

@@ -14,6 +14,7 @@ import {
   SECTION_DEFS,
   buildCanonicalMetrics,
   buildCitations,
+  buildValuationDeepDive,
   calcMarginOfSafety,
   chooseIntrinsicReferencePrice,
   extractMetricValue,
@@ -290,6 +291,38 @@ export function ReportLayout({
     }
     return nextMetrics;
   }, [canonicalMetrics, effectiveCurrentPrice, effectiveMarginOfSafety, intrinsicValue]);
+  const canonicalForwardSnapshot = useMemo(() => {
+    const currentPrice = effectiveCurrentPrice ?? null;
+    const targetForwardEps = liveTarget?.forward_eps ?? null;
+    const currentFyEps = liveTarget?.current_fy_eps ?? effectiveMetrics.forwardEpsFy0?.value ?? null;
+    const forwardEps = targetForwardEps
+      ?? effectiveMetrics.forwardEpsTtm?.value
+      ?? effectiveMetrics.forwardEpsFy1?.value
+      ?? null;
+    const fwdPer = liveTarget?.forward_pe
+      ?? (currentPrice !== null && forwardEps !== null && forwardEps > 0 ? currentPrice / forwardEps : null)
+      ?? effectiveMetrics.forwardPe?.value
+      ?? null;
+    const currentFyPer = currentPrice !== null && currentFyEps !== null && currentFyEps > 0
+      ? currentPrice / currentFyEps
+      : effectiveMetrics.forwardPeFy0?.value ?? null;
+    return {
+      ttmPer: liveTarget?.trailing_pe ?? null,
+      currentFyPer,
+      fwdPer,
+      fwdEps: forwardEps,
+      currentFyEps,
+    };
+  }, [effectiveCurrentPrice, effectiveMetrics, liveTarget]);
+  const valuationReport = getAgentReport(
+    completeResult.analyst_signals,
+    'valuation_analyst',
+    activeTicker,
+  );
+  const valuationDeepDive = useMemo(
+    () => buildValuationDeepDive(valuationReport, effectiveCurrentPrice),
+    [effectiveCurrentPrice, valuationReport],
+  );
   const tiles = extractTargetTiles(effectiveMetrics, displayAgentKey, language, effectiveCurrency);
   const otherAgents = listOtherAgents(completeResult, displayAgentKey, activeTicker, agentMetaMap, language);
 
@@ -386,6 +419,7 @@ export function ReportLayout({
             ticker={activeTicker}
             citations={citations}
             language={language}
+            canonicalForwardSnapshot={canonicalForwardSnapshot}
             onCitationHover={setActiveCitationLetter}
             onCitationClick={handleCitationClick}
           />
@@ -396,6 +430,8 @@ export function ReportLayout({
           language={language}
           onSwitchAgent={setActiveAgentKey}
           report={displayReport}
+          valuationDeepDive={valuationDeepDive}
+          currency={effectiveCurrency}
         />
       </div>
 

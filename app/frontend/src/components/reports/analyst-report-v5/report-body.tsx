@@ -1,6 +1,6 @@
-import { extractReasoningText, normalizeAgentReport } from './helpers';
+import { extractReasoningText, normalizeAgentReport, sanitizeForwardPeNarrative } from './helpers';
 import { ReportSection } from './report-section';
-import type { AgentReport, Citation, NormalizedReport, ReportLanguage, SectionDef, SectionId } from './types';
+import type { AgentReport, CanonicalForwardSnapshot, Citation, NormalizedReport, ReportLanguage, SectionDef, SectionId } from './types';
 
 interface ReportBodyProps {
   sections: SectionDef[];
@@ -9,6 +9,7 @@ interface ReportBodyProps {
   ticker: string;
   citations: Citation[];
   language: ReportLanguage;
+  canonicalForwardSnapshot?: CanonicalForwardSnapshot | null;
   className?: string;
   onCitationHover?: (letter: string | null) => void;
   onCitationClick?: (citation: Citation) => void;
@@ -39,6 +40,7 @@ export function ReportBody({
   ticker,
   citations,
   language,
+  canonicalForwardSnapshot,
   className = '',
   onCitationHover,
   onCitationClick,
@@ -51,7 +53,11 @@ export function ReportBody({
         <ReportSection
           key={section.id}
           section={section}
-          sectionText={sectionText(normalizedReport, section.id) || fallbackSectionText(activeReport, normalizedReport, section.id)}
+          sectionText={sanitizeForwardPeNarrative(
+            sectionText(normalizedReport, section.id) || fallbackSectionText(activeReport, normalizedReport, section.id),
+            canonicalForwardSnapshot,
+            language,
+          )}
           activeReport={activeReport}
           activeAgentKey={activeAgentKey}
           citations={citations}
