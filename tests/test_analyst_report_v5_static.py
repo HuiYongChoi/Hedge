@@ -238,12 +238,19 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         layout = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         price_compass = (V5_DIR / "price-compass-panel/index.tsx").read_text(encoding="utf-8")
+        target_tiles = helpers[helpers.index("export function extractTargetTiles"):helpers.index("function buildSafetyMarginPrice")]
+        i18n = LANG_PREFS.read_text(encoding="utf-8")
 
         self.assertIn("sanitizeForwardPeNarrative", helpers)
         self.assertIn("canonicalForwardSnapshot", layout)
         self.assertIn("canonicalForwardSnapshot={canonicalForwardSnapshot}", layout)
         self.assertIn("canonicalForwardSnapshot", body)
         self.assertIn("sanitizeForwardPeNarrative", body)
+        self.assertIn(r"\(?", helpers, "FwdPER sanitizer must handle parenthesized values like FwdPER(36.05x)")
+        self.assertIn("targetForwardPeLabel: 'FwdPER'", i18n)
+        self.assertIn("targetForwardPeSubtitle: 'Price Compass 기준'", i18n)
+        self.assertIn("metric: metrics.forwardPe, tone: 'neutral', formatter: formatMultiple", target_tiles)
+        self.assertNotIn("metric: metrics.forwardPeFy0 || metrics.forwardPe", target_tiles)
         self.assertLess(
             price_compass.index("target?.forward_eps"),
             price_compass.index("metrics.forwardEpsFy0"),

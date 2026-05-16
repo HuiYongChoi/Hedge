@@ -280,6 +280,12 @@ export function ReportLayout({
     if (effectiveCurrentPrice !== null) {
       nextMetrics.currentPrice = marketDataMetric(effectiveCurrentPrice, canonicalMetrics.currentPrice);
     }
+    if (liveTarget?.forward_eps !== null && liveTarget?.forward_eps !== undefined && Number.isFinite(liveTarget.forward_eps)) {
+      nextMetrics.forwardEpsTtm = marketDataMetric(liveTarget.forward_eps, canonicalMetrics.forwardEpsTtm);
+    }
+    if (liveTarget?.forward_pe !== null && liveTarget?.forward_pe !== undefined && Number.isFinite(liveTarget.forward_pe)) {
+      nextMetrics.forwardPe = marketDataMetric(liveTarget.forward_pe, canonicalMetrics.forwardPe);
+    }
     if (intrinsicValue !== null) {
       nextMetrics.intrinsicValue = marketDataMetric(intrinsicValue, canonicalMetrics.intrinsicValue);
     }
@@ -290,7 +296,7 @@ export function ReportLayout({
       );
     }
     return nextMetrics;
-  }, [canonicalMetrics, effectiveCurrentPrice, effectiveMarginOfSafety, intrinsicValue]);
+  }, [canonicalMetrics, effectiveCurrentPrice, effectiveMarginOfSafety, intrinsicValue, liveTarget]);
   const canonicalForwardSnapshot = useMemo(() => {
     const currentPrice = effectiveCurrentPrice ?? null;
     const targetForwardEps = liveTarget?.forward_eps ?? null;

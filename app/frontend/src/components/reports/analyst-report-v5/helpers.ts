@@ -1544,11 +1544,15 @@ export function sanitizeForwardPeNarrative(
   if (!fwd) return text;
 
   let next = text.replace(
-    /\b(?:forward\s*p\/?e|fwd\s*p\/?e|fwdper|포워드\s*p\/?e|포워드\s*per)\s*(?:\(ttm\)\s*)?[:=]?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?/giu,
+    /\b(?:forward\s*p\/?e|fwd\s*p\/?e|fwdper|포워드\s*p\/?e|포워드\s*per)\s*(?:\((?:ttm|fy0|fy\+?1|현fy|current\s*fy)\)\s*)?\(?\s*[:=]?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?\s*\)?/giu,
     `FwdPER ${fwd}`,
   );
 
   if (ttm) {
+    next = next.replace(
+      /\b(?:trailing|ttm)\s*(?:p\/?e|per)\s*(?:\([^)]+\)\s*)?\(?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?\s*\)?/giu,
+      `TTM PER ${ttm}`,
+    );
     next = next.replace(
       /\s+vs\s+(?:trailing|ttm)\s*p\/?e\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?\s*(?:\([^)]+\))?/giu,
       ` vs TTM PER ${ttm}`,
@@ -1719,13 +1723,13 @@ export function extractTargetTiles(
 ): TargetTile[] {
   const safetyMarginPrice = buildSafetyMarginPrice(metrics);
   const candidates: Array<{ labelKey: string; sublabelKey: string; metric?: CanonicalMetric; tone: ReportTone; formatter?: (value: number) => string }> = [
-    { labelKey: 'targetEpsLabel', sublabelKey: 'targetEpsSubtitle', metric: metrics.forwardEpsFy0 || metrics.forwardEpsTtm, tone: 'neutral', formatter: formatPlain },
+    { labelKey: 'targetEpsLabel', sublabelKey: 'targetEpsSubtitle', metric: metrics.forwardEpsTtm || metrics.forwardEpsFy0, tone: 'neutral', formatter: formatPlain },
     { labelKey: 'targetIntrinsicLabel', sublabelKey: 'targetIntrinsicSubtitle', metric: metrics.intrinsicValue, tone: intrinsicTone(metrics.intrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatCurrency(value, currency) },
     { labelKey: 'targetMarginLabel', sublabelKey: 'targetMarginSubtitle', metric: safetyMarginPrice, tone: marginTone(metrics.marginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, metrics.marginOfSafety?.value ?? null, currency) },
     { labelKey: 'targetCoverageLabel', sublabelKey: 'targetCoverageSubtitle', metric: metrics.interestCoverage, tone: coverageTone(metrics.interestCoverage?.value ?? null), formatter: formatMultiple },
     { labelKey: 'targetBetaLabel', sublabelKey: 'targetBetaSubtitle', metric: metrics.beta, tone: 'neutral', formatter: formatPlain },
     { labelKey: 'targetWaccLabel', sublabelKey: 'targetWaccSubtitle', metric: metrics.wacc, tone: 'neutral', formatter: formatPercentSmart },
-    { labelKey: 'targetForwardPeLabel', sublabelKey: 'targetForwardPeSubtitle', metric: metrics.forwardPeFy0 || metrics.forwardPe, tone: 'neutral', formatter: formatMultiple },
+    { labelKey: 'targetForwardPeLabel', sublabelKey: 'targetForwardPeSubtitle', metric: metrics.forwardPe, tone: 'neutral', formatter: formatMultiple },
   ];
 
   return candidates
