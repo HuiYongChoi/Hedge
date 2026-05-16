@@ -261,6 +261,25 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("RimBreakdown", src)
         self.assertIn("PbrBand", src)
 
+    def test_get_agent_report_suffix_aware_scan(self):
+        """getAgentReport must handle unique_agent_id keys with random 6-char suffix."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("Suffix-aware fallback", src, "Missing suffix-aware fallback comment in getAgentReport")
+        self.assertIn("stripSuffix", src)
+        self.assertIn("export function stripSuffix", src)
+
+    def test_list_other_agents_uses_strip_suffix(self):
+        """listOtherAgents must strip uuid suffix when comparing against active agent key."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        fn_start = src.index("export function listOtherAgents")
+        snippet = src[fn_start:fn_start + 1500]
+        self.assertIn("stripSuffix", snippet, "listOtherAgents must use stripSuffix for active agent filtering")
+
+    def test_get_agent_report_json_parse_fallback(self):
+        """getAgentReport must attempt JSON.parse when analysis is a string (Case D)."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("JSON.parse", src)
+
 
 if __name__ == "__main__":
     unittest.main()

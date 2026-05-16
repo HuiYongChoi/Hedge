@@ -165,6 +165,14 @@ export function normalizeTicker(ticker: string) {
   return ticker.trim().toUpperCase();
 }
 
+export function stripSuffix(k: string): string {
+  const noAgent = k.replace(/_agent$/, '');
+  const parts = noAgent.split('_');
+  const last = parts[parts.length - 1];
+  if (parts.length > 1 && /^[a-z0-9]{6}$/i.test(last)) return parts.slice(0, -1).join('_');
+  return noAgent;
+}
+
 export function isJapaneseTicker(ticker: string) {
   const t = ticker.trim().toUpperCase();
   const code = t.split('.')[0];
@@ -346,11 +354,24 @@ export function getAgentReport(
       const report = signals[ticker] || signals[normalized];
       if (report && typeof report === 'object') return report as AgentReport;
     }
+    // Suffix-aware fallback: scan analystSignals keys, match by base name
+    const wantedBase = stripSuffix(agentKey);
+    for (const key of Object.keys(analystSignals)) {
+      if (stripSuffix(key) !== wantedBase) continue;
+      const signals = analystSignals[key];
+      if (!signals || typeof signals !== 'object') continue;
+      const report = signals[ticker] || signals[normalized];
+      if (report && typeof report === 'object') return report as AgentReport;
+    }
   }
 
-  const analysis = agentResult?.analysis;
-  if (analysis && typeof analysis === 'object') {
-    const report = analysis[ticker] || analysis[normalized];
+  // agentResult fallback — handle string analysis (Case D: stale progress event data)
+  let analysisObj: Record<string, any> | null = agentResult?.analysis as Record<string, any> | null;
+  if (typeof analysisObj === 'string') {
+    try { analysisObj = JSON.parse(analysisObj as string); } catch { analysisObj = null; }
+  }
+  if (analysisObj && typeof analysisObj === 'object') {
+    const report = analysisObj[ticker] || analysisObj[normalized];
     if (report && typeof report === 'object') return report as AgentReport;
   }
   if (agentResult?.report && typeof agentResult.report === 'object') return agentResult.report as AgentReport;
@@ -1504,8 +1525,8 @@ export function listOtherAgents(
   const signals = completeResult.analyst_signals || {};
   return Object.entries(signals)
     .map(([key, value]) => {
-      const baseKey = key.replace(/_agent$/, '');
-      if (baseKey === activeAgentKey.replace(/_agent$/, '') || baseKey === 'risk_management') return null;
+      const baseKey = stripSuffix(key);
+      if (baseKey === stripSuffix(activeAgentKey) || baseKey === 'risk_management') return null;
       const report = value && typeof value === 'object' ? (value as Record<string, any>)[ticker] : null;
       if (!report || typeof report !== 'object') return null;
       const meta = agentMetaMap.get(baseKey) || getAgentMeta(baseKey);

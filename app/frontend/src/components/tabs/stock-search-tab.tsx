@@ -1571,6 +1571,8 @@ function AnalysisDisplay({ analysis, language }: { analysis: any; agentKey?: str
 }
 
 function AgentReportSummary({ analysis, language }: { analysis: any; language: 'ko' | 'en' }) {
+  const [expandedEntries, setExpandedEntries] = useState<Set<string>>(new Set());
+
   if (!analysis || typeof analysis !== 'object' || Array.isArray(analysis)) {
     return null;
   }
@@ -1592,44 +1594,69 @@ function AgentReportSummary({ analysis, language }: { analysis: any; language: '
     return null;
   }
 
+  const toggleEntry = (ticker: string) => {
+    setExpandedEntries(prev => {
+      const next = new Set(prev);
+      if (next.has(ticker)) next.delete(ticker);
+      else next.add(ticker);
+      return next;
+    });
+  };
+
   return (
     <div className="space-y-2">
       <div className="text-xs font-medium text-muted-foreground">
         {language === 'ko' ? '에이전트 점수 요약' : 'Agent Score Summary'}
       </div>
       <div className="grid gap-2">
-        {entries.map((entry) => (
-          <div key={entry.ticker} className="rounded-md border border-border bg-background/40 p-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-xs font-semibold text-primary">
-                {entry.companyName ? (
-                  <>{entry.companyName} <span className="font-normal text-muted-foreground">({entry.ticker})</span></>
-                ) : (
-                  entry.ticker
-                )}
-              </span>
-              <Badge variant="outline" className={getSignalClass(entry.signal)}>
-                {getSignalLabel(entry.signal, language)}
-              </Badge>
-              {entry.confidence && (
-                <Badge variant="outline" className="border-blue-500/30 bg-blue-500/10 text-blue-500">
-                  {language === 'ko' ? '점수' : 'Score'} {entry.confidence}
+        {entries.map((entry) => {
+          const isExpanded = expandedEntries.has(entry.ticker);
+          return (
+            <div key={entry.ticker} className="rounded-md border border-border bg-background/40 p-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-xs font-semibold text-primary">
+                  {entry.companyName ? (
+                    <>{entry.companyName} <span className="font-normal text-muted-foreground">({entry.ticker})</span></>
+                  ) : (
+                    entry.ticker
+                  )}
+                </span>
+                <Badge variant="outline" className={getSignalClass(entry.signal)}>
+                  {getSignalLabel(entry.signal, language)}
                 </Badge>
+                {entry.confidence && (
+                  <Badge variant="outline" className="border-blue-500/30 bg-blue-500/10 text-blue-500">
+                    {language === 'ko' ? '점수' : 'Score'} {entry.confidence}
+                  </Badge>
+                )}
+              </div>
+              {entry.reasoning && (
+                <div className="mt-2">
+                  <div
+                    className={`text-xs leading-relaxed text-muted-foreground [&_h2]:mb-2 [&_h2]:mt-1 [&_h2]:text-sm [&_h3]:mb-2 [&_h3]:mt-1 [&_h3]:text-sm [&_li]:text-muted-foreground [&_ol]:my-2 [&_p]:my-2 [&_p]:text-muted-foreground [&_ul]:my-2 ${isExpanded ? '' : 'max-h-32 overflow-hidden'}`}
+                  >
+                    <ReportSentimentDashboard
+                      markdown={formatDecisionReasoning(entry.reasoning)}
+                      language={language}
+                      className="mb-3"
+                    />
+                    <ReportToneLegend language={language} />
+                    {renderMarkdownBlocks(ensureParagraphBreaks(formatDecisionReasoning(entry.reasoning)))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleEntry(entry.ticker)}
+                    className="mt-1.5 text-xs font-medium text-primary hover:underline focus:outline-none"
+                  >
+                    {isExpanded
+                      ? (language === 'ko' ? '▲ 접기' : '▲ Collapse')
+                      : (language === 'ko' ? '▼ 더 보기' : '▼ Show more')}
+                  </button>
+                </div>
               )}
             </div>
-            {entry.reasoning && (
-              <div className="mt-2 text-xs leading-relaxed text-muted-foreground [&_h2]:mb-2 [&_h2]:mt-1 [&_h2]:text-sm [&_h3]:mb-2 [&_h3]:mt-1 [&_h3]:text-sm [&_li]:text-muted-foreground [&_ol]:my-2 [&_p]:my-2 [&_p]:text-muted-foreground [&_ul]:my-2">
-                <ReportSentimentDashboard
-                  markdown={formatDecisionReasoning(entry.reasoning)}
-                  language={language}
-                  className="mb-3"
-                />
-                <ReportToneLegend language={language} />
-                {renderMarkdownBlocks(ensureParagraphBreaks(formatDecisionReasoning(entry.reasoning)))}
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
