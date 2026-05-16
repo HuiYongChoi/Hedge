@@ -44,6 +44,31 @@ def test_pbr_band_uses_historical_percentiles_and_implied_prices():
     assert result["rerating_note"]
 
 
+def test_pbr_band_falls_back_to_current_snapshot_when_history_is_sparse():
+    from src.agents.valuation import calculate_pbr_band
+
+    result = calculate_pbr_band(
+        financial_metrics=[
+            FinancialMetrics(
+                ticker="000660.KS",
+                report_period="2026-12-31",
+                period="ttm",
+                currency="KRW",
+                price_to_book_ratio=10.7,
+                book_value_per_share=174_319.29,
+            )
+        ],
+        current_price=1_865_216.4,
+        shares_outstanding=692_216_846.0,
+        revenue_growth=0.46,
+    )
+
+    assert result is not None
+    assert result["position_label"] == "single_snapshot"
+    assert result["fair_price_p50"] == result["current_price"]
+    assert "히스토리 부족" in result["details"]
+
+
 def test_valuation_agent_emits_rim_pbr_when_only_current_line_item(monkeypatch):
     """Korean/Japan providers can return only one rich TTM line-item snapshot."""
     import src.agents.valuation as valuation

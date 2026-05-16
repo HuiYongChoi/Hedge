@@ -637,14 +637,30 @@ def calculate_pbr_band(
             period = getattr(metric, "report_period", "") or ""
             pbr_history.append((period, pbr))
 
-    if len(pbr_history) < 4:
-        return None
-
     bvps: float | None = getattr(financial_metrics[0], "book_value_per_share", None)
     if bvps is None or bvps <= 0:
         return None
 
     current_pbr = pbr_history[0][1]
+    if len(pbr_history) < 4:
+        anchor_price = current_price or bvps * current_pbr
+        return {
+            "current_pbr": current_pbr,
+            "percentiles": {"p10": current_pbr, "p25": current_pbr, "p50": current_pbr, "p75": current_pbr, "p90": current_pbr},
+            "history": [{"period": period, "pbr": pbr} for period, pbr in pbr_history],
+            "bvps": bvps,
+            "fair_price_p10": anchor_price,
+            "fair_price_p25": anchor_price,
+            "fair_price_p50": anchor_price,
+            "fair_price_p75": anchor_price,
+            "fair_price_p90": anchor_price,
+            "current_price": anchor_price,
+            "position_label": "single_snapshot",
+            "rerating_note": "PBR 히스토리 부족 — 현재 PBR 스냅샷 기준",
+            "signal": "neutral",
+            "details": f"현재 PBR {current_pbr:.2f}x · 히스토리 부족으로 현재 스냅샷을 기준점으로 표시",
+        }
+
     values = sorted(value for _, value in pbr_history)
     p10 = _percentile_manual(values, 10)
     p25 = _percentile_manual(values, 25)
