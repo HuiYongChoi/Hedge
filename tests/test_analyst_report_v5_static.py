@@ -297,6 +297,37 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("stripSuffix(key)", snippet)
         self.assertIn("!isNarrativeAgentKey(baseKey)", snippet)
 
+    def test_extract_key_numbers_label_guard(self):
+        """배 단위 값에 절대량 라벨이 붙지 않아야 한다.
+        Price-to-Earnings 의 'Price' 가 '현재가' 패턴에 광범위하게 매치되던 버그 재발 방지."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+
+        # (A) '현재가' 패턴이 더 이상 \bprice\b 단독을 잡지 않는다
+        self.assertIn("share\\s*price", src)
+        self.assertIn("stock\\s*price", src)
+        self.assertIn("market\\s*price", src)
+        # 이전의 광범위 'price' 단독 매치는 제거되어야 함
+        self.assertNotIn("/현재가|current price|price/i", src)
+
+        # (B) 단위 가드 헬퍼와 가드 분기가 존재한다
+        self.assertIn("MULTIPLE_VALUE_PATTERN", src)
+        self.assertIn("isMultipleValue", src)
+        self.assertIn("isAbsoluteAmountLabel", src)
+        self.assertIn("PRICE_LABEL_KO", src)
+        self.assertIn("PRICE_LABEL_EN", src)
+
+        # (C) 라벨 후보 순서: 트레일링 P/E 가 '현재가' 보다 위에 있어야 함
+        forward_idx = src.find("ko: '포워드 P/E'")
+        trailing_idx = src.find("ko: '트레일링 P/E'")
+        current_price_idx = src.find("ko: '현재가'")
+        self.assertGreater(forward_idx, 0)
+        self.assertGreater(trailing_idx, 0)
+        self.assertGreater(current_price_idx, 0)
+        self.assertLess(forward_idx, current_price_idx,
+                        "포워드 P/E 라벨은 현재가 라벨보다 앞 순서에 있어야 한다")
+        self.assertLess(trailing_idx, current_price_idx,
+                        "트레일링 P/E 라벨은 현재가 라벨보다 앞 순서에 있어야 한다")
+
     def test_sentiment_dashboard_has_toggle(self):
         """ReportSentimentDashboard cards must have expand/collapse toggle.
         Each tone card limits items to maxItemsPerTone with line-clamp-2 by default;

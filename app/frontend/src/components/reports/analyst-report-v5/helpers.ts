@@ -87,13 +87,15 @@ const LABEL_CANDIDATES: Array<{ pattern: RegExp; ko: string; en: string }> = [
   { pattern: /FCF\s*수익률|free cash flow yield|fcf yield/i, ko: 'FCF 수익률', en: 'FCF yield' },
   { pattern: /부채비율|debt-to-equity|D\/E/i, ko: '부채비율', en: 'Debt-to-equity' },
   { pattern: /내재가치|intrinsic value|fair value/i, ko: '1주당 내재가치', en: 'Intrinsic value' },
-  { pattern: /현재가|current price|price/i, ko: '현재가', en: 'Current price' },
-  { pattern: /안전마진|margin of safety/i, ko: '안전마진', en: 'Margin of safety' },
-  { pattern: /wacc|discount rate|할인율/i, ko: 'WACC', en: 'WACC' },
-  { pattern: /forward.*eps|전망.*eps|컨센.*eps|다음.*eps/i, ko: '다음분기 EPS', en: 'Forward EPS' },
-  { pattern: /ttm.*eps|trailing.*eps/i, ko: 'TTM EPS', en: 'TTM EPS' },
+  // P/E ratio labels before the generic '현재가' so "Price-to-Earnings" context matches here first
   { pattern: /forward.*p\/?e|포워드.*p\/?e|forward per/i, ko: '포워드 P/E', en: 'Forward P/E' },
   { pattern: /trailing.*p\/?e|트레일링.*p\/?e/i, ko: '트레일링 P/E', en: 'Trailing P/E' },
+  { pattern: /forward.*eps|전망.*eps|컨센.*eps|다음.*eps/i, ko: '다음분기 EPS', en: 'Forward EPS' },
+  { pattern: /ttm.*eps|trailing.*eps/i, ko: 'TTM EPS', en: 'TTM EPS' },
+  // Narrowed: require a qualifier before 'price' so "Price-to-Earnings" won't match here
+  { pattern: /현재가|주가\s*수준|share\s*price|stock\s*price|market\s*price|current\s*price/i, ko: '현재가', en: 'Current price' },
+  { pattern: /안전마진|margin of safety/i, ko: '안전마진', en: 'Margin of safety' },
+  { pattern: /wacc|discount rate|할인율/i, ko: 'WACC', en: 'WACC' },
   { pattern: /성장률|growth rate|growth/i, ko: '성장률', en: 'Growth' },
   { pattern: /이자보상|interest coverage/i, ko: '이자보상배율', en: 'Interest coverage' },
   { pattern: /베타|beta/i, ko: '베타', en: 'Beta' },
@@ -1235,6 +1237,21 @@ export function buildCitations(
   }));
 }
 
+// Unit guard: values ending in 배/x/X are multiples (P/E, PBR, etc.),
+// never absolute prices. If a candidate label is a price/amount category,
+// fall back to a generic label to avoid e.g. "현재가 30.06배".
+const MULTIPLE_VALUE_PATTERN = /[\d.,]\s?(?:배|x|X)$/;
+const PRICE_LABEL_KO = new Set(['현재가', '시가총액', '매출', '영업이익', '1주당 내재가치']);
+const PRICE_LABEL_EN = new Set(['Current price', 'Market cap', 'Revenue', 'Operating income', 'Intrinsic value']);
+
+function isMultipleValue(rawValue: string): boolean {
+  return MULTIPLE_VALUE_PATTERN.test(rawValue.trim());
+}
+
+function isAbsoluteAmountLabel(label: string): boolean {
+  return PRICE_LABEL_KO.has(label) || PRICE_LABEL_EN.has(label);
+}
+
 export function extractKeyNumbers(
   itemText: string,
   language: ReportLanguage,
@@ -1253,7 +1270,11 @@ export function extractKeyNumbers(
     const contextEnd = Math.min(itemText.length, index + value.length + 80);
     const context = itemText.slice(contextStart, contextEnd);
     const candidate = LABEL_CANDIDATES.find(label => label.pattern.test(context));
-    const label = candidate ? (language === 'ko' ? candidate.ko : candidate.en) : (language === 'ko' ? `값 ${results.length + 1}` : `Value ${results.length + 1}`);
+    let label = candidate ? (language === 'ko' ? candidate.ko : candidate.en) : (language === 'ko' ? `값 ${results.length + 1}` : `Value ${results.length + 1}`);
+    // Unit guard: 배/x/X values are multiples, never absolute prices
+    if (isMultipleValue(value) && isAbsoluteAmountLabel(label)) {
+      label = language === 'ko' ? `값 ${results.length + 1}` : `Value ${results.length + 1}`;
+    }
 
     if (usedLabels.has(label)) continue;
     usedLabels.add(label);
