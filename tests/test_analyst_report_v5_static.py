@@ -226,5 +226,43 @@ class AnalystReportV5StaticTests(unittest.TestCase):
             self.assertNotIn("pbrBand", src_text)
             self.assertNotIn("RimBreakdown", src_text)
 
+    def test_get_agent_report_is_suffix_aware_for_live_sse_keys(self):
+        """Live SSE uses keys like aswath_damodaran_codx01."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        fn_start = src.index("export function getAgentReport")
+        snippet = src[fn_start:fn_start + 2400]
+
+        self.assertIn("export function stripSuffix", src)
+        self.assertIn("Suffix-aware fallback", snippet)
+        self.assertIn("stripSuffix(key) !== wantedBase", snippet)
+
+    def test_get_agent_report_unwraps_ticker_wrapped_agent_result_report(self):
+        """Stock search stores final agentResult.report as { ticker: report }."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        fn_start = src.index("export function getAgentReport")
+        snippet = src[fn_start:fn_start + 2600]
+
+        self.assertIn("pickTickerReport", src)
+        self.assertIn("agentResult.report", snippet)
+        self.assertNotIn("return agentResult.report as AgentReport", snippet)
+
+    def test_pick_default_agent_skips_risk_manager_metrics_nodes(self):
+        """risk_management_agent_codx01 has metrics dict reasoning, not a narrative report."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        fn_start = src.index("export function pickDefaultAgent")
+        snippet = src[fn_start:fn_start + 2400]
+
+        self.assertIn("isNarrativeAgentKey", src)
+        self.assertIn("risk_management", snippet)
+        self.assertIn("isNarrativeAgentKey(key)", snippet)
+
+    def test_list_other_agents_excludes_risk_manager_suffix_keys(self):
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        fn_start = src.index("export function listOtherAgents")
+        snippet = src[fn_start:fn_start + 1800]
+
+        self.assertIn("stripSuffix(key)", snippet)
+        self.assertIn("!isNarrativeAgentKey(baseKey)", snippet)
+
 if __name__ == "__main__":
     unittest.main()

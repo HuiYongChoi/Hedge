@@ -165,6 +165,22 @@ export function normalizeTicker(ticker: string) {
   return ticker.trim().toUpperCase();
 }
 
+export function stripSuffix(key: string): string {
+  const parts = key.split('_');
+  const last = parts[parts.length - 1];
+  const withoutRuntimeSuffix = parts.length > 1 && /^[a-z0-9]{6}$/i.test(last)
+    ? parts.slice(0, -1).join('_')
+    : key;
+  return withoutRuntimeSuffix.replace(/_agent$/, '');
+}
+
+function isNarrativeAgentKey(key: string) {
+  const baseKey = stripSuffix(key);
+  return baseKey !== 'risk_management'
+    && baseKey !== 'portfolio_manager'
+    && baseKey !== 'forward_prefetch';
+}
+
 export function isJapaneseTicker(ticker: string) {
   const t = ticker.trim().toUpperCase();
   const code = t.split('.')[0];
@@ -210,14 +226,14 @@ export function getDisplayTickerLabel(ticker: string, report?: AgentReport | nul
 }
 
 export function displayAgentName(agentKey: string, fallback?: string, language: ReportLanguage = 'ko') {
-  const baseKey = agentKey.replace(/_agent$/, '');
+  const baseKey = stripSuffix(agentKey);
   const meta = AGENT_META[baseKey];
   if (language === 'ko') return meta?.nameKo || fallback || humanizeAgentKey(baseKey);
   return meta?.nameEn || fallback || humanizeAgentKey(baseKey);
 }
 
 export function getAgentMeta(agentKey: string, result?: AgentResult): AgentMeta {
-  const baseKey = agentKey.replace(/_agent$/, '');
+  const baseKey = stripSuffix(agentKey);
   const meta = AGENT_META[baseKey];
   return {
     key: baseKey,
@@ -229,8 +245,7 @@ export function getAgentMeta(agentKey: string, result?: AgentResult): AgentMeta 
 }
 
 export function humanizeAgentKey(agentKey: string) {
-  return agentKey
-    .replace(/_agent$/, '')
+  return stripSuffix(agentKey)
     .replace(/_/g, ' ')
     .replace(/\b\w/g, char => char.toUpperCase());
 }
@@ -306,8 +321,45 @@ export function extractReasoningText(reasoning: unknown): string {
     const fields = ['reasoning', 'summary', 'analysis', 'details', 'explanation', 'detail_report', 'cross_check_guide'];
     const chunks = fields.map(field => extractReasoningText(record[field])).filter(Boolean);
     if (chunks.length > 0) return chunks.join('\n\n');
+
+    const primitiveLines: string[] = [];
+    for (const [key, value] of Object.entries(record)) {
+      if (value === null || value === undefined) continue;
+      if (typeof value === 'string' && value.trim()) {
+        primitiveLines.push(`- ${key.replace(/_/g, ' ')}: ${value}`);
+      } else if (typeof value === 'number' || typeof value === 'boolean') {
+        primitiveLines.push(`- ${key.replace(/_/g, ' ')}: ${value}`);
+      }
+    }
+    if (primitiveLines.length > 0) return primitiveLines.join('\n');
   }
   return '';
+}
+
+function isLikelyAgentReport(value: unknown): value is AgentReport {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return 'reasoning' in record
+    || 'signal' in record
+    || 'confidence' in record
+    || 'structured_view' in record
+    || 'sections' in record;
+}
+
+function pickTickerReport(value: unknown, ticker: string): AgentReport | null {
+  if (!value || typeof value !== 'object') return null;
+  if (isLikelyAgentReport(value)) return value;
+
+  const normalized = normalizeTicker(ticker);
+  const record = value as Record<string, unknown>;
+  const exact = record[ticker] || record[normalized];
+  if (isLikelyAgentReport(exact)) return exact;
+
+  for (const [key, nested] of Object.entries(record)) {
+    if (normalizeTicker(key) !== normalized) continue;
+    if (isLikelyAgentReport(nested)) return nested;
+  }
+  return null;
 }
 
 export function getAgentReport(
@@ -316,36 +368,55 @@ export function getAgentReport(
   ticker: string,
   agentResult?: AgentResult,
 ): AgentReport | null {
-  const normalized = normalizeTicker(ticker);
-  const candidates = [agentKey, agentKey.replace(/_agent$/, ''), `${agentKey.replace(/_agent$/, '')}_agent`];
+  const baseAgentKey = stripSuffix(agentKey);
+  const candidates = Array.from(new Set([agentKey, baseAgentKey, `${baseAgentKey}_agent`]));
   if (analystSignals) {
     for (const key of candidates) {
       const signals = analystSignals[key];
-      if (!signals || typeof signals !== 'object') continue;
-      const report = signals[ticker] || signals[normalized];
-      if (report && typeof report === 'object') return report as AgentReport;
+      const report = pickTickerReport(signals, ticker);
+      if (report) return report;
+    }
+
+    // Suffix-aware fallback: live SSE keys look like "aswath_damodaran_codx01".
+    const wantedBase = stripSuffix(agentKey);
+    for (const [key, signals] of Object.entries(analystSignals)) {
+      if (stripSuffix(key) !== wantedBase) continue;
+      const report = pickTickerReport(signals, ticker);
+      if (report) return report;
     }
   }
 
-  const analysis = agentResult?.analysis;
-  if (analysis && typeof analysis === 'object') {
-    const report = analysis[ticker] || analysis[normalized];
-    if (report && typeof report === 'object') return report as AgentReport;
+  let analysis = agentResult?.analysis as unknown;
+  if (typeof analysis === 'string') {
+    try {
+      analysis = JSON.parse(analysis);
+    } catch {
+      analysis = null;
+    }
   }
-  if (agentResult?.report && typeof agentResult.report === 'object') return agentResult.report as AgentReport;
+  const analysisReport = pickTickerReport(analysis, ticker);
+  if (analysisReport) return analysisReport;
+
+  const storedReport = pickTickerReport(agentResult && agentResult.report, ticker);
+  if (storedReport) return storedReport;
   return null;
 }
 
 export function pickDefaultAgent(agentResults: Map<string, AgentResult>, activeTicker: string): string {
-  const completeForTicker = Array.from(agentResults.entries()).filter(([, result]) => (
-    result.status === 'complete' && (!result.ticker || normalizeTicker(result.ticker) === normalizeTicker(activeTicker))
+  // risk_management nodes expose portfolio limit metrics, not analyst narrative text.
+  const completeForTicker = Array.from(agentResults.entries()).filter(([key, result]) => (
+    result.status === 'complete'
+    && isNarrativeAgentKey(key)
+    && (!result.ticker || normalizeTicker(result.ticker) === normalizeTicker(activeTicker))
   ));
-  const scopedValuation = completeForTicker.find(([key]) => key === 'valuation_analyst');
+  const scopedValuation = completeForTicker.find(([key]) => stripSuffix(key) === 'valuation_analyst');
   if (scopedValuation) return scopedValuation[0];
 
   const complete = completeForTicker.length > 0
     ? completeForTicker
-    : Array.from(agentResults.entries()).filter(([, result]) => result.status === 'complete');
+    : Array.from(agentResults.entries()).filter(([key, result]) => (
+      result.status === 'complete' && isNarrativeAgentKey(key)
+    ));
   if (complete.length === 0) return Array.from(agentResults.keys())[0] || 'valuation_analyst';
   return complete[0][0];
 }
@@ -1511,10 +1582,10 @@ export function listOtherAgents(
   const signals = completeResult.analyst_signals || {};
   return Object.entries(signals)
     .map(([key, value]) => {
-      const baseKey = key.replace(/_agent$/, '');
-      if (baseKey === activeAgentKey.replace(/_agent$/, '') || baseKey === 'risk_management') return null;
-      const report = value && typeof value === 'object' ? (value as Record<string, any>)[ticker] : null;
-      if (!report || typeof report !== 'object') return null;
+      const baseKey = stripSuffix(key);
+      if (baseKey === stripSuffix(activeAgentKey) || !isNarrativeAgentKey(baseKey)) return null;
+      const report = pickTickerReport(value, ticker);
+      if (!report) return null;
       const meta = agentMetaMap.get(baseKey) || getAgentMeta(baseKey);
       const tone = getSignalTone(report.signal);
       return {

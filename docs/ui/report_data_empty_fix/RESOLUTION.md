@@ -19,6 +19,25 @@
 
 결론: 백엔드가 모든 본문을 빈 값으로 보내는 문제가 아니었다. 일반 투자 에이전트들은 긴 reasoning 문자열을 정상 반환했고, RIM/PBR feature 이후의 `valuation_analyst` 경로와 프론트 deep-dive 도입이 본문 회귀를 유발한 범위로 확정했다.
 
+### 1.1 배포 후 추가 실측
+
+`cbaab47` 배포 후에도 라이브 화면에서 섹션 01~06이 비어 보이는 증상이 재현되어, 같은 서버에 실제 UI 형태의 SK하이닉스 payload를 다시 호출했다.
+
+- `complete.data.analyst_signals` key:
+  - `aswath_damodaran_codx01`
+  - `charlie_munger_codx01`
+  - `risk_management_agent_codx01`
+- `aswath_damodaran_codx01["000660.KS"].reasoning`: string, 약 3,059자
+- `charlie_munger_codx01["000660.KS"].reasoning`: string, 약 3,460자
+- `risk_management_agent_codx01["000660.KS"].reasoning`: dict
+
+추가 root cause:
+
+- Strategy A revert 과정에서 RIM/PBR feature는 제거됐지만, `e62c6d3`/`4546303`에 있던 suffix-aware scan과 risk manager 기본 선택 방지까지 함께 빠졌다.
+- live SSE key는 `aswath_damodaran_codx01`처럼 runtime suffix가 붙는데, `getAgentReport`는 unsuffixed key만 우선 조회했다.
+- `risk_management_agent_codx01`은 보고서 본문이 아니라 포트폴리오 제한 계산용 metrics dict인데, 기본 active agent로 잡히면 본문 섹션이 모두 비어 보일 수 있었다.
+- stock search 결과 저장 경로는 `agentResult.report`를 `{ ticker: report }` wrapper로 보관할 수 있으므로, 이를 그대로 report로 반환하면 `reasoning`을 찾지 못한다.
+
 ## 2. 본문 빈 상태 Root Cause 및 적용 Diff
 
 사용자가 선택한 전략 A에 따라 회귀가 시작된 feature/fix 묶음을 제거하고 마지막 정상 기준인 `75f9924` 동작으로 되돌렸다.
@@ -38,6 +57,19 @@
 - `tests/test_analyst_report_v5_static.py`에 RIM/PBR panel이 안전하게 재도입되기 전까지 남아 있지 않아야 한다는 회귀 방지 assertion 추가
 
 `75f9924..HEAD` 기준 실제 남은 의도적 차이는 `helpers.ts`의 안전마진 타일 보정과 해당 static test뿐이다.
+
+추가 적용 diff:
+
+- `helpers.ts`
+  - `stripSuffix`를 복원하되 `risk_management_agent_codx01 → risk_management`까지 정규화하도록 보강
+  - `getAgentReport`가 live SSE suffix key를 scan하도록 복원
+  - `pickTickerReport` 추가로 `{ ticker: report }` wrapper를 안전하게 해제
+  - `pickDefaultAgent`가 `risk_management`, `portfolio_manager`, `forward_prefetch`를 기본 본문 agent로 선택하지 않도록 수정
+  - `listOtherAgents`에서도 suffix 정규화 후 risk manager를 제외
+- `tests/test_analyst_report_v5_static.py`
+  - live SSE suffix key lookup 회귀 방지
+  - ticker-wrapped `agentResult.report` 해제 회귀 방지
+  - risk manager 기본 선택 및 other-agent 노출 회귀 방지
 
 ## 3. 안전마진 타일 알고리즘 및 LOCK
 
