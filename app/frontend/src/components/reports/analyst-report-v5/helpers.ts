@@ -335,6 +335,20 @@ export function extractReasoningText(reasoning: unknown): string {
       if (fwdDetails) parts.push(`## 멀티플\n${fwdDetails}`);
       return parts.join('\n\n');
     }
+
+    // Last-resort fallback: any dict shape with primitive (string/number/boolean) values
+    // gets rendered as `key: value` lines. Covers agents like risk_management whose
+    // `reasoning` is a metrics dict (portfolio_value, risk_adjustment, …).
+    const primitiveLines: string[] = [];
+    for (const [k, v] of Object.entries(record)) {
+      if (v === null || v === undefined) continue;
+      if (typeof v === 'string' && v.trim()) {
+        primitiveLines.push(`- ${k.replace(/_/g, ' ')}: ${v}`);
+      } else if (typeof v === 'number' || typeof v === 'boolean') {
+        primitiveLines.push(`- ${k.replace(/_/g, ' ')}: ${v}`);
+      }
+    }
+    if (primitiveLines.length > 0) return primitiveLines.join('\n');
   }
   return '';
 }
@@ -379,17 +393,27 @@ export function getAgentReport(
 }
 
 export function pickDefaultAgent(agentResults: Map<string, AgentResult>, activeTicker: string): string {
-  const completeForTicker = Array.from(agentResults.entries()).filter(([, result]) => (
-    result.status === 'complete' && (!result.ticker || normalizeTicker(result.ticker) === normalizeTicker(activeTicker))
+  // risk_management is a portfolio-constraint calculator; its `reasoning` is a metrics dict
+  // (portfolio_value, position_limit, …) without analyst narrative. Excluding it from the
+  // default active selection prevents the report from rendering empty sections.
+  const isReportable = (key: string) => key !== 'risk_management';
+
+  const completeForTicker = Array.from(agentResults.entries()).filter(([key, result]) => (
+    result.status === 'complete' && isReportable(key)
+    && (!result.ticker || normalizeTicker(result.ticker) === normalizeTicker(activeTicker))
   ));
   const scopedValuation = completeForTicker.find(([key]) => key === 'valuation_analyst');
   if (scopedValuation) return scopedValuation[0];
 
   const complete = completeForTicker.length > 0
     ? completeForTicker
-    : Array.from(agentResults.entries()).filter(([, result]) => result.status === 'complete');
-  if (complete.length === 0) return Array.from(agentResults.keys())[0] || 'valuation_analyst';
-  return complete[0][0];
+    : Array.from(agentResults.entries()).filter(([key, result]) => result.status === 'complete' && isReportable(key));
+  if (complete.length > 0) return complete[0][0];
+
+  // Last resort: fall back to any complete agent (including risk_management) or any keyed entry.
+  const anyComplete = Array.from(agentResults.entries()).find(([, result]) => result.status === 'complete');
+  if (anyComplete) return anyComplete[0];
+  return Array.from(agentResults.keys())[0] || 'valuation_analyst';
 }
 
 export function splitSentences(text: string): string[] {

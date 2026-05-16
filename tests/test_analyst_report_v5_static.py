@@ -280,6 +280,22 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         self.assertIn("JSON.parse", src)
 
+    def test_pick_default_agent_skips_risk_management(self):
+        """pickDefaultAgent must skip risk_management since its reasoning is a metrics
+        dict, not analyst narrative — picking it as default produces empty sections."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        fn_start = src.index("export function pickDefaultAgent")
+        snippet = src[fn_start:fn_start + 2000]
+        self.assertIn("risk_management", snippet)
+        self.assertIn("isReportable", snippet)
+
+    def test_extract_reasoning_text_has_primitive_fallback(self):
+        """extractReasoningText must format dict shapes with primitive values as
+        key:value lines when no recognized fields match (defense in depth for
+        risk_management style reasonings)."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("primitiveLines", src)
+
 
 if __name__ == "__main__":
     unittest.main()
