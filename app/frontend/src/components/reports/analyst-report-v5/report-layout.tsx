@@ -198,6 +198,29 @@ export function ReportLayout({
     activeTicker,
     activeAgentResult,
   );
+
+  useEffect(() => {
+    const reasoning = activeReport?.reasoning;
+    // eslint-disable-next-line no-console
+    console.log('[REPORT-DEBUG]', {
+      activeAgentKey,
+      activeTicker,
+      agentResultsKeys: Array.from(agentResults.keys()),
+      activeAgentResultStatus: activeAgentResult?.status,
+      activeAgentResultAnalysisType: typeof activeAgentResult?.analysis,
+      activeAgentResultAnalysisKeys: activeAgentResult?.analysis && typeof activeAgentResult.analysis === 'object'
+        ? Object.keys(activeAgentResult.analysis)
+        : null,
+      analystSignalsKeys: Object.keys(completeResult.analyst_signals || {}),
+      activeReportPresent: activeReport !== null,
+      activeReportKeys: activeReport ? Object.keys(activeReport) : null,
+      activeReportReasoningType: typeof reasoning,
+      activeReportReasoningLen: typeof reasoning === 'string' ? reasoning.length : null,
+      activeReportReasoningPreview: typeof reasoning === 'string'
+        ? reasoning.slice(0, 300)
+        : (reasoning && typeof reasoning === 'object' ? Object.keys(reasoning) : null),
+    });
+  }, [activeAgentKey, activeTicker, activeAgentResult, activeReport, agentResults, completeResult]);
   const citations = useMemo(() => buildCitations(activeTicker, isKoreanTicker(activeTicker), language), [activeTicker, language]);
   const canonicalMetrics = useMemo(
     () => buildCanonicalMetrics(activeAgentKey, completeResult, activeTicker),
