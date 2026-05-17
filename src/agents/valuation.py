@@ -56,7 +56,7 @@ def _forward_pe_interpretation(trailing_pe: float | None, forward_pe: float | No
         else "above TTM P/E; consensus implies earnings contraction or valuation pressure"
     )
     confidence_note = " Low confidence: use this as directional, not as a trailing-only override." if confidence == "low" else ""
-    return f"Price Compass FwdPER {forward_pe:.2f}x is {direction} vs TTM P/E {trailing_pe:.2f}x.{confidence_note}"
+    return f"Baseline forward P/E {forward_pe:.2f}x is {direction} vs TTM P/E {trailing_pe:.2f}x.{confidence_note}"
 
 
 def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analyst_agent"):
@@ -273,6 +273,19 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         signal = "bullish" if weighted_gap > 0.15 else "bearish" if weighted_gap < -0.15 else "neutral"
         confidence = round(min(abs(weighted_gap) / 0.30 * 100, 100))
 
+        # Weighted equity intrinsic value (sum of (weight * value) / total_weight)
+        weighted_intrinsic_total = (
+            sum(v["weight"] * v["value"] for v in method_values.values() if v["value"] > 0)
+            / total_weight
+            if total_weight > 0
+            else None
+        )
+        intrinsic_per_share_weighted = (
+            weighted_intrinsic_total / shares_outstanding
+            if weighted_intrinsic_total and shares_outstanding
+            else None
+        )
+
         capex_ratio = abs(li_curr.capital_expenditure or 0) / li_curr.revenue if li_curr.revenue else 0
         fcf_vol = calculate_fcf_volatility(fcf_history) if fcf_history else 0
         regime_note = (
@@ -394,7 +407,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             "details": (
                 f"{forward_interpretation} "
                 f"Trailing P/E: {_format_ratio(trailing_pe)}, "
-                f"Price Compass FwdPER: {_format_ratio(forward_pe)}, "
+                f"Baseline forward P/E: {_format_ratio(forward_pe)}, "
                 f"Blended P/E: {_format_ratio(blended_pe)}, "
                 f"Forward P/E (FY0 annual): {_format_ratio(forward_pe_fy0)}, "
                 f"Forward P/E (FY+1 annual): {_format_ratio(forward_pe_fy1)}, "
@@ -438,6 +451,9 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         valuation_analysis[ticker] = {
             "signal": signal,
             "confidence": confidence,
+            "intrinsic_value": intrinsic_per_share_weighted,
+            "intrinsic_value_total": weighted_intrinsic_total,
+            "margin_of_safety": weighted_gap,
             "reasoning": reasoning,
         }
         progress.update_status(agent_id, ticker, "Done", analysis=json.dumps(reasoning, indent=4))

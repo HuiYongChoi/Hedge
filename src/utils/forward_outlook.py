@@ -144,7 +144,7 @@ def build_forward_outlook_block(
             "fwd_eps_ttm": display_forward_eps,
             "current_fy_eps": getattr(forward_metrics, "forward_eps_fy0", None),
             "next_fy_eps": getattr(forward_metrics, "forward_eps_fy1", None) or canonical_forward_eps,
-            "formula": "Price Compass FwdPER = current_price / forward_eps",
+            "formula": "Baseline forward P/E = current_price / forward_eps",
         },
         "interpretation_hint": _build_interpretation_hint(
             forward_metrics,

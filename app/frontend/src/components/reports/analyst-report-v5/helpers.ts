@@ -1572,11 +1572,14 @@ function buildForwardPeComparisonNote(
 // Developer-only tokens that LLMs sometimes echo from the system prompt.
 // These must never reach the analyst-facing report.
 const DEVELOPER_TOKEN_PATTERNS: Array<{ pattern: RegExp; ko: string; en: string }> = [
+  // Strip standalone "canonical" English word when it precedes a Korean PER/EPS phrase
+  // or English forward/per/eps/multiple — common LLM leak after FwdPER got replaced.
+  { pattern: /\bcanonical\s+(?=(?:선행|포워드|컨센|forward|fwd|per|p\/?e|eps|standard|multiple|consensus|baseline|estimate|FwdPER))/gi, ko: '', en: '' },
   { pattern: /\bcanonical\s*FwdPER\b/gi, ko: '선행 PER', en: 'forward P/E' },
   { pattern: /\bcanonical_multiples(?:\.[a-z_]+)?/gi, ko: '표준 배수', en: 'standard multiples' },
   { pattern: /\bcanonical\s*forward\s*(?:p\/?e|per|eps)\b/gi, ko: '선행 컨센서스 추정', en: 'forward consensus estimate' },
   { pattern: /\bforward_outlook(?:\.[a-z_]+)*/gi, ko: '포워드 전망', en: 'forward outlook' },
-  { pattern: /\bprice\s*compass(?:\s*기준)?\s*(?:baseline|standard)?/gi, ko: '선행 컨센서스 기준', en: 'forward consensus baseline' },
+  { pattern: /\bprice\s*compass(?:\s*기준)?(?:\s*(?:baseline|standard))?/gi, ko: '선행 컨센서스 기준', en: 'forward consensus baseline' },
   { pattern: /\b(?:the\s+)?only\s+canonical\s+FwdPER\s+shown\s+in\s+Price\s+Compass\b/gi, ko: '선행 컨센서스 기준 FwdPER', en: 'baseline forward P/E' },
   { pattern: /\braw\s*_?\s*spliced\s*_?\s*forward\s*_?\s*(?:pe|p\/?e|per)\b/gi, ko: '원천 분기 스플라이스', en: 'raw spliced forward P/E' },
   { pattern: /\bpe_change_pct\b/gi, ko: 'PER 변동률', en: 'P/E change' },
@@ -1589,6 +1592,9 @@ const RAW_PE_VS_BLOCK_PATTERN =
 
 // Tone-correction: drop incorrect “더 비싸진/비쌈” qualifiers when FwdPER < TTM.
 const FALSE_EXPENSIVE_TONE_KO = /(?:이\s*있어|상태(?:라서|이라서|이며)?)\s*(?:더\s*)?(?:비싸|비싼|고평가|높|상승)[^.!?。？！\n]*[.!?。？！]?/gi;
+// Inverted word-order: “비싸진/비싼/고평가(된) 상태(라서)” — verb-before-noun.
+// Captures the entire short clause to drop subject+tone+causal-particle together.
+const FALSE_EXPENSIVE_INVERTED_KO = /(?:포워드\s*PER이?\s*|선행\s*PER이?\s*|FwdPER이?\s*)?(?:더\s*)?(?:비싸진?|비싼|고평가(?:된)?)\s*상태(?:라서|이라서|이며)?\s*/gi;
 
 export function sanitizeForwardPeNarrative(
   text: string,
@@ -1605,7 +1611,7 @@ export function sanitizeForwardPeNarrative(
 
   // ── Pass 1: replace any “( A x vs B x )” block with the canonicalFwdPER ─────
   next = next.replace(RAW_PE_VS_BLOCK_PATTERN, (_match, _a, _b) => {
-    return language === 'ko' ? `선행 PER ${fwd}` : `forward P/E ${fwd}`;
+    return language === 'ko' ? ` 선행 PER ${fwd} ` : ` forward P/E ${fwd} `;
   });
 
   // ── Pass 2: existing labelled-PE replacement ────────────────────────────────
@@ -1624,7 +1630,10 @@ export function sanitizeForwardPeNarrative(
   // ── Pass 3: drop false-expensive tone when FwdPER < TTM ──────────────────────
   if (ttm && snapshot.ttmPer !== null && snapshot.fwdPer < snapshot.ttmPer) {
     if (language === 'ko') {
-      next = next.replace(FALSE_EXPENSIVE_TONE_KO, '상태로');
+      // 1) Strip "포워드 PER이 비싸진 상태라서" inverted-order clause entirely
+      next = next.replace(FALSE_EXPENSIVE_INVERTED_KO, '');
+      // 2) Strip "상태라서 비싸" original-order clause
+      next = next.replace(FALSE_EXPENSIVE_TONE_KO, '');
     }
     next = next.replace(/\b(?:more\s+expensive|valuation\s+pressure)\b/gi, 'consensus-driven');
   }
@@ -1641,6 +1650,13 @@ export function sanitizeForwardPeNarrative(
   for (const { pattern, ko, en } of DEVELOPER_TOKEN_PATTERNS) {
     next = next.replace(pattern, language === 'ko' ? ko : en);
   }
+
+  // ── Pass 6: insert missing spaces between concatenated Korean tokens ────────
+  // e.g. "선행 컨센서스 기준선행 PER" → "선행 컨센서스 기준 선행 PER"
+  //      "라서선행 PER" → "라서 선행 PER"
+  next = next.replace(/(기준|배수|전망|메모|추정|스플라이스|변동률|라서|이라서|이며)(?=(?:선행|포워드|컨센|FwdPER|forward|fwd|TTM|trailing|P\/?E|PER))/g, '$1 ');
+  // also handle leading whitespace lost after stripping
+  next = next.replace(/([가-힣A-Za-z0-9])\s*\(\s*-?\d/g, (match, prefix) => match.startsWith(' ') ? match : `${prefix} ${match.slice(prefix.length).trimStart()}`);
 
   // collapse double spaces / orphan particles caused by replacement
   next = next.replace(/\s{2,}/g, ' ').replace(/\s+([,.])/g, '$1');

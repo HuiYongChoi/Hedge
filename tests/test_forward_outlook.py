@@ -256,3 +256,15 @@ def test_interpretation_hint_uses_analyst_vocabulary():
     assert "TTM P/E" in hint
     assert "Next-quarter" not in hint
     assert "Forward consensus EPS" in hint
+
+
+def test_canonical_multiples_formula_avoids_developer_token():
+    """The `canonical_multiples.formula` string must not contain 'Price Compass' —
+    the LLM mirrors human-readable strings in its input."""
+    from src.utils.forward_outlook import build_forward_outlook_block
+
+    block = build_forward_outlook_block(_forward_metrics(), trailing_pe=20.0)
+
+    formula = block["canonical_multiples"]["formula"]
+    assert "Price Compass" not in formula
+    assert "Baseline forward P/E" in formula

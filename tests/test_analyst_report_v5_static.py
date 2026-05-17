@@ -426,11 +426,11 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("forward P/E ${fwd}", src)
 
     def test_sanitizer_corrects_false_expensive_tone(self):
-        """When fwdPer < ttmPer, '더 비싸진' tone must be neutralized in KO."""
+        """When fwdPer < ttmPer, '더 비싸진' tone must be stripped in KO."""
         src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         self.assertIn("FALSE_EXPENSIVE_TONE_KO", src)
-        # Replacement neutralizes to '상태로' (state of being) without judgement
-        self.assertIn("'상태로'", src)
+        # Replacement strips the false-expensive clause entirely (empty string)
+        self.assertIn("FALSE_EXPENSIVE_TONE_KO, ''", src)
 
     def test_label_candidates_ratio_guard(self):
         """Ratio-percent labels (ROIC, 안전마진, etc.) must be rejected when
@@ -458,6 +458,42 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertNotIn("'Forward earnings scale'", src)
         self.assertNotIn("'Next-Q Consensus EPS'", src)
         self.assertNotIn("'Forward earnings size'", src)
+
+    def test_sanitizer_strips_orphan_canonical_word(self):
+        """After FwdPER → 선행 PER replacement, standalone 'canonical' word
+        must still be stripped (it lost its FwdPER suffix)."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        # Lookahead pattern that strips 'canonical' before Korean PER/EPS phrases
+        self.assertIn("canonical\\s+(?=(?:선행|포워드|컨센|forward|fwd|per|p\\/?e|eps|standard|multiple|consensus|baseline|estimate|FwdPER))", src)
+
+    def test_sanitizer_price_compass_pattern_preserves_trailing_space(self):
+        """The price\\s*compass replacement must not greedily consume the trailing
+        whitespace when neither 'baseline' nor 'standard' follows — otherwise
+        '기준선행' (no space) appears."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        # The trailing \\s* must be INSIDE the optional baseline|standard group, not outside
+        self.assertIn("price\\s*compass(?:\\s*기준)?(?:\\s*(?:baseline|standard))?", src)
+        # The old greedy form must be gone
+        self.assertNotIn("price\\s*compass(?:\\s*기준)?\\s*(?:baseline|standard)?", src)
+
+    def test_sanitizer_catches_inverted_expensive_tone(self):
+        """'비싸진 상태라서' (verb-before-noun) must also be stripped, not only
+        '상태라서 비싸' (noun-before-verb)."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("FALSE_EXPENSIVE_INVERTED_KO", src)
+        # The inverted pattern must reference '비싸진?' and '상태'
+        self.assertIn("비싸진?", src)
+        # Both passes must run (inverted + original) when fwdPer < ttmPer
+        self.assertIn("FALSE_EXPENSIVE_INVERTED_KO,", src)
+        self.assertIn("FALSE_EXPENSIVE_TONE_KO,", src)
+
+    def test_sanitizer_pass6_inserts_missing_korean_spaces(self):
+        """Pass 6 must insert a space between certain Korean tokens
+        (기준/배수/전망/추정/라서/etc.) and a following PER/EPS phrase."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("(기준|배수|전망|메모|추정|스플라이스|변동률|라서|이라서|이며)", src)
+        self.assertIn("(?=(?:선행|포워드|컨센|FwdPER|forward|fwd|TTM|trailing|P\\/?E|PER))", src)
+
 
 if __name__ == "__main__":
     unittest.main()
