@@ -13,23 +13,36 @@ logger = logging.getLogger(__name__)
 CACHE_KEY = "forward_metrics_cache"
 
 FORWARD_OUTLOOK_SYSTEM_INSTRUCTION = (
-    "FORWARD OUTLOOK REQUIREMENT: If `forward_outlook` is provided in the analysis "
-    "data and `available` is true, you MUST weigh forward consensus when discussing "
-    "valuation. Use `forward_outlook.canonical_multiples.price_compass_fwd_per` as the "
-    "only canonical FwdPER shown in Price Compass. Compare that FwdPER to trailing P/E "
-    "and explain whether the consensus implies earnings expansion or contraction. "
-    "Quote the next-quarter consensus EPS "
-    "value explicitly. Never ignore forward_outlook even if it conflicts with your "
-    "trailing-based narrative; explicitly reconcile the two views. If "
-    "`forward_outlook.available` is false, use trailing metrics only. If "
-    "`confidence` is 'low', acknowledge the limitation in one sentence, but treat "
-    "the canonical FwdPER as directional and must not revert to a trailing-only conclusion. "
-    "When Price Compass FwdPER is below TTM PER, state that the consensus implies "
-    "earnings/operating-income expansion, not valuation pressure. "
-    "When `forward_pe_fy0` or `forward_pe_fy1` is present, treat them as the **annual** "
-    "anchor and quote them alongside the TTM splice; do not average silently. Never "
-    "label FY0 annual P/E, FY+1 annual P/E, or a manually computed EPS multiple as "
-    "Price Compass FwdPER."
+    "FORWARD OUTLOOK REQUIREMENT: When the analysis input contains a forward "
+    "outlook block with `available: true`, you MUST weigh the forward consensus "
+    "when discussing valuation. Read the baseline forward P/E from the input "
+    "data and compare it to the trailing P/E. Explain whether the consensus "
+    "implies earnings expansion (forward P/E below trailing) or contraction / "
+    "valuation pressure (forward P/E above trailing). Quote the forward "
+    "consensus EPS value explicitly. Reconcile the two views in your "
+    "narrative. If the forward outlook is unavailable, use trailing metrics "
+    "only. If confidence is low, acknowledge the limitation in one sentence "
+    "but treat the baseline forward P/E as directional; must not revert to a "
+    "trailing-only conclusion. When the baseline forward P/E is below the "
+    "trailing P/E, state that the consensus implies earnings / operating-"
+    "income expansion, NOT valuation pressure. When annual-anchor forward "
+    "P/Es (current fiscal year, next fiscal year) are also provided, quote "
+    "them alongside the TTM PER; do not silently average them with "
+    "the baseline. \n\n"
+    "OUTPUT LANGUAGE RULES — STRICTLY ENFORCED:\n"
+    "- Your investor-facing narrative must read as a securities analyst's "
+    "summary, NOT as a developer reading raw data fields.\n"
+    "- NEVER write the literal terms 'Price Compass', 'canonical FwdPER', "
+    "'canonical_multiples', 'forward_outlook', "
+    "'raw spliced', 'interpretation_hint', 'pe_change_pct', or any other "
+    "data-key style identifier in your output text.\n"
+    "- Refer to the baseline forward P/E as '선행 PER' (Korean) or 'forward "
+    "P/E' (English). Refer to the trailing twelve-month splice as 'TTM PER'.\n"
+    "- Refer to the forward EPS as '선행 12M 컨센 EPS' / '12M forward "
+    "consensus EPS'. Do NOT call it 'next-quarter consensus EPS' — it is a "
+    "12-month forward / annualized figure.\n"
+    "- Do NOT splice two different forward P/E values into a 'A x vs B x' "
+    "comparison. There is exactly one baseline forward P/E; quote it once.\n"
 )
 
 
@@ -173,16 +186,27 @@ def _build_interpretation_hint(
     parts: list[str] = []
 
     if forward_pe is not None and trailing_pe is not None and pe_change_pct is not None:
-        direction = "earnings expansion" if pe_change_pct < 0 else "earnings contraction or valuation pressure"
+        direction = (
+            "earnings expansion"
+            if pe_change_pct < 0
+            else "earnings contraction or valuation pressure"
+        )
         parts.append(
-            f"Price Compass FwdPER {forward_pe:.2f}x vs TTM PER {trailing_pe:.2f}x "
-            f"({pe_change_pct:+.1f}%) - consensus implies {direction}."
+            f"Baseline forward P/E {forward_pe:.2f}x vs TTM P/E {trailing_pe:.2f}x "
+            f"({pe_change_pct:+.1f}%) — consensus implies {direction}."
         )
     elif forward_pe is not None:
-        parts.append(f"Price Compass FwdPER {forward_pe:.2f}x; no TTM PER is available for direct comparison.")
+        parts.append(
+            f"Baseline forward P/E {forward_pe:.2f}x; no TTM P/E available "
+            f"for direct comparison."
+        )
 
     consensus_quarter = next(
-        (quarter for quarter in forward_metrics.composition if quarter.source.startswith("consensus")),
+        (
+            quarter
+            for quarter in forward_metrics.composition
+            if quarter.source.startswith("consensus")
+        ),
         None,
     )
     if consensus_quarter is not None:
@@ -192,12 +216,12 @@ def _build_interpretation_hint(
             else ""
         )
         parts.append(
-            f"Next-quarter ({consensus_quarter.period}) consensus EPS: "
+            f"Forward consensus EPS ({consensus_quarter.period}): "
             f"{consensus_quarter.eps:.2f} {forward_metrics.currency}{analyst_text}."
         )
 
     if forward_metrics.confidence == "low":
-        parts.append("Confidence is LOW; treat forward figures as directional only.")
+        parts.append("Confidence is low; treat forward figures as directional only.")
 
     fy0_pe = getattr(forward_metrics, "forward_pe_fy0", None)
     fy0_est = getattr(forward_metrics, "fy0_estimate", None)
@@ -205,9 +229,10 @@ def _build_interpretation_hint(
         fy0_year = fy0_est.fiscal_year if fy0_est else "FY"
         if forward_pe is not None:
             parts.append(
-                f"Current FY PER {fy0_pe:.2f}x (FY{fy0_year}) is an annual anchor, not Price Compass FwdPER."
+                f"Current-year P/E {fy0_pe:.2f}x (FY{fy0_year}) is the annual "
+                f"anchor and is separate from the baseline forward P/E."
             )
         else:
-            parts.append(f"Current FY PER (FY{fy0_year}) {fy0_pe:.2f}x.")
+            parts.append(f"Current-year P/E (FY{fy0_year}) {fy0_pe:.2f}x.")
 
     return " ".join(parts) if parts else "No interpretive hint available."

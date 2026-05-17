@@ -432,8 +432,8 @@ export const translations = {
     periodLabelHeader: '기간',
     // Report v5 - Target data sidebar
     targetDataTitle: '핵심 타겟 데이터',
-    targetEpsLabel: '다음 분기 컨센 EPS',
-    targetEpsSubtitle: '전망이익의 크기',
+    targetEpsLabel: '선행 12M 컨센 EPS',
+    targetEpsSubtitle: '12개월 선행 추정',
     targetIntrinsicLabel: '1주당 내재가치',
     targetIntrinsicSubtitle: 'FCFF DCF',
     targetMarginLabel: '안전마진',
@@ -934,8 +934,8 @@ export const translations = {
     periodLabelHeader: 'Period',
     // Report v5 - Target data sidebar
     targetDataTitle: 'Target Data',
-    targetEpsLabel: 'Next-Q Consensus EPS',
-    targetEpsSubtitle: 'Forward earnings size',
+    targetEpsLabel: '12M forward consensus EPS',
+    targetEpsSubtitle: 'Forward 12-month estimate',
     targetIntrinsicLabel: 'Intrinsic Value / Share',
     targetIntrinsicSubtitle: 'FCFF DCF',
     targetMarginLabel: 'Margin of Safety',

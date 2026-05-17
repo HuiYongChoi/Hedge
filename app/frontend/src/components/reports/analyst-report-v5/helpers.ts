@@ -1260,12 +1260,33 @@ const MULTIPLE_VALUE_PATTERN = /[\d.,]\s?(?:배|x|X)$/;
 const PRICE_LABEL_KO = new Set(['현재가', '시가총액', '매출', '영업이익', '1주당 내재가치']);
 const PRICE_LABEL_EN = new Set(['Current price', 'Market cap', 'Revenue', 'Operating income', 'Intrinsic value']);
 
+const RATIO_PERCENT_LABEL_KO = new Set([
+  'ROIC',
+  'FCF 수익률',
+  '부채비율',
+  '안전마진',
+  '성장률',
+  'WACC',
+]);
+const RATIO_PERCENT_LABEL_EN = new Set([
+  'ROIC',
+  'FCF yield',
+  'Debt-to-equity',
+  'Margin of safety',
+  'Growth',
+  'WACC',
+]);
+
 function isMultipleValue(rawValue: string): boolean {
   return MULTIPLE_VALUE_PATTERN.test(rawValue.trim());
 }
 
 function isAbsoluteAmountLabel(label: string): boolean {
   return PRICE_LABEL_KO.has(label) || PRICE_LABEL_EN.has(label);
+}
+
+function isRatioPercentLabel(label: string): boolean {
+  return RATIO_PERCENT_LABEL_KO.has(label) || RATIO_PERCENT_LABEL_EN.has(label);
 }
 
 export function extractKeyNumbers(
@@ -1288,7 +1309,7 @@ export function extractKeyNumbers(
     const candidate = LABEL_CANDIDATES.find(label => label.pattern.test(context));
     let label = candidate ? (language === 'ko' ? candidate.ko : candidate.en) : (language === 'ko' ? `값 ${results.length + 1}` : `Value ${results.length + 1}`);
     // Unit guard: 배/x/X values are multiples, never absolute prices
-    if (isMultipleValue(value) && isAbsoluteAmountLabel(label)) {
+    if (isMultipleValue(value) && (isAbsoluteAmountLabel(label) || isRatioPercentLabel(label))) {
       label = language === 'ko' ? `값 ${results.length + 1}` : `Value ${results.length + 1}`;
     }
 
@@ -1540,13 +1561,34 @@ function buildForwardPeComparisonNote(
   if (!ttm || snapshot.ttmPer === null || snapshot.fwdPer === null) return null;
   if (snapshot.fwdPer < snapshot.ttmPer) {
     return language === 'ko'
-      ? `Price Compass 기준 FwdPER ${fwd}는 TTM PER ${ttm}보다 낮습니다. 이는 컨센서스가 향후 EPS/영업이익 개선을 반영한다는 뜻이며, 이 차이를 “비싸짐” 신호로 해석하지 않습니다.`
-      : `Price Compass baseline FwdPER ${fwd} is below TTM PER ${ttm}. This means consensus is pricing future EPS/operating-income expansion, not valuation pressure.`;
+      ? `선행 PER ${fwd}는 TTM PER ${ttm}보다 낮습니다. 컨센서스가 향후 EPS와 영업이익 개선을 반영한다는 뜻으로, 이를 “비싸졌다”는 신호로 해석하지 않습니다.`
+      : `Forward P/E ${fwd} is below TTM P/E ${ttm}. Consensus is pricing future EPS / operating-income expansion, not valuation pressure.`;
   }
   return language === 'ko'
-    ? `Price Compass 기준 FwdPER ${fwd}는 TTM PER ${ttm}보다 높습니다. 이는 컨센서스 기준 이익 개선 폭보다 가격 부담이 더 크다는 신호로 해석합니다.`
-    : `Price Compass baseline FwdPER ${fwd} is above TTM PER ${ttm}. This means valuation pressure is higher than the consensus earnings improvement.`;
+    ? `선행 PER ${fwd}는 TTM PER ${ttm}보다 높습니다. 컨센서스 기준 이익 개선 폭보다 가격 부담이 더 크다는 신호로 읽습니다.`
+    : `Forward P/E ${fwd} is above TTM P/E ${ttm}. Valuation pressure exceeds the consensus earnings improvement.`;
 }
+
+// Developer-only tokens that LLMs sometimes echo from the system prompt.
+// These must never reach the analyst-facing report.
+const DEVELOPER_TOKEN_PATTERNS: Array<{ pattern: RegExp; ko: string; en: string }> = [
+  { pattern: /\bcanonical\s*FwdPER\b/gi, ko: '선행 PER', en: 'forward P/E' },
+  { pattern: /\bcanonical_multiples(?:\.[a-z_]+)?/gi, ko: '표준 배수', en: 'standard multiples' },
+  { pattern: /\bcanonical\s*forward\s*(?:p\/?e|per|eps)\b/gi, ko: '선행 컨센서스 추정', en: 'forward consensus estimate' },
+  { pattern: /\bforward_outlook(?:\.[a-z_]+)*/gi, ko: '포워드 전망', en: 'forward outlook' },
+  { pattern: /\bprice\s*compass(?:\s*기준)?\s*(?:baseline|standard)?/gi, ko: '선행 컨센서스 기준', en: 'forward consensus baseline' },
+  { pattern: /\b(?:the\s+)?only\s+canonical\s+FwdPER\s+shown\s+in\s+Price\s+Compass\b/gi, ko: '선행 컨센서스 기준 FwdPER', en: 'baseline forward P/E' },
+  { pattern: /\braw\s*_?\s*spliced\s*_?\s*forward\s*_?\s*(?:pe|p\/?e|per)\b/gi, ko: '원천 분기 스플라이스', en: 'raw spliced forward P/E' },
+  { pattern: /\bpe_change_pct\b/gi, ko: 'PER 변동률', en: 'P/E change' },
+  { pattern: /\binterpretation_hint\b/gi, ko: '해석 메모', en: 'interpretation note' },
+];
+
+// Raw-value patterns: e.g. “( 36.05x vs 30.06x )” with no label nearby.
+const RAW_PE_VS_BLOCK_PATTERN =
+  /\(?\s*(-?\d{1,3}(?:[.,]\d+)?)\s*(?:x|X|배)\s*(?:vs|대비|보다)\s*(-?\d{1,3}(?:[.,]\d+)?)\s*(?:x|X|배)\s*\)?/gi;
+
+// Tone-correction: drop incorrect “더 비싸진/비쌈” qualifiers when FwdPER < TTM.
+const FALSE_EXPENSIVE_TONE_KO = /(?:이\s*있어|상태(?:라서|이라서|이며)?)\s*(?:더\s*)?(?:비싸|비싼|고평가|높|상승)[^.!?。？！\n]*[.!?。？！]?/gi;
 
 export function sanitizeForwardPeNarrative(
   text: string,
@@ -1557,12 +1599,19 @@ export function sanitizeForwardPeNarrative(
 
   const fwd = formatOneDecimalMultiple(snapshot.fwdPer);
   const ttm = formatOneDecimalMultiple(snapshot.ttmPer);
-  const curFy = formatOneDecimalMultiple(snapshot.currentFyPer);
   if (!fwd) return text;
 
-  let next = text.replace(
+  let next = text;
+
+  // ── Pass 1: replace any “( A x vs B x )” block with the canonicalFwdPER ─────
+  next = next.replace(RAW_PE_VS_BLOCK_PATTERN, (_match, _a, _b) => {
+    return language === 'ko' ? `선행 PER ${fwd}` : `forward P/E ${fwd}`;
+  });
+
+  // ── Pass 2: existing labelled-PE replacement ────────────────────────────────
+  next = next.replace(
     /\b(?:forward\s*p\/?e|fwd\s*p\/?e|fwdper|포워드\s*p\/?e|포워드\s*per)\s*(?:\((?:ttm|fy0|fy\+?1|현fy|current\s*fy)\)\s*)?\(?\s*(?:[:=]|(?:은|는|이|가|을|를))?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?\s*\)?/giu,
-    `FwdPER ${fwd}`,
+    language === 'ko' ? `선행 PER ${fwd}` : `forward P/E ${fwd}`,
   );
 
   if (ttm) {
@@ -1570,45 +1619,31 @@ export function sanitizeForwardPeNarrative(
       /\b(?:trailing|ttm)\s*(?:p\/?e|per)\s*(?:\([^)]+\)\s*)?\(?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?\s*\)?/giu,
       `TTM PER ${ttm}`,
     );
-    next = next.replace(
-      /\s+vs\s+(?:trailing|ttm)\s*p\/?e\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?\s*(?:\([^)]+\))?/giu,
-      ` vs TTM PER ${ttm}`,
-    );
-    next = next.replace(
-      /\s+대비\s*(?:트레일링|ttm)\s*(?:p\/?e|per)\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?/giu,
-      ` 대비 TTM PER ${ttm}`,
-    );
   }
 
-  const mentionsForward = /FwdPER|forward\s*p\/?e|fwd\s*p\/?e|포워드\s*p\/?e|포워드\s*per/iu.test(text);
+  // ── Pass 3: drop false-expensive tone when FwdPER < TTM ──────────────────────
+  if (ttm && snapshot.ttmPer !== null && snapshot.fwdPer < snapshot.ttmPer) {
+    if (language === 'ko') {
+      next = next.replace(FALSE_EXPENSIVE_TONE_KO, '상태로');
+    }
+    next = next.replace(/\b(?:more\s+expensive|valuation\s+pressure)\b/gi, 'consensus-driven');
+  }
+
+  // ── Pass 4: replace comparison sentences with the natural-language note ──────
+  const mentionsForward = /선행 PER|forward\s*P\/?E|FwdPER/iu.test(next);
   const comparisonNote = buildForwardPeComparisonNote(fwd, ttm, snapshot, language);
   if (mentionsForward && comparisonNote) {
-    const comparisonPattern = /[^.!?。？！\n]*(?:FwdPER|forward\s*p\/?e|fwd\s*p\/?e|포워드\s*p\/?e|포워드\s*per)[^.!?。？！\n]*(?:TTM PER|trailing\s*p\/?e|ttm\s*p\/?e|트레일링\s*p\/?e)[^.!?。？！\n]*[.!?。？！]?/giu;
+    const comparisonPattern = /[^.!?。？！\n]*(?:선행 PER|FwdPER|forward\s*p\/?e|fwd\s*p\/?e)[^.!?。？！\n]*(?:TTM PER|trailing\s*p\/?e|ttm\s*p\/?e|트레일링\s*p\/?e)[^.!?。？！\n]*[.!?。？！]?/giu;
     next = next.replace(comparisonPattern, comparisonNote);
-    if (snapshot.ttmPer !== null && snapshot.fwdPer < snapshot.ttmPer) {
-      next = next.replace(
-        /(?:비교\s*기준(?:으로)?\s*)?TTM PER\s*-?\d[\d,]*(?:\.\d+)?x?\s*보다\s*(?:높|크|비싸|비싼|상승)[^.!?。？！\n]*[.!?。？！]?/giu,
-        comparisonNote,
-      );
-      next = next.replace(
-        /(?:compared\s+with\s+)?TTM PER\s*-?\d[\d,]*(?:\.\d+)?x?\s*(?:is\s+)?(?:higher|above|more\s+expensive)[^.!?。？！\n]*[.!?。？！]?/giu,
-        comparisonNote,
-      );
-    }
   }
 
-  const alreadyHasLock = /Price Compass\s*기준|Price Compass baseline/iu.test(next);
-  if (mentionsForward && !alreadyHasLock) {
-    const bits = [
-      ttm ? `TTM PER ${ttm}` : null,
-      curFy ? (language === 'ko' ? `현FY PER ${curFy}` : `Current FY PER ${curFy}`) : null,
-      `FwdPER ${fwd}`,
-    ].filter(Boolean).join(', ');
-    const note = language === 'ko'
-      ? `기준값: ${bits} (Price Compass 기준).`
-      : `Baseline: ${bits} (Price Compass baseline).`;
-    next = `${next.trim()}\n\n${note}`;
+  // ── Pass 5: strip developer tokens (Price Compass / canonical / etc.) ────────
+  for (const { pattern, ko, en } of DEVELOPER_TOKEN_PATTERNS) {
+    next = next.replace(pattern, language === 'ko' ? ko : en);
   }
+
+  // collapse double spaces / orphan particles caused by replacement
+  next = next.replace(/\s{2,}/g, ' ').replace(/\s+([,.])/g, '$1');
 
   return next;
 }

@@ -260,8 +260,11 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("sanitizeForwardPeNarrative", body)
         self.assertIn(r"\(?", helpers, "FwdPER sanitizer must handle parenthesized values like FwdPER(36.05x)")
         self.assertIn("(?:은|는|이|가|을|를)", helpers)
-        self.assertIn("향후 EPS/영업이익 개선", helpers)
-        self.assertIn("비교\\s*기준", helpers)
+        self.assertIn("향후 EPS와 영업이익 개선", helpers)
+        self.assertIn("더\\s*)?(?:비싸|비싼|고평가|높|상승)", helpers)
+        self.assertNotIn("Price Compass 기준 FwdPER", helpers)
+        self.assertNotIn("(Price Compass 기준)", helpers)
+        self.assertNotIn("canonical FwdPER", helpers)
         self.assertNotIn("targetForwardPeLabel", target_tiles)
         self.assertNotIn("targetForwardPeSubtitle", target_tiles)
         self.assertNotIn("metric: metrics.forwardPe, tone: 'neutral', formatter: formatMultiple", target_tiles)
@@ -391,6 +394,70 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         # conditional line-clamp: only applied when !isExpanded
         self.assertIn("!isExpanded", src)
         self.assertIn("line-clamp-2", src)
+
+    def test_sanitizer_strips_developer_tokens(self):
+        """Sanitizer must never inject 'Price Compass 기준' itself, and must
+        strip developer tokens like 'canonical FwdPER', 'canonical_multiples',
+        'forward_outlook' from analyst-facing narrative."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        fn_start = src.index("export function sanitizeForwardPeNarrative")
+        snippet = src[fn_start:fn_start + 4500]
+
+        # (Self-contamination) sanitizer must no longer insert these strings
+        self.assertNotIn("Price Compass 기준 FwdPER", snippet)
+        self.assertNotIn("Price Compass baseline FwdPER", snippet)
+        self.assertNotIn("(Price Compass 기준).", snippet)
+        self.assertNotIn("(Price Compass baseline).", snippet)
+
+        # (Token stripping) developer tokens must have replacement patterns
+        self.assertIn("DEVELOPER_TOKEN_PATTERNS", src)
+        self.assertIn("canonical\\s*FwdPER", src)
+        self.assertIn("canonical_multiples", src)
+        self.assertIn("forward_outlook", src)
+        self.assertIn("price\\s*compass", src)
+
+    def test_sanitizer_collapses_raw_vs_block(self):
+        """`( 36.05x vs 30.06x )` style blocks must be collapsed to the
+        snapshot-derived single multiple."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("RAW_PE_VS_BLOCK_PATTERN", src)
+        # the new replacement uses 선행 PER / forward P/E rather than raw vs
+        self.assertIn("선행 PER ${fwd}", src)
+        self.assertIn("forward P/E ${fwd}", src)
+
+    def test_sanitizer_corrects_false_expensive_tone(self):
+        """When fwdPer < ttmPer, '더 비싸진' tone must be neutralized in KO."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("FALSE_EXPENSIVE_TONE_KO", src)
+        # Replacement neutralizes to '상태로' (state of being) without judgement
+        self.assertIn("'상태로'", src)
+
+    def test_label_candidates_ratio_guard(self):
+        """Ratio-percent labels (ROIC, 안전마진, etc.) must be rejected when
+        value is a multiple (배/x/X). Prevents '값 1 36.05x  ROIC 30.06x'."""
+        src = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("RATIO_PERCENT_LABEL_KO", src)
+        self.assertIn("RATIO_PERCENT_LABEL_EN", src)
+        self.assertIn("isRatioPercentLabel", src)
+        # Guard must check both PRICE and RATIO sets in extractKeyNumbers
+        self.assertIn("isRatioPercentLabel(label)", src)
+
+    def test_eps_label_is_forward_12m_not_next_quarter(self):
+        """targetEpsLabel must say '선행 12M' / '12M forward', not '다음 분기' /
+        'next-quarter' — the underlying value is a 12-month forward / annual
+        consensus EPS, not a single-quarter number."""
+        src = LANG_PREFS.read_text(encoding="utf-8")
+        self.assertIn("선행 12M 컨센 EPS", src)
+        self.assertIn("12M forward consensus EPS", src)
+        self.assertIn("12개월 선행 추정", src)
+        self.assertIn("Forward 12-month estimate", src)
+        # The misleading labels must be gone
+        self.assertNotIn("다음 분기 컨센 EPS", src)
+        self.assertNotIn("Next-quarter consensus EPS", src)
+        self.assertNotIn("'전망이익의 크기'", src)
+        self.assertNotIn("'Forward earnings scale'", src)
+        self.assertNotIn("'Next-Q Consensus EPS'", src)
+        self.assertNotIn("'Forward earnings size'", src)
 
 if __name__ == "__main__":
     unittest.main()

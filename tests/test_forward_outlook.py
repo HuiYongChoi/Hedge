@@ -58,6 +58,12 @@ def test_forward_outlook_system_instruction_requires_consensus_usage():
     assert "confidence" in FORWARD_OUTLOOK_SYSTEM_INSTRUCTION
     assert "directional" in FORWARD_OUTLOOK_SYSTEM_INSTRUCTION
     assert "must not revert to a trailing-only conclusion" in FORWARD_OUTLOOK_SYSTEM_INSTRUCTION
+    # The instruction now has an explicit NEVER-write section that LISTS these
+    # tokens as forbidden in LLM output — they appear in the instruction but
+    # only as items to prohibit, not as usage instructions.
+    assert "NEVER write" in FORWARD_OUTLOOK_SYSTEM_INSTRUCTION
+    assert "forward P/E" in FORWARD_OUTLOOK_SYSTEM_INSTRUCTION
+    assert "TTM PER" in FORWARD_OUTLOOK_SYSTEM_INSTRUCTION
 
 
 def test_build_forward_outlook_serializes_standard_block_and_delta():
@@ -85,7 +91,7 @@ def test_build_forward_outlook_serializes_standard_block_and_delta():
     assert "earnings expansion" in block["interpretation_hint"]
 
 
-def test_forward_outlook_locks_price_compass_forward_per_as_canonical():
+def test_forward_outlook_locks_standard_forward_per():
     from src.utils.forward_outlook import build_forward_outlook_block
 
     metrics = _forward_metrics()
@@ -115,9 +121,11 @@ def test_forward_outlook_locks_price_compass_forward_per_as_canonical():
     assert block["canonical_multiples"]["price_compass_fwd_per"] == 5.51
     assert block["canonical_multiples"]["ttm_per"] == 30.85
     assert block["canonical_multiples"]["current_fy_per"] == 6.17
-    assert "Price Compass FwdPER 5.51x" in block["interpretation_hint"]
-    assert "Current FY PER 6.17x" in block["interpretation_hint"]
+    assert "Baseline forward P/E 5.51x" in block["interpretation_hint"]
+    assert "Current-year P/E 6.17x" in block["interpretation_hint"]
     assert "36.05" not in block["interpretation_hint"]
+    assert "Price Compass" not in block["interpretation_hint"]
+    assert "canonical" not in block["interpretation_hint"].lower()
 
 
 def test_build_forward_outlook_warns_when_confidence_low():
@@ -126,7 +134,7 @@ def test_build_forward_outlook_warns_when_confidence_low():
     block = build_forward_outlook_block(_forward_metrics(confidence="low"), trailing_pe=12.0)
 
     assert block["confidence"] == "low"
-    assert "LOW" in block["interpretation_hint"]
+    assert "Confidence is low" in block["interpretation_hint"]
     assert "directional" in block["interpretation_hint"]
 
 
@@ -197,3 +205,54 @@ def test_forward_prefetch_node_fetches_unique_tickers_once(monkeypatch):
 
     assert calls == ["AAPL", "MSFT"]
     assert result["data"][CACHE_KEY] == {"AAPL": None, "MSFT": None}
+
+
+def test_system_instruction_avoids_developer_tokens():
+    """The system instruction must NOT teach the LLM developer-only key names.
+    It must explicitly forbid these tokens from appearing in the analyst-facing
+    output."""
+    from src.utils.forward_outlook import FORWARD_OUTLOOK_SYSTEM_INSTRUCTION
+
+    instr = FORWARD_OUTLOOK_SYSTEM_INSTRUCTION
+
+    # The instruction MUST explicitly list these tokens in its NEVER-write section
+    forbidden_in_output = [
+        "Price Compass",
+        "canonical FwdPER",
+        "canonical_multiples",
+        "forward_outlook",
+        "raw spliced",
+        "interpretation_hint",
+        "pe_change_pct",
+    ]
+    for token in forbidden_in_output:
+        assert token in instr, f"{token!r} must be listed as forbidden in SYSTEM_INSTRUCTION"
+
+    # The instruction must mention the NEVER directive
+    assert "NEVER write" in instr or "must NOT" in instr or "do NOT" in instr.lower()
+
+    # The instruction must teach the analyst-facing vocabulary
+    assert "선행 PER" in instr or "forward P/E" in instr
+    assert "TTM PER" in instr
+    assert "12M forward consensus EPS" in instr or "12개월 선행" in instr
+
+
+def test_interpretation_hint_uses_analyst_vocabulary():
+    """_build_interpretation_hint output must use 'Baseline forward P/E'
+    and 'TTM P/E' phrasing, not raw key names."""
+    from src.utils.forward_outlook import _build_interpretation_hint
+
+    metrics = _forward_metrics()
+
+    hint = _build_interpretation_hint(
+        metrics,
+        trailing_pe=30.9,
+        forward_pe=5.5,
+        pe_change_pct=-82.2,
+    )
+
+    assert "Price Compass FwdPER" not in hint
+    assert "Baseline forward P/E" in hint
+    assert "TTM P/E" in hint
+    assert "Next-quarter" not in hint
+    assert "Forward consensus EPS" in hint
