@@ -308,6 +308,61 @@ def test_low_confidence_forward_pe_still_gets_directional_weight():
     assert blended < 30.85
 
 
+def test_price_compass_canonical_forward_pe_overrides_splice_for_agents():
+    from src.agents.valuation import _blend_trailing_forward_pe
+
+    class Forward:
+        forward_pe = 36.05
+        canonical_forward_pe = 5.51
+        confidence = "low"
+
+    blended, forward_pe, trailing_weight, forward_weight, confidence = _blend_trailing_forward_pe(30.85, Forward())
+
+    assert forward_pe == 5.51
+    assert confidence == "low"
+    assert forward_weight > 0
+    assert blended < 30.85
+
+
+def test_forward_metrics_attaches_price_compass_canonical_snapshot(monkeypatch):
+    from types import SimpleNamespace
+    from src.tools import forward_metrics
+    from src.tools.forward_metrics import get_forward_metrics
+
+    metrics = [
+        _kr_metric("2025-09-30", 17_854),
+        _kr_metric("2025-12-31", 18_500),
+        _kr_metric("2026-03-31", 19_200),
+    ]
+    _patch_trailing_and_prices(monkeypatch, metrics, close=1_686_000.0)
+    monkeypatch.setattr(forward_metrics, "_load_dart_quarterly_eps", lambda t, d: [])
+    monkeypatch.setattr(forward_metrics, "_load_yfinance_quarterly_eps", lambda t, d: [])
+    monkeypatch.setattr(
+        forward_metrics,
+        "default_provider_chain",
+        lambda ticker: [FakeEstimateProvider([_kr_consensus(date(2026, 6, 30), 12_500)])],
+    )
+    monkeypatch.setattr(
+        forward_metrics,
+        "_fetch_price_compass_forward_snapshot",
+        lambda ticker: SimpleNamespace(
+            current_price=1_819_000.0,
+            current_fy_eps=294_628.56,
+            forward_eps=330_127.04,
+            forward_pe=5.51,
+        ),
+    )
+
+    result = get_forward_metrics("000660.KS", as_of_date="2026-05-09")
+
+    assert result is not None
+    assert result.forward_pe == pytest.approx(1_686_000.0 / (18_500 + 19_200 + 17_854 + 12_500))
+    assert getattr(result, "canonical_forward_pe") == pytest.approx(5.51)
+    assert getattr(result, "canonical_current_price") == pytest.approx(1_819_000.0)
+    assert getattr(result, "canonical_forward_eps") == pytest.approx(330_127.04)
+    assert result.forward_pe_fy1 == pytest.approx(5.51)
+
+
 def test_ac6_forward_track_does_not_change_trailing_model_or_api_contract():
     api_source = API_MODULE.read_text(encoding="utf-8")
     models_source = MODELS.read_text(encoding="utf-8")

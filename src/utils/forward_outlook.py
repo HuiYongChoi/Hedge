@@ -73,7 +73,12 @@ def build_forward_outlook_block(
             "fallback_guidance": "Use trailing metrics only; do not speculate about next quarter.",
         }
 
-    forward_pe = getattr(forward_metrics, "forward_pe", None)
+    raw_spliced_forward_pe = getattr(forward_metrics, "forward_pe", None)
+    forward_pe = getattr(forward_metrics, "canonical_forward_pe", None) or raw_spliced_forward_pe
+    canonical_forward_eps = getattr(forward_metrics, "canonical_forward_eps", None)
+    canonical_current_price = getattr(forward_metrics, "canonical_current_price", None)
+    display_forward_eps = canonical_forward_eps or forward_metrics.forward_eps_ttm
+    display_current_price = canonical_current_price or forward_metrics.current_price
     pe_change_pct: float | None = None
     if trailing_pe is not None and forward_pe is not None and trailing_pe > 0:
         pe_change_pct = round((forward_pe - trailing_pe) / trailing_pe * 100, 2)
@@ -106,9 +111,13 @@ def build_forward_outlook_block(
         "available": True,
         "as_of_date": forward_metrics.as_of_date.isoformat(),
         "currency": forward_metrics.currency,
-        "current_price": forward_metrics.current_price,
-        "forward_eps_ttm": forward_metrics.forward_eps_ttm,
+        "current_price": display_current_price,
+        "forward_eps_ttm": display_forward_eps,
         "forward_pe": forward_pe,
+        "canonical_forward_pe": getattr(forward_metrics, "canonical_forward_pe", None),
+        "canonical_forward_eps": canonical_forward_eps,
+        "raw_spliced_forward_pe": raw_spliced_forward_pe,
+        "raw_spliced_forward_eps_ttm": forward_metrics.forward_eps_ttm,
         "trailing_pe": trailing_pe,
         "pe_change_pct": pe_change_pct,
         "confidence": forward_metrics.confidence,
@@ -119,10 +128,10 @@ def build_forward_outlook_block(
             "ttm_per": trailing_pe,
             "current_fy_per": fy0_pe,
             "next_fy_per": fy1_pe,
-            "fwd_eps_ttm": forward_metrics.forward_eps_ttm,
+            "fwd_eps_ttm": display_forward_eps,
             "current_fy_eps": getattr(forward_metrics, "forward_eps_fy0", None),
-            "next_fy_eps": getattr(forward_metrics, "forward_eps_fy1", None),
-            "formula": "Price Compass FwdPER = current_price / forward_eps_ttm",
+            "next_fy_eps": getattr(forward_metrics, "forward_eps_fy1", None) or canonical_forward_eps,
+            "formula": "Price Compass FwdPER = current_price / forward_eps",
         },
         "interpretation_hint": _build_interpretation_hint(
             forward_metrics,

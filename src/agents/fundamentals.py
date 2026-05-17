@@ -12,8 +12,13 @@ def _format_ratio(value: float | None) -> str:
     return f"{value:.2f}" if value is not None else "N/A"
 
 
+def _select_forward_pe(forward_metrics) -> float | None:
+    canonical = getattr(forward_metrics, "canonical_forward_pe", None)
+    return canonical if canonical is not None else getattr(forward_metrics, "forward_pe", None)
+
+
 def _blend_trailing_forward_pe(trailing_pe: float | None, forward_metrics) -> tuple[float | None, float | None, float, float, str | None]:
-    forward_pe = getattr(forward_metrics, "forward_pe", None)
+    forward_pe = _select_forward_pe(forward_metrics)
     confidence = getattr(forward_metrics, "confidence", None)
 
     if forward_metrics is None or forward_pe is None:
@@ -170,6 +175,7 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
             "forward_interpretation": forward_interpretation,
             "trailing_pe": trailing_pe,
             "forward_pe": forward_pe,
+            "raw_spliced_forward_pe": getattr(forward_metrics, "forward_pe", None) if forward_metrics else None,
             "blended_pe": pe_ratio,
             "trailing_weight": trailing_weight,
             "forward_weight": forward_weight,

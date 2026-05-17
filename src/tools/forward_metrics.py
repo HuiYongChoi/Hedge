@@ -60,6 +60,63 @@ def clear_forward_metrics_override(ticker: str, as_of_date: str | date | None) -
     _FORWARD_CACHE.pop(_forward_cache_key(normalized_ticker, as_of), None)
 
 
+def _fetch_price_compass_forward_snapshot(ticker: str):
+    """Return the live Price Compass analyst target snapshot when available."""
+    try:
+        from src.tools.analyst_target_api import fetch_analyst_target
+
+        return fetch_analyst_target(ticker)
+    except Exception as exc:
+        logger.debug("price compass forward snapshot unavailable for %s: %s", ticker, exc)
+        return None
+
+
+def _positive_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _apply_price_compass_forward_snapshot(result: ForwardMetrics) -> ForwardMetrics:
+    """Attach canonical Price Compass FwdPER fields without rewriting raw splice data.
+
+    ``ForwardMetrics.forward_pe`` intentionally remains the raw TTM-splice
+    multiple for backward compatibility. Agents and LLM-facing blocks should use
+    ``canonical_forward_pe`` when present because it matches the Price Compass
+    header and user-facing FwdPER.
+    """
+    snapshot = _fetch_price_compass_forward_snapshot(result.ticker)
+    if snapshot is None:
+        return result
+
+    canonical_forward_pe = _positive_float(getattr(snapshot, "forward_pe", None))
+    if canonical_forward_pe is None:
+        return result
+
+    canonical_current_price = _positive_float(getattr(snapshot, "current_price", None))
+    canonical_forward_eps = _positive_float(getattr(snapshot, "forward_eps", None))
+    current_fy_eps = _positive_float(getattr(snapshot, "current_fy_eps", None))
+
+    updates: dict[str, Any] = {
+        "canonical_forward_pe": canonical_forward_pe,
+        "canonical_current_price": canonical_current_price,
+        "canonical_forward_eps": canonical_forward_eps,
+    }
+    if canonical_forward_eps is not None:
+        updates.setdefault("forward_eps_fy1", canonical_forward_eps)
+        updates.setdefault("forward_pe_fy1", canonical_forward_pe)
+    if canonical_current_price is not None and current_fy_eps is not None:
+        updates.setdefault("forward_eps_fy0", current_fy_eps)
+        updates.setdefault("forward_pe_fy0", canonical_current_price / current_fy_eps)
+
+    notes = list(result.notes)
+    notes.append("canonical forward P/E sourced from Price Compass analyst target API")
+    updates["notes"] = notes
+    return result.model_copy(update=updates)
+
+
 def build_forward_metrics_override(
     ticker: str,
     as_of_date: str | date | None,
@@ -153,6 +210,7 @@ def get_forward_metrics(
     if cache_key in _FORWARD_CACHE:
         return _FORWARD_CACHE[cache_key]
 
+    use_price_compass_snapshot = providers is None
     actuals = _load_trailing_quarterly_eps(ticker, as_of, api_key)
 
     # Detect staleness: most recent actual > 6 months before as_of
@@ -177,6 +235,8 @@ def get_forward_metrics(
         )
         if result is not None:
             result.notes.extend(staleness_notes + gap_notes)
+            if use_price_compass_snapshot:
+                result = _apply_price_compass_forward_snapshot(result)
         _FORWARD_CACHE[cache_key] = result
         return result
 
@@ -209,6 +269,8 @@ def get_forward_metrics(
             actuals,
             reason="no consensus estimate available",
         )
+        if result is not None and use_price_compass_snapshot:
+            result = _apply_price_compass_forward_snapshot(result)
         _FORWARD_CACHE[cache_key] = result
         return result
 
@@ -305,6 +367,8 @@ def get_forward_metrics(
         fy1_estimate=fy1_estimate,
         annual_estimates=annual_estimates,
     )
+    if use_price_compass_snapshot:
+        result = _apply_price_compass_forward_snapshot(result)
     _FORWARD_CACHE[cache_key] = result
     return result
 
