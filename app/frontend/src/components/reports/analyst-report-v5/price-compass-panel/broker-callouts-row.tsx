@@ -54,6 +54,17 @@ export function BrokerCalloutsRow({
       {positioned.map(({ broker, leftPct, rowIndex }) => {
         const isHovered = hoveredBroker === broker.name;
         const topPx = rowIndex * ROW_HEIGHT_PX + 8;
+        // Edge-clamp the card so the full 112px width stays inside the container.
+        // When leftPct is near 0/100, anchor the card edge instead of its centre —
+        // otherwise translateX(-50%) pushes the card outside the container and
+        // the broker name gets visually clipped (cf. MU where Goldman $400 == range.min).
+        const cardHalfPct = containerPx > 0 ? (CALLOUT_PX / 2 / containerPx) * 100 : 0;
+        const transformX =
+          leftPct <= cardHalfPct
+            ? '0'
+            : leftPct >= 100 - cardHalfPct
+              ? '-100%'
+              : '-50%';
 
         return (
           <div
@@ -62,14 +73,20 @@ export function BrokerCalloutsRow({
             style={{
               left: `${leftPct}%`,
               top: `${topPx}px`,
-              transform: 'translateX(-50%)',
+              transform: `translateX(${transformX})`,
               zIndex: isHovered ? 30 : 10,
             }}
           >
-            {/* Connecting line — neutral gray, behind cards (z-index managed by parent) */}
+            {/* Connecting line — anchored to the broker's actual leftPct on the bar.
+                Position inside the wrapper is the inverse of the wrapper transform so
+                the line stays at the broker's true x position even after edge-clamping. */}
             <div
-              className="absolute left-1/2 -translate-x-1/2 w-px bg-muted-foreground/20"
-              style={{ top: `-${topPx + 8}px`, height: `${topPx + 8}px` }}
+              className="absolute w-px bg-muted-foreground/20"
+              style={{
+                left: transformX === '0' ? '0' : transformX === '-100%' ? '100%' : '50%',
+                top: `-${topPx + 8}px`,
+                height: `${topPx + 8}px`,
+              }}
             />
             <BrokerCalloutCard
               broker={broker}
