@@ -273,19 +273,6 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         signal = "bullish" if weighted_gap > 0.15 else "bearish" if weighted_gap < -0.15 else "neutral"
         confidence = round(min(abs(weighted_gap) / 0.30 * 100, 100))
 
-        # Weighted equity intrinsic value (sum of (weight * value) / total_weight)
-        weighted_intrinsic_total = (
-            sum(v["weight"] * v["value"] for v in method_values.values() if v["value"] > 0)
-            / total_weight
-            if total_weight > 0
-            else None
-        )
-        intrinsic_per_share_weighted = (
-            weighted_intrinsic_total / shares_outstanding
-            if weighted_intrinsic_total and shares_outstanding
-            else None
-        )
-
         capex_ratio = abs(li_curr.capital_expenditure or 0) / li_curr.revenue if li_curr.revenue else 0
         fcf_vol = calculate_fcf_volatility(fcf_history) if fcf_history else 0
         regime_note = (
@@ -451,9 +438,6 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         valuation_analysis[ticker] = {
             "signal": signal,
             "confidence": confidence,
-            "intrinsic_value": intrinsic_per_share_weighted,
-            "intrinsic_value_total": weighted_intrinsic_total,
-            "margin_of_safety": weighted_gap,
             "reasoning": reasoning,
         }
         progress.update_status(agent_id, ticker, "Done", analysis=json.dumps(reasoning, indent=4))
