@@ -324,6 +324,7 @@ export function ReportLayout({
     completeResult.analyst_signals,
     'valuation_analyst',
     activeTicker,
+    agentResults.get('valuation_analyst'),
   );
   const valuationDeepDive = useMemo(
     () => buildValuationDeepDive(valuationReport, effectiveCurrentPrice),

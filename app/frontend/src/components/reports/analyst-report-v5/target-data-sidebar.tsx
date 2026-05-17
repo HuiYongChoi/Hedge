@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { t } from '@/lib/language-preferences';
 import { ChevronRight } from 'lucide-react';
 import { toneToClasses } from './helpers';
-import type { OtherAgent, ReportLanguage, TargetTile, ValuationDeepDive, ValuationModel } from './types';
+import type { OtherAgent, ReportLanguage, TargetTile, ValuationDeepDive } from './types';
 
 interface TargetDataSidebarProps {
   tiles: TargetTile[];
@@ -38,17 +38,7 @@ function formatRatio(value: number | null | undefined) {
   return `${value.toFixed(2)}x`;
 }
 
-function modelDisplayName(model: ValuationModel, language: ReportLanguage) {
-  const names: Record<string, { ko: string; en: string }> = {
-    dcf: { ko: 'DCF', en: 'DCF' },
-    owner_earnings: { ko: 'Owner Earnings', en: 'Owner Earnings' },
-    ev_ebitda: { ko: 'EV/EBITDA', en: 'EV/EBITDA' },
-    residual_income: { ko: 'RIM', en: 'RIM' },
-    pbr_band: { ko: 'PBR 밴드', en: 'PBR Band' },
-  };
-  const name = names[model.key];
-  return name ? (language === 'ko' ? name.ko : name.en) : model.labelKey;
-}
+const PRIMARY_TILE_KEYS = new Set(['targetIntrinsicLabel', 'targetMarginLabel']);
 
 function ValuationSidebarPanel({
   dive,
@@ -59,63 +49,106 @@ function ValuationSidebarPanel({
   currency: string;
   language: ReportLanguage;
 }) {
-  const models = dive.models
-    .filter(model => ['dcf', 'residual_income', 'pbr_band'].includes(model.key))
-    .slice(0, 3);
+  const pbrModel = dive.models.find(model => model.key === 'pbr_band');
+  const rimModel = dive.models.find(model => model.key === 'residual_income');
+  const pbrValue = dive.pbr?.fairPriceP50 ?? pbrModel?.intrinsicPerShare ?? null;
+  const pbrGap = pbrModel?.gapToMarket ?? (
+    dive.pbr?.currentPrice && pbrValue !== null
+      ? (pbrValue - dive.pbr.currentPrice) / dive.pbr.currentPrice
+      : null
+  );
+  const rimValue = dive.rim?.intrinsicPerShare ?? rimModel?.intrinsicPerShare ?? null;
+  const rimGap = rimModel?.gapToMarket ?? (
+    dive.rim?.intrinsicPerShare && dive.pbr?.currentPrice
+      ? (dive.rim.intrinsicPerShare - dive.pbr.currentPrice) / dive.pbr.currentPrice
+      : null
+  );
+  const pbrTone = dive.pbr?.signal ?? pbrModel?.signal ?? 'neutral';
+  const rimTone = dive.rim?.signal ?? rimModel?.signal ?? 'neutral';
+  const hasPbr = pbrValue !== null || dive.pbr;
+  const hasRim = rimValue !== null || dive.rim;
+
+  if (!hasPbr && !hasRim) return null;
 
   return (
-    <div className="mt-4 border-t border-border/60 pt-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {language === 'ko' ? '가치평가 근거' : 'Valuation Evidence'}
-      </h3>
+    <div className="mt-2 space-y-2">
       {dive.regimeNote && (
-        <p className="mt-1 text-[10px] leading-4 text-muted-foreground">{dive.regimeNote}</p>
+        <p className="rounded-md border border-border/60 bg-muted/10 px-2.5 py-2 text-[10px] leading-4 text-muted-foreground">{dive.regimeNote}</p>
       )}
-      {models.length > 0 && (
-        <div className="mt-2 space-y-1.5">
-          {models.map(model => {
-            const classes = toneToClasses(model.signal);
-            return (
-              <div key={model.key} className={`rounded-md border bg-muted/10 p-2 ${classes.border}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-semibold text-foreground">{modelDisplayName(model, language)}</span>
-                  <span className={`font-mono text-[11px] font-semibold ${classes.text}`}>{formatPercent(model.gapToMarket)}</span>
-                </div>
-                <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
-                  <span>{language === 'ko' ? '주당 가치' : 'Per share'}</span>
-                  <span className="font-mono text-foreground">{formatCurrency(model.intrinsicPerShare, currency)}</span>
-                </div>
+      {hasPbr && (() => {
+        const classes = toneToClasses(pbrTone);
+        return (
+          <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {language === 'ko' ? 'PBR 밴드' : 'PBR Band'}
               </div>
-            );
-          })}
-        </div>
-      )}
-      {(dive.rim || dive.pbr) && (
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          {dive.rim && (
-            <div className="rounded-md border border-border/60 bg-muted/10 p-2">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">RIM</div>
-              <div className="mt-1 font-mono text-sm font-semibold text-foreground">
-                {formatCurrency(dive.rim.intrinsicPerShare, currency)}
-              </div>
-              <div className="mt-1 text-[10px] text-muted-foreground">
-                ROE {formatPercent(dive.rim.roeImplied)} · Ke {formatPercent(dive.rim.costOfEquity)}
-              </div>
+              <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(pbrGap)}</div>
             </div>
-          )}
-          {dive.pbr && (
-            <div className="rounded-md border border-border/60 bg-muted/10 p-2">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">PBR</div>
-              <div className="mt-1 font-mono text-sm font-semibold text-foreground">
-                {formatRatio(dive.pbr.currentPbr)}
-              </div>
-              <div className="mt-1 text-[10px] text-muted-foreground">
-                P50 {formatCurrency(dive.pbr.fairPriceP50, currency)}
-              </div>
+            <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+              {formatCurrency(pbrValue, currency)}
             </div>
-          )}
-        </div>
+            <div className="text-[10px] text-muted-foreground">
+              {dive.pbr
+                ? `P50 · PBR ${formatRatio(dive.pbr.currentPbr)}`
+                : (language === 'ko' ? '밴드 평가' : 'Band value')}
+            </div>
+            {dive.pbr?.reratingNote && (
+              <div className="mt-1 text-[10px] leading-4 text-muted-foreground">{dive.pbr.reratingNote}</div>
+            )}
+          </div>
+        );
+      })()}
+      {hasRim && (() => {
+        const classes = toneToClasses(rimTone);
+        return (
+          <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {language === 'ko' ? 'RIM 평가' : 'RIM Valuation'}
+              </div>
+              <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(rimGap)}</div>
+            </div>
+            <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+              {formatCurrency(rimValue, currency)}
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              {dive.rim
+                ? `ROE ${formatPercent(dive.rim.roeImplied)} · Ke ${formatPercent(dive.rim.costOfEquity)}`
+                : (language === 'ko' ? '잔여이익모델' : 'Residual income model')}
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+function TargetTileCard({ tile, language }: { tile: TargetTile; language: ReportLanguage }) {
+  const classes = toneToClasses(tile.tone);
+  const sourceName = tile.sourceAgent
+    ? (language === 'ko' ? tile.sourceAgent.nameKo : tile.sourceAgent.nameEn)
+    : '';
+
+  return (
+    <div key={tile.labelKey} className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+      {tile.sourceAgent && !tile.isFromActiveAgent && (
+        <span
+          className="absolute right-2 top-2 flex h-5 min-w-5 items-center justify-center rounded-full border border-border/70 bg-background px-1 font-mono text-[10px] font-semibold text-muted-foreground"
+          title={t('targetTileFromAgent', language).replace('{name}', sourceName)}
+        >
+          {sourceName.slice(0, 1)}
+        </span>
       )}
+      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {t(tile.labelKey, language)}
+      </div>
+      <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+        {tile.value}
+      </div>
+      <div className="text-[10px] text-muted-foreground">
+        {t(tile.sublabelKey, language)}
+      </div>
     </div>
   );
 }
@@ -130,6 +163,10 @@ export function TargetDataSidebar({
   valuationDeepDive,
   currency = 'USD',
 }: TargetDataSidebarProps) {
+  const primaryTiles = tiles.filter(tile => PRIMARY_TILE_KEYS.has(tile.labelKey));
+  const secondaryTiles = tiles.filter(tile => !PRIMARY_TILE_KEYS.has(tile.labelKey));
+  const topTiles = primaryTiles.length > 0 ? primaryTiles : tiles;
+
   return (
     <aside className={`w-full flex-shrink-0 lg:sticky lg:top-4 lg:w-[280px] lg:self-start lg:overflow-y-auto lg:max-h-[calc(100vh-6rem)] ${className}`}>
       <div className="rounded-xl border border-border/60 bg-background p-3 shadow-sm">
@@ -137,49 +174,38 @@ export function TargetDataSidebar({
           {t('targetDataTitle', language)}
         </h3>
         {tiles.length > 0 ? (
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
-            {tiles.map(tile => {
-              const classes = toneToClasses(tile.tone);
-              const sourceName = tile.sourceAgent
-                ? (language === 'ko' ? tile.sourceAgent.nameKo : tile.sourceAgent.nameEn)
-                : '';
-              return (
-                <div key={tile.labelKey} className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
-                  {tile.sourceAgent && !tile.isFromActiveAgent && (
-                    <span
-                      className="absolute right-2 top-2 flex h-5 min-w-5 items-center justify-center rounded-full border border-border/70 bg-background px-1 font-mono text-[10px] font-semibold text-muted-foreground"
-                      title={t('targetTileFromAgent', language).replace('{name}', sourceName)}
-                    >
-                      {sourceName.slice(0, 1)}
-                    </span>
-                  )}
-                  <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    {t(tile.labelKey, language)}
-                  </div>
-                  <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
-                    {tile.value}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">
-                    {t(tile.sublabelKey, language)}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
+              {topTiles.map(tile => <TargetTileCard key={tile.labelKey} tile={tile} language={language} />)}
+            </div>
+            {valuationDeepDive && (
+              <ValuationSidebarPanel
+                dive={valuationDeepDive}
+                currency={currency}
+                language={language}
+              />
+            )}
+            {primaryTiles.length > 0 && secondaryTiles.length > 0 && (
+              <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
+                {secondaryTiles.map(tile => <TargetTileCard key={tile.labelKey} tile={tile} language={language} />)}
+              </div>
+            )}
+          </>
         ) : (
-          <div className="rounded-lg border border-dashed p-4 text-center text-[11px] text-muted-foreground">
-            {report?.data_coverage !== undefined && report.data_coverage !== null && report.data_coverage < 0.4
-              ? (language === 'ko' ? '데이터 커버리지가 낮아 핵심 타겟을 보류했습니다.' : 'Target data is on hold due to low coverage.')
-              : (language === 'ko' ? '핵심 타겟 데이터가 없습니다.' : 'No target data available.')}
-          </div>
-        )}
-
-        {valuationDeepDive && (
-          <ValuationSidebarPanel
-            dive={valuationDeepDive}
-            currency={currency}
-            language={language}
-          />
+          <>
+            <div className="rounded-lg border border-dashed p-4 text-center text-[11px] text-muted-foreground">
+              {report?.data_coverage !== undefined && report.data_coverage !== null && report.data_coverage < 0.4
+                ? (language === 'ko' ? '데이터 커버리지가 낮아 핵심 타겟을 보류했습니다.' : 'Target data is on hold due to low coverage.')
+                : (language === 'ko' ? '핵심 타겟 데이터가 없습니다.' : 'No target data available.')}
+            </div>
+            {valuationDeepDive && (
+              <ValuationSidebarPanel
+                dive={valuationDeepDive}
+                currency={currency}
+                language={language}
+              />
+            )}
+          </>
         )}
 
         {otherAgents.length > 0 && (

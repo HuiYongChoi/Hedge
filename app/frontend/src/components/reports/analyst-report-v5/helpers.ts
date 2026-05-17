@@ -1531,6 +1531,23 @@ function formatOneDecimalMultiple(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)}x` : null;
 }
 
+function buildForwardPeComparisonNote(
+  fwd: string,
+  ttm: string | null,
+  snapshot: CanonicalForwardSnapshot,
+  language: ReportLanguage,
+) {
+  if (!ttm || snapshot.ttmPer === null || snapshot.fwdPer === null) return null;
+  if (snapshot.fwdPer < snapshot.ttmPer) {
+    return language === 'ko'
+      ? `Price Compass 기준 FwdPER ${fwd}는 TTM PER ${ttm}보다 낮습니다. 이는 컨센서스가 향후 EPS/영업이익 개선을 반영한다는 뜻이며, 이 차이를 “비싸짐” 신호로 해석하지 않습니다.`
+      : `Price Compass baseline FwdPER ${fwd} is below TTM PER ${ttm}. This means consensus is pricing future EPS/operating-income expansion, not valuation pressure.`;
+  }
+  return language === 'ko'
+    ? `Price Compass 기준 FwdPER ${fwd}는 TTM PER ${ttm}보다 높습니다. 이는 컨센서스 기준 이익 개선 폭보다 가격 부담이 더 크다는 신호로 해석합니다.`
+    : `Price Compass baseline FwdPER ${fwd} is above TTM PER ${ttm}. This means valuation pressure is higher than the consensus earnings improvement.`;
+}
+
 export function sanitizeForwardPeNarrative(
   text: string,
   snapshot: CanonicalForwardSnapshot | null | undefined,
@@ -1544,7 +1561,7 @@ export function sanitizeForwardPeNarrative(
   if (!fwd) return text;
 
   let next = text.replace(
-    /\b(?:forward\s*p\/?e|fwd\s*p\/?e|fwdper|포워드\s*p\/?e|포워드\s*per)\s*(?:\((?:ttm|fy0|fy\+?1|현fy|current\s*fy)\)\s*)?\(?\s*[:=]?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?\s*\)?/giu,
+    /\b(?:forward\s*p\/?e|fwd\s*p\/?e|fwdper|포워드\s*p\/?e|포워드\s*per)\s*(?:\((?:ttm|fy0|fy\+?1|현fy|current\s*fy)\)\s*)?\(?\s*(?:[:=]|(?:은|는|이|가|을|를))?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?\s*\)?/giu,
     `FwdPER ${fwd}`,
   );
 
@@ -1564,6 +1581,22 @@ export function sanitizeForwardPeNarrative(
   }
 
   const mentionsForward = /FwdPER|forward\s*p\/?e|fwd\s*p\/?e|포워드\s*p\/?e|포워드\s*per/iu.test(text);
+  const comparisonNote = buildForwardPeComparisonNote(fwd, ttm, snapshot, language);
+  if (mentionsForward && comparisonNote) {
+    const comparisonPattern = /[^.!?。？！\n]*(?:FwdPER|forward\s*p\/?e|fwd\s*p\/?e|포워드\s*p\/?e|포워드\s*per)[^.!?。？！\n]*(?:TTM PER|trailing\s*p\/?e|ttm\s*p\/?e|트레일링\s*p\/?e)[^.!?。？！\n]*[.!?。？！]?/giu;
+    next = next.replace(comparisonPattern, comparisonNote);
+    if (snapshot.ttmPer !== null && snapshot.fwdPer < snapshot.ttmPer) {
+      next = next.replace(
+        /(?:비교\s*기준(?:으로)?\s*)?TTM PER\s*-?\d[\d,]*(?:\.\d+)?x?\s*보다\s*(?:높|크|비싸|비싼|상승)[^.!?。？！\n]*[.!?。？！]?/giu,
+        comparisonNote,
+      );
+      next = next.replace(
+        /(?:compared\s+with\s+)?TTM PER\s*-?\d[\d,]*(?:\.\d+)?x?\s*(?:is\s+)?(?:higher|above|more\s+expensive)[^.!?。？！\n]*[.!?。？！]?/giu,
+        comparisonNote,
+      );
+    }
+  }
+
   const alreadyHasLock = /Price Compass\s*기준|Price Compass baseline/iu.test(next);
   if (mentionsForward && !alreadyHasLock) {
     const bits = [
@@ -1723,13 +1756,12 @@ export function extractTargetTiles(
 ): TargetTile[] {
   const safetyMarginPrice = buildSafetyMarginPrice(metrics);
   const candidates: Array<{ labelKey: string; sublabelKey: string; metric?: CanonicalMetric; tone: ReportTone; formatter?: (value: number) => string }> = [
-    { labelKey: 'targetEpsLabel', sublabelKey: 'targetEpsSubtitle', metric: metrics.forwardEpsTtm || metrics.forwardEpsFy0, tone: 'neutral', formatter: formatPlain },
     { labelKey: 'targetIntrinsicLabel', sublabelKey: 'targetIntrinsicSubtitle', metric: metrics.intrinsicValue, tone: intrinsicTone(metrics.intrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatCurrency(value, currency) },
     { labelKey: 'targetMarginLabel', sublabelKey: 'targetMarginSubtitle', metric: safetyMarginPrice, tone: marginTone(metrics.marginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, metrics.marginOfSafety?.value ?? null, currency) },
+    { labelKey: 'targetEpsLabel', sublabelKey: 'targetEpsSubtitle', metric: metrics.forwardEpsTtm || metrics.forwardEpsFy0, tone: 'neutral', formatter: formatPlain },
     { labelKey: 'targetCoverageLabel', sublabelKey: 'targetCoverageSubtitle', metric: metrics.interestCoverage, tone: coverageTone(metrics.interestCoverage?.value ?? null), formatter: formatMultiple },
     { labelKey: 'targetBetaLabel', sublabelKey: 'targetBetaSubtitle', metric: metrics.beta, tone: 'neutral', formatter: formatPlain },
     { labelKey: 'targetWaccLabel', sublabelKey: 'targetWaccSubtitle', metric: metrics.wacc, tone: 'neutral', formatter: formatPercentSmart },
-    { labelKey: 'targetForwardPeLabel', sublabelKey: 'targetForwardPeSubtitle', metric: metrics.forwardPe, tone: 'neutral', formatter: formatMultiple },
   ];
 
   return candidates

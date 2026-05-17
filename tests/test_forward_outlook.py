@@ -56,6 +56,8 @@ def test_forward_outlook_system_instruction_requires_consensus_usage():
     assert "FORWARD OUTLOOK REQUIREMENT" in FORWARD_OUTLOOK_SYSTEM_INSTRUCTION
     assert "forward consensus" in FORWARD_OUTLOOK_SYSTEM_INSTRUCTION
     assert "confidence" in FORWARD_OUTLOOK_SYSTEM_INSTRUCTION
+    assert "directional" in FORWARD_OUTLOOK_SYSTEM_INSTRUCTION
+    assert "must not revert to a trailing-only conclusion" in FORWARD_OUTLOOK_SYSTEM_INSTRUCTION
 
 
 def test_build_forward_outlook_serializes_standard_block_and_delta():
@@ -120,6 +122,7 @@ def test_build_forward_outlook_warns_when_confidence_low():
 
     assert block["confidence"] == "low"
     assert "LOW" in block["interpretation_hint"]
+    assert "directional" in block["interpretation_hint"]
 
 
 def test_cached_forward_metrics_fetches_once_and_reuses_cache(monkeypatch):

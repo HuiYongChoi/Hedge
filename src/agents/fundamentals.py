@@ -16,13 +16,30 @@ def _blend_trailing_forward_pe(trailing_pe: float | None, forward_metrics) -> tu
     forward_pe = getattr(forward_metrics, "forward_pe", None)
     confidence = getattr(forward_metrics, "confidence", None)
 
-    if forward_metrics is None or forward_pe is None or confidence == "low":
+    if forward_metrics is None or forward_pe is None:
         return trailing_pe, forward_pe, 1.0 if trailing_pe is not None else 0.0, 0.0, confidence
 
     if trailing_pe is None:
         return forward_pe, forward_pe, 0.0, 1.0, confidence
 
+    if confidence == "low":
+        trailing_weight = 0.65
+        forward_weight = 0.35
+        return (trailing_pe * trailing_weight) + (forward_pe * forward_weight), forward_pe, trailing_weight, forward_weight, confidence
+
     return (trailing_pe * 0.5) + (forward_pe * 0.5), forward_pe, 0.5, 0.5, confidence
+
+
+def _forward_pe_interpretation(trailing_pe: float | None, forward_pe: float | None, confidence: str | None) -> str:
+    if trailing_pe is None or forward_pe is None:
+        return "Forward P/E comparison unavailable."
+    direction = (
+        "below TTM P/E; consensus implies earnings and operating-income expansion"
+        if forward_pe < trailing_pe
+        else "above TTM P/E; consensus implies earnings contraction or valuation pressure"
+    )
+    confidence_note = " Low confidence: use this as directional, not as a trailing-only override." if confidence == "low" else ""
+    return f"Price Compass FwdPER {forward_pe:.2f}x is {direction} vs TTM P/E {trailing_pe:.2f}x.{confidence_note}"
 
 
 ##### Fundamental Agent #####
@@ -127,6 +144,7 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
             trailing_pe,
             forward_metrics,
         )
+        forward_interpretation = _forward_pe_interpretation(trailing_pe, forward_pe, forward_confidence)
         pb_ratio = metrics.price_to_book_ratio
         ps_ratio = metrics.price_to_sales_ratio
 
@@ -141,13 +159,15 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
         reasoning["price_ratios_signal"] = {
             "signal": signals[3],
             "details": (
+                f"{forward_interpretation} "
                 f"Trailing P/E: {_format_ratio(trailing_pe)}, "
-                f"Forward P/E: {_format_ratio(forward_pe)}, "
+                f"Price Compass FwdPER: {_format_ratio(forward_pe)}, "
                 f"Blended P/E: {_format_ratio(pe_ratio)}, "
                 f"Forward confidence: {forward_confidence or 'N/A'}, "
                 f"Weights: trailing {trailing_weight:.0%} / forward {forward_weight:.0%}, "
                 f"P/B: {_format_ratio(pb_ratio)}, P/S: {_format_ratio(ps_ratio)}"
             ),
+            "forward_interpretation": forward_interpretation,
             "trailing_pe": trailing_pe,
             "forward_pe": forward_pe,
             "blended_pe": pe_ratio,

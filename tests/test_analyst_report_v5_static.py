@@ -230,6 +230,18 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("valuationDeepDive={valuationDeepDive}", layout)
         self.assertIn("ValuationSidebarPanel", sidebar)
         self.assertIn("valuationDeepDive", sidebar)
+        self.assertGreaterEqual(
+            sidebar.count("<ValuationSidebarPanel"),
+            2,
+            "PBR/RIM evidence must render even when primary target tiles are absent",
+        )
+        self.assertIn("primaryTiles", sidebar)
+        self.assertIn("secondaryTiles", sidebar)
+        self.assertLess(
+            sidebar.index("dive.pbr"),
+            sidebar.index("dive.rim"),
+            "PBR band card must appear above the RIM card under safety margin",
+        )
         self.assertNotIn("ValuationDeepDivePanel", src)
         self.assertNotIn("valuation-panel", src)
 
@@ -247,9 +259,12 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("canonicalForwardSnapshot", body)
         self.assertIn("sanitizeForwardPeNarrative", body)
         self.assertIn(r"\(?", helpers, "FwdPER sanitizer must handle parenthesized values like FwdPER(36.05x)")
-        self.assertIn("targetForwardPeLabel: 'FwdPER'", i18n)
-        self.assertIn("targetForwardPeSubtitle: 'Price Compass 기준'", i18n)
-        self.assertIn("metric: metrics.forwardPe, tone: 'neutral', formatter: formatMultiple", target_tiles)
+        self.assertIn("(?:은|는|이|가|을|를)", helpers)
+        self.assertIn("향후 EPS/영업이익 개선", helpers)
+        self.assertIn("비교\\s*기준", helpers)
+        self.assertNotIn("targetForwardPeLabel", target_tiles)
+        self.assertNotIn("targetForwardPeSubtitle", target_tiles)
+        self.assertNotIn("metric: metrics.forwardPe, tone: 'neutral', formatter: formatMultiple", target_tiles)
         self.assertNotIn("metric: metrics.forwardPeFy0 || metrics.forwardPe", target_tiles)
         self.assertLess(
             price_compass.index("target?.forward_eps"),

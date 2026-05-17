@@ -289,7 +289,23 @@ def test_ac5_valuation_and_fundamentals_reasoning_expose_trailing_and_forward_pe
         assert '"trailing_pe"' in source
         assert '"forward_pe"' in source
         assert '"forward_weight"' in source
-        assert 'confidence == "low"' in source
+        assert '"forward_interpretation"' in source
+
+
+def test_low_confidence_forward_pe_still_gets_directional_weight():
+    from src.agents.valuation import _blend_trailing_forward_pe
+
+    class Forward:
+        forward_pe = 5.51
+        confidence = "low"
+
+    blended, forward_pe, trailing_weight, forward_weight, confidence = _blend_trailing_forward_pe(30.85, Forward())
+
+    assert forward_pe == 5.51
+    assert confidence == "low"
+    assert forward_weight > 0
+    assert trailing_weight < 1
+    assert blended < 30.85
 
 
 def test_ac6_forward_track_does_not_change_trailing_model_or_api_contract():
