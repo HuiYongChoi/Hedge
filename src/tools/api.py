@@ -861,6 +861,118 @@ def _fetch_alphavantage_metrics(ticker: str) -> dict | None:
         pass
     return None
 
+
+def _fetch_yfinance_pbr_history(ticker: str, limit: int = 8) -> list[dict]:
+    """Compute a historical price-to-book-ratio series for a ticker via yfinance.
+
+    Returns up to ``limit`` quarterly snapshots, newest-first. Each entry is
+    ``{"report_period": "YYYY-MM-DD", "price_to_book_ratio": float, "book_value_per_share": float}``.
+
+    Used as a fallback when the primary financial-metrics source returns a single
+    snapshot — without history, ``calculate_pbr_band`` cannot produce P10/P25/P50/
+    P75/P90 percentiles and falls back to a degenerate "single snapshot" anchor.
+
+    Strategy: take the quarterly balance sheet (Stockholders Equity / Ordinary
+    Shares Number → BVPS) and the monthly price history; for each quarter end,
+    pair its BVPS with the closest monthly close to derive PBR. Returns ``[]``
+    on any error (yfinance unreachable, ticker unsupported, schema change, etc.)
+    """
+    try:
+        import yfinance as yf
+        import pandas as pd
+    except ImportError:
+        return []
+
+    try:
+        t = yf.Ticker(ticker)
+        qbs = t.quarterly_balance_sheet
+        if qbs is None or not hasattr(qbs, "columns") or len(qbs.columns) == 0:
+            return []
+
+        # Locate the equity row (yfinance schema varies by ticker / version).
+        equity_row = None
+        for candidate in (
+            "Stockholders Equity",
+            "Total Stockholder Equity",
+            "Common Stock Equity",
+        ):
+            if candidate in qbs.index:
+                equity_row = qbs.loc[candidate]
+                break
+        if equity_row is None:
+            return []
+
+        # Locate the shares-outstanding row.
+        shares_row = None
+        for candidate in (
+            "Ordinary Shares Number",
+            "Share Issued",
+            "Common Stock Shares Outstanding",
+        ):
+            if candidate in qbs.index:
+                shares_row = qbs.loc[candidate]
+                break
+        if shares_row is None:
+            return []
+
+        oldest = min(qbs.columns)
+        newest = max(qbs.columns)
+        hist = t.history(
+            start=oldest - pd.Timedelta(days=45),
+            end=newest + pd.Timedelta(days=45),
+            interval="1mo",
+            auto_adjust=False,
+        )
+        if hist is None or hist.empty or "Close" not in hist.columns:
+            return []
+
+        # Strip timezone for comparison (some yfinance versions return tz-aware indices).
+        hist_index = hist.index.tz_localize(None) if hist.index.tz is not None else hist.index
+
+        results: list[dict] = []
+        for col_date in sorted(qbs.columns, reverse=True):
+            equity_val = equity_row.get(col_date)
+            shares_val = shares_row.get(col_date)
+            if equity_val is None or shares_val is None:
+                continue
+            try:
+                equity_f = float(equity_val)
+                shares_f = float(shares_val)
+            except (TypeError, ValueError):
+                continue
+            # NaN-safe filter (pandas may return NaN for missing cells).
+            if not (equity_f > 0 and shares_f > 0):
+                continue
+
+            bvps = equity_f / shares_f
+            if bvps <= 0:
+                continue
+
+            col_naive = col_date.tz_localize(None) if col_date.tzinfo else col_date
+            try:
+                diffs = abs(hist_index - col_naive)
+                idx = diffs.argmin()
+                close_price = float(hist["Close"].iloc[idx])
+            except Exception:
+                continue
+            if not (close_price > 0):
+                continue
+
+            pbr = close_price / bvps
+            results.append({
+                "report_period": col_date.strftime("%Y-%m-%d"),
+                "price_to_book_ratio": pbr,
+                "book_value_per_share": bvps,
+            })
+            if len(results) >= limit:
+                break
+
+        return results
+    except Exception as e:
+        logger.debug("yfinance PBR history fetch failed for %s: %s", ticker, e)
+        return []
+
+
 def get_financial_metrics(
 
     ticker: str,
