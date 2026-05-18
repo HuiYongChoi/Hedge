@@ -204,7 +204,6 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             ),
             shares_outstanding=shares_outstanding,
             revenue_growth=most_recent_metrics.revenue_growth,
-            ticker=ticker,
         )
 
         regime = detect_capex_regime(
@@ -654,15 +653,8 @@ def calculate_pbr_band(
     current_price: float | None,
     shares_outstanding: float | None,
     revenue_growth: float | None = None,
-    ticker: str | None = None,
 ) -> dict | None:
-    """PBR band using trailing price-to-book history.
-
-    When the primary source returns fewer than 4 historical PBR points (typical
-    for US tickers whose data falls through to a single-snapshot fallback), this
-    function pulls a quarterly PBR series from yfinance and uses it as the
-    history basis so the band can still compute proper percentiles.
-    """
+    """PBR band using trailing price-to-book history."""
     import math
 
     pbr_history: list[tuple[str, float]] = []
@@ -673,31 +665,7 @@ def calculate_pbr_band(
             pbr_history.append((period, pbr))
 
     bvps: float | None = getattr(financial_metrics[0], "book_value_per_share", None)
-
-    # Fallback: enrich sparse history (and missing BVPS) from yfinance-derived
-    # quarterly PBR series. Uses internally-consistent BVPS so absolute
-    # fair_price computation stays valid.
-    yfinance_basis = False
-    if (len(pbr_history) < 4) and ticker:
-        try:
-            from src.tools.api import _fetch_yfinance_pbr_history
-            yf_series = _fetch_yfinance_pbr_history(ticker, limit=8)
-        except Exception:
-            yf_series = []
-
-        if len(yf_series) >= 4:
-            pbr_history = [
-                (entry["report_period"], entry["price_to_book_ratio"])
-                for entry in yf_series
-            ]
-            # Use yfinance-derived BVPS for consistency with the series.
-            bvps = yf_series[0].get("book_value_per_share") or bvps
-            yfinance_basis = True
-
     if bvps is None or bvps <= 0:
-        return None
-
-    if not pbr_history:
         return None
 
     current_pbr = pbr_history[0][1]
@@ -718,7 +686,6 @@ def calculate_pbr_band(
             "rerating_note": "PBR 히스토리 부족 — 현재 PBR 스냅샷 기준",
             "signal": "neutral",
             "details": f"현재 PBR {current_pbr:.2f}x · 히스토리 부족으로 현재 스냅샷을 기준점으로 표시",
-            "history_source": "snapshot",
         }
 
     values = sorted(value for _, value in pbr_history)
@@ -763,7 +730,6 @@ def calculate_pbr_band(
         "rerating_note": rerating_note,
         "signal": signal,
         "details": f"현재 PBR {current_pbr:.2f}x · P50 {p50:.2f}x · 역사적 {position_label} 구간",
-        "history_source": "yfinance" if yfinance_basis else "primary",
     }
 
 
