@@ -44,7 +44,40 @@ def test_pbr_band_uses_historical_percentiles_and_implied_prices():
     assert result["rerating_note"]
 
 
-def test_pbr_band_falls_back_to_current_snapshot_when_history_is_sparse():
+def test_pbr_band_uses_external_history_when_financial_metrics_are_sparse():
+    from src.agents.valuation import calculate_pbr_band
+    from src.tools.api import PbrHistoryPoint
+
+    result = calculate_pbr_band(
+        financial_metrics=[
+            FinancialMetrics(
+                ticker="000660.KS",
+                report_period="2026-12-31",
+                period="ttm",
+                currency="KRW",
+                price_to_book_ratio=10.7,
+                book_value_per_share=174_319.29,
+            )
+        ],
+        pbr_history=[
+            PbrHistoryPoint(period="2026-03-31", price_to_book_ratio=10.7, book_value_per_share=174_319.29, source="yfinance"),
+            PbrHistoryPoint(period="2025-12-31", price_to_book_ratio=8.2, book_value_per_share=170_000.0, source="yfinance"),
+            PbrHistoryPoint(period="2025-09-30", price_to_book_ratio=5.6, book_value_per_share=168_000.0, source="yfinance"),
+            PbrHistoryPoint(period="2025-06-30", price_to_book_ratio=3.9, book_value_per_share=166_000.0, source="yfinance"),
+        ],
+        current_price=1_865_216.4,
+        shares_outstanding=692_216_846.0,
+        revenue_growth=0.46,
+    )
+
+    assert result is not None
+    assert result["position_label"] != "single_snapshot"
+    assert result["percentiles"]["p10"] < result["percentiles"]["p50"] < result["percentiles"]["p90"]
+    assert result["fair_price_p50"] != result["current_price"]
+    assert "히스토리 부족" not in result["details"]
+
+
+def test_pbr_band_returns_none_when_history_is_sparse():
     from src.agents.valuation import calculate_pbr_band
 
     result = calculate_pbr_band(
@@ -63,10 +96,7 @@ def test_pbr_band_falls_back_to_current_snapshot_when_history_is_sparse():
         revenue_growth=0.46,
     )
 
-    assert result is not None
-    assert result["position_label"] == "single_snapshot"
-    assert result["fair_price_p50"] == result["current_price"]
-    assert "히스토리 부족" in result["details"]
+    assert result is None
 
 
 def test_valuation_agent_emits_rim_pbr_when_only_current_line_item(monkeypatch):
@@ -114,6 +144,7 @@ def test_valuation_agent_emits_rim_pbr_when_only_current_line_item(monkeypatch):
     )
 
     monkeypatch.setattr(valuation, "get_financial_metrics", lambda **_: metrics)
+    monkeypatch.setattr(valuation, "get_pbr_history", lambda **_: [])
     monkeypatch.setattr(valuation, "search_line_items", lambda **_: [line_item])
     monkeypatch.setattr(valuation, "get_market_cap", lambda *_args, **_kwargs: 1_000_000.0)
     monkeypatch.setattr(valuation, "get_cached_forward_metrics", lambda *_args, **_kwargs: None)
@@ -135,3 +166,71 @@ def test_valuation_agent_emits_rim_pbr_when_only_current_line_item(monkeypatch):
     assert reasoning["rim_analysis"]["intrinsic_per_share"] is not None
     assert reasoning["pbr_band_analysis"]["fair_price_p50"] is not None
     assert reasoning["dcf_scenario_analysis"]["fcf_periods_analyzed"] == 1
+
+
+def test_valuation_agent_uses_external_pbr_history_for_single_snapshot(monkeypatch):
+    import src.agents.valuation as valuation
+    from src.tools.api import PbrHistoryPoint
+
+    metrics = [
+        FinancialMetrics(
+            ticker="000660.KS",
+            report_period="2026-03-31",
+            period="ttm",
+            currency="KRW",
+            market_cap=1_000_000.0,
+            enterprise_value=1_200_000.0,
+            enterprise_value_to_ebitda_ratio=6.0,
+            price_to_earnings_ratio=30.9,
+            price_to_book_ratio=10.7,
+            book_value_per_share=100_000.0,
+            revenue_growth=0.25,
+            book_value_growth=0.04,
+            outstanding_shares=10.0,
+        )
+    ]
+    line_item = LineItem(
+        ticker="000660.KS",
+        report_period="2026-03-31",
+        period="ttm",
+        currency="KRW",
+        free_cash_flow=80_000.0,
+        net_income=140_000.0,
+        depreciation_and_amortization=20_000.0,
+        capital_expenditure=-30_000.0,
+        working_capital=15_000.0,
+        total_debt=200_000.0,
+        cash_and_equivalents=50_000.0,
+        interest_expense=5_000.0,
+        revenue=500_000.0,
+        ebitda=200_000.0,
+        outstanding_shares=10.0,
+    )
+    history = [
+        PbrHistoryPoint(period="2026-03-31", price_to_book_ratio=10.7, book_value_per_share=100_000.0, source="fixture"),
+        PbrHistoryPoint(period="2025-12-31", price_to_book_ratio=8.0, book_value_per_share=98_000.0, source="fixture"),
+        PbrHistoryPoint(period="2025-09-30", price_to_book_ratio=6.0, book_value_per_share=96_000.0, source="fixture"),
+        PbrHistoryPoint(period="2025-06-30", price_to_book_ratio=4.0, book_value_per_share=94_000.0, source="fixture"),
+    ]
+
+    monkeypatch.setattr(valuation, "get_financial_metrics", lambda **_: metrics)
+    monkeypatch.setattr(valuation, "get_pbr_history", lambda **_: history)
+    monkeypatch.setattr(valuation, "search_line_items", lambda **_: [line_item])
+    monkeypatch.setattr(valuation, "get_market_cap", lambda *_args, **_kwargs: 1_000_000.0)
+    monkeypatch.setattr(valuation, "get_cached_forward_metrics", lambda *_args, **_kwargs: None)
+
+    state = {
+        "messages": [],
+        "data": {
+            "tickers": ["000660.KS"],
+            "end_date": "2026-05-10",
+            "analyst_signals": {},
+        },
+        "metadata": {"show_reasoning": False},
+    }
+
+    result = valuation.valuation_analyst_agent(state, agent_id="valuation_analyst_test")
+    reasoning = result["data"]["analyst_signals"]["valuation_analyst_test"]["000660.KS"]["reasoning"]
+
+    assert reasoning["pbr_band_analysis"]["fair_price_p50"] != reasoning["pbr_band_analysis"]["current_price"]
+    assert reasoning["pbr_band_analysis"]["history_source"] == "fixture"

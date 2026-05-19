@@ -4,6 +4,8 @@ import os
 import pandas as pd
 import requests
 import time
+from dataclasses import asdict, dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,14 @@ _cache = get_cache()
 _MARKET_CAP_CACHE: dict[tuple[str, str], float | None] = {}
 _ENRICHMENT_LINE_ITEMS_CACHE: dict[tuple[str, str], list[dict]] = {}
 _ENRICHMENT_IN_PROGRESS: set[tuple[str, str]] = set()  # recursion guard
+
+
+@dataclass
+class PbrHistoryPoint:
+    period: str
+    price_to_book_ratio: float
+    book_value_per_share: float | None = None
+    source: str = ""
 
 DEFAULT_FINANCIAL_METRIC_FIELDS = tuple(FinancialMetrics.model_fields.keys())
 LINE_ITEM_DERIVED_FIELDS = (
@@ -860,6 +870,316 @@ def _fetch_alphavantage_metrics(ticker: str) -> dict | None:
     except Exception as e:
         pass
     return None
+
+
+def _valid_pbr_point(period: Any, pbr: Any, bvps: Any, source: str) -> PbrHistoryPoint | None:
+    pbr_value = parse_float_safe(pbr)
+    if pbr_value is None or pbr_value <= 0:
+        return None
+    bvps_value = parse_float_safe(bvps)
+    return PbrHistoryPoint(
+        period=str(period or ""),
+        price_to_book_ratio=pbr_value,
+        book_value_per_share=bvps_value if bvps_value and bvps_value > 0 else None,
+        source=source,
+    )
+
+
+def _dedupe_pbr_points(points: list[PbrHistoryPoint], limit: int) -> list[PbrHistoryPoint]:
+    seen: set[str] = set()
+    out: list[PbrHistoryPoint] = []
+    for point in points:
+        period = point.period[:10] if point.period else f"unknown-{len(out)}"
+        if period in seen:
+            continue
+        seen.add(period)
+        out.append(point)
+    out.sort(key=lambda point: point.period, reverse=True)
+    return out[:limit]
+
+
+def _financialdatasets_pbr_history(
+    ticker: str,
+    end_date: str,
+    limit: int,
+    api_key: str | None,
+) -> list[PbrHistoryPoint]:
+    headers = {}
+    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
+    if financial_api_key:
+        headers["X-API-KEY"] = financial_api_key
+
+    url = (
+        "https://api.financialdatasets.ai/financial-metrics/"
+        f"?ticker={ticker}&report_period_lte={end_date}&limit={limit}&period=annual"
+    )
+    try:
+        response = _make_api_request(url, headers)
+        if response.status_code != 200:
+            return []
+        raw_response = response.json()
+        raw_metrics = raw_response.get("financial_metrics", []) if isinstance(raw_response, dict) else []
+    except Exception as exc:
+        logger.debug("financialdatasets PBR history failed for %s: %s", ticker, exc)
+        return []
+
+    points: list[PbrHistoryPoint] = []
+    for row in raw_metrics:
+        if not isinstance(row, dict):
+            continue
+        metric = _build_financial_metric(row)
+        point = _valid_pbr_point(
+            metric.get("report_period"),
+            metric.get("price_to_book_ratio"),
+            metric.get("book_value_per_share"),
+            "financialdatasets",
+        )
+        if point:
+            points.append(point)
+    return _dedupe_pbr_points(points, limit)
+
+
+def _fetch_fmp_pbr_history(ticker: str, limit: int) -> list[PbrHistoryPoint]:
+    if _is_korean_ticker(ticker):
+        return []
+
+    def _rows(period: str, row_limit: int) -> list[dict]:
+        data = _fmp_get("key-metrics", {"symbol": ticker, "period": period, "limit": row_limit}) or []
+        return data if isinstance(data, list) else []
+
+    points: list[PbrHistoryPoint] = []
+    for row in _rows("annual", limit):
+        if not isinstance(row, dict):
+            continue
+        point = _valid_pbr_point(
+            row.get("date") or row.get("calendarYear"),
+            row.get("pbRatio") or row.get("priceToBookRatio") or row.get("priceToBookValueRatio"),
+            row.get("bookValuePerShare"),
+            "fmp",
+        )
+        if point:
+            points.append(point)
+
+    points = _dedupe_pbr_points(points, limit)
+    if len(points) >= 4:
+        return points
+
+    for row in _rows("quarter", max(limit * 4, 12)):
+        if not isinstance(row, dict):
+            continue
+        point = _valid_pbr_point(
+            row.get("date") or row.get("calendarYear"),
+            row.get("pbRatio") or row.get("priceToBookRatio") or row.get("priceToBookValueRatio"),
+            row.get("bookValuePerShare"),
+            "fmp",
+        )
+        if point:
+            points.append(point)
+    return _dedupe_pbr_points(points, limit)
+
+
+def _timestamp(value: Any) -> pd.Timestamp | None:
+    try:
+        ts = pd.Timestamp(value)
+        if pd.isna(ts):
+            return None
+        if ts.tzinfo is not None:
+            ts = ts.tz_convert(None)
+        return ts.normalize()
+    except Exception:
+        return None
+
+
+def _df_row_values(df: pd.DataFrame | None, labels: list[str]):
+    if df is None or df.empty:
+        return None
+    normalized = {str(idx).strip().lower(): idx for idx in df.index}
+    for label in labels:
+        idx = normalized.get(label.lower())
+        if idx is not None:
+            return df.loc[idx]
+    return None
+
+
+def _close_on_or_before(history: pd.DataFrame, period: pd.Timestamp) -> float | None:
+    if history is None or history.empty or "Close" not in history.columns:
+        return None
+    closes = history[["Close"]].dropna().copy()
+    if closes.empty:
+        return None
+    closes.index = pd.to_datetime(closes.index).tz_localize(None).normalize()
+    closes.sort_index(inplace=True)
+    eligible = closes[closes.index <= period]
+    if eligible.empty:
+        eligible = closes[closes.index >= period]
+    if eligible.empty:
+        return None
+    return parse_float_safe(eligible.iloc[-1]["Close"])
+
+
+def _fetch_yfinance_pbr_series(ticker: str, end_date: str, limit: int) -> list[PbrHistoryPoint]:
+    try:
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+        balance_sheet = getattr(t, "quarterly_balance_sheet", None)
+        if balance_sheet is None or balance_sheet.empty:
+            balance_sheet = getattr(t, "balance_sheet", None)
+        if balance_sheet is None or balance_sheet.empty:
+            return []
+
+        info = getattr(t, "info", None) or {}
+        fallback_shares = parse_float_safe(info.get("sharesOutstanding"))
+        price_history = t.history(period="5y", interval="1mo", auto_adjust=False)
+    except Exception as exc:
+        logger.debug("yfinance PBR history failed for %s: %s", ticker, exc)
+        return []
+
+    equity_row = _df_row_values(balance_sheet, ["Stockholders Equity", "Total Equity Gross Minority Interest"])
+    shares_row = _df_row_values(balance_sheet, ["Ordinary Shares Number", "Share Issued", "Common Stock Shares Outstanding"])
+    if equity_row is None:
+        return []
+
+    end_ts = _timestamp(end_date)
+    points: list[PbrHistoryPoint] = []
+    for col in balance_sheet.columns:
+        period_ts = _timestamp(col)
+        if period_ts is None or (end_ts is not None and period_ts > end_ts):
+            continue
+        equity = parse_float_safe(equity_row.get(col))
+        shares = parse_float_safe(shares_row.get(col)) if shares_row is not None else fallback_shares
+        if equity is None or equity <= 0 or shares is None or shares <= 0:
+            continue
+        bvps = equity / shares
+        close = _close_on_or_before(price_history, period_ts)
+        if close is None or close <= 0 or bvps <= 0:
+            continue
+        point = _valid_pbr_point(period_ts.strftime("%Y-%m-%d"), close / bvps, bvps, "yfinance")
+        if point:
+            points.append(point)
+    return _dedupe_pbr_points(points, limit)
+
+
+def _fetch_dart_pbr_series(
+    ticker: str,
+    end_date: str,
+    limit: int,
+    include_quarterly: bool = False,
+) -> list[PbrHistoryPoint]:
+    if not _is_korean_ticker(ticker):
+        return []
+    try:
+        from src.tools.dart_api import (
+            REPRT_ANNUAL,
+            REPRT_H1,
+            REPRT_Q1,
+            REPRT_Q3,
+            _extract_financials,
+            _fetch_dart_fs,
+            _get_corp_code,
+        )
+    except Exception as exc:
+        logger.debug("DART PBR import failed for %s: %s", ticker, exc)
+        return []
+
+    stock_code = ticker.split(".")[0]
+    corp_code = _get_corp_code(stock_code)
+    if not corp_code:
+        return []
+
+    end_year = int(end_date[:4])
+    start_year = max(2010, end_year - max(limit + 2, 8))
+    start_date = f"{start_year}-01-01"
+    prices = get_prices(ticker, start_date, end_date)
+    if not prices:
+        return []
+    price_df = prices_to_df(prices)
+
+    report_specs = [(REPRT_ANNUAL, "12-31")]
+    if include_quarterly:
+        report_specs = [
+            (REPRT_ANNUAL, "12-31"),
+            (REPRT_Q3, "09-30"),
+            (REPRT_H1, "06-30"),
+            (REPRT_Q1, "03-31"),
+        ]
+
+    points: list[PbrHistoryPoint] = []
+    for year in range(end_year, start_year - 1, -1):
+        for reprt_code, suffix in report_specs:
+            period = f"{year}-{suffix}"
+            if period > end_date:
+                continue
+            try:
+                df = _fetch_dart_fs(corp_code, year, reprt_code)
+                fin = _extract_financials(df) if df is not None else {}
+            except Exception as exc:
+                logger.debug("DART PBR fetch failed for %s %s %s: %s", ticker, year, reprt_code, exc)
+                continue
+            if not fin:
+                continue
+            bvps = parse_float_safe(fin.get("book_value_per_share"))
+            if bvps is None:
+                equity = parse_float_safe(fin.get("shareholders_equity"))
+                shares = parse_float_safe(fin.get("outstanding_shares"))
+                bvps = equity / shares if equity and shares else None
+            period_ts = _timestamp(period)
+            close = _close_on_or_before(price_df, period_ts) if period_ts is not None else None
+            if bvps is None or bvps <= 0 or close is None or close <= 0:
+                continue
+            point = _valid_pbr_point(period, close / bvps, bvps, "dart")
+            if point:
+                points.append(point)
+            if len(_dedupe_pbr_points(points, limit)) >= limit:
+                return _dedupe_pbr_points(points, limit)
+    return _dedupe_pbr_points(points, limit)
+
+
+def get_pbr_history(
+    ticker: str,
+    end_date: str,
+    limit: int = 8,
+    api_key: str | None = None,
+) -> list[PbrHistoryPoint]:
+    """Return historical PBR observations newest-first for valuation PBR bands."""
+    cache_key = f"{ticker}_{end_date}_{limit}"
+    cached_data = _cache.get_pbr_history(cache_key)
+    if cached_data is not None:
+        return [PbrHistoryPoint(**point) for point in cached_data]
+
+    best: list[PbrHistoryPoint] = []
+    for fetch_points in (
+        lambda: _financialdatasets_pbr_history(ticker, end_date, limit, api_key),
+        lambda: _fetch_fmp_pbr_history(ticker, limit),
+        lambda: _fetch_yfinance_pbr_series(ticker, end_date, limit),
+    ):
+        try:
+            points = fetch_points()
+        except Exception as exc:
+            logger.debug("PBR history source failed for %s: %s", ticker, exc)
+            points = []
+        if len(points) > len(best):
+            best = points
+        if len(points) >= 4:
+            _cache.set_pbr_history(cache_key, [asdict(point) for point in points])
+            return points
+
+    dart_annual = _fetch_dart_pbr_series(ticker, end_date, limit, include_quarterly=False)
+    if len(dart_annual) > len(best):
+        best = dart_annual
+    if len(dart_annual) >= 4:
+        _cache.set_pbr_history(cache_key, [asdict(point) for point in dart_annual])
+        return dart_annual
+
+    dart_quarterly = _fetch_dart_pbr_series(ticker, end_date, limit, include_quarterly=True)
+    if len(dart_quarterly) > len(best):
+        best = dart_quarterly
+    if len(dart_quarterly) >= 4:
+        _cache.set_pbr_history(cache_key, [asdict(point) for point in dart_quarterly])
+        return dart_quarterly
+
+    _cache.set_pbr_history(cache_key, [])
+    return []
+
 
 def get_financial_metrics(
 

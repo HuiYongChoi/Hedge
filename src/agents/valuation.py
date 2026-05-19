@@ -15,6 +15,7 @@ from src.utils.api_key import get_api_key_from_state
 from src.tools.api import (
     get_financial_metrics,
     get_market_cap,
+    get_pbr_history,
     search_line_items,
 )
 from src.utils.forward_outlook import get_cached_forward_metrics
@@ -197,6 +198,12 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
 
         pbr_band_result = calculate_pbr_band(
             financial_metrics=financial_metrics,
+            pbr_history=get_pbr_history(
+                ticker=ticker,
+                end_date=end_date,
+                limit=8,
+                api_key=api_key,
+            ),
             current_price=(
                 most_recent_metrics.market_cap / shares_outstanding
                 if most_recent_metrics.market_cap and shares_outstanding
@@ -653,42 +660,55 @@ def calculate_pbr_band(
     current_price: float | None,
     shares_outstanding: float | None,
     revenue_growth: float | None = None,
+    pbr_history: list | None = None,
 ) -> dict | None:
     """PBR band using trailing price-to-book history."""
     import math
 
-    pbr_history: list[tuple[str, float]] = []
-    for metric in financial_metrics:
-        pbr = getattr(metric, "price_to_book_ratio", None)
-        if pbr is not None and math.isfinite(pbr) and pbr > 0:
-            period = getattr(metric, "report_period", "") or ""
-            pbr_history.append((period, pbr))
+    if not financial_metrics:
+        return None
 
-    bvps: float | None = getattr(financial_metrics[0], "book_value_per_share", None)
+    history_pairs: list[tuple[str, float]] = []
+    bvps: float | None = None
+    history_source = "financial_metrics"
+
+    if pbr_history:
+        for point in pbr_history:
+            pbr = getattr(point, "price_to_book_ratio", None)
+            if pbr is not None and math.isfinite(pbr) and pbr > 0:
+                period = getattr(point, "period", "") or ""
+                history_pairs.append((period, pbr))
+                if bvps is None:
+                    point_bvps = getattr(point, "book_value_per_share", None)
+                    if point_bvps is not None and point_bvps > 0:
+                        bvps = point_bvps
+                source = getattr(point, "source", None)
+                if source:
+                    history_source = source
+
+    if len(history_pairs) < 4:
+        history_pairs = []
+        history_source = "financial_metrics"
+        for metric in financial_metrics:
+            pbr = getattr(metric, "price_to_book_ratio", None)
+            if pbr is not None and math.isfinite(pbr) and pbr > 0:
+                period = getattr(metric, "report_period", "") or ""
+                history_pairs.append((period, pbr))
+                if bvps is None:
+                    metric_bvps = getattr(metric, "book_value_per_share", None)
+                    if metric_bvps is not None and metric_bvps > 0:
+                        bvps = metric_bvps
+
+    if bvps is None:
+        bvps = getattr(financial_metrics[0], "book_value_per_share", None)
     if bvps is None or bvps <= 0:
         return None
 
-    current_pbr = pbr_history[0][1]
-    if len(pbr_history) < 4:
-        anchor_price = current_price or bvps * current_pbr
-        return {
-            "current_pbr": current_pbr,
-            "percentiles": {"p10": current_pbr, "p25": current_pbr, "p50": current_pbr, "p75": current_pbr, "p90": current_pbr},
-            "history": [{"period": period, "pbr": pbr} for period, pbr in pbr_history],
-            "bvps": bvps,
-            "fair_price_p10": anchor_price,
-            "fair_price_p25": anchor_price,
-            "fair_price_p50": anchor_price,
-            "fair_price_p75": anchor_price,
-            "fair_price_p90": anchor_price,
-            "current_price": anchor_price,
-            "position_label": "single_snapshot",
-            "rerating_note": "PBR 히스토리 부족 — 현재 PBR 스냅샷 기준",
-            "signal": "neutral",
-            "details": f"현재 PBR {current_pbr:.2f}x · 히스토리 부족으로 현재 스냅샷을 기준점으로 표시",
-        }
+    if len(history_pairs) < 4:
+        return None
 
-    values = sorted(value for _, value in pbr_history)
+    current_pbr = history_pairs[0][1]
+    values = sorted(value for _, value in history_pairs)
     p10 = _percentile_manual(values, 10)
     p25 = _percentile_manual(values, 25)
     p50 = _percentile_manual(values, 50)
@@ -718,7 +738,8 @@ def calculate_pbr_band(
     return {
         "current_pbr": current_pbr,
         "percentiles": {"p10": p10, "p25": p25, "p50": p50, "p75": p75, "p90": p90},
-        "history": [{"period": period, "pbr": pbr} for period, pbr in pbr_history],
+        "history": [{"period": period, "pbr": pbr} for period, pbr in history_pairs],
+        "history_source": history_source,
         "bvps": bvps,
         "fair_price_p10": implied_price(p10),
         "fair_price_p25": implied_price(p25),
