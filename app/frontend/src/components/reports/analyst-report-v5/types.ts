@@ -169,6 +169,10 @@ export interface ValuationModel {
   weight: number;
   signal: 'bullish' | 'neutral' | 'bearish';
   gapToMarket: number | null;
+  medianMultiple?: number | null;
+  currentMultiple?: number | null;
+  ebitdaNow?: number | null;
+  netDebt?: number | null;
 }
 
 export interface ValuationDeepDive {

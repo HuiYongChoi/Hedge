@@ -1776,6 +1776,14 @@ export function buildValuationDeepDive(
     const intrinsicPerShare = safeNum(raw.intrinsic_per_share);
     const intrinsicTotal = safeNum(raw.intrinsic_total ?? raw.value);
     if (intrinsicPerShare === null && intrinsicTotal === null) return;
+    const evEbitdaFields = key === 'ev_ebitda'
+      ? {
+          medianMultiple: safeNum(raw.median_multiple),
+          currentMultiple: safeNum(raw.current_multiple),
+          ebitdaNow: safeNum(raw.ebitda_now),
+          netDebt: safeNum(raw.net_debt),
+        }
+      : {};
     models.push({
       key,
       labelKey: MODEL_LABEL_MAP[key] ?? key,
@@ -1786,6 +1794,7 @@ export function buildValuationDeepDive(
       gapToMarket: currentPrice && currentPrice > 0 && intrinsicPerShare !== null
         ? (intrinsicPerShare - currentPrice) / currentPrice
         : safeNum(raw.gap_to_market ?? raw.gap),
+      ...evEbitdaFields,
     });
   });
 

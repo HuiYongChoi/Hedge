@@ -38,6 +38,13 @@ function formatRatio(value: number | null | undefined) {
   return `${value.toFixed(2)}x`;
 }
 
+function fillTemplate(template: string, values: Record<string, string>) {
+  return Object.entries(values).reduce(
+    (next, [key, value]) => next.replace(`{${key}}`, value),
+    template,
+  );
+}
+
 const ORDERED_PRIMARY_TILE_KEYS = ['targetIntrinsicLabel', 'targetMarginLabel'] as const;
 const PRIMARY_TILE_KEYS = new Set<string>(ORDERED_PRIMARY_TILE_KEYS);
 
@@ -52,6 +59,7 @@ function ValuationSidebarPanel({
 }) {
   const pbrModel = dive.models.find(model => model.key === 'pbr_band');
   const rimModel = dive.models.find(model => model.key === 'residual_income');
+  const evModel = dive.models.find(model => model.key === 'ev_ebitda');
   const pbrValue = dive.pbr?.fairPriceP50 ?? pbrModel?.intrinsicPerShare ?? null;
   const pbrGap = pbrModel?.gapToMarket ?? (
     dive.pbr?.currentPrice && pbrValue !== null
@@ -64,63 +72,111 @@ function ValuationSidebarPanel({
       ? (dive.rim.intrinsicPerShare - dive.pbr.currentPrice) / dive.pbr.currentPrice
       : null
   );
+  const evValue = evModel?.intrinsicPerShare ?? null;
+  const evGap = evModel?.gapToMarket ?? (
+    dive.pbr?.currentPrice && evValue !== null
+      ? (evValue - dive.pbr.currentPrice) / dive.pbr.currentPrice
+      : null
+  );
   const pbrTone = dive.pbr?.signal ?? pbrModel?.signal ?? 'neutral';
   const rimTone = dive.rim?.signal ?? rimModel?.signal ?? 'neutral';
+  const evTone = evModel?.signal ?? 'neutral';
   const hasPbr = pbrValue !== null || dive.pbr;
   const hasRim = rimValue !== null || dive.rim;
+  const hasEv = evValue !== null;
 
-  if (!hasPbr && !hasRim) return null;
+  if (!hasPbr && !hasRim && !hasEv) return null;
+
+  const evSubtitle = evModel?.medianMultiple !== null
+    && evModel?.medianMultiple !== undefined
+    && evModel?.currentMultiple !== null
+    && evModel?.currentMultiple !== undefined
+    ? fillTemplate(t('evEbitdaSubtitleMedian', language), {
+        median: evModel.medianMultiple.toFixed(1),
+        current: evModel.currentMultiple.toFixed(1),
+      })
+    : t('evEbitdaSubtitleFallback', language);
+  const evCard = hasEv && (() => {
+    const classes = toneToClasses(evTone);
+    return (
+      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {t('evEbitdaLabel', language)}
+          </div>
+          <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(evGap)}</div>
+        </div>
+        <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+          {formatCurrency(evValue, currency)}
+        </div>
+        <div className="text-[10px] text-muted-foreground">{evSubtitle}</div>
+      </div>
+    );
+  })();
+  const pbrCard = hasPbr && (() => {
+    const classes = toneToClasses(pbrTone);
+    return (
+      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {language === 'ko' ? 'PBR 밴드' : 'PBR Band'}
+          </div>
+          <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(pbrGap)}</div>
+        </div>
+        <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+          {formatCurrency(pbrValue, currency)}
+        </div>
+        <div className="text-[10px] text-muted-foreground">
+          {dive.pbr
+            ? `P50 · PBR ${formatRatio(dive.pbr.currentPbr)}`
+            : (language === 'ko' ? '밴드 평가' : 'Band value')}
+        </div>
+        {dive.pbr?.reratingNote && (
+          <div className="mt-1 text-[10px] leading-4 text-muted-foreground">{dive.pbr.reratingNote}</div>
+        )}
+      </div>
+    );
+  })();
+  const rimCard = hasRim && (() => {
+    const classes = toneToClasses(rimTone);
+    return (
+      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {language === 'ko' ? 'RIM 평가' : 'RIM Valuation'}
+          </div>
+          <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(rimGap)}</div>
+        </div>
+        <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+          {formatCurrency(rimValue, currency)}
+        </div>
+        <div className="text-[10px] text-muted-foreground">
+          {dive.rim
+            ? `ROE ${formatPercent(dive.rim.roeImplied)} · Ke ${formatPercent(dive.rim.costOfEquity)}`
+            : (language === 'ko' ? '잔여이익모델' : 'Residual income model')}
+        </div>
+      </div>
+    );
+  })();
 
   return (
     <div className="mt-2 space-y-2">
       {dive.regimeNote && (
         <p className="rounded-md border border-border/60 bg-muted/10 px-2.5 py-2 text-[10px] leading-4 text-muted-foreground">{dive.regimeNote}</p>
       )}
-      {hasPbr && (() => {
-        const classes = toneToClasses(pbrTone);
-        return (
-          <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
-            <div className="flex items-start justify-between gap-2">
-              <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                {language === 'ko' ? 'PBR 밴드' : 'PBR Band'}
-              </div>
-              <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(pbrGap)}</div>
-            </div>
-            <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
-              {formatCurrency(pbrValue, currency)}
-            </div>
-            <div className="text-[10px] text-muted-foreground">
-              {dive.pbr
-                ? `P50 · PBR ${formatRatio(dive.pbr.currentPbr)}`
-                : (language === 'ko' ? '밴드 평가' : 'Band value')}
-            </div>
-            {dive.pbr?.reratingNote && (
-              <div className="mt-1 text-[10px] leading-4 text-muted-foreground">{dive.pbr.reratingNote}</div>
-            )}
-          </div>
-        );
-      })()}
-      {hasRim && (() => {
-        const classes = toneToClasses(rimTone);
-        return (
-          <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
-            <div className="flex items-start justify-between gap-2">
-              <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                {language === 'ko' ? 'RIM 평가' : 'RIM Valuation'}
-              </div>
-              <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(rimGap)}</div>
-            </div>
-            <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
-              {formatCurrency(rimValue, currency)}
-            </div>
-            <div className="text-[10px] text-muted-foreground">
-              {dive.rim
-                ? `ROE ${formatPercent(dive.rim.roeImplied)} · Ke ${formatPercent(dive.rim.costOfEquity)}`
-                : (language === 'ko' ? '잔여이익모델' : 'Residual income model')}
-            </div>
-          </div>
-        );
-      })()}
+      {dive.regime === 'capex_heavy' ? (
+        <>
+          {evCard}
+          {pbrCard}
+          {rimCard}
+        </>
+      ) : (
+        <>
+          {pbrCard}
+          {rimCard}
+          {evCard}
+        </>
+      )}
     </div>
   );
 }

@@ -172,7 +172,8 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         dcf_val = dcf_results['expected_value']
 
         # Implied Equity Value
-        ev_ebitda_val = calculate_ev_ebitda_value(financial_metrics)
+        ev_breakdown = calculate_ev_ebitda_breakdown(financial_metrics)
+        ev_ebitda_val = ev_breakdown["equity_value"] if ev_breakdown else 0
 
         shares_outstanding: float | None = (
             most_recent_metrics.outstanding_shares
@@ -327,6 +328,15 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                     "weight_used": vals["weight"],
                     "gap_to_market": vals["gap"],
                 }
+
+        if ev_breakdown and "ev_ebitda_analysis" in reasoning:
+            reasoning["ev_ebitda_analysis"].update({
+                "median_multiple": ev_breakdown["median_multiple"],
+                "current_multiple": ev_breakdown["current_multiple"],
+                "ebitda_now": ev_breakdown["ebitda_now"],
+                "net_debt": ev_breakdown["net_debt"],
+                "sample_size": ev_breakdown["sample_size"],
+            })
         
         # Add overall DCF scenario summary if available
         if 'dcf_results' in locals():
@@ -522,23 +532,41 @@ def calculate_intrinsic_value(
     return pv + pv_term
 
 
-def calculate_ev_ebitda_value(financial_metrics: list):
-    """Implied equity value via median EV/EBITDA multiple."""
+def calculate_ev_ebitda_breakdown(financial_metrics: list) -> dict | None:
+    """Implied equity value plus multiple details via median EV/EBITDA."""
     if not financial_metrics:
-        return 0
+        return None
     m0 = financial_metrics[0]
     if not (m0.enterprise_value and m0.enterprise_value_to_ebitda_ratio):
-        return 0
+        return None
     if m0.enterprise_value_to_ebitda_ratio == 0:
-        return 0
+        return None
 
-    ebitda_now = m0.enterprise_value / m0.enterprise_value_to_ebitda_ratio
-    med_mult = statistics.median([
+    current_mult = m0.enterprise_value_to_ebitda_ratio
+    ebitda_now = m0.enterprise_value / current_mult
+    multiples = [
         m.enterprise_value_to_ebitda_ratio for m in financial_metrics if m.enterprise_value_to_ebitda_ratio
-    ])
+    ]
+    if not multiples:
+        return None
+    med_mult = statistics.median(multiples)
     ev_implied = med_mult * ebitda_now
     net_debt = (m0.enterprise_value or 0) - (m0.market_cap or 0)
-    return max(ev_implied - net_debt, 0)
+    equity_implied = max(ev_implied - net_debt, 0.0)
+    return {
+        "equity_value": equity_implied,
+        "median_multiple": med_mult,
+        "current_multiple": current_mult,
+        "ebitda_now": ebitda_now,
+        "net_debt": net_debt,
+        "sample_size": len(multiples),
+    }
+
+
+def calculate_ev_ebitda_value(financial_metrics: list):
+    """Backward-compatible EV/EBITDA equity value helper."""
+    breakdown = calculate_ev_ebitda_breakdown(financial_metrics)
+    return breakdown["equity_value"] if breakdown else 0
 
 
 def calculate_residual_income_value(
