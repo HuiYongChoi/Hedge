@@ -108,12 +108,20 @@ class AnalystReportV5StaticTests(unittest.TestCase):
     def test_target_margin_tile_shows_historical_buffered_price_not_raw_intrinsic(self):
         layout = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        sidebar = (V5_DIR / "target-data-sidebar.tsx").read_text(encoding="utf-8")
 
         self.assertIn("extractTargetTiles(effectiveMetrics, displayAgentKey, language, effectiveCurrency)", layout)
         self.assertIn("formatMarginTarget", helpers)
         self.assertIn("SAFETY_MARGIN_PRICE_BUFFER = 0.25", helpers)
         self.assertIn("safetyMarginPrice", helpers)
         self.assertIn("formatSafetyMarginTarget", helpers)
+        self.assertIn("impliedIntrinsicValue = current * (1 + margin)", helpers)
+        self.assertIn("ORDERED_PRIMARY_TILE_KEYS", sidebar)
+        self.assertLess(
+            sidebar.index("{topTiles.map"),
+            sidebar.index("{valuationDeepDive &&"),
+            "Safety margin must remain in the primary tile group above PBR/RIM valuation cards",
+        )
         self.assertNotIn("formatMarginTarget(value, metrics.intrinsicValue?.value", helpers)
         self.assertNotIn("formatCurrency(referencePrice, currency)", helpers)
 

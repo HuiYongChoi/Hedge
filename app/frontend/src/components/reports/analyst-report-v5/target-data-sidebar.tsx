@@ -38,7 +38,8 @@ function formatRatio(value: number | null | undefined) {
   return `${value.toFixed(2)}x`;
 }
 
-const PRIMARY_TILE_KEYS = new Set(['targetIntrinsicLabel', 'targetMarginLabel']);
+const ORDERED_PRIMARY_TILE_KEYS = ['targetIntrinsicLabel', 'targetMarginLabel'] as const;
+const PRIMARY_TILE_KEYS = new Set<string>(ORDERED_PRIMARY_TILE_KEYS);
 
 function ValuationSidebarPanel({
   dive,
@@ -163,7 +164,9 @@ export function TargetDataSidebar({
   valuationDeepDive,
   currency = 'USD',
 }: TargetDataSidebarProps) {
-  const primaryTiles = tiles.filter(tile => PRIMARY_TILE_KEYS.has(tile.labelKey));
+  const primaryTiles = ORDERED_PRIMARY_TILE_KEYS
+    .map(key => tiles.find(tile => tile.labelKey === key))
+    .filter((tile): tile is TargetTile => Boolean(tile));
   const secondaryTiles = tiles.filter(tile => !PRIMARY_TILE_KEYS.has(tile.labelKey));
   const topTiles = primaryTiles.length > 0 ? primaryTiles : tiles;
 

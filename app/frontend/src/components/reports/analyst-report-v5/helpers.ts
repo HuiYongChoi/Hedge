@@ -1837,10 +1837,25 @@ export function extractTargetTiles(
 
 function buildSafetyMarginPrice(metrics: CanonicalMetrics): CanonicalMetric | undefined {
   const intrinsic = metrics.intrinsicValue;
-  if (!intrinsic || !Number.isFinite(intrinsic.value) || intrinsic.value <= 0) return undefined;
+  if (intrinsic && Number.isFinite(intrinsic.value) && intrinsic.value > 0) {
+    return {
+      ...intrinsic,
+      value: intrinsic.value * (1 - SAFETY_MARGIN_PRICE_BUFFER),
+    };
+  }
+
+  const current = finiteNumber(metrics.currentPrice?.value);
+  const margin = finiteNumber(metrics.marginOfSafety?.value);
+  if (current === null || current <= 0 || margin === null) return undefined;
+
+  const impliedIntrinsicValue = current * (1 + margin);
+  if (!Number.isFinite(impliedIntrinsicValue) || impliedIntrinsicValue <= 0) return undefined;
+
+  const source = metrics.marginOfSafety ?? metrics.currentPrice;
+  if (!source) return undefined;
   return {
-    ...intrinsic,
-    value: intrinsic.value * (1 - SAFETY_MARGIN_PRICE_BUFFER),
+    ...source,
+    value: impliedIntrinsicValue * (1 - SAFETY_MARGIN_PRICE_BUFFER),
   };
 }
 
