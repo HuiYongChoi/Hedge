@@ -319,6 +319,57 @@ export function toneToClasses(tone: ReportTone): { border: string; bg: string; t
   };
 }
 
+export interface PbrTrend {
+  direction: 'up' | 'down' | 'flat';
+  pctChange: number;
+  pctText: string;
+  label: string;
+  icon: '↑' | '↓' | '→';
+  tone: string;
+  windowText: string;
+}
+
+export function computePbrTrend(
+  history: Array<{ period: string; pbr: number }>,
+  language: ReportLanguage = 'ko',
+): PbrTrend | null {
+  if (!history || history.length < 4) return null;
+
+  const n = history.length;
+  const half = Math.floor(n / 2);
+  const recent = history.slice(0, half).map(item => item.pbr).filter(Number.isFinite);
+  const older = history.slice(half).map(item => item.pbr).filter(Number.isFinite);
+  if (recent.length === 0 || older.length === 0) return null;
+
+  const average = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
+  const recentAvg = average(recent);
+  const olderAvg = average(older);
+  if (!Number.isFinite(recentAvg) || !Number.isFinite(olderAvg) || olderAvg === 0) return null;
+
+  const pctChange = (recentAvg - olderAvg) / olderAvg;
+  const direction: PbrTrend['direction'] = pctChange > 0.05
+    ? 'up'
+    : pctChange < -0.05
+      ? 'down'
+      : 'flat';
+
+  return {
+    direction,
+    pctChange,
+    pctText: `${pctChange > 0 ? '+' : ''}${(pctChange * 100).toFixed(0)}%`,
+    label: language === 'ko'
+      ? (direction === 'up' ? '상승국면' : direction === 'down' ? '하락국면' : '횡보')
+      : (direction === 'up' ? 'Uptrend' : direction === 'down' ? 'Downtrend' : 'Sideways'),
+    icon: direction === 'up' ? '↑' : direction === 'down' ? '↓' : '→',
+    tone: direction === 'up'
+      ? 'text-emerald-500'
+      : direction === 'down'
+        ? 'text-red-500'
+        : 'text-muted-foreground',
+    windowText: language === 'ko' ? `${n}분기` : `${n}q`,
+  };
+}
+
 export function extractReasoningText(reasoning: unknown): string {
   if (!reasoning) return '';
   if (typeof reasoning === 'string') return reasoning;

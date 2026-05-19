@@ -1,8 +1,9 @@
 import { Button } from '@/components/ui/button';
 import { t } from '@/lib/language-preferences';
 import { ChevronRight } from 'lucide-react';
-import { toneToClasses } from './helpers';
-import type { OtherAgent, ReportLanguage, TargetTile, ValuationDeepDive } from './types';
+import type { ReactNode } from 'react';
+import { computePbrTrend, toneToClasses } from './helpers';
+import type { OtherAgent, PbrBand, ReportLanguage, ReportTone, TargetTile, ValuationDeepDive } from './types';
 
 interface TargetDataSidebarProps {
   tiles: TargetTile[];
@@ -33,11 +34,6 @@ function formatPercent(value: number | null | undefined) {
   return `${value > 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
 }
 
-function formatRatio(value: number | null | undefined) {
-  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
-  return `${value.toFixed(2)}x`;
-}
-
 function fillTemplate(template: string, values: Record<string, string>) {
   return Object.entries(values).reduce(
     (next, [key, value]) => next.replace(`{${key}}`, value),
@@ -47,6 +43,164 @@ function fillTemplate(template: string, values: Record<string, string>) {
 
 const ORDERED_PRIMARY_TILE_KEYS = ['targetIntrinsicLabel', 'targetMarginLabel'] as const;
 const PRIMARY_TILE_KEYS = new Set<string>(ORDERED_PRIMARY_TILE_KEYS);
+
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) return 50;
+  return Math.max(0, Math.min(100, value));
+}
+
+function ratioToBandPct(value: number, p10: number, p90: number) {
+  const range = p90 - p10;
+  if (!Number.isFinite(range) || range <= 0) return 50;
+  return clampPercent(((value - p10) / range) * 100);
+}
+
+function pbrPositionText(position: PbrBand['positionLabel'], language: ReportLanguage) {
+  const labels = {
+    below_p25: language === 'ko' ? '밴드 하단 (P10–P25)' : 'Band lower (P10–P25)',
+    p25_p50: language === 'ko' ? '밴드 중하 (P25–P50)' : 'Band mid-low (P25–P50)',
+    p50_p75: language === 'ko' ? '밴드 중상 (P50–P75)' : 'Band mid-high (P50–P75)',
+    above_p75: language === 'ko' ? '밴드 상단 (P75–P90)' : 'Band upper (P75–P90)',
+  };
+  return labels[position];
+}
+
+function pbrSignalText(signalTone: ReportTone, language: ReportLanguage) {
+  if (signalTone === 'bullish') return language === 'ko' ? '매수·강세' : 'Buy · bullish';
+  if (signalTone === 'bearish') return language === 'ko' ? '매도·약세' : 'Sell · bearish';
+  return language === 'ko' ? '중립' : 'Neutral';
+}
+
+function InfoDot({ title }: { title: string }) {
+  return (
+    <span
+      role="tooltip"
+      title={title}
+      className="inline-flex h-3 w-3 cursor-help items-center justify-center rounded-full border border-border/60 text-[8px] text-muted-foreground"
+      aria-label={title}
+    >
+      ?
+    </span>
+  );
+}
+
+function Row({ label, tip, children }: { label: string; tip?: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <dt className="flex items-center gap-1 text-muted-foreground">
+        <span>{label}</span>
+        {tip && <InfoDot title={tip} />}
+      </dt>
+      <dd className="min-w-0 text-right">{children}</dd>
+    </div>
+  );
+}
+
+function PbrMiniRail({
+  percentiles,
+  currentPbr,
+  positionPct,
+  tone,
+}: {
+  percentiles: PbrBand['percentiles'];
+  currentPbr: number;
+  positionPct: number;
+  tone: ReportTone;
+}) {
+  const classes = toneToClasses(tone);
+  const p25Pct = ratioToBandPct(percentiles.p25, percentiles.p10, percentiles.p90);
+  const p50Pct = ratioToBandPct(percentiles.p50, percentiles.p10, percentiles.p90);
+  const p75Pct = ratioToBandPct(percentiles.p75, percentiles.p10, percentiles.p90);
+  const left = Math.min(p25Pct, p75Pct);
+  const width = Math.abs(p75Pct - p25Pct);
+
+  return (
+    <div className="relative mt-1 h-2 w-full rounded-full bg-muted">
+      <div
+        className="absolute h-2 rounded-full bg-muted-foreground/30"
+        style={{ left: `${left}%`, width: `${width}%` }}
+      />
+      <div className="absolute -top-0.5 h-3 w-px bg-muted-foreground/70" style={{ left: `${p50Pct}%` }} />
+      <div
+        className={`absolute -top-1 h-4 w-4 -translate-x-1/2 rounded-full border-2 border-background ${classes.bg}`}
+        style={{ left: `${positionPct}%` }}
+        title={`현재 PBR ${currentPbr.toFixed(2)}x`}
+      />
+    </div>
+  );
+}
+
+function PbrBandCard({
+  pbr,
+  pbrFairP50,
+  gapToMarket,
+  signalTone,
+  currency,
+  language,
+}: {
+  pbr: PbrBand;
+  pbrFairP50: number | null;
+  gapToMarket: number | null;
+  signalTone: ReportTone;
+  currency: string;
+  language: ReportLanguage;
+}) {
+  const classes = toneToClasses(signalTone);
+  const trend = computePbrTrend(pbr.history, language);
+  const gapPeak = pbr.percentiles.p90 ? (pbr.currentPbr - pbr.percentiles.p90) / pbr.percentiles.p90 : null;
+  const gapTrough = pbr.percentiles.p10 ? (pbr.currentPbr - pbr.percentiles.p10) / pbr.percentiles.p10 : null;
+  const railPct = ratioToBandPct(pbr.currentPbr, pbr.percentiles.p10, pbr.percentiles.p90);
+
+  return (
+    <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {t('pbrCardTitle', language)}
+          <InfoDot title={t('pbrCardTitleTip', language)} />
+        </div>
+        <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(gapToMarket)}</div>
+      </div>
+
+      <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+        {formatCurrency(pbrFairP50, currency)}
+      </div>
+
+      <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
+        <span>{language === 'ko' ? '밴드 위치' : 'Band position'}</span>
+        <InfoDot title={t('pbrRailTip', language)} />
+      </div>
+      <PbrMiniRail percentiles={pbr.percentiles} currentPbr={pbr.currentPbr} positionPct={railPct} tone={signalTone} />
+      <div className="mt-1 flex justify-between text-[10px] font-mono text-muted-foreground">
+        <span>P10 {pbr.percentiles.p10.toFixed(2)}x</span>
+        <span>P50 {pbr.percentiles.p50.toFixed(2)}x</span>
+        <span>P90 {pbr.percentiles.p90.toFixed(2)}x</span>
+      </div>
+
+      <dl className="mt-2 space-y-0.5 text-[10px]">
+        <Row label={t('pbrRowPosition', language)} tip={t('pbrRowPositionTip', language)}>
+          <span className="font-mono">{pbrPositionText(pbr.positionLabel, language)}</span>
+        </Row>
+        {trend && (
+          <Row label={t('pbrRowTrend', language)} tip={t('pbrRowTrendTip', language)}>
+            <span className={`font-mono ${trend.tone}`}>{trend.icon} {trend.label} · {trend.pctText}</span>
+          </Row>
+        )}
+        <Row label={t('pbrRowExtremes', language)} tip={t('pbrRowExtremesTip', language)}>
+          <span className="font-mono">
+            {language === 'ko' ? '고점' : 'Peak'} {formatPercent(gapPeak)} · {language === 'ko' ? '저점' : 'Trough'} {formatPercent(gapTrough)}
+          </span>
+        </Row>
+        <Row label={t('pbrRowSignal', language)} tip={t('pbrRowSignalTip', language)}>
+          <span className={`font-mono font-semibold ${classes.text}`}>{pbrSignalText(signalTone, language)}</span>
+        </Row>
+      </dl>
+
+      {pbr.reratingNote && (
+        <div className="mt-2 text-[10px] leading-4 text-muted-foreground">{pbr.reratingNote}</div>
+      )}
+    </div>
+  );
+}
 
 function ValuationSidebarPanel({
   dive,
@@ -115,7 +269,16 @@ function ValuationSidebarPanel({
   })();
   const pbrCard = hasPbr && (() => {
     const classes = toneToClasses(pbrTone);
-    return (
+    return dive.pbr ? (
+      <PbrBandCard
+        pbr={dive.pbr}
+        pbrFairP50={pbrValue}
+        gapToMarket={pbrGap}
+        signalTone={pbrTone}
+        currency={currency}
+        language={language}
+      />
+    ) : (
       <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
         <div className="flex items-start justify-between gap-2">
           <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -127,13 +290,8 @@ function ValuationSidebarPanel({
           {formatCurrency(pbrValue, currency)}
         </div>
         <div className="text-[10px] text-muted-foreground">
-          {dive.pbr
-            ? `P50 · PBR ${formatRatio(dive.pbr.currentPbr)}`
-            : (language === 'ko' ? '밴드 평가' : 'Band value')}
+          {language === 'ko' ? '밴드 평가' : 'Band value'}
         </div>
-        {dive.pbr?.reratingNote && (
-          <div className="mt-1 text-[10px] leading-4 text-muted-foreground">{dive.pbr.reratingNote}</div>
-        )}
       </div>
     );
   })();
