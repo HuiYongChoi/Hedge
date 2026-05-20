@@ -344,6 +344,18 @@ export function ReportLayout({
       currentFyEps,
     };
   }, [effectiveCurrentPrice, effectiveMetrics, liveTarget]);
+  const brokerConsensus = useMemo(() => {
+    const consensus = liveTarget?.consensus ?? liveTarget?.median ?? liveTarget?.distribution?.average ?? null;
+    const brokerCount = liveTarget?.analyst_count
+      ?? liveTarget?.brokers?.length
+      ?? liveTarget?.distribution?.total
+      ?? 0;
+    return {
+      consensus,
+      brokerCount,
+      forwardEps: canonicalForwardSnapshot.fwdEps ?? canonicalForwardSnapshot.currentFyEps ?? null,
+    };
+  }, [canonicalForwardSnapshot, liveTarget]);
   const valuationReport = getAgentReport(
     completeResult.analyst_signals,
     'valuation_analyst',
@@ -477,6 +489,7 @@ export function ReportLayout({
           report={displayReport}
           valuationDeepDive={valuationDeepDive}
           currency={effectiveCurrency}
+          brokerConsensus={brokerConsensus}
         />
       </div>
 

@@ -74,3 +74,28 @@ def test_valuation_reasoning_requires_concrete_numbers_in_evidence_details():
     assert "def _ensure_numeric_evidence_details" in src
     assert "_ensure_numeric_evidence_details(" in src
     assert "enhanced_details," in src
+
+
+def test_broker_consensus_tile_is_added_after_secondary_tiles_without_primary_tile_changes():
+    sidebar = read(V5_DIR / "target-data-sidebar.tsx")
+    layout = read(V5_DIR / "report-layout.tsx")
+
+    assert "function BrokerConsensusTile" in sidebar
+    assert "brokerConsensus" in sidebar
+    assert "brokerConsensusLabel" in sidebar
+    assert "brokerConsensusTip" in sidebar
+    assert "secondaryTiles.map" in sidebar
+    assert sidebar.index("secondaryTiles.map") < sidebar.index("<BrokerConsensusTile")
+    assert "ORDERED_PRIMARY_TILE_KEYS = ['targetIntrinsicLabel', 'targetMarginLabel']" in sidebar
+
+    assert "brokerConsensus={" in layout
+    assert "liveTarget?.consensus" in layout
+    assert "canonicalForwardSnapshot.fwdEps" in layout
+
+
+def test_broker_consensus_i18n_keys_exist_in_ko_and_en():
+    src = read(LANGUAGE_PREFS)
+
+    assert "brokerConsensusLabel: '증권사 평균 목표가'" in src
+    assert "brokerConsensusLabel: 'Broker Consensus'" in src
+    assert "brokerConsensusTip:" in src

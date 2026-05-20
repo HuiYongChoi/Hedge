@@ -14,6 +14,13 @@ interface TargetDataSidebarProps {
   report?: Record<string, any> | null;
   valuationDeepDive?: ValuationDeepDive | null;
   currency?: string;
+  brokerConsensus?: BrokerConsensusSnapshot | null;
+}
+
+interface BrokerConsensusSnapshot {
+  consensus: number | null;
+  brokerCount: number;
+  forwardEps: number | null;
 }
 
 function shortTone(tone: OtherAgent['tone']) {
@@ -450,6 +457,46 @@ function TargetTileCard({ tile, language }: { tile: TargetTile; language: Report
   );
 }
 
+function BrokerConsensusTile({
+  brokerConsensus,
+  currency,
+  language,
+}: {
+  brokerConsensus: BrokerConsensusSnapshot | null | undefined;
+  currency: string;
+  language: ReportLanguage;
+}) {
+  const consensus = brokerConsensus?.consensus ?? null;
+  if (consensus === null || !Number.isFinite(consensus) || consensus <= 0) return null;
+
+  const brokerCount = Math.max(0, brokerConsensus?.brokerCount ?? 0);
+  const forwardEps = brokerConsensus?.forwardEps ?? null;
+  const fwdPer = forwardEps !== null && Number.isFinite(forwardEps) && forwardEps > 0
+    ? consensus / forwardEps
+    : null;
+  const brokerLabel = language === 'ko'
+    ? `${brokerCount}명`
+    : `${brokerCount} brokers`;
+  const subtitle = fwdPer !== null
+    ? `Fwd PER ${fwdPer.toFixed(2)}x · ${brokerLabel}`
+    : brokerLabel;
+
+  return (
+    <div className="relative rounded-lg border border-border/60 bg-muted/10 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {t('brokerConsensusLabel', language)}
+        </div>
+        <InfoDot title={t('brokerConsensusTip', language)} />
+      </div>
+      <div className="mt-1 font-mono text-lg font-semibold text-foreground">
+        {formatCurrency(consensus, currency)}
+      </div>
+      <div className="text-[10px] text-muted-foreground">{subtitle}</div>
+    </div>
+  );
+}
+
 export function TargetDataSidebar({
   tiles,
   otherAgents,
@@ -459,12 +506,18 @@ export function TargetDataSidebar({
   report,
   valuationDeepDive,
   currency = 'USD',
+  brokerConsensus,
 }: TargetDataSidebarProps) {
   const primaryTiles = ORDERED_PRIMARY_TILE_KEYS
     .map(key => tiles.find(tile => tile.labelKey === key))
     .filter((tile): tile is TargetTile => Boolean(tile));
   const secondaryTiles = tiles.filter(tile => !PRIMARY_TILE_KEYS.has(tile.labelKey));
   const topTiles = primaryTiles.length > 0 ? primaryTiles : tiles;
+  const hasBrokerConsensus = Boolean(
+    brokerConsensus?.consensus
+    && Number.isFinite(brokerConsensus.consensus)
+    && brokerConsensus.consensus > 0,
+  );
 
   return (
     <aside className={`w-full flex-shrink-0 lg:sticky lg:top-4 lg:w-[280px] lg:self-start lg:overflow-y-auto lg:max-h-[calc(100vh-6rem)] ${className}`}>
@@ -484,9 +537,14 @@ export function TargetDataSidebar({
                 language={language}
               />
             )}
-            {primaryTiles.length > 0 && secondaryTiles.length > 0 && (
+            {primaryTiles.length > 0 && (secondaryTiles.length > 0 || hasBrokerConsensus) && (
               <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
                 {secondaryTiles.map(tile => <TargetTileCard key={tile.labelKey} tile={tile} language={language} />)}
+                <BrokerConsensusTile
+                  brokerConsensus={brokerConsensus}
+                  currency={currency}
+                  language={language}
+                />
               </div>
             )}
           </>
