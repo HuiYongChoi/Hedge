@@ -10,6 +10,7 @@ import {
   renderReportTonedContent,
   sortReportSentimentLines,
 } from '@/components/reports/report-sentiment-dashboard';
+import { useActiveTicker } from '@/contexts/active-ticker-context';
 import { useLanguage } from '@/contexts/language-context';
 import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
@@ -521,6 +522,7 @@ const LINE_ITEM_FIELDS = [
 
 export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
   const { language } = useLanguage();
+  const { activeTicker, setActiveTicker } = useActiveTicker();
   const { success, error } = useToastManager();
 
   // Config state
@@ -562,6 +564,7 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
   const [expandedAgentResults, setExpandedAgentResults] = useState<Set<string>>(new Set());
   const [isFinalDecisionExpanded, setIsFinalDecisionExpanded] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const hasHydratedActiveTickerRef = useRef(false);
 
   // View tab
   const [viewTab, setViewTab] = useState<ViewTab>('metrics');
@@ -570,6 +573,21 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
     setTickerValidationStatus(status);
     setValidatedTicker(status === 'valid' && resolvedTicker ? resolvedTicker : '');
   }, []);
+
+  useEffect(() => {
+    if (hasHydratedActiveTickerRef.current || tickers.trim() || !activeTicker) return;
+    setTickers(activeTicker);
+    setValidatedTicker(activeTicker);
+    setTickerValidationStatus('valid');
+    hasHydratedActiveTickerRef.current = true;
+  }, [activeTicker, tickers]);
+
+  useEffect(() => {
+    if (tickerValidationStatus !== 'valid') return;
+    const raw = tickers.split(',')[0]?.trim();
+    const ticker = (validatedTicker || (raw ? resolveTickerValue(raw) : '')).toUpperCase();
+    if (ticker) setActiveTicker(ticker);
+  }, [setActiveTicker, tickerValidationStatus, tickers, validatedTicker]);
 
   // Load agents & models on mount
   useEffect(() => {

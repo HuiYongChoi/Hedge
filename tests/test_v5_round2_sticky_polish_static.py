@@ -4,6 +4,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 V5_DIR = ROOT / "app/frontend/src/components/reports/analyst-report-v5"
 LANGUAGE_PREFS = ROOT / "app/frontend/src/lib/language-preferences.ts"
+CONTEXTS_DIR = ROOT / "app/frontend/src/contexts"
+TABS_DIR = ROOT / "app/frontend/src/components/tabs"
 
 
 def read(path: Path) -> str:
@@ -38,3 +40,26 @@ def test_sticky_header_i18n_keys_exist_in_ko_and_en():
     assert "stickyConfidenceLabel: 'Confidence'" in src
     assert "stickyPriceUnavailable: '현재가 없음'" in src
     assert "stickyPriceUnavailable: 'No price'" in src
+
+
+def test_active_ticker_context_is_registered_and_used_by_stock_and_sandbox_tabs():
+    context_src = read(CONTEXTS_DIR / "active-ticker-context.tsx")
+    main_src = read(ROOT / "app/frontend/src/main.tsx")
+    stock_src = read(TABS_DIR / "stock-search-tab.tsx")
+    sandbox_src = read(TABS_DIR / "data-sandbox-tab.tsx")
+
+    assert "ActiveTickerProvider" in context_src
+    assert "useActiveTicker" in context_src
+    assert "<ActiveTickerProvider>" in main_src
+    assert "useActiveTicker" in stock_src
+    assert "setActiveTicker" in stock_src
+    assert "useActiveTicker" in sandbox_src
+    assert "hasHydratedActiveTickerRef" in sandbox_src
+
+
+def test_stock_search_redundant_top_status_box_is_not_rendered():
+    src = read(TABS_DIR / "stock-search-tab.tsx")
+
+    assert "활성 종목" not in src
+    assert "Sandbox 미사용" not in src
+    assert "샌드박스 미사용" not in src

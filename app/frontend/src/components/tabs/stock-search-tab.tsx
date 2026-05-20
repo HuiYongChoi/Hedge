@@ -5,6 +5,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { ModelSelector } from '@/components/ui/llm-selector';
 import { resolveTickerValue, TickerInput, type TickerInputValidationStatus } from '@/components/ui/ticker-input';
+import { useActiveTicker } from '@/contexts/active-ticker-context';
 import { useLanguage } from '@/contexts/language-context';
 import { useWorkspace, type Workspace } from '@/contexts/workspace-context';
 import { Agent, getAgents } from '@/data/agents';
@@ -587,6 +588,7 @@ function getDetailReportMarkdown(result: AgentResult) {
 
 export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
   const { language } = useLanguage();
+  const { setActiveTicker } = useActiveTicker();
   const { workspace, setTickers, setDateRange, setSelectedModel, toggleAgent, setSelectedAgents, setUseDataSandboxOverrides, patchWorkspace } = useWorkspace();
   const {
     tickers,
@@ -684,6 +686,12 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
     const rawTicker = tickers.split(',')[0]?.trim();
     return rawTicker ? resolveTickerValue(rawTicker).toUpperCase() : '';
   }, [tickers]);
+
+  useEffect(() => {
+    if (!currentTicker) return;
+    if (tickerValidationStatus !== 'valid' && !completeResult && agentResults.size === 0) return;
+    setActiveTicker(validatedTicker || currentTicker);
+  }, [agentResults.size, completeResult, currentTicker, setActiveTicker, tickerValidationStatus, validatedTicker]);
 
   const sandboxOverrideForTicker = useMemo(() => (
     currentTicker ? getSandboxOverrideForTicker(sandboxOverrideSnapshot, currentTicker) : null
