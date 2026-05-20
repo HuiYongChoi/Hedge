@@ -25,6 +25,7 @@ import {
   getAgentReport,
   getDetailReportMarkdown,
   getDisplayTickerLabel,
+  isJapaneseTicker,
   isKoreanTicker,
   listOtherAgents,
   pickDefaultAgent,
@@ -34,6 +35,7 @@ import { PriceCompassPanel } from './price-compass-panel';
 import { ReportBody } from './report-body';
 import { ReportHeaderRibbon } from './report-header-ribbon';
 import { MobileToc, ReportTocSidebar } from './report-toc-sidebar';
+import { StickyAnalysisHeader } from './sticky-analysis-header';
 import { TargetDataSidebar } from './target-data-sidebar';
 import type { AgentMeta, AnalystReportDashboardProps, CanonicalMetric, Citation, SectionId } from './types';
 
@@ -127,6 +129,25 @@ function marketDataMetric(value: number, fallback?: CanonicalMetric): CanonicalM
     sourceAgentNameEn: fallback?.sourceAgentNameEn ?? 'Market Data',
     isFromActiveAgent: fallback?.isFromActiveAgent ?? false,
   };
+}
+
+function countryFromTicker(ticker: string) {
+  if (isKoreanTicker(ticker)) return 'KR';
+  if (isJapaneseTicker(ticker)) return 'JP';
+  return 'US';
+}
+
+function stickyVerdictFromSignal(signal: unknown): 'buy' | 'sell' | 'hold' | 'on_hold' {
+  const normalized = String(signal ?? '').toLowerCase();
+  if (['bullish', 'buy', 'long'].includes(normalized)) return 'buy';
+  if (['bearish', 'sell', 'short'].includes(normalized)) return 'sell';
+  if (['neutral', 'hold'].includes(normalized)) return 'hold';
+  return 'on_hold';
+}
+
+function numericConfidence(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export function ReportLayout({
@@ -275,6 +296,9 @@ export function ReportLayout({
   });
   const effectiveMarginOfSafety = marginSnapshot.margin;
   const displayTickerLabel = getDisplayTickerLabel(activeTicker, displayReport);
+  const stickyCompanyName = displayTickerLabel && displayTickerLabel !== activeTicker ? displayTickerLabel : null;
+  const stickyVerdict = stickyVerdictFromSignal(displayReport?.signal ?? completeResult.decisions?.[activeTicker]?.action);
+  const stickyConfidence = numericConfidence(displayReport?.confidence ?? completeResult.decisions?.[activeTicker]?.confidence);
   const effectiveMetrics = useMemo(() => {
     const nextMetrics = { ...canonicalMetrics };
     if (effectiveCurrentPrice !== null) {
@@ -366,6 +390,20 @@ export function ReportLayout({
 
   return (
     <div className="space-y-4">
+      <StickyAnalysisHeader
+        ticker={activeTicker}
+        companyName={stickyCompanyName}
+        country={countryFromTicker(activeTicker)}
+        currentPrice={effectiveCurrentPrice}
+        currency={effectiveCurrency}
+        priceChangePct={null}
+        verdict={stickyVerdict}
+        verdictConfidence={stickyConfidence}
+        marginOfSafetyPct={effectiveMarginOfSafety}
+        wacc={effectiveMetrics.wacc?.value ?? null}
+        language={language}
+      />
+
       <TickerSwitcher
         tickers={tickers}
         activeTicker={activeTicker}

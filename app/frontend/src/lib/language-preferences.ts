@@ -429,6 +429,8 @@ export const translations = {
     verdictBuy: '↑매수·강세',
     verdictSell: '↓매도·약세',
     verdictHold: '→보유·중립',
+    stickyConfidenceLabel: '신뢰도',
+    stickyPriceUnavailable: '현재가 없음',
     periodLabelHeader: '기간',
     // Report v5 - Target data sidebar
     targetDataTitle: '핵심 타겟 데이터',
@@ -951,6 +953,8 @@ export const translations = {
     verdictBuy: '↑Buy · Bull',
     verdictSell: '↓Sell · Bear',
     verdictHold: '→Hold · Neutral',
+    stickyConfidenceLabel: 'Confidence',
+    stickyPriceUnavailable: 'No price',
     periodLabelHeader: 'Period',
     // Report v5 - Target data sidebar
     targetDataTitle: 'Target Data',
