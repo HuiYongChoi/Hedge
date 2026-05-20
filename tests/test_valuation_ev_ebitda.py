@@ -66,6 +66,52 @@ def test_ev_ebitda_breakdown_accepts_single_snapshot_fallback():
     assert result["sample_size"] == 1
 
 
+def test_ev_ebitda_breakdown_clips_extreme_multiples_before_median():
+    from src.agents.valuation import calculate_ev_ebitda_breakdown
+
+    metrics = [
+        SimpleNamespace(
+            enterprise_value=1_200.0,
+            enterprise_value_to_ebitda_ratio=6.0,
+            market_cap=1_000.0,
+        ),
+        SimpleNamespace(enterprise_value_to_ebitda_ratio=8.0),
+        SimpleNamespace(enterprise_value_to_ebitda_ratio=10.0),
+        SimpleNamespace(enterprise_value_to_ebitda_ratio=12.0),
+        SimpleNamespace(enterprise_value_to_ebitda_ratio=100.0),
+    ]
+
+    result = calculate_ev_ebitda_breakdown(metrics)
+
+    assert result is not None
+    assert result["median_multiple"] == pytest.approx(10.0)
+    assert result["multiple_basis"] == "median_clipped"
+    assert result["clipped_sample_size"] == 3
+
+
+def test_ev_ebitda_breakdown_uses_p75_for_capex_heavy_regime():
+    from src.agents.valuation import calculate_ev_ebitda_breakdown
+
+    metrics = [
+        SimpleNamespace(
+            enterprise_value=1_200.0,
+            enterprise_value_to_ebitda_ratio=6.0,
+            market_cap=1_000.0,
+        ),
+        SimpleNamespace(enterprise_value_to_ebitda_ratio=8.0),
+        SimpleNamespace(enterprise_value_to_ebitda_ratio=10.0),
+        SimpleNamespace(enterprise_value_to_ebitda_ratio=12.0),
+        SimpleNamespace(enterprise_value_to_ebitda_ratio=100.0),
+    ]
+
+    result = calculate_ev_ebitda_breakdown(metrics, capex_heavy=True)
+
+    assert result is not None
+    assert result["median_multiple"] == pytest.approx(11.0)
+    assert result["multiple_basis"] == "capex_heavy_p75_clipped"
+    assert result["clipped_sample_size"] == 3
+
+
 def test_valuation_agent_emits_ev_ebitda_breakdown(monkeypatch):
     import src.agents.valuation as valuation
 
@@ -128,11 +174,12 @@ def test_valuation_agent_emits_ev_ebitda_breakdown(monkeypatch):
     reasoning = result["data"]["analyst_signals"]["valuation_analyst_evtest"]["MU"]["reasoning"]
     ev = reasoning["ev_ebitda_analysis"]
 
-    assert ev["median_multiple"] == pytest.approx(9.0)
+    assert ev["median_multiple"] == pytest.approx(10.5)
     assert ev["current_multiple"] == pytest.approx(6.0)
     assert ev["ebitda_now"] == pytest.approx(200_000.0)
     assert ev["net_debt"] == pytest.approx(200_000.0)
     assert ev["sample_size"] == 4
+    assert ev["multiple_basis"] == "capex_heavy_p75"
 
 
 def test_sidebar_renders_ev_ebitda_without_changing_pbr_rim_cards():

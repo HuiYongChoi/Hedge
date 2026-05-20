@@ -156,6 +156,12 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         for li in line_items:
             if hasattr(li, 'free_cash_flow') and li.free_cash_flow is not None:
                 fcf_history.append(li.free_cash_flow)
+
+        regime = detect_capex_regime(
+            capex=li_curr.capital_expenditure,
+            revenue=li_curr.revenue,
+            fcf_history=fcf_history,
+        )
         
         # Enhanced DCF with scenarios
         dcf_results = calculate_dcf_scenarios(
@@ -173,7 +179,10 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         dcf_val = dcf_results['expected_value']
 
         # Implied Equity Value
-        ev_breakdown = calculate_ev_ebitda_breakdown(financial_metrics)
+        ev_breakdown = calculate_ev_ebitda_breakdown(
+            financial_metrics,
+            capex_heavy=regime == "capex_heavy",
+        )
         ev_ebitda_val = ev_breakdown["equity_value"] if ev_breakdown else 0
 
         shares_outstanding: float | None = (
@@ -222,12 +231,6 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             financial_metrics=financial_metrics,
             forward_metrics=forward_metrics,
             cost_of_equity=ke_for_justified,
-        )
-
-        regime = detect_capex_regime(
-            capex=li_curr.capital_expenditure,
-            revenue=li_curr.revenue,
-            fcf_history=fcf_history,
         )
 
         # ------------------------------------------------------------------
@@ -346,6 +349,8 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                 "ebitda_now": ev_breakdown["ebitda_now"],
                 "net_debt": ev_breakdown["net_debt"],
                 "sample_size": ev_breakdown["sample_size"],
+                "clipped_sample_size": ev_breakdown["clipped_sample_size"],
+                "multiple_basis": ev_breakdown["multiple_basis"],
             })
         
         # Add overall DCF scenario summary if available
@@ -578,8 +583,27 @@ def calculate_intrinsic_value(
     return pv + pv_term
 
 
-def calculate_ev_ebitda_breakdown(financial_metrics: list) -> dict | None:
-    """Implied equity value plus multiple details via median EV/EBITDA."""
+def _clip_ev_ebitda_multiples(multiples: list[float]) -> tuple[list[float], bool]:
+    """Trim the most distorted cycle trough/peak multiple when enough history exists."""
+    sorted_multiples = sorted(multiples)
+    if len(sorted_multiples) >= 5:
+        return sorted_multiples[1:-1], True
+    return sorted_multiples, False
+
+
+def _select_ev_ebitda_multiple(multiples: list[float], capex_heavy: bool) -> tuple[float, str, int]:
+    clipped_multiples, was_clipped = _clip_ev_ebitda_multiples(multiples)
+    if capex_heavy:
+        selected = _percentile_manual(clipped_multiples, 75)
+        basis = "capex_heavy_p75_clipped" if was_clipped else "capex_heavy_p75"
+    else:
+        selected = statistics.median(clipped_multiples)
+        basis = "median_clipped" if was_clipped else "median"
+    return selected, basis, len(clipped_multiples)
+
+
+def calculate_ev_ebitda_breakdown(financial_metrics: list, capex_heavy: bool = False) -> dict | None:
+    """Implied equity value plus cycle-aware EV/EBITDA multiple details."""
     if not financial_metrics:
         return None
     m0 = financial_metrics[0]
@@ -595,7 +619,7 @@ def calculate_ev_ebitda_breakdown(financial_metrics: list) -> dict | None:
     ]
     if not multiples:
         return None
-    med_mult = statistics.median(multiples)
+    med_mult, multiple_basis, clipped_sample_size = _select_ev_ebitda_multiple(multiples, capex_heavy)
     ev_implied = med_mult * ebitda_now
     net_debt = (m0.enterprise_value or 0) - (m0.market_cap or 0)
     equity_implied = max(ev_implied - net_debt, 0.0)
@@ -606,6 +630,8 @@ def calculate_ev_ebitda_breakdown(financial_metrics: list) -> dict | None:
         "ebitda_now": ebitda_now,
         "net_debt": net_debt,
         "sample_size": len(multiples),
+        "clipped_sample_size": clipped_sample_size,
+        "multiple_basis": multiple_basis,
     }
 
 
