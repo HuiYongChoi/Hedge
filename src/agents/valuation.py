@@ -7,6 +7,7 @@ configurable weights.
 """
 
 import json
+import math
 import statistics
 from langchain_core.messages import HumanMessage
 from src.graph.state import AgentState, show_agent_reasoning
@@ -214,6 +215,15 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             revenue_growth=most_recent_metrics.revenue_growth,
         )
 
+        ke_for_justified = compute_cost_of_equity(
+            beta_proxy=most_recent_metrics.beta if most_recent_metrics.beta else 1.0,
+        )
+        justified_pbr_breakdown = calculate_justified_pbr_breakdown(
+            financial_metrics=financial_metrics,
+            forward_metrics=forward_metrics,
+            cost_of_equity=ke_for_justified,
+        )
+
         regime = detect_capex_regime(
             capex=li_curr.capital_expenditure,
             revenue=li_curr.revenue,
@@ -383,6 +393,42 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             reasoning["pbr_band_analysis"] = {
                 **pbr_band_result,
                 "weight_used": base_weights.get("pbr_band", 0),
+            }
+
+        if justified_pbr_breakdown:
+            jp_target = justified_pbr_breakdown["target_price"]
+            current_pp = (
+                market_cap / shares_outstanding
+                if (market_cap and shares_outstanding)
+                else pbr_band_result.get("current_price") if pbr_band_result else None
+            )
+            jp_gap = (jp_target - current_pp) / current_pp if current_pp and current_pp > 0 else None
+            if jp_gap is not None and jp_gap > 0.15:
+                jp_signal = "bullish"
+            elif jp_gap is not None and jp_gap < -0.15:
+                jp_signal = "bearish"
+            else:
+                jp_signal = "neutral"
+
+            reasoning["justified_pbr_analysis"] = {
+                "signal": jp_signal,
+                "gap_to_market": jp_gap,
+                "target_price": jp_target,
+                "justified_pbr": justified_pbr_breakdown["justified_pbr"],
+                "roe_used": justified_pbr_breakdown["roe_used"],
+                "roe_source": justified_pbr_breakdown["roe_source"],
+                "roe_window": justified_pbr_breakdown["roe_window"],
+                "cost_of_equity": justified_pbr_breakdown["cost_of_equity"],
+                "growth_g": justified_pbr_breakdown["growth_g"],
+                "bvps_now": justified_pbr_breakdown["bvps_now"],
+                "bvps_forward": justified_pbr_breakdown["bvps_forward"],
+                "eps_growth_1y": justified_pbr_breakdown["eps_growth_1y"],
+                "weight_used": 0,
+                "details": (
+                    f"Justified PBR {justified_pbr_breakdown['justified_pbr']:.2f}x × "
+                    f"BVPS forward {justified_pbr_breakdown['bvps_forward']:,.0f} = "
+                    f"{jp_target:,.0f}"
+                ),
             }
 
         trailing_pe = most_recent_metrics.price_to_earnings_ratio
@@ -567,6 +613,87 @@ def calculate_ev_ebitda_value(financial_metrics: list):
     """Backward-compatible EV/EBITDA equity value helper."""
     breakdown = calculate_ev_ebitda_breakdown(financial_metrics)
     return breakdown["equity_value"] if breakdown else 0
+
+
+def calculate_justified_pbr_breakdown(
+    financial_metrics: list,
+    forward_metrics,
+    cost_of_equity: float,
+    fallback_terminal_growth: float = 0.03,
+    lookback_years: int = 5,
+) -> dict | None:
+    """Justified PBR via Gordon Growth: PBR* = (ROE - g) / (Ke - g)."""
+    if not financial_metrics:
+        return None
+
+    def finite_float(value) -> float | None:
+        if value is None:
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) else None
+
+    m0 = financial_metrics[0]
+    bvps_now = finite_float(getattr(m0, "book_value_per_share", None))
+    if bvps_now is None or bvps_now <= 0:
+        return None
+
+    forward_eps_samples: list[float] = []
+    fy0 = None
+    fy1 = None
+    if forward_metrics is not None:
+        fy0 = finite_float(getattr(forward_metrics, "forward_eps_fy0", None))
+        fy1 = finite_float(getattr(forward_metrics, "forward_eps_fy1", None))
+        for value in (fy0, fy1):
+            if value is not None and value > 0:
+                forward_eps_samples.append(value)
+
+    if forward_eps_samples:
+        roe_used = (sum(forward_eps_samples) / len(forward_eps_samples)) / bvps_now
+        roe_source = "forward_eps_implied"
+        roe_window = "FY0-FY1" if len(forward_eps_samples) == 2 else "FY0"
+    else:
+        trailing_roes = [
+            finite_float(getattr(metric, "return_on_equity", None))
+            for metric in financial_metrics[:lookback_years]
+        ]
+        trailing_roes = [value for value in trailing_roes if value is not None]
+        if not trailing_roes:
+            return None
+        roe_used = sum(trailing_roes) / len(trailing_roes)
+        roe_source = "trailing_avg"
+        roe_window = f"trailing {len(trailing_roes)}y"
+
+    g_raw = finite_float(getattr(m0, "book_value_growth", None))
+    g = g_raw if g_raw is not None else fallback_terminal_growth
+    g = max(0.0, min(g, cost_of_equity - 0.005))
+
+    denom = cost_of_equity - g
+    if denom <= 0:
+        return None
+
+    justified_pbr = max((roe_used - g) / denom, 0.0)
+    bvps_forward = bvps_now * (1.0 + g)
+    target_price = justified_pbr * bvps_forward
+
+    eps_growth_1y: float | None = None
+    if fy0 is not None and fy1 is not None and fy0 > 0:
+        eps_growth_1y = (fy1 - fy0) / fy0
+
+    return {
+        "roe_used": roe_used,
+        "roe_source": roe_source,
+        "roe_window": roe_window,
+        "cost_of_equity": cost_of_equity,
+        "growth_g": g,
+        "justified_pbr": justified_pbr,
+        "bvps_now": bvps_now,
+        "bvps_forward": bvps_forward,
+        "target_price": target_price,
+        "eps_growth_1y": eps_growth_1y,
+    }
 
 
 def calculate_residual_income_value(
@@ -795,6 +922,16 @@ def detect_capex_regime(
     return "default"
 
 
+def compute_cost_of_equity(
+    beta_proxy: float = 1.0,
+    risk_free_rate: float = 0.045,
+    market_risk_premium: float = 0.06,
+) -> float:
+    """CAPM cost of equity shared by WACC and Justified PBR."""
+    ke = risk_free_rate + beta_proxy * market_risk_premium
+    return max(ke, risk_free_rate + 0.02)
+
+
 ####################################
 # Enhanced DCF Helper Functions
 ####################################
@@ -812,7 +949,7 @@ def calculate_wacc(
     """Calculate WACC using available financial data."""
     
     # Cost of Equity (CAPM)
-    cost_of_equity = risk_free_rate + beta_proxy * market_risk_premium
+    cost_of_equity = compute_cost_of_equity(beta_proxy, risk_free_rate, market_risk_premium)
     
     # Cost of Debt - estimate from interest coverage
     if interest_coverage and interest_coverage > 0:

@@ -10,6 +10,7 @@ import type {
   CitationInference,
   CompleteResult,
   EvidenceItem,
+  JustifiedPbrBreakdown,
   KeyNumber,
   NormalizedReport,
   OtherAgent,
@@ -1797,6 +1798,30 @@ function parsePbrBand(raw: Record<string, unknown>): PbrBand | null {
   };
 }
 
+function parseJustifiedPbrBreakdown(raw: Record<string, unknown>): JustifiedPbrBreakdown | null {
+  const targetPrice = safeNum(raw.target_price);
+  const justifiedPbr = safeNum(raw.justified_pbr);
+  if (targetPrice === null && justifiedPbr === null) return null;
+  const roeSource = raw.roe_source === 'forward_eps_implied' || raw.roe_source === 'trailing_avg'
+    ? raw.roe_source
+    : null;
+  return {
+    signal: parseValuationSignal(raw.signal),
+    gapToMarket: safeNum(raw.gap_to_market),
+    targetPrice,
+    justifiedPbr,
+    roeUsed: safeNum(raw.roe_used),
+    roeSource,
+    roeWindow: safeStr(raw.roe_window),
+    costOfEquity: safeNum(raw.cost_of_equity),
+    growthG: safeNum(raw.growth_g),
+    bvpsNow: safeNum(raw.bvps_now),
+    bvpsForward: safeNum(raw.bvps_forward),
+    epsGrowth1y: safeNum(raw.eps_growth_1y),
+    details: safeStr(raw.details),
+  };
+}
+
 const MODEL_LABEL_MAP: Record<string, string> = {
   dcf: 'DCF',
   owner_earnings: 'Owner Earnings',
@@ -1818,6 +1843,9 @@ export function buildValuationDeepDive(
     : null;
   const pbr = reasoning.pbr_band_analysis && typeof reasoning.pbr_band_analysis === 'object'
     ? parsePbrBand(reasoning.pbr_band_analysis as Record<string, unknown>)
+    : null;
+  const justifiedPbr = reasoning.justified_pbr_analysis && typeof reasoning.justified_pbr_analysis === 'object'
+    ? parseJustifiedPbrBreakdown(reasoning.justified_pbr_analysis as Record<string, unknown>)
     : null;
 
   const models: ValuationModel[] = [];
@@ -1849,12 +1877,13 @@ export function buildValuationDeepDive(
     });
   });
 
-  if (models.length === 0 && !rim && !pbr) return null;
+  if (models.length === 0 && !rim && !pbr && !justifiedPbr) return null;
   return {
     regime: reasoning.regime === 'capex_heavy' ? 'capex_heavy' : 'default',
     regimeNote: typeof reasoning.regime_note === 'string' ? reasoning.regime_note : null,
     rim,
     pbr,
+    justifiedPbr,
     models,
   };
 }

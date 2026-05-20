@@ -175,11 +175,28 @@ export interface ValuationModel {
   netDebt?: number | null;
 }
 
+export interface JustifiedPbrBreakdown {
+  signal: 'bullish' | 'neutral' | 'bearish';
+  gapToMarket: number | null;
+  targetPrice: number | null;
+  justifiedPbr: number | null;
+  roeUsed: number | null;
+  roeSource: 'forward_eps_implied' | 'trailing_avg' | null;
+  roeWindow: string;
+  costOfEquity: number | null;
+  growthG: number | null;
+  bvpsNow: number | null;
+  bvpsForward: number | null;
+  epsGrowth1y: number | null;
+  details: string;
+}
+
 export interface ValuationDeepDive {
   regime: 'capex_heavy' | 'default';
   regimeNote: string | null;
   rim: RimBreakdown | null;
   pbr: PbrBand | null;
+  justifiedPbr: JustifiedPbrBreakdown | null;
   models: ValuationModel[];
 }
 
