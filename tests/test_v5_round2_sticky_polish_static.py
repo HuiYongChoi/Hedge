@@ -6,6 +6,7 @@ V5_DIR = ROOT / "app/frontend/src/components/reports/analyst-report-v5"
 LANGUAGE_PREFS = ROOT / "app/frontend/src/lib/language-preferences.ts"
 CONTEXTS_DIR = ROOT / "app/frontend/src/contexts"
 TABS_DIR = ROOT / "app/frontend/src/components/tabs"
+VALUATION_AGENT = ROOT / "src/agents/valuation.py"
 
 
 def read(path: Path) -> str:
@@ -63,3 +64,13 @@ def test_stock_search_redundant_top_status_box_is_not_rendered():
     assert "활성 종목" not in src
     assert "Sandbox 미사용" not in src
     assert "샌드박스 미사용" not in src
+
+
+def test_valuation_reasoning_requires_concrete_numbers_in_evidence_details():
+    src = read(VALUATION_AGENT)
+
+    assert "CONCRETE_CONCLUSION_GUIDANCE" in src
+    assert "at least one concrete number" in src
+    assert "def _ensure_numeric_evidence_details" in src
+    assert "_ensure_numeric_evidence_details(" in src
+    assert "enhanced_details," in src

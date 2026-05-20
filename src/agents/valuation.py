@@ -22,8 +22,45 @@ from src.tools.api import (
 from src.utils.forward_outlook import get_cached_forward_metrics
 
 
+CONCRETE_CONCLUSION_GUIDANCE = (
+    "Each conclusion sentence MUST include at least one concrete number "
+    "(percentage, multiple, currency value, or growth rate)."
+)
+
+
 def _format_ratio(value: float | None) -> str:
     return f"{value:.2f}" if value is not None else "N/A"
+
+
+def _format_percent_for_evidence(value: float | None) -> str | None:
+    if value is None or not math.isfinite(value):
+        return None
+    return f"{value:.1%}"
+
+
+def _ensure_numeric_evidence_details(
+    details: str,
+    *,
+    gap: float | None = None,
+    weight: float | None = None,
+    per_share: float | None = None,
+) -> str:
+    """Apply CONCRETE_CONCLUSION_GUIDANCE to deterministic valuation details."""
+    if any(char.isdigit() for char in details):
+        return details
+
+    supplements: list[str] = []
+    gap_text = _format_percent_for_evidence(gap)
+    weight_text = _format_percent_for_evidence(weight)
+    if gap_text:
+        supplements.append(f"gap {gap_text}")
+    if weight_text:
+        supplements.append(f"weight {weight_text}")
+    if per_share is not None and math.isfinite(per_share):
+        supplements.append(f"per-share {per_share:,.2f}")
+    if not supplements:
+        supplements.append("numeric data points 0")
+    return f"{details} ({', '.join(supplements)})"
 
 
 def _select_forward_pe(forward_metrics) -> float | None:
@@ -335,7 +372,12 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                         "bullish" if vals["gap"] and vals["gap"] > 0.15 else
                         "bearish" if vals["gap"] and vals["gap"] < -0.15 else "neutral"
                     ),
-                    "details": enhanced_details,
+                    "details": _ensure_numeric_evidence_details(
+                        enhanced_details,
+                        gap=vals["gap"],
+                        weight=vals["weight"],
+                        per_share=intrinsic_per_share,
+                    ),
                     "intrinsic_total": vals["value"],
                     "intrinsic_per_share": intrinsic_per_share,
                     "weight_used": vals["weight"],
@@ -392,7 +434,13 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                 "gap_to_market": rim_gap,
             }
         else:
-            reasoning["rim_analysis"] = {"signal": "neutral", "details": "데이터 부족"}
+            reasoning["rim_analysis"] = {
+                "signal": "neutral",
+                "details": _ensure_numeric_evidence_details(
+                    "데이터 부족",
+                    weight=base_weights["residual_income"],
+                ),
+            }
 
         if pbr_band_result:
             reasoning["pbr_band_analysis"] = {
