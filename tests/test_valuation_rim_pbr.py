@@ -1,4 +1,5 @@
 from src.data.models import FinancialMetrics, LineItem
+import pytest
 
 
 def test_residual_income_breakdown_exposes_per_share_fields():
@@ -75,6 +76,41 @@ def test_pbr_band_uses_external_history_when_financial_metrics_are_sparse():
     assert result["percentiles"]["p10"] < result["percentiles"]["p50"] < result["percentiles"]["p90"]
     assert result["fair_price_p50"] != result["current_price"]
     assert "히스토리 부족" not in result["details"]
+
+
+def test_pbr_band_prices_external_percentiles_from_current_price_identity():
+    from src.agents.valuation import calculate_pbr_band
+    from src.tools.api import PbrHistoryPoint
+
+    result = calculate_pbr_band(
+        financial_metrics=[
+            FinancialMetrics(
+                ticker="000660.KS",
+                report_period="2026-12-31",
+                period="ttm",
+                currency="KRW",
+                price_to_book_ratio=3.48,
+                book_value_per_share=556_611.0,
+            )
+        ],
+        pbr_history=[
+            PbrHistoryPoint(period="2026-03-31", price_to_book_ratio=3.48, book_value_per_share=556_611.0, source="yfinance"),
+            PbrHistoryPoint(period="2025-12-31", price_to_book_ratio=2.40, book_value_per_share=530_000.0, source="yfinance"),
+            PbrHistoryPoint(period="2025-09-30", price_to_book_ratio=1.90, book_value_per_share=520_000.0, source="yfinance"),
+            PbrHistoryPoint(period="2025-06-30", price_to_book_ratio=3.67, book_value_per_share=510_000.0, source="yfinance"),
+        ],
+        current_price=1_940_000.0,
+        shares_outstanding=700_000_000.0,
+        revenue_growth=0.28,
+    )
+
+    assert result is not None
+    current_bvps = 1_940_000.0 / 3.48
+    assert result["bvps"] == pytest.approx(current_bvps)
+    assert result["bvps_source"] == "current_price_div_current_pbr"
+    assert result["fair_price_p50"] == pytest.approx(current_bvps * result["percentiles"]["p50"])
+    assert result["fair_price_p50"] > 1_000_000.0
+    assert result["fair_price_p50"] != pytest.approx(556_611.0)
 
 
 def test_pbr_band_returns_none_when_history_is_sparse():

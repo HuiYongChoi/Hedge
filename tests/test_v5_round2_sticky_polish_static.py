@@ -99,3 +99,19 @@ def test_broker_consensus_i18n_keys_exist_in_ko_and_en():
     assert "brokerConsensusLabel: '증권사 평균 목표가'" in src
     assert "brokerConsensusLabel: 'Broker Consensus'" in src
     assert "brokerConsensusTip:" in src
+
+
+def test_consensus_bridge_tile_reconciles_broker_targets_with_pbr_band():
+    sidebar = read(V5_DIR / "target-data-sidebar.tsx")
+    language = read(LANGUAGE_PREFS)
+
+    assert "function ConsensusBridgeTile" in sidebar
+    assert "consensusBridgeLabel" in sidebar
+    assert "impliedPbr" in sidebar
+    assert "fairPriceP50" in sidebar
+    assert "fairPriceP90" in sidebar
+    assert sidebar.index("<BrokerConsensusTile") < sidebar.index("<ConsensusBridgeTile")
+
+    assert "consensusBridgeLabel: '목표가 검산'" in language
+    assert "consensusBridgeLabel: 'Target Bridge'" in language
+    assert "consensusBridgeTip:" in language

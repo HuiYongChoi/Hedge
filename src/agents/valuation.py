@@ -928,15 +928,25 @@ def calculate_pbr_band(
                     if metric_bvps is not None and metric_bvps > 0:
                         bvps = metric_bvps
 
-    if bvps is None:
-        bvps = getattr(financial_metrics[0], "book_value_per_share", None)
-    if bvps is None or bvps <= 0:
-        return None
-
     if len(history_pairs) < 4:
         return None
 
     current_pbr = history_pairs[0][1]
+    bvps_source = "reported_book_value_per_share"
+    if (
+        current_price is not None
+        and math.isfinite(current_price)
+        and current_price > 0
+        and current_pbr > 0
+    ):
+        bvps = current_price / current_pbr
+        bvps_source = "current_price_div_current_pbr"
+    elif bvps is None:
+        bvps = getattr(financial_metrics[0], "book_value_per_share", None)
+
+    if bvps is None or bvps <= 0:
+        return None
+
     values = sorted(value for _, value in history_pairs)
     p10 = _percentile_manual(values, 10)
     p25 = _percentile_manual(values, 25)
@@ -970,6 +980,7 @@ def calculate_pbr_band(
         "history": [{"period": period, "pbr": pbr} for period, pbr in history_pairs],
         "history_source": history_source,
         "bvps": bvps,
+        "bvps_source": bvps_source,
         "fair_price_p10": implied_price(p10),
         "fair_price_p25": implied_price(p25),
         "fair_price_p50": implied_price(p50),

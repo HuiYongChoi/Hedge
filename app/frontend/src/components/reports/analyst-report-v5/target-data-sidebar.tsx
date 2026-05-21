@@ -497,6 +497,84 @@ function BrokerConsensusTile({
   );
 }
 
+function ConsensusBridgeTile({
+  brokerConsensus,
+  dive,
+  currency,
+  language,
+}: {
+  brokerConsensus: BrokerConsensusSnapshot | null | undefined;
+  dive: ValuationDeepDive | null | undefined;
+  currency: string;
+  language: ReportLanguage;
+}) {
+  const consensus = brokerConsensus?.consensus ?? null;
+  const pbr = dive?.pbr ?? null;
+  if (
+    consensus === null
+    || !Number.isFinite(consensus)
+    || consensus <= 0
+    || !pbr
+  ) return null;
+
+  const forwardEps = brokerConsensus?.forwardEps ?? null;
+  const impliedFwdPer = forwardEps !== null && Number.isFinite(forwardEps) && forwardEps > 0
+    ? consensus / forwardEps
+    : null;
+  const impliedPbr = pbr.bvps !== null && pbr.bvps > 0
+    ? consensus / pbr.bvps
+    : null;
+  const gapToP50 = pbr.fairPriceP50 ? (consensus - pbr.fairPriceP50) / pbr.fairPriceP50 : null;
+  const gapToP90 = pbr.fairPriceP90 ? (consensus - pbr.fairPriceP90) / pbr.fairPriceP90 : null;
+  const upsideToCurrent = pbr.currentPrice ? (consensus - pbr.currentPrice) / pbr.currentPrice : null;
+  const rimValue = dive?.rim?.intrinsicPerShare ?? null;
+  const multipleText = (value: number | null) => value === null ? '—' : `${value.toFixed(1)}x`;
+  const p90Text = gapToP90 === null
+    ? '—'
+    : (language === 'ko'
+        ? `P90 대비 ${formatPercent(gapToP90)}`
+        : `${formatPercent(gapToP90)} vs P90`);
+
+  return (
+    <div className="relative rounded-lg border border-border/60 bg-muted/10 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {t('consensusBridgeLabel', language)}
+        </div>
+        <InfoDot title={t('consensusBridgeTip', language)} />
+      </div>
+      <div className="mt-1 font-mono text-lg font-semibold text-foreground">
+        {formatCurrency(consensus, currency)}
+      </div>
+      <div className="text-[10px] text-muted-foreground">
+        FwdPER {multipleText(impliedFwdPer)} · PBR {multipleText(impliedPbr)}
+      </div>
+      <dl className="mt-2 space-y-0.5 text-[10px]">
+        <Row label="PBR P50">
+          <span className="font-mono">{formatCurrency(pbr.fairPriceP50, currency)}</span>
+        </Row>
+        <Row label="PBR P90">
+          <span className="font-mono">{formatCurrency(pbr.fairPriceP90, currency)}</span>
+        </Row>
+        {rimValue !== null && (
+          <Row label={language === 'ko' ? 'RIM' : 'RIM'}>
+            <span className="font-mono">{formatCurrency(rimValue, currency)}</span>
+          </Row>
+        )}
+      </dl>
+      <div className="mt-2 text-[10px] leading-4 text-muted-foreground">
+        {p90Text}
+        {upsideToCurrent !== null && (
+          <span> · {language === 'ko' ? '현재가 대비' : 'vs current'} {formatPercent(upsideToCurrent)}</span>
+        )}
+        {gapToP50 !== null && (
+          <span> · P50 {formatPercent(gapToP50)}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function TargetDataSidebar({
   tiles,
   otherAgents,
@@ -518,6 +596,7 @@ export function TargetDataSidebar({
     && Number.isFinite(brokerConsensus.consensus)
     && brokerConsensus.consensus > 0,
   );
+  const hasConsensusBridge = Boolean(hasBrokerConsensus && valuationDeepDive?.pbr);
 
   return (
     <aside className={`w-full flex-shrink-0 lg:sticky lg:top-4 lg:w-[280px] lg:self-start lg:overflow-y-auto lg:max-h-[calc(100vh-6rem)] ${className}`}>
@@ -537,11 +616,17 @@ export function TargetDataSidebar({
                 language={language}
               />
             )}
-            {primaryTiles.length > 0 && (secondaryTiles.length > 0 || hasBrokerConsensus) && (
+            {primaryTiles.length > 0 && (secondaryTiles.length > 0 || hasBrokerConsensus || hasConsensusBridge) && (
               <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
                 {secondaryTiles.map(tile => <TargetTileCard key={tile.labelKey} tile={tile} language={language} />)}
                 <BrokerConsensusTile
                   brokerConsensus={brokerConsensus}
+                  currency={currency}
+                  language={language}
+                />
+                <ConsensusBridgeTile
+                  brokerConsensus={brokerConsensus}
+                  dive={valuationDeepDive}
                   currency={currency}
                   language={language}
                 />
