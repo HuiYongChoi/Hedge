@@ -67,6 +67,21 @@ function ratioToBandPct(value: number, p10: number, p90: number) {
   return clampPercent(((value - p10) / range) * 100);
 }
 
+function derivePbrFairPrice(pbr: PbrBand, percentile: number, fallback: number | null | undefined) {
+  if (
+    pbr.currentPrice !== null
+    && Number.isFinite(pbr.currentPrice)
+    && pbr.currentPrice > 0
+    && Number.isFinite(pbr.currentPbr)
+    && pbr.currentPbr > 0
+    && Number.isFinite(percentile)
+    && percentile > 0
+  ) {
+    return pbr.currentPrice * percentile / pbr.currentPbr;
+  }
+  return fallback ?? null;
+}
+
 function pbrPositionText(position: PbrBand['positionLabel'], language: ReportLanguage) {
   const labels = {
     below_p25: language === 'ko' ? '밴드 하단 (P10–P25)' : 'Band lower (P10–P25)',
@@ -159,9 +174,27 @@ function PbrBandCard({
 }) {
   const classes = toneToClasses(signalTone);
   const trend = computePbrTrend(pbr.history, language);
-  const gapPeak = pbr.percentiles.p90 ? (pbr.currentPbr - pbr.percentiles.p90) / pbr.percentiles.p90 : null;
-  const gapTrough = pbr.percentiles.p10 ? (pbr.currentPbr - pbr.percentiles.p10) / pbr.percentiles.p10 : null;
   const railPct = ratioToBandPct(pbr.currentPbr, pbr.percentiles.p10, pbr.percentiles.p90);
+  const fairP10 = derivePbrFairPrice(pbr, pbr.percentiles.p10, pbr.fairPriceP10);
+  const fairP50 = derivePbrFairPrice(pbr, pbr.percentiles.p50, pbrFairP50);
+  const pbrFairP90 = derivePbrFairPrice(pbr, pbr.percentiles.p90, pbr.fairPriceP90);
+  const displayGap = pbr.currentPrice && fairP50 !== null
+    ? (fairP50 - pbr.currentPrice) / pbr.currentPrice
+    : gapToMarket;
+  const vsMedian = pbr.percentiles.p50 ? (pbr.currentPbr - pbr.percentiles.p50) / pbr.percentiles.p50 : null;
+  const vsP90 = pbr.percentiles.p90 ? (pbr.currentPbr - pbr.percentiles.p90) / pbr.percentiles.p90 : null;
+  const position = pbrPositionText(pbr.positionLabel, language);
+  const signal = pbrSignalText(signalTone, language);
+  const medianText = vsMedian === null
+    ? ''
+    : (language === 'ko'
+        ? `중앙값 대비 ${formatPercent(vsMedian)}`
+        : `${formatPercent(vsMedian)} vs median`);
+  const highText = vsP90 === null
+    ? ''
+    : (language === 'ko'
+        ? `상단까지 ${formatPercent(-vsP90)}`
+        : `${formatPercent(-vsP90)} to upper band`);
 
   return (
     <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
@@ -170,42 +203,66 @@ function PbrBandCard({
           {t('pbrCardTitle', language)}
           <InfoDot title={t('pbrCardTitleTip', language)} />
         </div>
-        <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(gapToMarket)}</div>
+        <div className={`font-mono text-[11px] font-semibold ${classes.text}`}>{formatPercent(displayGap)}</div>
       </div>
 
-      <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
-        {formatCurrency(pbrFairP50, currency)}
+      <div className="mt-2 flex items-end justify-between gap-2">
+        <div>
+          <div className="text-[10px] font-medium text-muted-foreground">
+            {language === 'ko' ? '중앙값 적정가' : 'Median fair value'}
+          </div>
+          <div className={`font-mono text-xl font-semibold ${classes.text}`}>
+            {formatCurrency(fairP50, currency)}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] text-muted-foreground">
+            {language === 'ko' ? '현재 PBR' : 'Current PBR'}
+          </div>
+          <div className="font-mono text-sm font-semibold text-foreground">{pbr.currentPbr.toFixed(2)}x</div>
+        </div>
       </div>
 
-      <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
-        <span>{language === 'ko' ? '밴드 위치' : 'Band position'}</span>
+      <div className="mt-3 flex items-center justify-between gap-2 text-[10px]">
+        <span className="text-muted-foreground">{language === 'ko' ? '현재 위치' : 'Position'}</span>
+        <span className={`font-semibold ${classes.text}`}>{position}</span>
+      </div>
+      <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+        <span>{medianText}</span>
         <InfoDot title={t('pbrRailTip', language)} />
       </div>
       <PbrMiniRail percentiles={pbr.percentiles} currentPbr={pbr.currentPbr} positionPct={railPct} tone={signalTone} />
       <div className="mt-1 flex justify-between text-[10px] font-mono text-muted-foreground">
-        <span>P10 {pbr.percentiles.p10.toFixed(2)}x</span>
+        <span>{language === 'ko' ? '하단' : 'Low'} {pbr.percentiles.p10.toFixed(2)}x</span>
         <span>P50 {pbr.percentiles.p50.toFixed(2)}x</span>
-        <span>P90 {pbr.percentiles.p90.toFixed(2)}x</span>
+        <span>{language === 'ko' ? '상단' : 'High'} {pbr.percentiles.p90.toFixed(2)}x</span>
       </div>
 
-      <dl className="mt-2 space-y-0.5 text-[10px]">
-        <Row label={t('pbrRowPosition', language)} tip={t('pbrRowPositionTip', language)}>
-          <span className="font-mono">{pbrPositionText(pbr.positionLabel, language)}</span>
+      <dl className="mt-3 space-y-1 border-t border-border/50 pt-2 text-[10px]">
+        <Row label={language === 'ko' ? '하단 방어가' : 'Lower band'}>
+          <span className="font-mono">{formatCurrency(fairP10, currency)}</span>
+        </Row>
+        <Row label="PBR P50">
+          <span className="font-mono font-semibold text-foreground">{formatCurrency(fairP50, currency)}</span>
+        </Row>
+        <Row label={language === 'ko' ? '상단 시나리오' : 'Upper case'}>
+          <span className="font-mono">{formatCurrency(pbrFairP90, currency)}</span>
         </Row>
         {trend && (
           <Row label={t('pbrRowTrend', language)} tip={t('pbrRowTrendTip', language)}>
             <span className={`font-mono ${trend.tone}`}>{trend.icon} {trend.label} · {trend.pctText}</span>
           </Row>
         )}
-        <Row label={t('pbrRowExtremes', language)} tip={t('pbrRowExtremesTip', language)}>
-          <span className="font-mono">
-            {language === 'ko' ? '고점' : 'Peak'} {formatPercent(gapPeak)} · {language === 'ko' ? '저점' : 'Trough'} {formatPercent(gapTrough)}
-          </span>
-        </Row>
         <Row label={t('pbrRowSignal', language)} tip={t('pbrRowSignalTip', language)}>
-          <span className={`font-mono font-semibold ${classes.text}`}>{pbrSignalText(signalTone, language)}</span>
+          <span className={`font-mono font-semibold ${classes.text}`}>{signal}</span>
         </Row>
       </dl>
+
+      <div className="mt-2 rounded-md bg-muted/15 px-2 py-1.5 text-[10px] leading-4 text-muted-foreground">
+        {language === 'ko'
+          ? `${highText || medianText}. PBR은 중앙값 가격과 상단 가격을 함께 봐야 합니다.`
+          : `${highText || medianText}. Read the median and upper-band values together.`}
+      </div>
 
       {pbr.reratingNote && (
         <div className="mt-2 text-[10px] leading-4 text-muted-foreground">{pbr.reratingNote}</div>
@@ -293,7 +350,9 @@ function ValuationSidebarPanel({
   const pbrModel = dive.models.find(model => model.key === 'pbr_band');
   const rimModel = dive.models.find(model => model.key === 'residual_income');
   const evModel = dive.models.find(model => model.key === 'ev_ebitda');
-  const pbrValue = dive.pbr?.fairPriceP50 ?? pbrModel?.intrinsicPerShare ?? null;
+  const pbrValue = dive.pbr
+    ? derivePbrFairPrice(dive.pbr, dive.pbr.percentiles.p50, dive.pbr.fairPriceP50)
+    : pbrModel?.intrinsicPerShare ?? null;
   const pbrGap = pbrModel?.gapToMarket ?? (
     dive.pbr?.currentPrice && pbrValue !== null
       ? (pbrValue - dive.pbr.currentPrice) / dive.pbr.currentPrice
@@ -524,8 +583,10 @@ function ConsensusBridgeTile({
   const impliedPbr = pbr.bvps !== null && pbr.bvps > 0
     ? consensus / pbr.bvps
     : null;
-  const gapToP50 = pbr.fairPriceP50 ? (consensus - pbr.fairPriceP50) / pbr.fairPriceP50 : null;
-  const gapToP90 = pbr.fairPriceP90 ? (consensus - pbr.fairPriceP90) / pbr.fairPriceP90 : null;
+  const fairP50 = derivePbrFairPrice(pbr, pbr.percentiles.p50, pbr.fairPriceP50);
+  const fairP90 = derivePbrFairPrice(pbr, pbr.percentiles.p90, pbr.fairPriceP90);
+  const gapToP50 = fairP50 ? (consensus - fairP50) / fairP50 : null;
+  const gapToP90 = fairP90 ? (consensus - fairP90) / fairP90 : null;
   const upsideToCurrent = pbr.currentPrice ? (consensus - pbr.currentPrice) / pbr.currentPrice : null;
   const rimValue = dive?.rim?.intrinsicPerShare ?? null;
   const multipleText = (value: number | null) => value === null ? '—' : `${value.toFixed(1)}x`;
@@ -551,10 +612,10 @@ function ConsensusBridgeTile({
       </div>
       <dl className="mt-2 space-y-0.5 text-[10px]">
         <Row label="PBR P50">
-          <span className="font-mono">{formatCurrency(pbr.fairPriceP50, currency)}</span>
+          <span className="font-mono">{formatCurrency(fairP50, currency)}</span>
         </Row>
         <Row label="PBR P90">
-          <span className="font-mono">{formatCurrency(pbr.fairPriceP90, currency)}</span>
+          <span className="font-mono">{formatCurrency(fairP90, currency)}</span>
         </Row>
         {rimValue !== null && (
           <Row label={language === 'ko' ? 'RIM' : 'RIM'}>

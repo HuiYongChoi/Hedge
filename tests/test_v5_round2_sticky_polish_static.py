@@ -115,3 +115,15 @@ def test_consensus_bridge_tile_reconciles_broker_targets_with_pbr_band():
     assert "consensusBridgeLabel: '목표가 검산'" in language
     assert "consensusBridgeLabel: 'Target Bridge'" in language
     assert "consensusBridgeTip:" in language
+
+
+def test_pbr_band_card_uses_defensive_price_identity_and_reader_labels():
+    sidebar = read(V5_DIR / "target-data-sidebar.tsx")
+
+    assert "function derivePbrFairPrice" in sidebar
+    assert "pbr.currentPrice * percentile / pbr.currentPbr" in sidebar
+    assert "pbrFairP90" in sidebar
+    assert "중앙값 적정가" in sidebar
+    assert "현재 PBR" in sidebar
+    assert "상단 시나리오" in sidebar
+    assert "PBR P50" in sidebar
