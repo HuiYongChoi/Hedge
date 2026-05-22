@@ -127,3 +127,15 @@ def test_pbr_band_card_uses_defensive_price_identity_and_reader_labels():
     assert "현재 PBR" in sidebar
     assert "상단 시나리오" in sidebar
     assert "PBR P50" in sidebar
+
+
+def test_pbr_band_card_supports_current_and_assumption_markers():
+    sidebar = read(V5_DIR / "target-data-sidebar.tsx")
+
+    assert "assumptionPbrInput" in sidebar
+    assert "assumptionPbr" in sidebar
+    assert "scenarioPct" in sidebar
+    assert "현재 PBR" in sidebar
+    assert "가정 PBR" in sidebar
+    assert "가정 주가" in sidebar
+    assert "aria-label={language === 'ko' ? '가정 PBR 입력' : 'Assumed PBR input'}" in sidebar

@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { t } from '@/lib/language-preferences';
 import { ChevronRight } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { computePbrTrend, toneToClasses } from './helpers';
 import type { JustifiedPbrBreakdown, OtherAgent, PbrBand, ReportLanguage, ReportTone, TargetTile, ValuationDeepDive } from './types';
 
@@ -127,11 +127,15 @@ function PbrMiniRail({
   percentiles,
   currentPbr,
   positionPct,
+  scenarioPbr,
+  scenarioPct,
   tone,
 }: {
   percentiles: PbrBand['percentiles'];
   currentPbr: number;
   positionPct: number;
+  scenarioPbr: number | null;
+  scenarioPct: number | null;
   tone: ReportTone;
 }) {
   const classes = toneToClasses(tone);
@@ -149,10 +153,17 @@ function PbrMiniRail({
       />
       <div className="absolute -top-0.5 h-3 w-px bg-muted-foreground/70" style={{ left: `${p50Pct}%` }} />
       <div
-        className={`absolute -top-1 h-4 w-4 -translate-x-1/2 rounded-full border-2 border-background ${classes.bg}`}
+        className={`absolute -top-1.5 h-5 w-[2px] -translate-x-1/2 rounded-full bg-foreground shadow-[0_0_0_1px_rgba(0,0,0,0.85)] ${classes.text}`}
         style={{ left: `${positionPct}%` }}
         title={`현재 PBR ${currentPbr.toFixed(2)}x`}
       />
+      {scenarioPbr !== null && scenarioPct !== null && (
+        <div
+          className="absolute -top-2 h-6 w-[3px] -translate-x-1/2 rounded-full bg-amber-400 shadow-[0_0_0_1px_rgba(0,0,0,0.85),0_0_10px_rgba(245,158,11,0.55)]"
+          style={{ left: `${clampPercent(scenarioPct)}%` }}
+          title={`가정 PBR ${scenarioPbr.toFixed(2)}x`}
+        />
+      )}
     </div>
   );
 }
@@ -173,11 +184,25 @@ function PbrBandCard({
   language: ReportLanguage;
 }) {
   const classes = toneToClasses(signalTone);
+  const [assumptionPbrInput, setAssumptionPbrInput] = useState('');
   const trend = computePbrTrend(pbr.history, language);
   const railPct = ratioToBandPct(pbr.currentPbr, pbr.percentiles.p10, pbr.percentiles.p90);
+  const assumptionPbr = useMemo(() => {
+    const parsed = Number(assumptionPbrInput.replace(',', '.'));
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [assumptionPbrInput]);
+  const scenarioPct = assumptionPbr === null
+    ? null
+    : ratioToBandPct(assumptionPbr, pbr.percentiles.p10, pbr.percentiles.p90);
   const fairP10 = derivePbrFairPrice(pbr, pbr.percentiles.p10, pbr.fairPriceP10);
   const fairP50 = derivePbrFairPrice(pbr, pbr.percentiles.p50, pbrFairP50);
   const pbrFairP90 = derivePbrFairPrice(pbr, pbr.percentiles.p90, pbr.fairPriceP90);
+  const assumptionPrice = assumptionPbr === null
+    ? null
+    : derivePbrFairPrice(pbr, assumptionPbr, null);
+  const assumptionGap = pbr.currentPrice && assumptionPrice !== null
+    ? (assumptionPrice - pbr.currentPrice) / pbr.currentPrice
+    : null;
   const displayGap = pbr.currentPrice && fairP50 !== null
     ? (fairP50 - pbr.currentPrice) / pbr.currentPrice
     : gapToMarket;
@@ -223,15 +248,49 @@ function PbrBandCard({
         </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-2 text-[10px]">
-        <span className="text-muted-foreground">{language === 'ko' ? '현재 위치' : 'Position'}</span>
-        <span className={`font-semibold ${classes.text}`}>{position}</span>
+      <div className="mt-3 flex items-end justify-between gap-2">
+        <div>
+          <div className="text-[10px] text-muted-foreground">{language === 'ko' ? '현재 위치' : 'Position'}</div>
+          <div className={`text-[11px] font-semibold ${classes.text}`}>{position}</div>
+        </div>
+        <label className="flex flex-col items-end gap-1 text-[10px] text-muted-foreground">
+          {language === 'ko' ? '가정 PBR' : 'Assumed PBR'}
+          <div className="flex items-center gap-1">
+            <input
+              value={assumptionPbrInput}
+              onChange={event => setAssumptionPbrInput(event.target.value)}
+              inputMode="decimal"
+              placeholder={pbr.currentPbr.toFixed(2)}
+              aria-label={language === 'ko' ? '가정 PBR 입력' : 'Assumed PBR input'}
+              className="h-7 w-16 rounded-md border border-border/70 bg-background px-2 text-right font-mono text-xs font-semibold text-foreground outline-none focus:border-amber-400"
+            />
+            <span className="font-mono text-xs font-semibold text-foreground">x</span>
+          </div>
+        </label>
       </div>
       <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <span>{medianText}</span>
         <InfoDot title={t('pbrRailTip', language)} />
       </div>
-      <PbrMiniRail percentiles={pbr.percentiles} currentPbr={pbr.currentPbr} positionPct={railPct} tone={signalTone} />
+      <PbrMiniRail
+        percentiles={pbr.percentiles}
+        currentPbr={pbr.currentPbr}
+        positionPct={railPct}
+        scenarioPbr={assumptionPbr}
+        scenarioPct={scenarioPct}
+        tone={signalTone}
+      />
+      <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
+        <div className="rounded-md border border-border/40 bg-background/40 px-2 py-1.5">
+          <div className="text-muted-foreground">{language === 'ko' ? '현재 PBR 선' : 'Current line'}</div>
+          <div className="font-mono text-sm font-semibold text-foreground">{pbr.currentPbr.toFixed(2)}x</div>
+        </div>
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5">
+          <div className="text-muted-foreground">{language === 'ko' ? '가정 주가' : 'Assumed price'}</div>
+          <div className="font-mono text-sm font-semibold text-amber-300">{formatCurrency(assumptionPrice, currency)}</div>
+          <div className="font-mono text-[10px] text-muted-foreground">{formatPercent(assumptionGap)}</div>
+        </div>
+      </div>
       <div className="mt-1 flex justify-between text-[10px] font-mono text-muted-foreground">
         <span>{language === 'ko' ? '하단' : 'Low'} {pbr.percentiles.p10.toFixed(2)}x</span>
         <span>P50 {pbr.percentiles.p50.toFixed(2)}x</span>
