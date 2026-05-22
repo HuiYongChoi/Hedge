@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { t } from '@/lib/language-preferences';
 import { ChevronRight } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { computePbrTrend, toneToClasses } from './helpers';
 import type { JustifiedPbrBreakdown, OtherAgent, PbrBand, ReportLanguage, ReportTone, TargetTile, ValuationDeepDive } from './types';
 
@@ -184,7 +184,10 @@ function PbrBandCard({
   language: ReportLanguage;
 }) {
   const classes = toneToClasses(signalTone);
-  const [assumptionPbrInput, setAssumptionPbrInput] = useState('');
+  const [assumptionPbrInput, setAssumptionPbrInput] = useState(() => pbr.currentPbr.toFixed(2));
+  useEffect(() => {
+    setAssumptionPbrInput(pbr.currentPbr.toFixed(2));
+  }, [pbr.currentPbr]);
   const trend = computePbrTrend(pbr.history, language);
   const railPct = ratioToBandPct(pbr.currentPbr, pbr.percentiles.p10, pbr.percentiles.p90);
   const assumptionPbr = useMemo(() => {
@@ -194,6 +197,7 @@ function PbrBandCard({
   const scenarioPct = assumptionPbr === null
     ? null
     : ratioToBandPct(assumptionPbr, pbr.percentiles.p10, pbr.percentiles.p90);
+  const showScenarioMarker = assumptionPbr !== null && Math.abs(assumptionPbr - pbr.currentPbr) > 0.005;
   const fairP10 = derivePbrFairPrice(pbr, pbr.percentiles.p10, pbr.fairPriceP10);
   const fairP50 = derivePbrFairPrice(pbr, pbr.percentiles.p50, pbrFairP50);
   const pbrFairP90 = derivePbrFairPrice(pbr, pbr.percentiles.p90, pbr.fairPriceP90);
@@ -203,6 +207,12 @@ function PbrBandCard({
   const assumptionGap = pbr.currentPrice && assumptionPrice !== null
     ? (assumptionPrice - pbr.currentPrice) / pbr.currentPrice
     : null;
+  const assumptionPriceText = assumptionPrice !== null
+    ? formatCurrency(assumptionPrice, currency)
+    : (language === 'ko' ? '입력 필요' : 'Enter PBR');
+  const assumptionGapText = assumptionGap !== null
+    ? formatPercent(assumptionGap)
+    : (language === 'ko' ? 'PBR을 입력하면 계산됩니다' : 'Enter a PBR to calculate');
   const displayGap = pbr.currentPrice && fairP50 !== null
     ? (fairP50 - pbr.currentPrice) / pbr.currentPrice
     : gapToMarket;
@@ -276,8 +286,8 @@ function PbrBandCard({
         percentiles={pbr.percentiles}
         currentPbr={pbr.currentPbr}
         positionPct={railPct}
-        scenarioPbr={assumptionPbr}
-        scenarioPct={scenarioPct}
+        scenarioPbr={showScenarioMarker ? assumptionPbr : null}
+        scenarioPct={showScenarioMarker ? scenarioPct : null}
         tone={signalTone}
       />
       <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
@@ -287,8 +297,8 @@ function PbrBandCard({
         </div>
         <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5">
           <div className="text-muted-foreground">{language === 'ko' ? '가정 주가' : 'Assumed price'}</div>
-          <div className="font-mono text-sm font-semibold text-amber-300">{formatCurrency(assumptionPrice, currency)}</div>
-          <div className="font-mono text-[10px] text-muted-foreground">{formatPercent(assumptionGap)}</div>
+          <div className="font-mono text-sm font-semibold text-amber-300">{assumptionPriceText}</div>
+          <div className="font-mono text-[10px] text-muted-foreground">{assumptionGapText}</div>
         </div>
       </div>
       <div className="mt-1 flex justify-between text-[10px] font-mono text-muted-foreground">

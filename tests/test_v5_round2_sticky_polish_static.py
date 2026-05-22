@@ -131,11 +131,18 @@ def test_pbr_band_card_uses_defensive_price_identity_and_reader_labels():
 
 def test_pbr_band_card_supports_current_and_assumption_markers():
     sidebar = read(V5_DIR / "target-data-sidebar.tsx")
+    language = read(LANGUAGE_PREFS)
 
     assert "assumptionPbrInput" in sidebar
+    assert "useState(() => pbr.currentPbr.toFixed(2))" in sidebar
+    assert "setAssumptionPbrInput(pbr.currentPbr.toFixed(2))" in sidebar
+    assert "[pbr.currentPbr]" in sidebar
     assert "assumptionPbr" in sidebar
     assert "scenarioPct" in sidebar
+    assert "showScenarioMarker" in sidebar
     assert "현재 PBR" in sidebar
     assert "가정 PBR" in sidebar
     assert "가정 주가" in sidebar
+    assert "입력 필요" in sidebar
     assert "aria-label={language === 'ko' ? '가정 PBR 입력' : 'Assumed PBR input'}" in sidebar
+    assert "입력칸에 PBR을 바꾸면" in language
