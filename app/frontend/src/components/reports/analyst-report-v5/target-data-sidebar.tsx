@@ -46,6 +46,11 @@ function formatPercentPlain(value: number | null | undefined) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function formatPbrMultiple(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  return value.toFixed(1);
+}
+
 function fillTemplate(template: string, values: Record<string, string>) {
   return Object.entries(values).reduce(
     (next, [key, value]) => next.replace(`{${key}}`, value),
@@ -84,10 +89,10 @@ function derivePbrFairPrice(pbr: PbrBand, percentile: number, fallback: number |
 
 function pbrPositionText(position: PbrBand['positionLabel'], language: ReportLanguage) {
   const labels = {
-    below_p25: language === 'ko' ? '밴드 하단 (P10–P25)' : 'Band lower (P10–P25)',
-    p25_p50: language === 'ko' ? '밴드 중하 (P25–P50)' : 'Band mid-low (P25–P50)',
-    p50_p75: language === 'ko' ? '밴드 중상 (P50–P75)' : 'Band mid-high (P50–P75)',
-    above_p75: language === 'ko' ? '밴드 상단 (P75–P90)' : 'Band upper (P75–P90)',
+    below_p25: language === 'ko' ? '밴드 하단 (10–25%)' : 'Band lower (10–25%)',
+    p25_p50: language === 'ko' ? '밴드 중하 (25–50%)' : 'Band mid-low (25–50%)',
+    p50_p75: language === 'ko' ? '밴드 중상 (50–75%)' : 'Band mid-high (50–75%)',
+    above_p75: language === 'ko' ? '밴드 상단 (75–90%)' : 'Band upper (75–90%)',
   };
   return labels[position];
 }
@@ -155,13 +160,13 @@ function PbrMiniRail({
       <div
         className={`absolute -top-1.5 h-5 w-[2px] -translate-x-1/2 rounded-full bg-foreground shadow-[0_0_0_1px_rgba(0,0,0,0.85)] ${classes.text}`}
         style={{ left: `${positionPct}%` }}
-        title={`현재 PBR ${currentPbr.toFixed(2)}x`}
+        title={`현재 PBR ${formatPbrMultiple(currentPbr)}`}
       />
       {scenarioPbr !== null && scenarioPct !== null && (
         <div
           className="absolute -top-2 h-6 w-[3px] -translate-x-1/2 rounded-full bg-amber-400 shadow-[0_0_0_1px_rgba(0,0,0,0.85),0_0_10px_rgba(245,158,11,0.55)]"
           style={{ left: `${clampPercent(scenarioPct)}%` }}
-          title={`입력 PBR ${scenarioPbr.toFixed(2)}x`}
+          title={`입력 PBR ${formatPbrMultiple(scenarioPbr)}`}
         />
       )}
     </div>
@@ -184,9 +189,9 @@ function PbrBandCard({
   language: ReportLanguage;
 }) {
   const classes = toneToClasses(signalTone);
-  const [assumptionPbrInput, setAssumptionPbrInput] = useState(() => pbr.currentPbr.toFixed(2));
+  const [assumptionPbrInput, setAssumptionPbrInput] = useState(() => formatPbrMultiple(pbr.currentPbr));
   useEffect(() => {
-    setAssumptionPbrInput(pbr.currentPbr.toFixed(2));
+    setAssumptionPbrInput(formatPbrMultiple(pbr.currentPbr));
   }, [pbr.currentPbr]);
   const trend = computePbrTrend(pbr.history, language);
   const railPct = ratioToBandPct(pbr.currentPbr, pbr.percentiles.p10, pbr.percentiles.p90);
@@ -246,42 +251,40 @@ function PbrBandCard({
       <div className="mt-2 flex items-end justify-between gap-2">
         <div>
           <div className="text-[10px] font-medium text-muted-foreground">
-            {language === 'ko' ? 'P50 기준 주가' : 'P50 price'}
+            {language === 'ko' ? '50% 기준 주가' : '50% price'}
           </div>
           <div className={`font-mono text-xl font-semibold ${classes.text}`}>
             {formatCurrency(fairP50, currency)}
           </div>
         </div>
-        <div className="text-right">
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="rounded-md border border-border/40 bg-background/40 px-2 py-1.5">
           <div className="text-[10px] text-muted-foreground">
             {language === 'ko' ? '현재 PBR' : 'Current PBR'}
           </div>
-          <div className="font-mono text-sm font-semibold text-foreground">{pbr.currentPbr.toFixed(2)}x</div>
+          <div className="font-mono text-sm font-semibold text-foreground">{formatPbrMultiple(pbr.currentPbr)}</div>
         </div>
-      </div>
-
-      <div className="mt-3 flex items-end justify-between gap-2">
-        <div>
-          <div className="text-[10px] text-muted-foreground">{language === 'ko' ? '현재 위치' : 'Position'}</div>
-          <div className={`text-[11px] font-semibold ${classes.text}`}>{position}</div>
-        </div>
-        <label className="flex flex-col items-end gap-1 text-[10px] text-muted-foreground">
-          {language === 'ko' ? '입력 PBR' : 'Input PBR'}
-          <div className="flex items-center gap-1">
+        <label className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5">
+          <div className="text-[10px] text-muted-foreground">{language === 'ko' ? '입력 PBR' : 'Input PBR'}</div>
+          <div className="mt-1">
             <input
               value={assumptionPbrInput}
               onChange={event => setAssumptionPbrInput(event.target.value)}
+              onBlur={() => {
+                if (assumptionPbr !== null) setAssumptionPbrInput(formatPbrMultiple(assumptionPbr));
+              }}
               inputMode="decimal"
-              placeholder={pbr.currentPbr.toFixed(2)}
+              placeholder={formatPbrMultiple(pbr.currentPbr)}
               aria-label={language === 'ko' ? 'PBR 배수 입력' : 'PBR multiple input'}
-              className="h-7 w-16 rounded-md border border-border/70 bg-background px-2 text-right font-mono text-xs font-semibold text-foreground outline-none focus:border-amber-400"
+              className="h-7 w-full rounded-md border border-border/70 bg-background px-2 text-right font-mono text-sm font-semibold text-foreground outline-none focus:border-amber-400"
             />
-            <span className="font-mono text-xs font-semibold text-foreground">x</span>
           </div>
         </label>
       </div>
-      <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
-        <span>{medianText}</span>
+      <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
+        <span>{language === 'ko' ? '현재 위치' : 'Position'} · <span className={classes.text}>{position}</span></span>
         <InfoDot title={t('pbrRailTip', language)} />
       </div>
       <PbrMiniRail
@@ -292,28 +295,22 @@ function PbrBandCard({
         scenarioPct={showScenarioMarker ? scenarioPct : null}
         tone={signalTone}
       />
-      <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
-        <div className="rounded-md border border-border/40 bg-background/40 px-2 py-1.5">
-          <div className="text-muted-foreground">{language === 'ko' ? '현재 PBR 기준' : 'Current PBR basis'}</div>
-          <div className="font-mono text-sm font-semibold text-foreground">{pbr.currentPbr.toFixed(2)}x</div>
-        </div>
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5">
-          <div className="text-muted-foreground">{language === 'ko' ? '입력 PBR 기준 주가' : 'Input PBR price'}</div>
-          <div className="font-mono text-sm font-semibold text-amber-300">{assumptionPriceText}</div>
-          <div className="font-mono text-[10px] text-muted-foreground">{assumptionGapText}</div>
-        </div>
+      <div className="mt-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[10px]">
+        <div className="text-muted-foreground">{language === 'ko' ? '입력 PBR 기준 주가' : 'Input PBR price'}</div>
+        <div className="font-mono text-sm font-semibold text-amber-300">{assumptionPriceText}</div>
+        <div className="font-mono text-[10px] text-muted-foreground">{assumptionGapText}</div>
       </div>
       <div className="mt-1 flex justify-between text-[10px] font-mono text-muted-foreground">
-        <span>{language === 'ko' ? '하단' : 'Low'} {pbr.percentiles.p10.toFixed(2)}x</span>
-        <span>P50 {pbr.percentiles.p50.toFixed(2)}x</span>
-        <span>{language === 'ko' ? '상단' : 'High'} {pbr.percentiles.p90.toFixed(2)}x</span>
+        <span>{language === 'ko' ? '10%' : '10%'} {formatPbrMultiple(pbr.percentiles.p10)}</span>
+        <span>50% {formatPbrMultiple(pbr.percentiles.p50)}</span>
+        <span>{language === 'ko' ? '90%' : '90%'} {formatPbrMultiple(pbr.percentiles.p90)}</span>
       </div>
 
       <dl className="mt-3 space-y-1 border-t border-border/50 pt-2 text-[10px]">
         <Row label={language === 'ko' ? '하단 방어가' : 'Lower band'}>
           <span className="font-mono">{formatCurrency(fairP10, currency)}</span>
         </Row>
-        <Row label={language === 'ko' ? 'P50 기준 주가' : 'P50 price'}>
+        <Row label={language === 'ko' ? '50% 기준 주가' : '50% price'}>
           <span className="font-mono font-semibold text-foreground">{formatCurrency(fairP50, currency)}</span>
         </Row>
         <Row label={language === 'ko' ? '상단 시나리오' : 'Upper case'}>
@@ -352,9 +349,7 @@ function JustifiedPbrCard({
   language: ReportLanguage;
 }) {
   const classes = toneToClasses(data.signal);
-  const fmtMultiple = (value: number | null) => value === null ? '—' : (
-    language === 'ko' ? `${value.toFixed(2)}배` : `${value.toFixed(2)}x`
-  );
+  const fmtMultiple = (value: number | null) => formatPbrMultiple(value);
   const roeWindowText = data.roeSource === 'forward_eps_implied'
     ? (language === 'ko' ? `선행 ${data.roeWindow}` : `forward ${data.roeWindow}`)
     : (language === 'ko' ? `과거 ${data.roeWindow}` : data.roeWindow);
@@ -660,12 +655,12 @@ function ConsensusBridgeTile({
   const gapToP90 = fairP90 ? (consensus - fairP90) / fairP90 : null;
   const upsideToCurrent = pbr.currentPrice ? (consensus - pbr.currentPrice) / pbr.currentPrice : null;
   const rimValue = dive?.rim?.intrinsicPerShare ?? null;
-  const multipleText = (value: number | null) => value === null ? '—' : `${value.toFixed(1)}x`;
+  const perText = (value: number | null) => value === null ? '—' : `${value.toFixed(1)}x`;
   const p90Text = gapToP90 === null
     ? '—'
     : (language === 'ko'
-        ? `P90 대비 ${formatPercent(gapToP90)}`
-        : `${formatPercent(gapToP90)} vs P90`);
+        ? `90% 대비 ${formatPercent(gapToP90)}`
+        : `${formatPercent(gapToP90)} vs 90%`);
 
   return (
     <div className="relative rounded-lg border border-border/60 bg-muted/10 p-3">
@@ -679,13 +674,13 @@ function ConsensusBridgeTile({
         {formatCurrency(consensus, currency)}
       </div>
       <div className="text-[10px] text-muted-foreground">
-        FwdPER {multipleText(impliedFwdPer)} · PBR {multipleText(impliedPbr)}
+        FwdPER {perText(impliedFwdPer)} · PBR {formatPbrMultiple(impliedPbr)}
       </div>
       <dl className="mt-2 space-y-0.5 text-[10px]">
-        <Row label={language === 'ko' ? 'P50 기준 주가' : 'P50 price'}>
+        <Row label={language === 'ko' ? '50% 기준 주가' : '50% price'}>
           <span className="font-mono">{formatCurrency(fairP50, currency)}</span>
         </Row>
-        <Row label={language === 'ko' ? 'P90 상단 시나리오' : 'P90 upper case'}>
+        <Row label={language === 'ko' ? '90% 상단 시나리오' : '90% upper case'}>
           <span className="font-mono">{formatCurrency(fairP90, currency)}</span>
         </Row>
         {rimValue !== null && (
@@ -700,7 +695,7 @@ function ConsensusBridgeTile({
           <span> · {language === 'ko' ? '현재가 대비' : 'vs current'} {formatPercent(upsideToCurrent)}</span>
         )}
         {gapToP50 !== null && (
-          <span> · P50 {formatPercent(gapToP50)}</span>
+          <span> · 50% {formatPercent(gapToP50)}</span>
         )}
       </div>
     </div>
