@@ -161,7 +161,7 @@ function PbrMiniRail({
         <div
           className="absolute -top-2 h-6 w-[3px] -translate-x-1/2 rounded-full bg-amber-400 shadow-[0_0_0_1px_rgba(0,0,0,0.85),0_0_10px_rgba(245,158,11,0.55)]"
           style={{ left: `${clampPercent(scenarioPct)}%` }}
-          title={`가정 PBR ${scenarioPbr.toFixed(2)}x`}
+          title={`입력 PBR ${scenarioPbr.toFixed(2)}x`}
         />
       )}
     </div>
@@ -211,7 +211,9 @@ function PbrBandCard({
     ? formatCurrency(assumptionPrice, currency)
     : (language === 'ko' ? '입력 필요' : 'Enter PBR');
   const assumptionGapText = assumptionGap !== null
-    ? formatPercent(assumptionGap)
+    ? (language === 'ko'
+        ? `현재가 대비 ${formatPercent(assumptionGap)}`
+        : `${formatPercent(assumptionGap)} vs current`)
     : (language === 'ko' ? 'PBR을 입력하면 계산됩니다' : 'Enter a PBR to calculate');
   const displayGap = pbr.currentPrice && fairP50 !== null
     ? (fairP50 - pbr.currentPrice) / pbr.currentPrice
@@ -244,7 +246,7 @@ function PbrBandCard({
       <div className="mt-2 flex items-end justify-between gap-2">
         <div>
           <div className="text-[10px] font-medium text-muted-foreground">
-            {language === 'ko' ? '중앙값 적정가' : 'Median fair value'}
+            {language === 'ko' ? 'P50 기준 주가' : 'P50 price'}
           </div>
           <div className={`font-mono text-xl font-semibold ${classes.text}`}>
             {formatCurrency(fairP50, currency)}
@@ -264,14 +266,14 @@ function PbrBandCard({
           <div className={`text-[11px] font-semibold ${classes.text}`}>{position}</div>
         </div>
         <label className="flex flex-col items-end gap-1 text-[10px] text-muted-foreground">
-          {language === 'ko' ? '가정 PBR' : 'Assumed PBR'}
+          {language === 'ko' ? '입력 PBR' : 'Input PBR'}
           <div className="flex items-center gap-1">
             <input
               value={assumptionPbrInput}
               onChange={event => setAssumptionPbrInput(event.target.value)}
               inputMode="decimal"
               placeholder={pbr.currentPbr.toFixed(2)}
-              aria-label={language === 'ko' ? '가정 PBR 입력' : 'Assumed PBR input'}
+              aria-label={language === 'ko' ? 'PBR 배수 입력' : 'PBR multiple input'}
               className="h-7 w-16 rounded-md border border-border/70 bg-background px-2 text-right font-mono text-xs font-semibold text-foreground outline-none focus:border-amber-400"
             />
             <span className="font-mono text-xs font-semibold text-foreground">x</span>
@@ -292,11 +294,11 @@ function PbrBandCard({
       />
       <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
         <div className="rounded-md border border-border/40 bg-background/40 px-2 py-1.5">
-          <div className="text-muted-foreground">{language === 'ko' ? '현재 PBR 선' : 'Current line'}</div>
+          <div className="text-muted-foreground">{language === 'ko' ? '현재 PBR 기준' : 'Current PBR basis'}</div>
           <div className="font-mono text-sm font-semibold text-foreground">{pbr.currentPbr.toFixed(2)}x</div>
         </div>
         <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5">
-          <div className="text-muted-foreground">{language === 'ko' ? '가정 주가' : 'Assumed price'}</div>
+          <div className="text-muted-foreground">{language === 'ko' ? '입력 PBR 기준 주가' : 'Input PBR price'}</div>
           <div className="font-mono text-sm font-semibold text-amber-300">{assumptionPriceText}</div>
           <div className="font-mono text-[10px] text-muted-foreground">{assumptionGapText}</div>
         </div>
@@ -311,7 +313,7 @@ function PbrBandCard({
         <Row label={language === 'ko' ? '하단 방어가' : 'Lower band'}>
           <span className="font-mono">{formatCurrency(fairP10, currency)}</span>
         </Row>
-        <Row label="PBR P50">
+        <Row label={language === 'ko' ? 'P50 기준 주가' : 'P50 price'}>
           <span className="font-mono font-semibold text-foreground">{formatCurrency(fairP50, currency)}</span>
         </Row>
         <Row label={language === 'ko' ? '상단 시나리오' : 'Upper case'}>
@@ -680,10 +682,10 @@ function ConsensusBridgeTile({
         FwdPER {multipleText(impliedFwdPer)} · PBR {multipleText(impliedPbr)}
       </div>
       <dl className="mt-2 space-y-0.5 text-[10px]">
-        <Row label="PBR P50">
+        <Row label={language === 'ko' ? 'P50 기준 주가' : 'P50 price'}>
           <span className="font-mono">{formatCurrency(fairP50, currency)}</span>
         </Row>
-        <Row label="PBR P90">
+        <Row label={language === 'ko' ? 'P90 상단 시나리오' : 'P90 upper case'}>
           <span className="font-mono">{formatCurrency(fairP90, currency)}</span>
         </Row>
         {rimValue !== null && (

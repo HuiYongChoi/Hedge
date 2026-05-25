@@ -123,10 +123,10 @@ def test_pbr_band_card_uses_defensive_price_identity_and_reader_labels():
     assert "function derivePbrFairPrice" in sidebar
     assert "pbr.currentPrice * percentile / pbr.currentPbr" in sidebar
     assert "pbrFairP90" in sidebar
-    assert "중앙값 적정가" in sidebar
+    assert "P50 기준 주가" in sidebar
     assert "현재 PBR" in sidebar
     assert "상단 시나리오" in sidebar
-    assert "PBR P50" in sidebar
+    assert "P50 price" in sidebar
 
 
 def test_pbr_band_card_supports_current_and_assumption_markers():
@@ -141,8 +141,10 @@ def test_pbr_band_card_supports_current_and_assumption_markers():
     assert "scenarioPct" in sidebar
     assert "showScenarioMarker" in sidebar
     assert "현재 PBR" in sidebar
-    assert "가정 PBR" in sidebar
-    assert "가정 주가" in sidebar
+    assert "입력 PBR" in sidebar
+    assert "현재 PBR 기준" in sidebar
+    assert "입력 PBR 기준 주가" in sidebar
     assert "입력 필요" in sidebar
-    assert "aria-label={language === 'ko' ? '가정 PBR 입력' : 'Assumed PBR input'}" in sidebar
-    assert "입력칸에 PBR을 바꾸면" in language
+    assert "현재가 대비 ${formatPercent(assumptionGap)}" in sidebar
+    assert "aria-label={language === 'ko' ? 'PBR 배수 입력' : 'PBR multiple input'}" in sidebar
+    assert "P50 기준 주가는 과거 중앙값 PBR" in language
