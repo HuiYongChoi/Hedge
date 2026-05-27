@@ -354,6 +354,7 @@ export function ReportLayout({
       consensus,
       brokerCount,
       forwardEps: canonicalForwardSnapshot.fwdEps ?? canonicalForwardSnapshot.currentFyEps ?? null,
+      forwardPer: canonicalForwardSnapshot.fwdPer ?? null,
     };
   }, [canonicalForwardSnapshot, liveTarget]);
   const valuationReport = getAgentReport(

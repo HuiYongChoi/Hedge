@@ -46,7 +46,8 @@ def test_pbr_card_shows_band_position_extremes_signal_and_keeps_rim_card():
     assert "50% {formatPbrMultiple(pbr.percentiles.p50)}" in sidebar
     assert "formatPbrMultiple(pbr.percentiles.p90)" in sidebar
     assert "dive.regime === 'capex_heavy' ? (" in sidebar
-    assert sidebar.index("{evCard}") < sidebar.index("{pbrCard}") < sidebar.index("{rimCard}")
+    capex_block = sidebar[sidebar.index("dive.regime === 'capex_heavy' ? ("):]
+    assert capex_block.index("{evCard}") < capex_block.index("{pbrCard}") < capex_block.index("{rimCard}")
     assert "RIM 평가" in sidebar
     assert "RIM Valuation" in sidebar
 

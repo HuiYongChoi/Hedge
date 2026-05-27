@@ -117,10 +117,16 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("formatSafetyMarginTarget", helpers)
         self.assertIn("impliedIntrinsicValue = current * (1 + margin)", helpers)
         self.assertIn("ORDERED_PRIMARY_TILE_KEYS", sidebar)
+        self.assertIn("primaryTiles.map", sidebar)
         self.assertLess(
-            sidebar.index("{topTiles.map"),
-            sidebar.index("{valuationDeepDive &&"),
-            "Safety margin must remain in the primary tile group above PBR/RIM valuation cards",
+            sidebar.index("<ConsensusBridgeTile"),
+            sidebar.index("primaryTiles.map"),
+            "Safety margin must remain preserved after the broker/PBR/bridge overview",
+        )
+        self.assertLess(
+            sidebar.index("primaryTiles.map"),
+            sidebar.index('mode="afterPbr"'),
+            "Safety margin must remain above the lower RIM and conservative valuation model cards",
         )
         self.assertNotIn("formatMarginTarget(value, metrics.intrinsicValue?.value", helpers)
         self.assertNotIn("formatCurrency(referencePrice, currency)", helpers)
@@ -245,10 +251,17 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         )
         self.assertIn("primaryTiles", sidebar)
         self.assertIn("secondaryTiles", sidebar)
+        self.assertIn('mode="pbrOnly"', sidebar)
+        self.assertIn('mode="afterPbr"', sidebar)
         self.assertLess(
-            sidebar.index("dive.pbr"),
-            sidebar.index("dive.rim"),
-            "PBR band card must appear above the RIM card under safety margin",
+            sidebar.index('mode="pbrOnly"'),
+            sidebar.index("primaryTiles.map"),
+            "PBR band card must appear in the upper valuation overview before the primary tiles",
+        )
+        self.assertLess(
+            sidebar.index("primaryTiles.map"),
+            sidebar.index('mode="afterPbr"'),
+            "RIM and remaining valuation cards must stay below the primary tiles",
         )
         self.assertNotIn("ValuationDeepDivePanel", src)
         self.assertNotIn("valuation-panel", src)

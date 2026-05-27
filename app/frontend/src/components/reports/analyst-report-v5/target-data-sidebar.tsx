@@ -22,6 +22,7 @@ interface BrokerConsensusSnapshot {
   consensus: number | null;
   brokerCount: number;
   forwardEps: number | null;
+  forwardPer?: number | null;
 }
 
 function shortTone(tone: OtherAgent['tone']) {
@@ -61,6 +62,7 @@ function fillTemplate(template: string, values: Record<string, string>) {
 
 const ORDERED_PRIMARY_TILE_KEYS = ['targetIntrinsicLabel', 'targetMarginLabel'] as const;
 const PRIMARY_TILE_KEYS = new Set<string>(ORDERED_PRIMARY_TILE_KEYS);
+const SAFETY_MARGIN_DISPLAY_BUFFER = 0.25;
 
 function clampPercent(value: number) {
   if (!Number.isFinite(value)) return 50;
@@ -440,16 +442,97 @@ function JustifiedPbrCard({
   );
 }
 
+function ValuationGapNotice({
+  dive,
+  brokerConsensus,
+  currentPrice,
+  currency,
+  language,
+}: {
+  dive: ValuationDeepDive;
+  brokerConsensus?: BrokerConsensusSnapshot | null;
+  currentPrice?: number | null;
+  currency: string;
+  language: ReportLanguage;
+}) {
+  const dcfModel = dive.models.find(model => model.key === 'dcf');
+  const dcfValue = dcfModel?.intrinsicPerShare ?? null;
+  const safetyPrice = dcfValue !== null && Number.isFinite(dcfValue) && dcfValue > 0
+    ? dcfValue * (1 - SAFETY_MARGIN_DISPLAY_BUFFER)
+    : null;
+  const rimValue = dive.rim?.intrinsicPerShare
+    ?? dive.models.find(model => model.key === 'residual_income')?.intrinsicPerShare
+    ?? null;
+  const consensus = brokerConsensus?.consensus ?? null;
+  const livePrice = currentPrice && Number.isFinite(currentPrice) && currentPrice > 0 ? currentPrice : null;
+  const safetyGap = livePrice && safetyPrice ? (safetyPrice - livePrice) / livePrice : null;
+  const rimGap = livePrice && rimValue ? (rimValue - livePrice) / livePrice : null;
+  const consensusGap = livePrice && consensus ? (consensus - livePrice) / livePrice : null;
+  const shouldShow = Boolean(
+    livePrice
+    && (
+      (safetyGap !== null && Math.abs(safetyGap) >= 0.35)
+      || (rimGap !== null && Math.abs(rimGap) >= 0.35)
+    ),
+  );
+
+  if (!shouldShow) return null;
+
+  return (
+    <div className="relative rounded-lg border border-border/60 bg-muted/10 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {t('valuationGapNoticeTitle', language)}
+        </div>
+        <InfoDot title={t('valuationGapNoticeTip', language)} />
+      </div>
+      <div className="mt-1 text-[10px] leading-4 text-muted-foreground">
+        {t('valuationGapNoticeBody', language)}
+      </div>
+      <dl className="mt-2 space-y-1 text-[10px]">
+        <Row label={language === 'ko' ? '현재가' : 'Current'}>
+          <span className="font-mono text-foreground">{formatCurrency(livePrice, currency)}</span>
+        </Row>
+        {consensus !== null && (
+          <Row label={language === 'ko' ? '증권사 평균' : 'Broker avg'}>
+            <span className="font-mono text-foreground">
+              {formatCurrency(consensus, currency)} {consensusGap !== null ? `(${formatPercent(consensusGap)})` : ''}
+            </span>
+          </Row>
+        )}
+        {safetyPrice !== null && (
+          <Row label={language === 'ko' ? 'DCF 안전가' : 'DCF safety'}>
+            <span className="font-mono">
+              {formatCurrency(safetyPrice, currency)} {safetyGap !== null ? `(${formatPercent(safetyGap)})` : ''}
+            </span>
+          </Row>
+        )}
+        {rimValue !== null && (
+          <Row label={language === 'ko' ? 'RIM' : 'RIM'}>
+            <span className="font-mono">
+              {formatCurrency(rimValue, currency)} {rimGap !== null ? `(${formatPercent(rimGap)})` : ''}
+            </span>
+          </Row>
+        )}
+      </dl>
+    </div>
+  );
+}
+
 function ValuationSidebarPanel({
   dive,
   currency,
   language,
   currentPrice,
+  brokerConsensus,
+  mode = 'all',
 }: {
   dive: ValuationDeepDive;
   currency: string;
   language: ReportLanguage;
   currentPrice?: number | null;
+  brokerConsensus?: BrokerConsensusSnapshot | null;
+  mode?: 'all' | 'pbrOnly' | 'afterPbr';
 }) {
   const pbrModel = dive.models.find(model => model.key === 'pbr_band');
   const rimModel = dive.models.find(model => model.key === 'residual_income');
@@ -566,6 +649,33 @@ function ValuationSidebarPanel({
       language={language}
     />
   );
+  const gapNotice = (
+    <ValuationGapNotice
+      dive={dive}
+      brokerConsensus={brokerConsensus}
+      currentPrice={currentPrice}
+      currency={currency}
+      language={language}
+    />
+  );
+
+  if (mode === 'pbrOnly') {
+    return pbrCard ? <div className="mt-2 space-y-2">{pbrCard}</div> : null;
+  }
+
+  if (mode === 'afterPbr') {
+    return (
+      <div className="mt-2 space-y-2">
+        {dive.regimeNote && (
+          <p className="rounded-md border border-border/60 bg-muted/10 px-2.5 py-2 text-[10px] leading-4 text-muted-foreground">{dive.regimeNote}</p>
+        )}
+        {justifiedCard}
+        {rimCard}
+        {evCard}
+        {gapNotice}
+      </div>
+    );
+  }
 
   return (
     <div className="mt-2 space-y-2">
@@ -578,6 +688,7 @@ function ValuationSidebarPanel({
           {pbrCard}
           {justifiedCard}
           {rimCard}
+          {gapNotice}
         </>
       ) : (
         <>
@@ -585,6 +696,7 @@ function ValuationSidebarPanel({
           {justifiedCard}
           {rimCard}
           {evCard}
+          {gapNotice}
         </>
       )}
     </div>
@@ -624,24 +736,25 @@ function BrokerConsensusTile({
   brokerConsensus,
   currency,
   language,
+  currentPrice,
 }: {
   brokerConsensus: BrokerConsensusSnapshot | null | undefined;
   currency: string;
   language: ReportLanguage;
+  currentPrice?: number | null;
 }) {
   const consensus = brokerConsensus?.consensus ?? null;
   if (consensus === null || !Number.isFinite(consensus) || consensus <= 0) return null;
 
   const brokerCount = Math.max(0, brokerConsensus?.brokerCount ?? 0);
-  const forwardEps = brokerConsensus?.forwardEps ?? null;
-  const fwdPer = forwardEps !== null && Number.isFinite(forwardEps) && forwardEps > 0
-    ? consensus / forwardEps
+  const upside = currentPrice && Number.isFinite(currentPrice) && currentPrice > 0
+    ? (consensus - currentPrice) / currentPrice
     : null;
   const brokerLabel = language === 'ko'
     ? `${brokerCount}명`
     : `${brokerCount} brokers`;
-  const subtitle = fwdPer !== null
-    ? `Fwd PER ${fwdPer.toFixed(2)}x · ${brokerLabel}`
+  const subtitle = upside !== null
+    ? `${brokerLabel} · ${language === 'ko' ? '현재가 대비' : 'vs current'} ${formatPercent(upside)}`
     : brokerLabel;
 
   return (
@@ -656,6 +769,41 @@ function BrokerConsensusTile({
         {formatCurrency(consensus, currency)}
       </div>
       <div className="text-[10px] text-muted-foreground">{subtitle}</div>
+    </div>
+  );
+}
+
+function ForwardConsensusTile({
+  brokerConsensus,
+  currency,
+  language,
+}: {
+  brokerConsensus: BrokerConsensusSnapshot | null | undefined;
+  currency: string;
+  language: ReportLanguage;
+}) {
+  const forwardEps = brokerConsensus?.forwardEps ?? null;
+  if (forwardEps === null || !Number.isFinite(forwardEps) || forwardEps <= 0) return null;
+
+  const forwardPer = brokerConsensus?.forwardPer ?? null;
+  const forwardPerText = forwardPer !== null && Number.isFinite(forwardPer) && forwardPer > 0
+    ? `${forwardPer.toFixed(1)}x`
+    : '—';
+
+  return (
+    <div className="relative rounded-lg border border-border/60 bg-muted/10 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {t('targetEpsLabel', language)}
+        </div>
+        <InfoDot title={t('forwardConsensusTip', language)} />
+      </div>
+      <div className="mt-1 font-mono text-lg font-semibold text-foreground">
+        {formatCurrency(forwardEps, currency)}
+      </div>
+      <div className="text-[10px] text-muted-foreground">
+        FwdPER {forwardPerText} · {t('targetEpsSubtitle', language)}
+      </div>
     </div>
   );
 }
@@ -760,13 +908,21 @@ export function TargetDataSidebar({
     .map(key => tiles.find(tile => tile.labelKey === key))
     .filter((tile): tile is TargetTile => Boolean(tile));
   const secondaryTiles = tiles.filter(tile => !PRIMARY_TILE_KEYS.has(tile.labelKey));
-  const topTiles = primaryTiles.length > 0 ? primaryTiles : tiles;
   const hasBrokerConsensus = Boolean(
     brokerConsensus?.consensus
     && Number.isFinite(brokerConsensus.consensus)
     && brokerConsensus.consensus > 0,
   );
+  const hasForwardConsensus = Boolean(
+    brokerConsensus?.forwardEps
+    && Number.isFinite(brokerConsensus.forwardEps)
+    && brokerConsensus.forwardEps > 0,
+  );
+  const secondaryTilesForBottom = secondaryTiles.filter(tile => (
+    hasForwardConsensus ? tile.labelKey !== 'targetEpsLabel' : true
+  ));
   const hasConsensusBridge = Boolean(hasBrokerConsensus && valuationDeepDive?.pbr);
+  const hasAnyContent = tiles.length > 0 || Boolean(valuationDeepDive) || hasBrokerConsensus || hasForwardConsensus;
 
   return (
     <aside className={`w-full flex-shrink-0 lg:sticky lg:top-4 lg:w-[280px] lg:self-start lg:overflow-y-auto lg:max-h-[calc(100vh-6rem)] ${className}`}>
@@ -774,27 +930,35 @@ export function TargetDataSidebar({
         <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {t('targetDataTitle', language)}
         </h3>
-        {tiles.length > 0 ? (
+        {hasAnyContent ? (
           <>
-            <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
-              {topTiles.map(tile => <TargetTileCard key={tile.labelKey} tile={tile} language={language} />)}
-            </div>
+            {(hasBrokerConsensus || hasForwardConsensus) && (
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
+                <BrokerConsensusTile
+                  brokerConsensus={brokerConsensus}
+                  currency={currency}
+                  language={language}
+                  currentPrice={currentPrice}
+                />
+                <ForwardConsensusTile
+                  brokerConsensus={brokerConsensus}
+                  currency={currency}
+                  language={language}
+                />
+              </div>
+            )}
             {valuationDeepDive && (
               <ValuationSidebarPanel
                 dive={valuationDeepDive}
                 currency={currency}
                 language={language}
                 currentPrice={currentPrice}
+                brokerConsensus={brokerConsensus}
+                mode="pbrOnly"
               />
             )}
-            {primaryTiles.length > 0 && (secondaryTiles.length > 0 || hasBrokerConsensus || hasConsensusBridge) && (
+            {hasConsensusBridge && (
               <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
-                {secondaryTiles.map(tile => <TargetTileCard key={tile.labelKey} tile={tile} language={language} />)}
-                <BrokerConsensusTile
-                  brokerConsensus={brokerConsensus}
-                  currency={currency}
-                  language={language}
-                />
                 <ConsensusBridgeTile
                   brokerConsensus={brokerConsensus}
                   dive={valuationDeepDive}
@@ -804,23 +968,33 @@ export function TargetDataSidebar({
                 />
               </div>
             )}
-          </>
-        ) : (
-          <>
-            <div className="rounded-lg border border-dashed p-4 text-center text-[11px] text-muted-foreground">
-              {report?.data_coverage !== undefined && report.data_coverage !== null && report.data_coverage < 0.4
-                ? (language === 'ko' ? '데이터 커버리지가 낮아 핵심 타겟을 보류했습니다.' : 'Target data is on hold due to low coverage.')
-                : (language === 'ko' ? '핵심 타겟 데이터가 없습니다.' : 'No target data available.')}
-            </div>
+            {primaryTiles.length > 0 && (
+              <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
+                {primaryTiles.map(tile => <TargetTileCard key={tile.labelKey} tile={tile} language={language} />)}
+              </div>
+            )}
             {valuationDeepDive && (
               <ValuationSidebarPanel
                 dive={valuationDeepDive}
                 currency={currency}
                 language={language}
                 currentPrice={currentPrice}
+                brokerConsensus={brokerConsensus}
+                mode="afterPbr"
               />
             )}
+            {secondaryTilesForBottom.length > 0 && (
+              <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
+                {secondaryTilesForBottom.map(tile => <TargetTileCard key={tile.labelKey} tile={tile} language={language} />)}
+              </div>
+            )}
           </>
+        ) : (
+          <div className="rounded-lg border border-dashed p-4 text-center text-[11px] text-muted-foreground">
+            {report?.data_coverage !== undefined && report.data_coverage !== null && report.data_coverage < 0.4
+              ? (language === 'ko' ? '데이터 커버리지가 낮아 핵심 타겟을 보류했습니다.' : 'Target data is on hold due to low coverage.')
+              : (language === 'ko' ? '핵심 타겟 데이터가 없습니다.' : 'No target data available.')}
+          </div>
         )}
 
         {otherAgents.length > 0 && (

@@ -76,21 +76,29 @@ def test_valuation_reasoning_requires_concrete_numbers_in_evidence_details():
     assert "enhanced_details," in src
 
 
-def test_broker_consensus_tile_is_added_after_secondary_tiles_without_primary_tile_changes():
+def test_target_sidebar_orders_consensus_forward_pbr_bridge_before_valuation_model_cards():
     sidebar = read(V5_DIR / "target-data-sidebar.tsx")
     layout = read(V5_DIR / "report-layout.tsx")
 
     assert "function BrokerConsensusTile" in sidebar
+    assert "function ForwardConsensusTile" in sidebar
+    assert "function ValuationGapNotice" in sidebar
     assert "brokerConsensus" in sidebar
     assert "brokerConsensusLabel" in sidebar
     assert "brokerConsensusTip" in sidebar
-    assert "secondaryTiles.map" in sidebar
-    assert sidebar.index("secondaryTiles.map") < sidebar.index("<BrokerConsensusTile")
     assert "ORDERED_PRIMARY_TILE_KEYS = ['targetIntrinsicLabel', 'targetMarginLabel']" in sidebar
+    assert "secondaryTilesForBottom" in sidebar
+
+    assert sidebar.index("<BrokerConsensusTile") < sidebar.index("<ForwardConsensusTile")
+    assert sidebar.index("<ForwardConsensusTile") < sidebar.index('mode="pbrOnly"')
+    assert sidebar.index('mode="pbrOnly"') < sidebar.index("<ConsensusBridgeTile")
+    assert sidebar.index("<ConsensusBridgeTile") < sidebar.index("primaryTiles.map")
+    assert sidebar.index("primaryTiles.map") < sidebar.index('mode="afterPbr"')
 
     assert "brokerConsensus={" in layout
     assert "liveTarget?.consensus" in layout
     assert "canonicalForwardSnapshot.fwdEps" in layout
+    assert "forwardPer: canonicalForwardSnapshot.fwdPer" in layout
 
 
 def test_broker_consensus_i18n_keys_exist_in_ko_and_en():
@@ -99,6 +107,8 @@ def test_broker_consensus_i18n_keys_exist_in_ko_and_en():
     assert "brokerConsensusLabel: '증권사 평균 목표가'" in src
     assert "brokerConsensusLabel: 'Broker Consensus'" in src
     assert "brokerConsensusTip:" in src
+    assert "valuationGapNoticeTitle: '보수 모델 괴리 확인'" in src
+    assert "valuationGapNoticeTitle: 'Conservative model gap'" in src
 
 
 def test_consensus_bridge_tile_reconciles_broker_targets_with_pbr_band():
