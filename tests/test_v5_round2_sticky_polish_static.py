@@ -108,6 +108,8 @@ def test_consensus_bridge_tile_reconciles_broker_targets_with_pbr_band():
     assert "function ConsensusBridgeTile" in sidebar
     assert "consensusBridgeLabel" in sidebar
     assert "impliedPbr" in sidebar
+    assert "const pbrBasis = derivePbrBps(pbr)" in sidebar
+    assert "consensus / pbrBasis" in sidebar
     assert "fairPriceP50" in sidebar
     assert "fairPriceP90" in sidebar
     assert sidebar.index("<BrokerConsensusTile") < sidebar.index("<ConsensusBridgeTile")
@@ -121,7 +123,8 @@ def test_pbr_band_card_uses_defensive_price_identity_and_reader_labels():
     sidebar = read(V5_DIR / "target-data-sidebar.tsx")
 
     assert "function derivePbrFairPrice" in sidebar
-    assert "pbr.currentPrice * percentile / pbr.currentPbr" in sidebar
+    assert "function derivePbrBps" in sidebar
+    assert "pbr.currentPrice / pbr.currentPbr" in sidebar
     assert "pbrFairP90" in sidebar
     assert "50% 기준 주가" in sidebar
     assert "현재 PBR" in sidebar
@@ -142,10 +145,12 @@ def test_pbr_band_card_supports_current_and_assumption_markers():
     assert "scenarioPct" in sidebar
     assert "showScenarioMarker" in sidebar
     assert "현재 PBR" in sidebar
+    assert "현재가 " in sidebar
     assert "입력 PBR" in sidebar
     assert "grid grid-cols-2" in sidebar
     assert "입력 PBR 기준 주가" in sidebar
     assert "입력 필요" in sidebar
+    assert "계산 기준 BPS" in sidebar
     assert "현재가 대비 ${formatPercent(assumptionGap)}" in sidebar
     assert "aria-label={language === 'ko' ? 'PBR 배수 입력' : 'PBR multiple input'}" in sidebar
     assert "50% 기준 주가는 과거 PBR의 중앙값" in language

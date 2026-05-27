@@ -72,18 +72,22 @@ function ratioToBandPct(value: number, p10: number, p90: number) {
   return clampPercent(((value - p10) / range) * 100);
 }
 
-function derivePbrFairPrice(pbr: PbrBand, percentile: number, fallback: number | null | undefined) {
+function derivePbrBps(pbr: PbrBand) {
   if (
     pbr.currentPrice !== null
     && Number.isFinite(pbr.currentPrice)
     && pbr.currentPrice > 0
     && Number.isFinite(pbr.currentPbr)
     && pbr.currentPbr > 0
-    && Number.isFinite(percentile)
-    && percentile > 0
   ) {
-    return pbr.currentPrice * percentile / pbr.currentPbr;
+    return pbr.currentPrice / pbr.currentPbr;
   }
+  return pbr.bvps && Number.isFinite(pbr.bvps) && pbr.bvps > 0 ? pbr.bvps : null;
+}
+
+function derivePbrFairPrice(pbr: PbrBand, percentile: number, fallback: number | null | undefined) {
+  const bps = derivePbrBps(pbr);
+  if (bps !== null && Number.isFinite(percentile) && percentile > 0) return bps * percentile;
   return fallback ?? null;
 }
 
@@ -206,6 +210,7 @@ function PbrBandCard({
   const fairP10 = derivePbrFairPrice(pbr, pbr.percentiles.p10, pbr.fairPriceP10);
   const fairP50 = derivePbrFairPrice(pbr, pbr.percentiles.p50, pbrFairP50);
   const pbrFairP90 = derivePbrFairPrice(pbr, pbr.percentiles.p90, pbr.fairPriceP90);
+  const bpsBasis = derivePbrBps(pbr);
   const assumptionPrice = assumptionPbr === null
     ? null
     : derivePbrFairPrice(pbr, assumptionPbr, null);
@@ -265,6 +270,9 @@ function PbrBandCard({
             {language === 'ko' ? '현재 PBR' : 'Current PBR'}
           </div>
           <div className="font-mono text-sm font-semibold text-foreground">{formatPbrMultiple(pbr.currentPbr)}</div>
+          <div className="font-mono text-[10px] text-muted-foreground">
+            {language === 'ko' ? '현재가 ' : 'Price '}{formatCurrency(pbr.currentPrice, currency)}
+          </div>
         </div>
         <label className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5">
           <div className="text-[10px] text-muted-foreground">{language === 'ko' ? '입력 PBR' : 'Input PBR'}</div>
@@ -305,6 +313,9 @@ function PbrBandCard({
         <span>50% {formatPbrMultiple(pbr.percentiles.p50)}</span>
         <span>{language === 'ko' ? '90%' : '90%'} {formatPbrMultiple(pbr.percentiles.p90)}</span>
       </div>
+      <div className="mt-1 text-[10px] text-muted-foreground">
+        {language === 'ko' ? '계산 기준 BPS' : 'BPS basis'} {formatCurrency(bpsBasis, currency)}
+      </div>
 
       <dl className="mt-3 space-y-1 border-t border-border/50 pt-2 text-[10px]">
         <Row label={language === 'ko' ? '하단 방어가' : 'Lower band'}>
@@ -316,6 +327,14 @@ function PbrBandCard({
         <Row label={language === 'ko' ? '상단 시나리오' : 'Upper case'}>
           <span className="font-mono">{formatCurrency(pbrFairP90, currency)}</span>
         </Row>
+        <Row label={t('pbrRowPosition', language)} tip={t('pbrRowPositionTip', language)}>
+          <span className={`font-semibold ${classes.text}`}>{position}</span>
+        </Row>
+        {highText && (
+          <Row label={t('pbrRowExtremes', language)} tip={t('pbrRowExtremesTip', language)}>
+            <span className="font-mono">{highText}</span>
+          </Row>
+        )}
         {trend && (
           <Row label={t('pbrRowTrend', language)} tip={t('pbrRowTrendTip', language)}>
             <span className={`font-mono ${trend.tone}`}>{trend.icon} {trend.label} · {trend.pctText}</span>
@@ -646,8 +665,9 @@ function ConsensusBridgeTile({
   const impliedFwdPer = forwardEps !== null && Number.isFinite(forwardEps) && forwardEps > 0
     ? consensus / forwardEps
     : null;
-  const impliedPbr = pbr.bvps !== null && pbr.bvps > 0
-    ? consensus / pbr.bvps
+  const pbrBasis = derivePbrBps(pbr);
+  const impliedPbr = pbrBasis !== null && pbrBasis > 0
+    ? consensus / pbrBasis
     : null;
   const fairP50 = derivePbrFairPrice(pbr, pbr.percentiles.p50, pbr.fairPriceP50);
   const fairP90 = derivePbrFairPrice(pbr, pbr.percentiles.p90, pbr.fairPriceP90);

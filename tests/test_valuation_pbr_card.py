@@ -42,9 +42,9 @@ def test_pbr_card_shows_band_position_extremes_signal_and_keeps_rim_card():
     assert "pbrRowExtremes" in sidebar
     assert "pbrRowSignal" in sidebar
     assert "computePbrTrend(pbr.history" in sidebar
-    assert "P10 {pbr.percentiles.p10.toFixed(2)}x" in sidebar
-    assert "P50 {pbr.percentiles.p50.toFixed(2)}x" in sidebar
-    assert "P90 {pbr.percentiles.p90.toFixed(2)}x" in sidebar
+    assert "formatPbrMultiple(pbr.percentiles.p10)" in sidebar
+    assert "50% {formatPbrMultiple(pbr.percentiles.p50)}" in sidebar
+    assert "formatPbrMultiple(pbr.percentiles.p90)" in sidebar
     assert "dive.regime === 'capex_heavy' ? (" in sidebar
     assert sidebar.index("{evCard}") < sidebar.index("{pbrCard}") < sidebar.index("{rimCard}")
     assert "RIM 평가" in sidebar
@@ -55,16 +55,16 @@ def test_pbr_i18n_keys_exist_in_both_languages():
     i18n = LANG_PREFS.read_text(encoding="utf-8")
 
     for needle in [
-        "pbrCardTitle: 'PBR 밴드 평가'",
-        "pbrCardTitleTip: 'PBR(주가순자산비율)의 과거 분포 대비 현재 위치, 추세, 시그널을 보여줍니다.",
-        "pbrRailTip: '검은 트랙은 P10(최저10%)에서 P90(최고10%)까지의 PBR 범위입니다.",
+        "pbrCardTitle: 'PBR 밴드'",
+        "pbrCardTitleTip: '50% 기준 주가는 과거 PBR의 중앙값을 적용한 가격입니다.",
+        "pbrRailTip: '회색 막대는 과거 PBR 범위입니다.",
         "pbrRowPosition: '위치'",
         "pbrRowTrend: '추세'",
         "pbrRowExtremes: '극값 대비'",
         "pbrRowSignal: '시그널'",
         "pbrCardTitle: 'PBR Band'",
-        "pbrCardTitleTip: 'Where the current price-to-book sits in the historical distribution",
-        "pbrRailTip: 'Rail spans P10–P90 of historical PBR.",
+        "pbrCardTitleTip: '50% price applies the historical median PBR.",
+        "pbrRailTip: 'The gray rail is the historical PBR range.",
         "pbrRowPosition: 'Position'",
         "pbrRowTrend: 'Trend'",
         "pbrRowExtremes: 'Vs extremes'",
