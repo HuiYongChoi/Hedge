@@ -10,6 +10,7 @@ import { analystTargetService } from '@/services/analyst-target-service';
 import type { AnalystTarget } from '@/services/analyst-target-service';
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   SECTION_DEFS,
   buildCanonicalMetrics,
@@ -169,7 +170,12 @@ export function ReportLayout({
   const [liveTarget, setLiveTarget] = useState<AnalystTarget | null>(null);
   const [marketDataUpdatedAt, setMarketDataUpdatedAt] = useState<string | null>(null);
   const [isRefreshingMarketData, setIsRefreshingMarketData] = useState(false);
+  const [stickyHeaderHost, setStickyHeaderHost] = useState<HTMLElement | null>(null);
   const { info } = useToastManager();
+
+  useEffect(() => {
+    setStickyHeaderHost(document.getElementById('stock-analysis-sticky-summary-slot'));
+  }, []);
 
   useEffect(() => {
     if (!tickers.includes(activeTicker)) {
@@ -400,22 +406,26 @@ export function ReportLayout({
       markdown: getDetailReportMarkdown(displayReport, displayAgent, activeTicker),
     });
   };
+  const stickyHeaderNode = (
+    <StickyAnalysisHeader
+      ticker={activeTicker}
+      companyName={stickyCompanyName}
+      country={countryFromTicker(activeTicker)}
+      currentPrice={effectiveCurrentPrice}
+      currency={effectiveCurrency}
+      priceChangePct={null}
+      verdict={stickyVerdict}
+      verdictConfidence={stickyConfidence}
+      marginOfSafetyPct={effectiveMarginOfSafety}
+      wacc={effectiveMetrics.wacc?.value ?? null}
+      language={language}
+      placement={stickyHeaderHost ? 'tabHeader' : 'report'}
+    />
+  );
 
   return (
     <div className="space-y-4">
-      <StickyAnalysisHeader
-        ticker={activeTicker}
-        companyName={stickyCompanyName}
-        country={countryFromTicker(activeTicker)}
-        currentPrice={effectiveCurrentPrice}
-        currency={effectiveCurrency}
-        priceChangePct={null}
-        verdict={stickyVerdict}
-        verdictConfidence={stickyConfidence}
-        marginOfSafetyPct={effectiveMarginOfSafety}
-        wacc={effectiveMetrics.wacc?.value ?? null}
-        language={language}
-      />
+      {stickyHeaderHost ? createPortal(stickyHeaderNode, stickyHeaderHost) : stickyHeaderNode}
 
       <TickerSwitcher
         tickers={tickers}

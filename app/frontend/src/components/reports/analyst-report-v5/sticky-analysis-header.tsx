@@ -15,6 +15,7 @@ interface StickyAnalysisHeaderProps {
   marginOfSafetyPct: number | null;
   wacc: number | null;
   language: ReportLanguage;
+  placement?: 'report' | 'tabHeader';
 }
 
 function formatCurrency(value: number | null, currency: string, language: ReportLanguage) {
@@ -84,9 +85,16 @@ export function StickyAnalysisHeader({
   marginOfSafetyPct,
   wacc,
   language,
+  placement = 'report',
 }: StickyAnalysisHeaderProps) {
+  const isTabHeader = placement === 'tabHeader';
+
   return (
-    <div className="sticky top-0 z-30 -mx-4 mb-4 border-b border-border/60 bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+    <div
+      className={isTabHeader
+        ? 'mt-3 border-t border-border/60 pt-3'
+        : 'sticky top-0 z-30 -mx-4 mb-4 border-b border-border/60 bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/70'}
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className="font-mono text-sm font-semibold text-foreground">{ticker}</span>

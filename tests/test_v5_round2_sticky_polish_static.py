@@ -27,8 +27,13 @@ def test_sticky_analysis_header_component_exists_and_uses_core_metrics():
 
 def test_report_layout_mounts_sticky_header_before_existing_report_sections():
     src = read(V5_DIR / "report-layout.tsx")
+    stock_src = read(TABS_DIR / "stock-search-tab.tsx")
 
     assert "import { StickyAnalysisHeader } from './sticky-analysis-header';" in src
+    assert "import { createPortal } from 'react-dom';" in src
+    assert "stock-analysis-sticky-summary-slot" in src
+    assert 'placement={stickyHeaderHost ? \'tabHeader\' : \'report\'}' in src
+    assert 'id="stock-analysis-sticky-summary-slot"' in stock_src
     assert "<StickyAnalysisHeader" in src
     assert src.index("<StickyAnalysisHeader") < src.index("<TickerSwitcher")
     assert "isJapaneseTicker" in src

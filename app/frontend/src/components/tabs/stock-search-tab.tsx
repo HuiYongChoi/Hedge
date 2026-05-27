@@ -1167,6 +1167,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
             ? '종목을 검색하고 원하는 에이전트를 선택해 상세 분석 보고서를 받으세요.'
             : 'Search for stocks and select agents to receive detailed analysis reports.'}
         </p>
+        <div id="stock-analysis-sticky-summary-slot" />
       </div>
 
       <div className="flex flex-1 overflow-hidden">
