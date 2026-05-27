@@ -15,6 +15,7 @@ interface TargetDataSidebarProps {
   valuationDeepDive?: ValuationDeepDive | null;
   currency?: string;
   brokerConsensus?: BrokerConsensusSnapshot | null;
+  currentPrice?: number | null;
 }
 
 interface BrokerConsensusSnapshot {
@@ -72,21 +73,34 @@ function ratioToBandPct(value: number, p10: number, p90: number) {
   return clampPercent(((value - p10) / range) * 100);
 }
 
-function derivePbrBps(pbr: PbrBand) {
+function derivePbrBps(pbr: PbrBand, marketCurrentPrice?: number | null) {
+  const displayCurrentPrice = (
+    marketCurrentPrice !== null
+    && marketCurrentPrice !== undefined
+    && Number.isFinite(marketCurrentPrice)
+    && marketCurrentPrice > 0
+  )
+    ? marketCurrentPrice
+    : pbr.currentPrice;
   if (
-    pbr.currentPrice !== null
-    && Number.isFinite(pbr.currentPrice)
-    && pbr.currentPrice > 0
+    displayCurrentPrice !== null
+    && Number.isFinite(displayCurrentPrice)
+    && displayCurrentPrice > 0
     && Number.isFinite(pbr.currentPbr)
     && pbr.currentPbr > 0
   ) {
-    return pbr.currentPrice / pbr.currentPbr;
+    return displayCurrentPrice / pbr.currentPbr;
   }
   return pbr.bvps && Number.isFinite(pbr.bvps) && pbr.bvps > 0 ? pbr.bvps : null;
 }
 
-function derivePbrFairPrice(pbr: PbrBand, percentile: number, fallback: number | null | undefined) {
-  const bps = derivePbrBps(pbr);
+function derivePbrFairPrice(
+  pbr: PbrBand,
+  percentile: number,
+  fallback: number | null | undefined,
+  marketCurrentPrice?: number | null,
+) {
+  const bps = derivePbrBps(pbr, marketCurrentPrice);
   if (bps !== null && Number.isFinite(percentile) && percentile > 0) return bps * percentile;
   return fallback ?? null;
 }
@@ -180,19 +194,27 @@ function PbrMiniRail({
 function PbrBandCard({
   pbr,
   pbrFairP50,
-  gapToMarket,
   signalTone,
   currency,
   language,
+  marketCurrentPrice,
 }: {
   pbr: PbrBand;
   pbrFairP50: number | null;
-  gapToMarket: number | null;
   signalTone: ReportTone;
   currency: string;
   language: ReportLanguage;
+  marketCurrentPrice?: number | null;
 }) {
   const classes = toneToClasses(signalTone);
+  const displayCurrentPrice = (
+    marketCurrentPrice !== null
+    && marketCurrentPrice !== undefined
+    && Number.isFinite(marketCurrentPrice)
+    && marketCurrentPrice > 0
+  )
+    ? marketCurrentPrice
+    : pbr.currentPrice;
   const [assumptionPbrInput, setAssumptionPbrInput] = useState(() => formatPbrMultiple(pbr.currentPbr));
   useEffect(() => {
     setAssumptionPbrInput(formatPbrMultiple(pbr.currentPbr));
@@ -207,15 +229,15 @@ function PbrBandCard({
     ? null
     : ratioToBandPct(assumptionPbr, pbr.percentiles.p10, pbr.percentiles.p90);
   const showScenarioMarker = assumptionPbr !== null && Math.abs(assumptionPbr - pbr.currentPbr) > 0.005;
-  const fairP10 = derivePbrFairPrice(pbr, pbr.percentiles.p10, pbr.fairPriceP10);
-  const fairP50 = derivePbrFairPrice(pbr, pbr.percentiles.p50, pbrFairP50);
-  const pbrFairP90 = derivePbrFairPrice(pbr, pbr.percentiles.p90, pbr.fairPriceP90);
-  const bpsBasis = derivePbrBps(pbr);
+  const fairP10 = derivePbrFairPrice(pbr, pbr.percentiles.p10, pbr.fairPriceP10, displayCurrentPrice);
+  const fairP50 = derivePbrFairPrice(pbr, pbr.percentiles.p50, pbrFairP50, displayCurrentPrice);
+  const pbrFairP90 = derivePbrFairPrice(pbr, pbr.percentiles.p90, pbr.fairPriceP90, displayCurrentPrice);
+  const bpsBasis = derivePbrBps(pbr, displayCurrentPrice);
   const assumptionPrice = assumptionPbr === null
     ? null
-    : derivePbrFairPrice(pbr, assumptionPbr, null);
-  const assumptionGap = pbr.currentPrice && assumptionPrice !== null
-    ? (assumptionPrice - pbr.currentPrice) / pbr.currentPrice
+    : derivePbrFairPrice(pbr, assumptionPbr, null, displayCurrentPrice);
+  const assumptionGap = displayCurrentPrice && assumptionPrice !== null
+    ? (assumptionPrice - displayCurrentPrice) / displayCurrentPrice
     : null;
   const assumptionPriceText = assumptionPrice !== null
     ? formatCurrency(assumptionPrice, currency)
@@ -225,9 +247,6 @@ function PbrBandCard({
         ? `현재가 대비 ${formatPercent(assumptionGap)}`
         : `${formatPercent(assumptionGap)} vs current`)
     : (language === 'ko' ? 'PBR을 입력하면 계산됩니다' : 'Enter a PBR to calculate');
-  const displayGap = pbr.currentPrice && fairP50 !== null
-    ? (fairP50 - pbr.currentPrice) / pbr.currentPrice
-    : gapToMarket;
   const vsMedian = pbr.percentiles.p50 ? (pbr.currentPbr - pbr.percentiles.p50) / pbr.percentiles.p50 : null;
   const vsP90 = pbr.percentiles.p90 ? (pbr.currentPbr - pbr.percentiles.p90) / pbr.percentiles.p90 : null;
   const position = pbrPositionText(pbr.positionLabel, language);
@@ -246,20 +265,21 @@ function PbrBandCard({
   return (
     <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          {t('pbrCardTitle', language)}
-          <InfoDot title={t('pbrCardTitleTip', language)} />
-        </div>
-        <div className={`font-mono text-[11px] font-semibold ${classes.text}`}>{formatPercent(displayGap)}</div>
-      </div>
-
-      <div className="mt-2 flex items-end justify-between gap-2">
-        <div>
-          <div className="text-[10px] font-medium text-muted-foreground">
-            {language === 'ko' ? '50% 기준 주가' : '50% price'}
+        <div className="min-w-0">
+          <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {t('pbrCardTitle', language)}
+            <InfoDot title={t('pbrCardTitleTip', language)} />
           </div>
-          <div className={`font-mono text-xl font-semibold ${classes.text}`}>
-            {formatCurrency(fairP50, currency)}
+          {displayCurrentPrice !== null && (
+            <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
+              현재가 {formatCurrency(displayCurrentPrice, currency)}
+            </div>
+          )}
+        </div>
+        <div className="text-right">
+          <div className={`font-mono text-[11px] font-semibold ${classes.text}`}>{formatPercent(vsMedian)}</div>
+          <div className="text-[9px] text-muted-foreground">
+            {language === 'ko' ? '중위 PBR 대비' : 'vs median PBR'}
           </div>
         </div>
       </div>
@@ -270,9 +290,6 @@ function PbrBandCard({
             {language === 'ko' ? '현재 PBR' : 'Current PBR'}
           </div>
           <div className="font-mono text-sm font-semibold text-foreground">{formatPbrMultiple(pbr.currentPbr)}</div>
-          <div className="font-mono text-[10px] text-muted-foreground">
-            {language === 'ko' ? '현재가 ' : 'Price '}{formatCurrency(pbr.currentPrice, currency)}
-          </div>
         </div>
         <label className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5">
           <div className="text-[10px] text-muted-foreground">{language === 'ko' ? '입력 PBR' : 'Input PBR'}</div>
@@ -321,7 +338,7 @@ function PbrBandCard({
         <Row label={language === 'ko' ? '하단 방어가' : 'Lower band'}>
           <span className="font-mono">{formatCurrency(fairP10, currency)}</span>
         </Row>
-        <Row label={language === 'ko' ? '50% 기준 주가' : '50% price'}>
+        <Row label={language === 'ko' ? '역사적 PBR 중위값 기준 주가' : 'Historical median PBR price'}>
           <span className="font-mono font-semibold text-foreground">{formatCurrency(fairP50, currency)}</span>
         </Row>
         <Row label={language === 'ko' ? '상단 시나리오' : 'Upper case'}>
@@ -427,20 +444,22 @@ function ValuationSidebarPanel({
   dive,
   currency,
   language,
+  currentPrice,
 }: {
   dive: ValuationDeepDive;
   currency: string;
   language: ReportLanguage;
+  currentPrice?: number | null;
 }) {
   const pbrModel = dive.models.find(model => model.key === 'pbr_band');
   const rimModel = dive.models.find(model => model.key === 'residual_income');
   const evModel = dive.models.find(model => model.key === 'ev_ebitda');
   const pbrValue = dive.pbr
-    ? derivePbrFairPrice(dive.pbr, dive.pbr.percentiles.p50, dive.pbr.fairPriceP50)
+    ? derivePbrFairPrice(dive.pbr, dive.pbr.percentiles.p50, dive.pbr.fairPriceP50, currentPrice)
     : pbrModel?.intrinsicPerShare ?? null;
   const pbrGap = pbrModel?.gapToMarket ?? (
-    dive.pbr?.currentPrice && pbrValue !== null
-      ? (pbrValue - dive.pbr.currentPrice) / dive.pbr.currentPrice
+    currentPrice && pbrValue !== null
+      ? (pbrValue - currentPrice) / currentPrice
       : null
   );
   const rimValue = dive.rim?.intrinsicPerShare ?? rimModel?.intrinsicPerShare ?? null;
@@ -497,10 +516,10 @@ function ValuationSidebarPanel({
       <PbrBandCard
         pbr={dive.pbr}
         pbrFairP50={pbrValue}
-        gapToMarket={pbrGap}
         signalTone={pbrTone}
         currency={currency}
         language={language}
+        marketCurrentPrice={currentPrice}
       />
     ) : (
       <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
@@ -646,11 +665,13 @@ function ConsensusBridgeTile({
   dive,
   currency,
   language,
+  currentPrice,
 }: {
   brokerConsensus: BrokerConsensusSnapshot | null | undefined;
   dive: ValuationDeepDive | null | undefined;
   currency: string;
   language: ReportLanguage;
+  currentPrice?: number | null;
 }) {
   const consensus = brokerConsensus?.consensus ?? null;
   const pbr = dive?.pbr ?? null;
@@ -665,15 +686,16 @@ function ConsensusBridgeTile({
   const impliedFwdPer = forwardEps !== null && Number.isFinite(forwardEps) && forwardEps > 0
     ? consensus / forwardEps
     : null;
-  const pbrBasis = derivePbrBps(pbr);
+  const pbrBasis = derivePbrBps(pbr, currentPrice);
   const impliedPbr = pbrBasis !== null && pbrBasis > 0
     ? consensus / pbrBasis
     : null;
-  const fairP50 = derivePbrFairPrice(pbr, pbr.percentiles.p50, pbr.fairPriceP50);
-  const fairP90 = derivePbrFairPrice(pbr, pbr.percentiles.p90, pbr.fairPriceP90);
+  const fairP50 = derivePbrFairPrice(pbr, pbr.percentiles.p50, pbr.fairPriceP50, currentPrice);
+  const fairP90 = derivePbrFairPrice(pbr, pbr.percentiles.p90, pbr.fairPriceP90, currentPrice);
   const gapToP50 = fairP50 ? (consensus - fairP50) / fairP50 : null;
   const gapToP90 = fairP90 ? (consensus - fairP90) / fairP90 : null;
-  const upsideToCurrent = pbr.currentPrice ? (consensus - pbr.currentPrice) / pbr.currentPrice : null;
+  const displayCurrentPrice = currentPrice ?? pbr.currentPrice;
+  const upsideToCurrent = displayCurrentPrice ? (consensus - displayCurrentPrice) / displayCurrentPrice : null;
   const rimValue = dive?.rim?.intrinsicPerShare ?? null;
   const perText = (value: number | null) => value === null ? '—' : `${value.toFixed(1)}x`;
   const p90Text = gapToP90 === null
@@ -697,7 +719,7 @@ function ConsensusBridgeTile({
         FwdPER {perText(impliedFwdPer)} · PBR {formatPbrMultiple(impliedPbr)}
       </div>
       <dl className="mt-2 space-y-0.5 text-[10px]">
-        <Row label={language === 'ko' ? '50% 기준 주가' : '50% price'}>
+        <Row label={language === 'ko' ? '역사적 PBR 중위값 기준 주가' : 'Historical median PBR price'}>
           <span className="font-mono">{formatCurrency(fairP50, currency)}</span>
         </Row>
         <Row label={language === 'ko' ? '90% 상단 시나리오' : '90% upper case'}>
@@ -732,6 +754,7 @@ export function TargetDataSidebar({
   valuationDeepDive,
   currency = 'USD',
   brokerConsensus,
+  currentPrice,
 }: TargetDataSidebarProps) {
   const primaryTiles = ORDERED_PRIMARY_TILE_KEYS
     .map(key => tiles.find(tile => tile.labelKey === key))
@@ -761,6 +784,7 @@ export function TargetDataSidebar({
                 dive={valuationDeepDive}
                 currency={currency}
                 language={language}
+                currentPrice={currentPrice}
               />
             )}
             {primaryTiles.length > 0 && (secondaryTiles.length > 0 || hasBrokerConsensus || hasConsensusBridge) && (
@@ -776,6 +800,7 @@ export function TargetDataSidebar({
                   dive={valuationDeepDive}
                   currency={currency}
                   language={language}
+                  currentPrice={currentPrice}
                 />
               </div>
             )}
@@ -792,6 +817,7 @@ export function TargetDataSidebar({
                 dive={valuationDeepDive}
                 currency={currency}
                 language={language}
+                currentPrice={currentPrice}
               />
             )}
           </>

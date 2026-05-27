@@ -490,6 +490,7 @@ export function ReportLayout({
           valuationDeepDive={valuationDeepDive}
           currency={effectiveCurrency}
           brokerConsensus={brokerConsensus}
+          currentPrice={effectiveCurrentPrice}
         />
       </div>
 

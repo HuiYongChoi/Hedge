@@ -108,7 +108,7 @@ def test_consensus_bridge_tile_reconciles_broker_targets_with_pbr_band():
     assert "function ConsensusBridgeTile" in sidebar
     assert "consensusBridgeLabel" in sidebar
     assert "impliedPbr" in sidebar
-    assert "const pbrBasis = derivePbrBps(pbr)" in sidebar
+    assert "const pbrBasis = derivePbrBps(pbr, currentPrice)" in sidebar
     assert "consensus / pbrBasis" in sidebar
     assert "fairPriceP50" in sidebar
     assert "fairPriceP90" in sidebar
@@ -121,21 +121,27 @@ def test_consensus_bridge_tile_reconciles_broker_targets_with_pbr_band():
 
 def test_pbr_band_card_uses_defensive_price_identity_and_reader_labels():
     sidebar = read(V5_DIR / "target-data-sidebar.tsx")
+    language = read(LANGUAGE_PREFS)
 
     assert "function derivePbrFairPrice" in sidebar
     assert "function derivePbrBps" in sidebar
-    assert "pbr.currentPrice / pbr.currentPbr" in sidebar
+    assert "marketCurrentPrice?: number | null" in sidebar
+    assert "displayCurrentPrice / pbr.currentPbr" in sidebar
     assert "pbrFairP90" in sidebar
-    assert "50% 기준 주가" in sidebar
+    assert "역사적 PBR 중위값 기준 주가" in sidebar
+    assert "50% 기준 주가" not in sidebar
+    assert "중위 PBR 대비" in sidebar
     assert "현재 PBR" in sidebar
     assert "상단 시나리오" in sidebar
-    assert "50% price" in sidebar
+    assert "Historical median PBR price" in sidebar
     assert "formatPbrMultiple" in sidebar
+    assert "역사적 PBR 중위값 기준 주가는 과거 PBR의 중앙값" in language
 
 
 def test_pbr_band_card_supports_current_and_assumption_markers():
     sidebar = read(V5_DIR / "target-data-sidebar.tsx")
     language = read(LANGUAGE_PREFS)
+    layout = read(V5_DIR / "report-layout.tsx")
 
     assert "assumptionPbrInput" in sidebar
     assert "useState(() => formatPbrMultiple(pbr.currentPbr))" in sidebar
@@ -145,12 +151,14 @@ def test_pbr_band_card_supports_current_and_assumption_markers():
     assert "scenarioPct" in sidebar
     assert "showScenarioMarker" in sidebar
     assert "현재 PBR" in sidebar
-    assert "현재가 " in sidebar
+    assert "현재가 {formatCurrency(displayCurrentPrice, currency)}" in sidebar
+    assert "{language === 'ko' ? '현재가 ' : 'Price '}{formatCurrency(pbr.currentPrice, currency)}" not in sidebar
     assert "입력 PBR" in sidebar
     assert "grid grid-cols-2" in sidebar
     assert "입력 PBR 기준 주가" in sidebar
     assert "입력 필요" in sidebar
     assert "계산 기준 BPS" in sidebar
+    assert "currentPrice={effectiveCurrentPrice}" in layout
     assert "현재가 대비 ${formatPercent(assumptionGap)}" in sidebar
     assert "aria-label={language === 'ko' ? 'PBR 배수 입력' : 'PBR multiple input'}" in sidebar
-    assert "50% 기준 주가는 과거 PBR의 중앙값" in language
+    assert "역사적 PBR 중위값 기준 주가는 과거 PBR의 중앙값" in language

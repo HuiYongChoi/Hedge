@@ -56,14 +56,14 @@ def test_pbr_i18n_keys_exist_in_both_languages():
 
     for needle in [
         "pbrCardTitle: 'PBR 밴드'",
-        "pbrCardTitleTip: '50% 기준 주가는 과거 PBR의 중앙값을 적용한 가격입니다.",
+        "pbrCardTitleTip: '역사적 PBR 중위값 기준 주가는 과거 PBR의 중앙값을 적용한 가격입니다.",
         "pbrRailTip: '회색 막대는 과거 PBR 범위입니다.",
         "pbrRowPosition: '위치'",
         "pbrRowTrend: '추세'",
         "pbrRowExtremes: '극값 대비'",
         "pbrRowSignal: '시그널'",
         "pbrCardTitle: 'PBR Band'",
-        "pbrCardTitleTip: '50% price applies the historical median PBR.",
+        "pbrCardTitleTip: 'Historical median PBR price applies the historical median PBR.",
         "pbrRailTip: 'The gray rail is the historical PBR range.",
         "pbrRowPosition: 'Position'",
         "pbrRowTrend: 'Trend'",
