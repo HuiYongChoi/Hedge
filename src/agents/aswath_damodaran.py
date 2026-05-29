@@ -156,7 +156,14 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
                     + damodaran_output.reasoning
                 )
 
-        damodaran_signals[ticker] = damodaran_output.model_dump()
+        signal_payload = damodaran_output.model_dump()
+        # Surface the structured FCFF-DCF per-share value so the report headline
+        # anchors to the actual model output instead of regex-scraping it from
+        # the narrative (which drifts with LLM phrasing).
+        per_share_iv = intrinsic_val_analysis.get("intrinsic_per_share")
+        if per_share_iv is not None:
+            signal_payload["intrinsic_value_per_share"] = per_share_iv
+        damodaran_signals[ticker] = signal_payload
 
         progress.update_status(agent_id, ticker, "Done", analysis=damodaran_output.reasoning)
 
@@ -352,7 +359,15 @@ def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis
     fcff0 = getattr(latest_li, "free_cash_flow", None)
     if fcff0 is None and metrics:
         fcff0 = getattr(metrics[0], "free_cash_flow", None)
-    shares = getattr(latest_li, "outstanding_shares", None)
+    # Prefer the point-in-time TTM share count from financial metrics. The TTM
+    # line item can report outstanding_shares summed across quarters (~4x the
+    # real float), which deflates intrinsic value per share by the same factor
+    # (e.g. MU: 4.54B summed vs 1.13B real → $18.87 instead of $75.88).
+    # metrics[0].outstanding_shares is a snapshot consistent with the share base
+    # behind market cap / current price.
+    shares = getattr(metrics[0], "outstanding_shares", None) if metrics else None
+    if not shares or shares <= 0:
+        shares = getattr(latest_li, "outstanding_shares", None)
     if not fcff0 or not shares:
         return {"intrinsic_value": None, "details": ["N/A: FCFF 또는 주식 수가 없어 DCF는 보조 지표로만 취급"]}
 
