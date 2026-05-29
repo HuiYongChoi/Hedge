@@ -519,6 +519,44 @@ function ValuationGapNotice({
   );
 }
 
+function ValuationModelsSummary({
+  dive,
+  currency,
+  language,
+}: {
+  dive: ValuationDeepDive;
+  currency: string;
+  language: ReportLanguage;
+}) {
+  // Compact at-a-glance list of every valuation model the agent emitted, so
+  // EV/EBITDA, EBITDA (normalized) and ROIC−WACC EVA surface alongside DCF/RIM.
+  const rows = dive.models.filter(m => m.intrinsicPerShare !== null && m.intrinsicPerShare !== undefined);
+  if (rows.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+      <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {t('valuationModelsSummaryTitle', language)}
+      </div>
+      <dl className="space-y-0.5 text-[10px]">
+        {rows.map(model => {
+          const classes = toneToClasses(model.signal);
+          return (
+            <div key={model.key} className="flex items-center justify-between gap-2">
+              <dt className="truncate text-muted-foreground">{model.labelKey}</dt>
+              <dd className={`flex items-center gap-1.5 font-mono ${classes.text}`}>
+                <span>{formatCurrency(model.intrinsicPerShare, currency)}</span>
+                {model.gapToMarket !== null && model.gapToMarket !== undefined && (
+                  <span className="text-[9px]">{formatPercent(model.gapToMarket)}</span>
+                )}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+    </div>
+  );
+}
+
 function ValuationSidebarPanel({
   dive,
   currency,
@@ -724,6 +762,7 @@ function ValuationSidebarPanel({
         {dive.regimeNote && (
           <p className="rounded-md border border-border/60 bg-muted/10 px-2.5 py-2 text-[10px] leading-4 text-muted-foreground">{dive.regimeNote}</p>
         )}
+        <ValuationModelsSummary dive={dive} currency={currency} language={language} />
         {justifiedCard}
         {rimCard}
         {evCard}

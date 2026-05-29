@@ -64,6 +64,29 @@ def test_market_proxy_when_book_equity_unavailable():
     assert result["invested_capital"] == pytest.approx(520_000.0)
 
 
+def test_report_sidebar_wires_ebitda_and_roic_wacc_cards():
+    from pathlib import Path
+
+    v5 = Path(__file__).resolve().parents[1] / "app/frontend/src/components/reports/analyst-report-v5"
+    sidebar = (v5 / "target-data-sidebar.tsx").read_text(encoding="utf-8")
+    helpers = (v5 / "helpers.ts").read_text(encoding="utf-8")
+    types = (v5 / "types.ts").read_text(encoding="utf-8")
+
+    # New valuation cards are wired into the report sidebar.
+    assert "ebitdaModel" in sidebar
+    assert "evaModel" in sidebar
+    assert "{ebitdaCard}" in sidebar
+    assert "{evaCard}" in sidebar
+    # At-a-glance summary surfaces every model (incl. the two new ones).
+    assert "ValuationModelsSummary" in sidebar
+
+    # Parsing + types carry the new fields.
+    assert "ebitda_valuation" in helpers
+    assert "roic_wacc_valuation" in helpers
+    assert "normalizedEbitda" in types
+    assert "investedCapital" in types
+
+
 def test_weight_buckets_sum_to_one():
     import inspect
 
