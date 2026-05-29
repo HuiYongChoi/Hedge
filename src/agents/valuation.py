@@ -236,6 +236,15 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         )
         if shares_outstanding is not None and shares_outstanding <= 0:
             shares_outstanding = None
+        if shares_outstanding is None:
+            # Korean DART feeds sometimes omit a share count while still
+            # providing equity + BVPS. Recover shares = equity / BVPS so the
+            # per-share-gated valuation cards (EV/EBITDA, EBITDA, ROIC-WACC)
+            # still render instead of silently disappearing.
+            bvps = most_recent_metrics.book_value_per_share
+            equity = getattr(li_curr, "shareholders_equity", None)
+            if bvps and bvps > 0 and equity and equity > 0:
+                shares_outstanding = equity / bvps
 
         # ROIC−WACC excess-return (EVA) valuation.
         eva_growth = (
