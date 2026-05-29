@@ -98,6 +98,112 @@ def _forward_pe_interpretation(trailing_pe: float | None, forward_pe: float | No
     return f"Baseline forward P/E {forward_pe:.2f}x is {direction} vs TTM P/E {trailing_pe:.2f}x.{confidence_note}"
 
 
+def _to_finite_float(value) -> float | None:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
+
+
+def _backfill_valuation_inputs(
+    financial_metrics: list,
+    line_items: list,
+    *,
+    ticker: str,
+    end_date: str,
+    api_key: str | None,
+) -> None:
+    """Backfill the gating inputs for the EV/EBITDA, EBITDA, and ROIC−WACC cards.
+
+    Fallback feeds (notably Korean tickers when DART is unreachable and yfinance
+    404s) hand back metrics with ``enterprise_value`` / ``enterprise_value_to_ebitda_ratio``
+    / ``return_on_invested_capital`` left null. The three per-method breakdowns
+    return ``None`` on those nulls, so the agent never emits their ``*_analysis``
+    keys and the cards silently vanish from the sidebar. Derive the missing inputs
+    in place from line-item primitives plus an authoritative market cap, mirroring
+    ``src.utils.data_standardizer.derive_financial_fields`` so values stay consistent.
+    """
+    if not financial_metrics:
+        return
+    m0 = financial_metrics[0]
+    li_curr = line_items[0] if line_items else None
+
+    def li_get(key):
+        return getattr(li_curr, key, None) if li_curr is not None else None
+
+    total_debt = _to_finite_float(li_get("total_debt"))
+    if total_debt is None:
+        total_debt = _to_finite_float(getattr(m0, "total_debt", None))
+    cash = _to_finite_float(li_get("cash_and_equivalents"))
+    if cash is None:
+        cash = _to_finite_float(getattr(m0, "cash_and_equivalents", None))
+    operating_income = _to_finite_float(li_get("operating_income"))
+    if operating_income is None:
+        operating_income = _to_finite_float(getattr(m0, "operating_income", None))
+    depreciation = _to_finite_float(li_get("depreciation_and_amortization"))
+    if depreciation is None:
+        depreciation = _to_finite_float(getattr(m0, "depreciation_and_amortization", None))
+    shareholders_equity = _to_finite_float(li_get("shareholders_equity"))
+    shares = _to_finite_float(getattr(m0, "outstanding_shares", None))
+    if shares is None:
+        shares = _to_finite_float(li_get("outstanding_shares"))
+    bvps = _to_finite_float(getattr(m0, "book_value_per_share", None))
+
+    net_debt = (total_debt or 0) - (cash or 0)
+
+    # Authoritative market cap — required to derive enterprise value.
+    market_cap = _to_finite_float(getattr(m0, "market_cap", None))
+    if market_cap is None or market_cap <= 0:
+        try:
+            market_cap = _to_finite_float(get_market_cap(ticker, end_date, api_key))
+        except Exception:
+            market_cap = None
+        if market_cap and market_cap > 0:
+            m0.market_cap = market_cap
+
+    # EBITDA: metric → line item → operating income + D&A.
+    ebitda = _to_finite_float(getattr(m0, "ebitda", None))
+    if ebitda is None:
+        ebitda = _to_finite_float(li_get("ebitda"))
+    if ebitda is None and operating_income is not None and depreciation is not None:
+        ebitda = operating_income + depreciation
+    if ebitda is not None and _to_finite_float(getattr(m0, "ebitda", None)) is None:
+        m0.ebitda = ebitda
+
+    # Enterprise value = market cap + net debt.
+    ev = _to_finite_float(getattr(m0, "enterprise_value", None))
+    if ev is None and market_cap is not None and market_cap > 0:
+        ev = market_cap + net_debt
+        m0.enterprise_value = ev
+
+    # EV/EBITDA ratio — needed by both EBITDA-based cards. Backfill the whole
+    # window where each metric already carries an EV and an EBITDA so the
+    # cycle-aware multiple selector has more than one historical sample.
+    for idx, m in enumerate(financial_metrics):
+        if _to_finite_float(getattr(m, "enterprise_value_to_ebitda_ratio", None)) is not None:
+            continue
+        m_ev = _to_finite_float(getattr(m, "enterprise_value", None))
+        m_ebitda = _to_finite_float(getattr(m, "ebitda", None))
+        if m_ebitda is None and idx < len(line_items):
+            m_ebitda = _to_finite_float(getattr(line_items[idx], "ebitda", None))
+        if m_ev is not None and m_ebitda is not None and m_ebitda > 0:
+            m.enterprise_value_to_ebitda_ratio = m_ev / m_ebitda
+
+    # ROIC = operating income / invested capital (book equity, else market proxy).
+    if _to_finite_float(getattr(m0, "return_on_invested_capital", None)) is None and operating_income is not None:
+        book_equity = shareholders_equity
+        if book_equity is None and bvps and shares and bvps > 0 and shares > 0:
+            book_equity = bvps * shares
+        invested_capital = None
+        if book_equity is not None:
+            invested_capital = book_equity + net_debt
+        elif market_cap is not None and market_cap > 0:
+            invested_capital = market_cap + net_debt
+        if invested_capital and invested_capital > 0:
+            m0.return_on_invested_capital = operating_income / invested_capital
+
+
 def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analyst_agent"):
     """Run valuation across tickers and write signals back to `state`."""
 
@@ -157,6 +263,17 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         li_prev = line_items[1] if len(line_items) > 1 else li_curr
         if len(line_items) == 1:
             progress.update_status(agent_id, ticker, "Using current line item snapshot only")
+
+        # Backfill EV / EV-EBITDA / ROIC inputs that fallback feeds leave null,
+        # so the EV/EBITDA, EBITDA, and ROIC−WACC cards render instead of vanishing.
+        _backfill_valuation_inputs(
+            financial_metrics,
+            line_items,
+            ticker=ticker,
+            end_date=end_date,
+            api_key=api_key,
+        )
+        most_recent_metrics = financial_metrics[0]
 
         # ------------------------------------------------------------------
         # Valuation models
