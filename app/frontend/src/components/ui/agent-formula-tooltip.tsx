@@ -150,9 +150,30 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
     en: { title: 'Sentiment Analyst Quant Formula', summary: 'Combines News Sentiment 70% with Insider Trades 30%.', formulas: ['Sentiment Score = News Sentiment 70% + Insider Trades 30%', 'Insider Signal = Net Insider Buying - Net Insider Selling'], thresholds: ['News carries 70%; insiders carry 30%', 'Net insider buying is bullish', 'Insider selling plus negative news is bearish'] },
   },
   valuation_analyst: {
-    ko: { title: '가치평가 분석가 정량 공식', summary: 'DCF, Owner Earnings(소유자 이익), EV/EBITDA, Residual Income(잔여이익)을 가중 평균합니다.', formulas: ['Blended Intrinsic Value(혼합 내재가치) = DCF 35% + Owner Earnings 35% + EV/EBITDA 20% + Residual Income 10%', 'Weighted Gap(가중 괴리율) = (Blended Value(혼합가치) - Market Cap(시가총액)) / Market Cap(시가총액)'],
-      thresholds: ['가중 괴리율 +15% 초과 강세', '-15% 미만 약세', 'DCF와 Owner Earnings가 각각 35% 비중'] },
-    en: { title: 'Valuation Analyst Quant Formula', summary: 'Blends DCF, Owner Earnings, EV/EBITDA, and Residual Income.', formulas: ['Blended Intrinsic Value = DCF 35% + Owner Earnings 35% + EV/EBITDA 20% + Residual Income 10%', 'Weighted Gap = (Blended Value - Market Cap) / Market Cap'], thresholds: ['Weighted gap above +15% is bullish', 'Below -15% is bearish', 'DCF and Owner Earnings each carry 35% weight'] },
+    ko: {
+      title: '가치평가 분석가 정량 공식',
+      summary: 'DCF, Owner Earnings(소유자 이익), EV/EBITDA, EBITDA 정규화, ROIC−WACC EVA, RIM, PBR Band를 가중 평균하고 Justified PBR로 교차검증합니다.',
+      formulas: [
+        '혼합 내재가치 = 기본 regime DCF 24% + Owner Earnings 24% + EV/EBITDA 12% + RIM 8% + PBR Band 12% + EBITDA 정규화 10% + ROIC−WACC EVA 10%',
+        'CapEx-heavy 혼합 내재가치 = DCF 16% + Owner Earnings 20% + EV/EBITDA 16% + RIM 16% + PBR Band 12% + EBITDA 정규화 10% + ROIC−WACC EVA 10%',
+        'EBITDA 정규화 = Normalized EBITDA x Target EV/EBITDA - Net Debt(순부채)',
+        'ROIC−WACC EVA = Invested Capital(투하자본) + PV[(ROIC - WACC) x Invested Capital] - Net Debt(순부채)',
+        'Weighted Gap(가중 괴리율) = (Blended Value(혼합가치) - Market Cap(시가총액)) / Market Cap(시가총액)',
+      ],
+      thresholds: ['가중 괴리율 +15% 초과 강세', '-15% 미만 약세', 'EBITDA 정규화와 ROIC−WACC EVA는 각각 10% 비중', 'PBR Band는 12%, Justified PBR은 보조 크로스체크'],
+    },
+    en: {
+      title: 'Valuation Analyst Quant Formula',
+      summary: 'Blends DCF, Owner Earnings, EV/EBITDA, Normalized EBITDA, ROIC−WACC EVA, RIM, and PBR Band, then cross-checks with Justified PBR.',
+      formulas: [
+        'Blended Intrinsic Value = default DCF 24% + Owner Earnings 24% + EV/EBITDA 12% + RIM 8% + PBR Band 12% + Normalized EBITDA 10% + ROIC−WACC EVA 10%',
+        'CapEx-heavy Blended Value = DCF 16% + Owner Earnings 20% + EV/EBITDA 16% + RIM 16% + PBR Band 12% + Normalized EBITDA 10% + ROIC−WACC EVA 10%',
+        'Normalized EBITDA value = Normalized EBITDA x Target EV/EBITDA - Net Debt',
+        'ROIC−WACC EVA = Invested Capital + PV[(ROIC - WACC) x Invested Capital] - Net Debt',
+        'Weighted Gap = (Blended Value - Market Cap) / Market Cap',
+      ],
+      thresholds: ['Weighted gap above +15% is bullish', 'Below -15% is bearish', 'Normalized EBITDA and ROIC−WACC EVA each carry 10%', 'PBR Band carries 12%; Justified PBR is a supplemental cross-check'],
+    },
   },
   default: {
     ko: {
