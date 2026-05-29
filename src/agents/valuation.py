@@ -691,9 +691,9 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         # Forward-earnings-power per-share so Forward P/E joins the per-share
         # valuation summary. Value next year's expected EPS at the *trailing*
         # multiple — non-circular because trailing P/E comes from trailing EPS,
-        # not the forward EPS we apply. Skip when the trailing multiple is
-        # cyclically distorted out of a sane band so we never surface a garbage
-        # number (the row simply won't appear for trough cyclicals).
+        # not the forward EPS we apply. Emitted whenever the trailing multiple
+        # is in a sane band (3x–60x) and forward EPS is positive; for cyclical
+        # re-rating names the trailing multiple intentionally lifts the value.
         fwd_eps_fy0 = _to_finite_float(getattr(forward_metrics, "forward_eps_fy0", None)) if forward_metrics else None
         fwd_eps_fy1 = _to_finite_float(getattr(forward_metrics, "forward_eps_fy1", None)) if forward_metrics else None
         fwd_eps_for_value = (
@@ -701,18 +701,6 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             else fwd_eps_fy1 if (fwd_eps_fy1 is not None and fwd_eps_fy1 > 0)
             else None
         )
-        # Cyclical-earnings trap guard: when trailing and forward P/E diverge
-        # sharply (e.g. memory at a trough → recovery, trailing 22x vs forward
-        # 7x), applying the trough multiple to recovered forward EPS overshoots
-        # wildly (+100%s vs every other model). Only emit a per-share value when
-        # trailing/forward earnings are roughly consistent; otherwise omit the
-        # row rather than surface a misleading number.
-        pe_ratio = (
-            trailing_pe / forward_pe
-            if (trailing_pe is not None and forward_pe not in (None, 0) and math.isfinite(forward_pe))
-            else None
-        )
-        pe_consistent = pe_ratio is not None and 0.5 <= pe_ratio <= 2.0
         fwd_per_value = (
             trailing_pe * fwd_eps_for_value
             if (
@@ -720,7 +708,6 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                 and math.isfinite(trailing_pe)
                 and 3.0 <= trailing_pe <= 60.0
                 and fwd_eps_for_value is not None
-                and pe_consistent
             )
             else None
         )
