@@ -157,27 +157,31 @@ export const agentFormulas: Record<string, AgentFormula> = {
   'Valuation Analyst': {
     agentKey: 'valuation_analyst',
     axes: [
-      { nameKo: '전통 모델 종합 세트 (DCF)', nameEn: 'DCF', maxScore: '35%', formulaKo: '기본 시나리오, 아주 좋을 때, 아주 나쁠 때 3가지 상황을 종합해서 기대 가치를 배분합니다.', formulaEn: 'Runs a base, bull, and bear scenario using DCF to find expected value.' },
-      { nameKo: '진짜 주머니 현금 (Owner Earnings)', nameEn: 'Owner Earnings', maxScore: '35%', formulaKo: '회사가 당장 주머니에서 꺼내 주주들에게 줄 수 있는 잉여 현금을 통해 계산합니다.', formulaEn: 'Measures cash that can actually be taken out of the business.' },
-      { nameKo: '회사를 통째로 샀을 때 (EV/EBITDA)', nameEn: 'EV/EBITDA', maxScore: '20%', formulaKo: '과거에 이 회사가 시장에서 몇 년 치 영업이익을 몸값으로 받았는지를 기준으로 지금 가격을 계산합니다.', formulaEn: 'Values the company based on how many years of its operations the market historically pays for.' },
-      { nameKo: '남는 이익의 가치 (잔여이익)', nameEn: 'Residual Income', maxScore: '10%', formulaKo: '회사가 가진 재산(장부가치)에, 자본 비용을 빼고 진짜 남는 순수한 이익을 더해 계산합니다.', formulaEn: 'Book Value plus the present value of income minus the cost of capital.' },
+      { nameKo: '현금흐름 시나리오 (DCF)', nameEn: 'DCF scenarios', maxScore: '기본 24% / CapEx-heavy 16%', formulaKo: '기본·약세·강세 시나리오의 잉여현금흐름을 WACC로 할인해 기대 가치를 계산합니다.', formulaEn: 'Discounts bear, base, and bull free-cash-flow scenarios at WACC to estimate expected value.' },
+      { nameKo: '진짜 주머니 현금 (Owner Earnings)', nameEn: 'Owner Earnings', maxScore: '기본 24% / CapEx-heavy 20%', formulaKo: '순이익에 감가상각을 더하고 유지보수 투자와 운전자본 변동을 차감해 주주에게 남는 현금을 계산합니다.', formulaEn: 'Adds depreciation to net income, subtracts maintenance investment and working-capital change, then values the cash left for owners.' },
+      { nameKo: '현재 시장 멀티플 (EV/EBITDA)', nameEn: 'EV/EBITDA', maxScore: '기본 12% / CapEx-heavy 16%', formulaKo: '현재 EBITDA와 과거 EV/EBITDA 중앙값 또는 CapEx-heavy 75백분위 멀티플을 비교합니다.', formulaEn: 'Compares current EBITDA with the historical median EV/EBITDA multiple or the capex-heavy 75th percentile.' },
+      { nameKo: '수익력 보정 (EBITDA 정규화)', nameEn: 'Normalized EBITDA', maxScore: '10%', formulaKo: '여러 기간 EBITDA 평균에 1년 성장률을 보수적으로 반영한 뒤 타깃 EV/EBITDA를 적용하고 순부채를 뺍니다.', formulaEn: 'Averages EBITDA across periods, applies a conservative one-year growth overlay, multiplies by target EV/EBITDA, and subtracts net debt.' },
+      { nameKo: '자본 효율 (ROIC−WACC EVA)', nameEn: 'ROIC−WACC EVA', maxScore: '10%', formulaKo: 'ROIC가 WACC를 얼마나 초과하는지로 경제적 부가가치(EVA)를 계산해 투하자본에 더합니다.', formulaEn: 'Uses the ROIC minus WACC spread to estimate economic value added and adds that value to invested capital.' },
+      { nameKo: '장부가치 보정 (Residual Income / PBR)', nameEn: 'Residual Income / PBR', maxScore: 'RIM 8~16% + PBR Band 12%', formulaKo: 'Residual Income은 장부가치 위 초과이익을 할인하고, PBR Band는 과거 PBR 분포의 적정 가격대를 보여줍니다. Justified PBR은 별도 보조 크로스체크입니다.', formulaEn: 'Residual Income discounts excess earnings above book value, while PBR Band maps the stock against historical P/B ranges. Justified PBR is a supplemental cross-check.' },
     ],
     dcf: {
-      titleKo: '밸류에이션 모델 - 실전 시나리오',
-      titleEn: 'Valuation Analyst Scenario Approach',
+      titleKo: '밸류에이션 모델 - v10.3 실전 시나리오',
+      titleEn: 'Valuation Analyst v10.3 Scenario Approach',
       stepsKo: [
         '이 회사가 돈을 빌릴 수 있는 이자와 주주들이 원하는 수익률을 합쳐 평가 기준 허들을 만듭니다 (WACC).',
-        '아주 나쁜 상황 (성장이 절반으로 꺾인 최악의 경우) : 확률 20%',
-        '기본 예상 상황 (우리가 전망하는 대로 무난하게 성장) : 확률 60%',
-        '아주 좋을 상황 (성장이 엄청나게 폭발하는 최고의 경우) : 확률 20%',
-        '위 확률들로 구한 내재 가치가 주식 가격보다 15% 이상 높게 나오면 확실한 매수(Buy)! 를 외칩니다.'
+        'DCF와 Owner Earnings로 현금흐름 기반 내재가치를 계산하고, EV/EBITDA와 Normalized EBITDA로 수익력 멀티플을 교차검증합니다.',
+        'ROIC−WACC EVA로 투하자본이 가치를 만들고 있는지, PBR Band와 Justified PBR로 장부가치 기준 가격대를 확인합니다.',
+        '일반 기업은 DCF 24%, Owner Earnings 24%, EV/EBITDA 12%, RIM 8%, PBR Band 12%, EBITDA 정규화 10%, ROIC−WACC EVA 10%로 가중합니다.',
+        'CapEx-heavy 기업은 DCF 16%, Owner Earnings 20%, EV/EBITDA 16%, RIM 16%, PBR Band 12%, EBITDA 정규화 10%, ROIC−WACC EVA 10%로 가중합니다.',
+        '혼합 내재 가치가 주식 가격보다 15% 이상 높으면 Buy, 15% 이상 낮으면 Sell 성향입니다.'
       ],
       stepsEn: [
         'Find the cost of capital based on debt and equity (WACC).',
-        'Bear Case (growth halves) : 20% probability.',
-        'Base Case (expected growth) : 60% probability.',
-        'Bull Case (explosive growth) : 20% probability.',
-        'Buy if the weighted intrinsic value is more than 15% above stock price.'
+        'Use DCF and Owner Earnings for cash-flow intrinsic value, then cross-check earnings power with EV/EBITDA and Normalized EBITDA.',
+        'Use ROIC−WACC EVA to test whether invested capital creates value, then check book-value ranges with PBR Band and Justified PBR.',
+        'Default weighting is DCF 24%, Owner Earnings 24%, EV/EBITDA 12%, RIM 8%, PBR Band 12%, Normalized EBITDA 10%, and ROIC−WACC EVA 10%.',
+        'CapEx-heavy weighting is DCF 16%, Owner Earnings 20%, EV/EBITDA 16%, RIM 16%, PBR Band 12%, Normalized EBITDA 10%, and ROIC−WACC EVA 10%.',
+        'Buy if blended intrinsic value is more than 15% above price; sell if it is more than 15% below price.'
       ],
     },
     sectorAdjustments: [],

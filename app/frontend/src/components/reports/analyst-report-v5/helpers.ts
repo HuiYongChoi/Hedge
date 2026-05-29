@@ -72,7 +72,7 @@ export const AGENT_META: Record<string, { categoryKo: string; categoryEn: string
   news_sentiment_analyst: { categoryKo: '기술 및 분석', categoryEn: 'Technical & Analysis', nameKo: '뉴스 심리', nameEn: 'News Sentiment' },
   sentiment_analyst: { categoryKo: '기술 및 분석', categoryEn: 'Technical & Analysis', nameKo: '시장 심리', nameEn: 'Sentiment' },
   technical_analyst: { categoryKo: '기술 및 분석', categoryEn: 'Technical & Analysis', nameKo: '기술 분석', nameEn: 'Technical' },
-  valuation_analyst: { categoryKo: '기술 및 분석', categoryEn: 'Technical & Analysis', nameKo: '밸류에이션', nameEn: 'Valuation' },
+  valuation_analyst: { categoryKo: '기술 및 분석', categoryEn: 'Technical & Analysis', nameKo: '가치평가 분석가', nameEn: 'Valuation Analyst' },
 };
 
 const KOREAN_TICKER_DISPLAY_NAMES: Record<string, string> = {

@@ -704,6 +704,8 @@ function ValuationSidebarPanel({
       language={language}
     />
   );
+  const primaryPbrCard = pbrCard;
+  const secondaryRimCard = rimCard;
   const gapNotice = (
     <ValuationGapNotice
       dive={dive}
@@ -715,7 +717,7 @@ function ValuationSidebarPanel({
   );
 
   if (mode === 'pbrOnly') {
-    return pbrCard ? <div className="mt-2 space-y-2">{pbrCard}</div> : null;
+    return primaryPbrCard ? <div className="mt-2 space-y-2">{primaryPbrCard}</div> : null;
   }
 
   if (mode === 'afterPbr') {
@@ -724,11 +726,11 @@ function ValuationSidebarPanel({
         {dive.regimeNote && (
           <p className="rounded-md border border-border/60 bg-muted/10 px-2.5 py-2 text-[10px] leading-4 text-muted-foreground">{dive.regimeNote}</p>
         )}
-        {justifiedCard}
-        {rimCard}
         {evCard}
         {ebitdaCard}
         {evaCard}
+        {justifiedCard}
+        {secondaryRimCard}
         {gapNotice}
       </div>
     );
