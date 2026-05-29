@@ -10,11 +10,12 @@ cd /home/bitnami/ai-hedge-fund
 git fetch origin
 git pull origin main
 
-# Restart Backend
-sudo fuser -k 8000/tcp || true
-sleep 2
-nohup /home/bitnami/.local/bin/poetry run uvicorn app.backend.main:app --host 127.0.0.1 --port 8000 > backend.log 2>&1 &
-echo "Backend restarted."
+# Restart Backend via systemd (hedge-backend.service owns :8000).
+# A manual nohup uvicorn would squat the port and leave the systemd unit in a
+# perpetual bind-fail restart loop, so always go through systemctl.
+sudo systemctl restart hedge-backend.service
+sleep 3
+systemctl is-active hedge-backend.service && echo "Backend restarted."
 
 # Build Frontend
 export NVM_DIR="$HOME/.nvm"
