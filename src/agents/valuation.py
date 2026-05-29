@@ -688,44 +688,17 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         fy1_est = getattr(forward_metrics, "fy1_estimate", None) if forward_metrics else None
         raw_spliced_forward_pe = getattr(forward_metrics, "forward_pe", None) if forward_metrics else None
 
-        # Forward-earnings-power per-share so Forward P/E joins the per-share
-        # valuation summary. Value next year's expected EPS at the *trailing*
-        # multiple — non-circular because trailing P/E comes from trailing EPS,
-        # not the forward EPS we apply. Emitted whenever the trailing multiple
-        # is in a sane band (3x–60x) and forward EPS is positive; for cyclical
-        # re-rating names the trailing multiple intentionally lifts the value.
-        fwd_eps_fy0 = _to_finite_float(getattr(forward_metrics, "forward_eps_fy0", None)) if forward_metrics else None
-        fwd_eps_fy1 = _to_finite_float(getattr(forward_metrics, "forward_eps_fy1", None)) if forward_metrics else None
-        fwd_eps_for_value = (
-            fwd_eps_fy0 if (fwd_eps_fy0 is not None and fwd_eps_fy0 > 0)
-            else fwd_eps_fy1 if (fwd_eps_fy1 is not None and fwd_eps_fy1 > 0)
-            else None
-        )
-        fwd_per_value = (
-            trailing_pe * fwd_eps_for_value
-            if (
-                trailing_pe is not None
-                and math.isfinite(trailing_pe)
-                and 3.0 <= trailing_pe <= 60.0
-                and fwd_eps_for_value is not None
-            )
-            else None
-        )
-        fwd_current_pp = (
-            pbr_band_result.get("current_price") if pbr_band_result else None
-        )
-        if fwd_current_pp is None and market_cap and shares_outstanding:
-            fwd_current_pp = market_cap / shares_outstanding
-        fwd_per_gap = (
-            (fwd_per_value - fwd_current_pp) / fwd_current_pp
-            if (fwd_per_value is not None and fwd_current_pp and fwd_current_pp > 0)
-            else None
-        )
-
+        # Forward P/E stays a RATIO cross-check only — no per-share intrinsic.
+        # The previous trailing_pe × forward_eps implied price multiplied a
+        # trough/elevated trailing multiple by recovered forward EPS, which
+        # overshoots wildly on exactly the cyclical names this tool targets
+        # (e.g. MU trailing 45x → +175%, memory 22x → +179%). It is excluded
+        # from the per-share valuation summary; the forward/trailing/blended
+        # P/E figures below still feed the 선행 PER narrative.
         reasoning["forward_per_analysis"] = {
             "signal": pe_signal,
-            "intrinsic_per_share": fwd_per_value,
-            "gap_to_market": fwd_per_gap,
+            "intrinsic_per_share": None,
+            "gap_to_market": None,
             "weight_used": 0,
             "details": (
                 f"{forward_interpretation} "

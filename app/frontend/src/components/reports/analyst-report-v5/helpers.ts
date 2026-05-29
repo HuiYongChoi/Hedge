@@ -1805,8 +1805,20 @@ const MODEL_LABEL_MAP: Record<string, string> = {
   roic_wacc_valuation: 'ROIC−WACC EVA',
   residual_income: 'RIM',
   pbr_band: 'PBR Band',
-  forward_per: 'Forward P/E',
 };
+
+// Headline 1주당 내재가치 should track the DCF model's per-share value, not the
+// regex-scraped narrative number, which drifts free of the actual model output.
+export function extractValuationDcfPerShare(
+  valuationReport: AgentReport | null,
+): number | null {
+  const rawReasoning = valuationReport?.reasoning;
+  if (!rawReasoning || typeof rawReasoning !== 'object') return null;
+  const reasoning = rawReasoning as Record<string, unknown>;
+  const dcf = reasoning.dcf_analysis as Record<string, unknown> | undefined;
+  if (!dcf || typeof dcf !== 'object') return null;
+  return safeNum(dcf.intrinsic_per_share);
+}
 
 export function buildValuationDeepDive(
   valuationReport: AgentReport | null,
@@ -1824,7 +1836,7 @@ export function buildValuationDeepDive(
     : null;
 
   const models: ValuationModel[] = [];
-  (['dcf', 'owner_earnings', 'ev_ebitda', 'ebitda_valuation', 'roic_wacc_valuation', 'residual_income', 'pbr_band', 'forward_per'] as const).forEach(key => {
+  (['dcf', 'owner_earnings', 'ev_ebitda', 'ebitda_valuation', 'roic_wacc_valuation', 'residual_income', 'pbr_band'] as const).forEach(key => {
     const raw = reasoning[`${key}_analysis`] as Record<string, unknown> | undefined;
     if (!raw || typeof raw !== 'object') return;
     const intrinsicPerShare = safeNum(raw.intrinsic_per_share);

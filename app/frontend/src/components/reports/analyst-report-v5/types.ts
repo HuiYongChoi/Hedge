@@ -162,7 +162,7 @@ export interface PbrBand {
 }
 
 export interface ValuationModel {
-  key: 'dcf' | 'owner_earnings' | 'ev_ebitda' | 'residual_income' | 'pbr_band' | 'ebitda_valuation' | 'roic_wacc_valuation' | 'forward_per';
+  key: 'dcf' | 'owner_earnings' | 'ev_ebitda' | 'residual_income' | 'pbr_band' | 'ebitda_valuation' | 'roic_wacc_valuation';
   labelKey: string;
   intrinsicPerShare: number | null;
   intrinsicTotal: number | null;

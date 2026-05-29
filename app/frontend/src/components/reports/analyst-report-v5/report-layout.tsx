@@ -21,6 +21,7 @@ import {
   extractMetricValue,
   extractReasoningMetricValue,
   extractTargetTiles,
+  extractValuationDcfPerShare,
   findFirstRenderableAgentKey,
   getAgentMeta,
   getAgentReport,
@@ -277,6 +278,17 @@ export function ReportLayout({
     ?? extractMetricValue(displayReport, ['current_price', 'price', 'close_price', 'market_price']);
   const effectiveCurrentPrice = liveTarget?.current_price ?? reportCurrentPrice;
   const effectiveCurrency = liveTarget?.currency ?? (isKoreanTicker(activeTicker) ? 'KRW' : 'USD');
+  const valuationReport = getAgentReport(
+    completeResult.analyst_signals,
+    'valuation_analyst',
+    activeTicker,
+    agentResults.get('valuation_analyst'),
+  );
+  // For the valuation_analyst report, anchor the headline 1주당 내재가치 to the
+  // DCF model's per-share output rather than the regex-scraped narrative number.
+  const dcfHeadlineIntrinsic = displayAgentKey === 'valuation_analyst'
+    ? extractValuationDcfPerShare(valuationReport)
+    : null;
   const reportPerShareIntrinsicValue = extractMetricValue(displayReport, [
     'intrinsic_value_per_share',
     'fair_value_per_share',
@@ -286,7 +298,7 @@ export function ReportLayout({
   const reportedIntrinsicValue = canonicalMetrics.intrinsicValue?.value
     ?? extractMetricValue(displayReport, ['intrinsic_value', 'fair_value', 'dcf_value']);
   const intrinsicValue = chooseIntrinsicReferencePrice(
-    [reportPerShareIntrinsicValue, reportedIntrinsicValue],
+    [dcfHeadlineIntrinsic, reportPerShareIntrinsicValue, reportedIntrinsicValue],
     effectiveCurrentPrice,
   );
   const calculatedMarginOfSafety = calcMarginOfSafety(intrinsicValue, effectiveCurrentPrice);
@@ -363,12 +375,6 @@ export function ReportLayout({
       forwardPer: canonicalForwardSnapshot.fwdPer ?? null,
     };
   }, [canonicalForwardSnapshot, liveTarget]);
-  const valuationReport = getAgentReport(
-    completeResult.analyst_signals,
-    'valuation_analyst',
-    activeTicker,
-    agentResults.get('valuation_analyst'),
-  );
   const valuationDeepDive = useMemo(
     () => buildValuationDeepDive(valuationReport, effectiveCurrentPrice),
     [effectiveCurrentPrice, valuationReport],
