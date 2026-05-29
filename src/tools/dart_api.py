@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 import os
 import re
+import socket
+import time
 import datetime
 from functools import lru_cache
 from typing import Optional
@@ -117,18 +119,55 @@ REPRT_Q1 = "11012"      # 1분기보고서
 # ─── 내부 유틸리티 ────────────────────────────────────────────────────────────
 
 _dart_instance = None
+# DART 초기화가 실패하면 이 시각(monotonic)까지 재시도하지 않는다.
+_dart_unavailable_until = 0.0
+_DART_COOLDOWN_SECONDS = 300.0
+_DART_HOST = "opendart.fss.or.kr"
+
+
+def _dart_host_reachable(timeout: float = 2.0) -> bool:
+    """opendart.fss.or.kr:443 에 빠르게 TCP 연결을 시도한다.
+
+    OpenDartReader 생성자는 corpCode.xml 을 connect timeout 없이 내려받아
+    DART 가 도달 불가일 때 무한 대기한다. 짧은 사전 점검으로 이를 차단한다.
+    """
+    try:
+        with socket.create_connection((_DART_HOST, 443), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 
 def _get_dart() -> object:
-    """OpenDartReader 싱글톤 반환."""
-    global _dart_instance
-    if _dart_instance is None:
-        try:
-            import OpenDartReader
-            _dart_instance = OpenDartReader(DART_API_KEY)
-        except Exception as e:
-            logger.warning("OpenDartReader 초기화 실패: %s", e)
-            return None
+    """OpenDartReader 싱글톤 반환.
+
+    DART 가 도달 불가하면 빠르게 None 을 반환해 yfinance/pykrx 폴백으로 즉시
+    넘어간다. 한 번 실패하면 쿨다운 동안 재시도하지 않아, 한국 종목 분석이
+    SSE 타임아웃(60초)을 넘겨 멈추는 것을 방지한다.
+    """
+    global _dart_instance, _dart_unavailable_until
+    if _dart_instance is not None:
+        return _dart_instance
+
+    now = time.monotonic()
+    if now < _dart_unavailable_until:
+        return None
+
+    if not _dart_host_reachable():
+        logger.warning(
+            "DART(%s) 도달 불가 — %d초 동안 yfinance/pykrx 폴백 사용",
+            _DART_HOST, int(_DART_COOLDOWN_SECONDS),
+        )
+        _dart_unavailable_until = now + _DART_COOLDOWN_SECONDS
+        return None
+
+    try:
+        import OpenDartReader
+        _dart_instance = OpenDartReader(DART_API_KEY)
+    except Exception as e:
+        logger.warning("OpenDartReader 초기화 실패: %s", e)
+        _dart_unavailable_until = now + _DART_COOLDOWN_SECONDS
+        return None
     return _dart_instance
 
 
