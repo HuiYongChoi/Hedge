@@ -688,8 +688,45 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         fy1_est = getattr(forward_metrics, "fy1_estimate", None) if forward_metrics else None
         raw_spliced_forward_pe = getattr(forward_metrics, "forward_pe", None) if forward_metrics else None
 
+        # Forward-earnings-power per-share so Forward P/E joins the per-share
+        # valuation summary. Value next year's expected EPS at the *trailing*
+        # multiple — non-circular because trailing P/E comes from trailing EPS,
+        # not the forward EPS we apply. Skip when the trailing multiple is
+        # cyclically distorted out of a sane band so we never surface a garbage
+        # number (the row simply won't appear for trough cyclicals).
+        fwd_eps_fy0 = _to_finite_float(getattr(forward_metrics, "forward_eps_fy0", None)) if forward_metrics else None
+        fwd_eps_fy1 = _to_finite_float(getattr(forward_metrics, "forward_eps_fy1", None)) if forward_metrics else None
+        fwd_eps_for_value = (
+            fwd_eps_fy0 if (fwd_eps_fy0 is not None and fwd_eps_fy0 > 0)
+            else fwd_eps_fy1 if (fwd_eps_fy1 is not None and fwd_eps_fy1 > 0)
+            else None
+        )
+        fwd_per_value = (
+            trailing_pe * fwd_eps_for_value
+            if (
+                trailing_pe is not None
+                and math.isfinite(trailing_pe)
+                and 3.0 <= trailing_pe <= 60.0
+                and fwd_eps_for_value is not None
+            )
+            else None
+        )
+        fwd_current_pp = (
+            pbr_band_result.get("current_price") if pbr_band_result else None
+        )
+        if fwd_current_pp is None and market_cap and shares_outstanding:
+            fwd_current_pp = market_cap / shares_outstanding
+        fwd_per_gap = (
+            (fwd_per_value - fwd_current_pp) / fwd_current_pp
+            if (fwd_per_value is not None and fwd_current_pp and fwd_current_pp > 0)
+            else None
+        )
+
         reasoning["forward_per_analysis"] = {
             "signal": pe_signal,
+            "intrinsic_per_share": fwd_per_value,
+            "gap_to_market": fwd_per_gap,
+            "weight_used": 0,
             "details": (
                 f"{forward_interpretation} "
                 f"Trailing P/E: {_format_ratio(trailing_pe)}, "
@@ -774,6 +811,12 @@ def calculate_owner_earnings_value(
     owner_earnings = net_income + depreciation - capex - working_capital_change
     if owner_earnings <= 0:
         return 0
+
+    # Cyclical recovery earnings_growth (e.g. memory trough→peak) can be many
+    # hundred percent; compounding it over 5 years explodes the value to
+    # millions/share. Clamp to the DCF high-growth band so the projection stays
+    # sane (EBITDA model uses ±30%, ROIC−WACC ±10%, DCF caps at 25%).
+    growth_rate = max(min(growth_rate, 0.25), -0.10)
 
     pv = 0.0
     for yr in range(1, num_years + 1):

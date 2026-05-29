@@ -152,7 +152,7 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
   valuation_analyst: {
     ko: {
       title: '가치평가 분석가 정량 공식',
-      summary: 'DCF, Owner Earnings(소유자 이익), EV/EBITDA, EBITDA 정규화, ROIC−WACC EVA, RIM, PBR Band를 가중 평균하고 Justified PBR로 교차검증합니다.',
+      summary: 'DCF, Owner Earnings(소유자 이익), EV/EBITDA, EBITDA 정규화, ROIC−WACC EVA, RIM, PBR Band를 가중 평균하고 Forward P/E를 보조 참고 지표로 함께 표시합니다.',
       formulas: [
         '혼합 내재가치 = 기본 regime DCF 24% + Owner Earnings 24% + EV/EBITDA 12% + RIM 8% + PBR Band 12% + EBITDA 정규화 10% + ROIC−WACC EVA 10%',
         'CapEx-heavy 혼합 내재가치 = DCF 16% + Owner Earnings 20% + EV/EBITDA 16% + RIM 16% + PBR Band 12% + EBITDA 정규화 10% + ROIC−WACC EVA 10%',
@@ -160,11 +160,11 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
         'ROIC−WACC EVA = Invested Capital(투하자본) + PV[(ROIC - WACC) x Invested Capital] - Net Debt(순부채)',
         'Weighted Gap(가중 괴리율) = (Blended Value(혼합가치) - Market Cap(시가총액)) / Market Cap(시가총액)',
       ],
-      thresholds: ['가중 괴리율 +15% 초과 강세', '-15% 미만 약세', 'EBITDA 정규화와 ROIC−WACC EVA는 각각 10% 비중', 'PBR Band는 12%, Justified PBR은 보조 크로스체크'],
+      thresholds: ['가중 괴리율 +15% 초과 강세', '-15% 미만 약세', 'EBITDA 정규화와 ROIC−WACC EVA는 각각 10% 비중', 'PBR Band는 12%, Forward P/E는 보조 참고'],
     },
     en: {
       title: 'Valuation Analyst Quant Formula',
-      summary: 'Blends DCF, Owner Earnings, EV/EBITDA, Normalized EBITDA, ROIC−WACC EVA, RIM, and PBR Band, then cross-checks with Justified PBR.',
+      summary: 'Blends DCF, Owner Earnings, EV/EBITDA, Normalized EBITDA, ROIC−WACC EVA, RIM, and PBR Band, and shows Forward P/E as a supplemental reference.',
       formulas: [
         'Blended Intrinsic Value = default DCF 24% + Owner Earnings 24% + EV/EBITDA 12% + RIM 8% + PBR Band 12% + Normalized EBITDA 10% + ROIC−WACC EVA 10%',
         'CapEx-heavy Blended Value = DCF 16% + Owner Earnings 20% + EV/EBITDA 16% + RIM 16% + PBR Band 12% + Normalized EBITDA 10% + ROIC−WACC EVA 10%',
@@ -172,7 +172,7 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
         'ROIC−WACC EVA = Invested Capital + PV[(ROIC - WACC) x Invested Capital] - Net Debt',
         'Weighted Gap = (Blended Value - Market Cap) / Market Cap',
       ],
-      thresholds: ['Weighted gap above +15% is bullish', 'Below -15% is bearish', 'Normalized EBITDA and ROIC−WACC EVA each carry 10%', 'PBR Band carries 12%; Justified PBR is a supplemental cross-check'],
+      thresholds: ['Weighted gap above +15% is bullish', 'Below -15% is bearish', 'Normalized EBITDA and ROIC−WACC EVA each carry 10%', 'PBR Band carries 12%; Forward P/E is a supplemental reference'],
     },
   },
   default: {

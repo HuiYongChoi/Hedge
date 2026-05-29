@@ -3,7 +3,7 @@ import { t } from '@/lib/language-preferences';
 import { ChevronRight } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { computePbrTrend, toneToClasses } from './helpers';
-import type { JustifiedPbrBreakdown, OtherAgent, PbrBand, ReportLanguage, ReportTone, TargetTile, ValuationDeepDive } from './types';
+import type { OtherAgent, PbrBand, ReportLanguage, ReportTone, TargetTile, ValuationDeepDive } from './types';
 
 interface TargetDataSidebarProps {
   tiles: TargetTile[];
@@ -41,11 +41,6 @@ function formatCurrency(value: number | null | undefined, currency: string) {
 function formatPercent(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—';
   return `${value > 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
-}
-
-function formatPercentPlain(value: number | null | undefined) {
-  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
-  return `${(value * 100).toFixed(1)}%`;
 }
 
 function formatPbrMultiple(value: number | null | undefined) {
@@ -377,71 +372,6 @@ function PbrBandCard({
   );
 }
 
-function JustifiedPbrCard({
-  data,
-  currency,
-  language,
-}: {
-  data: JustifiedPbrBreakdown;
-  currency: string;
-  language: ReportLanguage;
-}) {
-  const classes = toneToClasses(data.signal);
-  const fmtMultiple = (value: number | null) => formatPbrMultiple(value);
-  const roeWindowText = data.roeSource === 'forward_eps_implied'
-    ? (language === 'ko' ? `선행 ${data.roeWindow}` : `forward ${data.roeWindow}`)
-    : (language === 'ko' ? `과거 ${data.roeWindow}` : data.roeWindow);
-  const signalLabel = data.signal === 'bullish'
-    ? (language === 'ko' ? '매수·강세' : 'Buy · bullish')
-    : data.signal === 'bearish'
-      ? (language === 'ko' ? '매도·약세' : 'Sell · bearish')
-      : (language === 'ko' ? '중립' : 'Neutral');
-
-  return (
-    <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          {t('justifiedPbrLabel', language)}
-          <InfoDot title={t('justifiedPbrTitleTip', language)} />
-        </div>
-        <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(data.gapToMarket)}</div>
-      </div>
-
-      <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
-        {formatCurrency(data.targetPrice, currency)}
-      </div>
-
-      <div className="text-[10px] text-muted-foreground">
-        {language === 'ko'
-          ? `목표 PBR ${fmtMultiple(data.justifiedPbr)} · 적용 BVPS ${formatCurrency(data.bvpsForward, currency)}`
-          : `Target PBR ${fmtMultiple(data.justifiedPbr)} · BVPS ${formatCurrency(data.bvpsForward, currency)}`}
-      </div>
-
-      <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
-        <span>{language === 'ko' ? '입력 가정' : 'Inputs'}</span>
-        <InfoDot title={t('justifiedPbrInputsTip', language)} />
-      </div>
-      <dl className="space-y-0.5 text-[10px]">
-        <Row label="ROE" tip={t('justifiedPbrRoeTip', language)}>
-          <span className="font-mono">{formatPercentPlain(data.roeUsed)} ({roeWindowText})</span>
-        </Row>
-        <Row label="Ke · g" tip={t('justifiedPbrKeGTip', language)}>
-          <span className="font-mono">{formatPercentPlain(data.costOfEquity)} · {formatPercentPlain(data.growthG)}</span>
-        </Row>
-        {data.epsGrowth1y !== null && (
-          <Row label={language === 'ko' ? 'EPS 성장(FY1)' : 'EPS growth (FY1)'} tip={t('justifiedPbrGrowthTip', language)}>
-            <span className="font-mono">{formatPercent(data.epsGrowth1y)} (fy0-fy1)</span>
-          </Row>
-        )}
-      </dl>
-
-      <div className={`mt-2 text-[10px] font-mono font-semibold ${classes.text}`}>
-        {language === 'ko' ? `시그널 ${signalLabel}` : `Signal ${signalLabel}`}
-      </div>
-    </div>
-  );
-}
-
 function ValuationGapNotice({
   dive,
   brokerConsensus,
@@ -603,11 +533,10 @@ function ValuationSidebarPanel({
   const hasPbr = pbrValue !== null || dive.pbr;
   const hasRim = rimValue !== null || dive.rim;
   const hasEv = evValue !== null;
-  const hasJustifiedPbr = Boolean(dive.justifiedPbr);
   const hasEbitdaModel = (ebitdaModel?.intrinsicPerShare ?? null) !== null;
   const hasEvaModel = (evaModel?.intrinsicPerShare ?? null) !== null;
 
-  if (!hasPbr && !hasRim && !hasEv && !hasJustifiedPbr && !hasEbitdaModel && !hasEvaModel) return null;
+  if (!hasPbr && !hasRim && !hasEv && !hasEbitdaModel && !hasEvaModel) return null;
 
   const evSubtitle = evModel?.medianMultiple !== null
     && evModel?.medianMultiple !== undefined
@@ -735,13 +664,6 @@ function ValuationSidebarPanel({
       </div>
     );
   })();
-  const justifiedCard = dive.justifiedPbr && (
-    <JustifiedPbrCard
-      data={dive.justifiedPbr}
-      currency={currency}
-      language={language}
-    />
-  );
   const primaryPbrCard = pbrCard;
   const secondaryRimCard = rimCard;
   const gapNotice = (
@@ -768,7 +690,6 @@ function ValuationSidebarPanel({
         {evCard}
         {ebitdaCard}
         {evaCard}
-        {justifiedCard}
         {secondaryRimCard}
         {gapNotice}
       </div>
@@ -786,14 +707,12 @@ function ValuationSidebarPanel({
           {ebitdaCard}
           {evaCard}
           {pbrCard}
-          {justifiedCard}
           {rimCard}
           {gapNotice}
         </>
       ) : (
         <>
           {pbrCard}
-          {justifiedCard}
           {rimCard}
           {evCard}
           {ebitdaCard}
