@@ -162,7 +162,7 @@ export interface PbrBand {
 }
 
 export interface ValuationModel {
-  key: 'dcf' | 'owner_earnings' | 'ev_ebitda' | 'residual_income' | 'pbr_band';
+  key: 'dcf' | 'owner_earnings' | 'ev_ebitda' | 'residual_income' | 'pbr_band' | 'ebitda_valuation' | 'roic_wacc_valuation';
   labelKey: string;
   intrinsicPerShare: number | null;
   intrinsicTotal: number | null;
@@ -173,6 +173,20 @@ export interface ValuationModel {
   currentMultiple?: number | null;
   ebitdaNow?: number | null;
   netDebt?: number | null;
+  // EBITDA (normalized) valuation extras.
+  normalizedEbitda?: number | null;
+  currentEbitda?: number | null;
+  targetMultiple?: number | null;
+  multipleBasis?: string | null;
+  // ROIC−WACC (EVA) valuation extras.
+  investedCapital?: number | null;
+  roic?: number | null;
+  wacc?: number | null;
+  spread?: number | null;
+  eva0?: number | null;
+  mva?: number | null;
+  enterpriseValue?: number | null;
+  icBasis?: string | null;
 }
 
 export interface JustifiedPbrBreakdown {

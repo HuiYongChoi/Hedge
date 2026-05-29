@@ -66,6 +66,11 @@ function LayoutContent() {
     openTab(tabData);
   };
 
+  const handleStockCompareClick = () => {
+    const tabData = TabService.createStockCompareTab();
+    openTab(tabData);
+  };
+
   const handleFlowClick = useCallback(async () => {
     if (hasFlowTab) {
       focusFirstFlowTab();
@@ -198,6 +203,7 @@ function LayoutContent() {
             isOpeningFlow={isOpeningFlow}
             onFlowClick={handleFlowClick}
             onSavedAnalysesClick={handleSavedAnalysesClick}
+            onStockCompareClick={handleStockCompareClick}
           />
         </div>
       </div>

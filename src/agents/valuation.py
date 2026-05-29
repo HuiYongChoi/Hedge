@@ -222,12 +222,38 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         )
         ev_ebitda_val = ev_breakdown["equity_value"] if ev_breakdown else 0
 
+        # Normalized/forward EBITDA earnings-power view (distinct from trailing EV/EBITDA).
+        ebitda_breakdown = calculate_ebitda_valuation_breakdown(
+            financial_metrics,
+            line_items,
+            capex_heavy=regime == "capex_heavy",
+        )
+        ebitda_val = ebitda_breakdown["equity_value"] if ebitda_breakdown else 0
+
         shares_outstanding: float | None = (
             most_recent_metrics.outstanding_shares
             or getattr(li_curr, "outstanding_shares", None)
         )
         if shares_outstanding is not None and shares_outstanding <= 0:
             shares_outstanding = None
+
+        # ROIC−WACC excess-return (EVA) valuation.
+        eva_growth = (
+            most_recent_metrics.operating_income_growth
+            or most_recent_metrics.earnings_growth
+            or most_recent_metrics.revenue_growth
+        )
+        roic_wacc_breakdown = calculate_roic_wacc_breakdown(
+            roic=most_recent_metrics.return_on_invested_capital,
+            wacc=wacc,
+            book_value_per_share=most_recent_metrics.book_value_per_share,
+            shares_outstanding=shares_outstanding,
+            total_debt=getattr(li_curr, "total_debt", None),
+            cash=getattr(li_curr, "cash_and_equivalents", None),
+            market_cap=most_recent_metrics.market_cap,
+            eva_growth=eva_growth,
+        )
+        roic_wacc_val = roic_wacc_breakdown["equity_value"] if roic_wacc_breakdown else 0
 
         # Residual Income Model — book-value anchored view for cyclical semiconductors.
         rim_breakdown = calculate_residual_income_breakdown(
@@ -280,19 +306,23 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
 
         if regime == "capex_heavy":
             base_weights = {
-                "dcf": 0.20,
-                "owner_earnings": 0.25,
-                "ev_ebitda": 0.20,
-                "residual_income": 0.20,
-                "pbr_band": 0.15,
+                "dcf": 0.16,
+                "owner_earnings": 0.20,
+                "ev_ebitda": 0.16,
+                "residual_income": 0.16,
+                "pbr_band": 0.12,
+                "ebitda_valuation": 0.10,
+                "roic_wacc_valuation": 0.10,
             }
         else:
             base_weights = {
-                "dcf": 0.30,
-                "owner_earnings": 0.30,
-                "ev_ebitda": 0.15,
-                "residual_income": 0.10,
-                "pbr_band": 0.15,
+                "dcf": 0.24,
+                "owner_earnings": 0.24,
+                "ev_ebitda": 0.12,
+                "residual_income": 0.08,
+                "pbr_band": 0.12,
+                "ebitda_valuation": 0.10,
+                "roic_wacc_valuation": 0.10,
             }
 
         pbr_equity_val = 0.0
@@ -312,6 +342,8 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             "owner_earnings": {"value": owner_val, "weight": base_weights["owner_earnings"]},
             "ev_ebitda": {"value": ev_ebitda_val, "weight": base_weights["ev_ebitda"]},
             "residual_income": {"value": rim_val, "weight": base_weights["residual_income"]},
+            "ebitda_valuation": {"value": ebitda_val, "weight": base_weights["ebitda_valuation"]},
+            "roic_wacc_valuation": {"value": roic_wacc_val, "weight": base_weights["roic_wacc_valuation"]},
         }
         if pbr_equity_val > 0:
             method_values["pbr_band"] = {"value": pbr_equity_val, "weight": base_weights["pbr_band"]}
@@ -393,6 +425,31 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                 "sample_size": ev_breakdown["sample_size"],
                 "clipped_sample_size": ev_breakdown["clipped_sample_size"],
                 "multiple_basis": ev_breakdown["multiple_basis"],
+            })
+
+        if ebitda_breakdown and "ebitda_valuation_analysis" in reasoning:
+            reasoning["ebitda_valuation_analysis"].update({
+                "normalized_ebitda": ebitda_breakdown["normalized_ebitda"],
+                "current_ebitda": ebitda_breakdown["current_ebitda"],
+                "target_multiple": ebitda_breakdown["target_multiple"],
+                "multiple_basis": ebitda_breakdown["multiple_basis"],
+                "ebitda_growth_applied": ebitda_breakdown["ebitda_growth_applied"],
+                "net_debt": ebitda_breakdown["net_debt"],
+                "ebitda_sample_size": ebitda_breakdown["ebitda_sample_size"],
+            })
+
+        if roic_wacc_breakdown and "roic_wacc_valuation_analysis" in reasoning:
+            reasoning["roic_wacc_valuation_analysis"].update({
+                "invested_capital": roic_wacc_breakdown["invested_capital"],
+                "ic_basis": roic_wacc_breakdown["ic_basis"],
+                "roic": roic_wacc_breakdown["roic"],
+                "wacc": roic_wacc_breakdown["wacc"],
+                "spread": roic_wacc_breakdown["spread"],
+                "eva_0": roic_wacc_breakdown["eva_0"],
+                "mva": roic_wacc_breakdown["mva"],
+                "enterprise_value": roic_wacc_breakdown["enterprise_value"],
+                "fade_growth": roic_wacc_breakdown["fade_growth"],
+                "terminal_growth": roic_wacc_breakdown["terminal_growth"],
             })
         
         # Add overall DCF scenario summary if available
@@ -687,6 +744,160 @@ def calculate_ev_ebitda_value(financial_metrics: list):
     """Backward-compatible EV/EBITDA equity value helper."""
     breakdown = calculate_ev_ebitda_breakdown(financial_metrics)
     return breakdown["equity_value"] if breakdown else 0
+
+
+def calculate_ebitda_valuation_breakdown(
+    financial_metrics: list,
+    line_items: list,
+    *,
+    capex_heavy: bool = False,
+) -> dict | None:
+    """Normalized/forward EBITDA × cycle-aware target multiple → equity value.
+
+    Distinct from ``calculate_ev_ebitda_breakdown`` (trailing EBITDA × historical
+    median): this view smooths EBITDA across the available history (earnings-power
+    lens) and overlays a single year of growth, while reusing the same cycle-aware
+    multiple selector so the two lines cross-check peak/trough distortion.
+    """
+    if not financial_metrics:
+        return None
+    m0 = financial_metrics[0]
+    if not getattr(m0, "enterprise_value", None):
+        return None
+
+    # Current EBITDA implied by EV / current multiple (fallback sample).
+    current_mult = getattr(m0, "enterprise_value_to_ebitda_ratio", None)
+    current_ebitda = m0.enterprise_value / current_mult if current_mult else None
+
+    # EBITDA time series from line items (cycle smoothing).
+    ebitda_samples = [
+        li.ebitda for li in (line_items or []) if getattr(li, "ebitda", None)
+    ]
+    if not ebitda_samples and current_ebitda:
+        ebitda_samples = [current_ebitda]
+    if not ebitda_samples:
+        return None
+
+    normalized_ebitda = statistics.mean(ebitda_samples)
+
+    # One-year growth overlay (clamped to keep cyclical swings sane).
+    ebitda_growth = getattr(m0, "ebitda_growth", None)
+    growth_applied = None
+    if ebitda_growth is not None and math.isfinite(ebitda_growth):
+        growth_applied = max(min(ebitda_growth, 0.30), -0.30)
+        normalized_ebitda *= 1 + growth_applied
+
+    if normalized_ebitda <= 0:
+        return None
+
+    # Target multiple — reuse the cycle-aware EV/EBITDA selector.
+    multiples = [
+        m.enterprise_value_to_ebitda_ratio
+        for m in financial_metrics
+        if getattr(m, "enterprise_value_to_ebitda_ratio", None)
+    ]
+    if multiples:
+        target_multiple, multiple_basis, _ = _select_ev_ebitda_multiple(multiples, capex_heavy)
+    elif current_mult:
+        target_multiple, multiple_basis = current_mult, "current_only"
+    else:
+        return None
+
+    ev_implied = target_multiple * normalized_ebitda
+    net_debt = (m0.enterprise_value or 0) - (getattr(m0, "market_cap", 0) or 0)
+    equity_value = max(ev_implied - net_debt, 0.0)
+    return {
+        "equity_value": equity_value,
+        "normalized_ebitda": normalized_ebitda,
+        "current_ebitda": current_ebitda,
+        "target_multiple": target_multiple,
+        "multiple_basis": multiple_basis,
+        "ebitda_growth_applied": growth_applied,
+        "net_debt": net_debt,
+        "ebitda_sample_size": len(ebitda_samples),
+    }
+
+
+def calculate_roic_wacc_breakdown(
+    *,
+    roic: float | None,
+    wacc: float,
+    book_value_per_share: float | None,
+    shares_outstanding: float | None,
+    total_debt: float | None,
+    cash: float | None,
+    market_cap: float | None,
+    eva_growth: float | None,
+    margin_of_safety: float = 0.20,
+    fade_years: int = 5,
+    terminal_growth: float = 0.02,
+) -> dict | None:
+    """Economic Value Added (EVA) equity value from the ROIC−WACC spread.
+
+    EnterpriseValue = InvestedCapital + Σ PV[(ROIC−WACC)·IC growing at g] (+terminal),
+    EquityValue = (EnterpriseValue − NetDebt) · (1 − MOS).
+    """
+    if roic is None or not math.isfinite(roic):
+        return None
+
+    net_debt = max((total_debt or 0) - (cash or 0), 0)
+    book_equity = (
+        book_value_per_share * shares_outstanding
+        if (
+            book_value_per_share
+            and shares_outstanding
+            and book_value_per_share > 0
+            and shares_outstanding > 0
+        )
+        else None
+    )
+    if book_equity is not None:
+        invested_capital = book_equity + net_debt
+        ic_basis = "book"
+    elif market_cap and market_cap > 0:
+        invested_capital = market_cap + net_debt
+        ic_basis = "market_proxy"
+    else:
+        return None
+    if invested_capital <= 0:
+        return None
+
+    spread = roic - wacc
+    eva_0 = spread * invested_capital
+
+    g = max(min(eva_growth or 0.0, 0.10), -0.10)
+    term_g = min(terminal_growth, wacc - 0.01)
+
+    pv_eva = 0.0
+    eva_t = eva_0
+    for t in range(1, fade_years + 1):
+        eva_t = eva_0 * (1 + g) ** t
+        pv_eva += eva_t / (1 + wacc) ** t
+
+    # Terminal value only for value creators (spread > 0); destroyers stay finite.
+    pv_terminal = 0.0
+    if spread > 0 and wacc > term_g:
+        terminal_eva = eva_t * (1 + term_g) / (wacc - term_g)
+        pv_terminal = terminal_eva / (1 + wacc) ** fade_years
+
+    mva = pv_eva + pv_terminal
+    enterprise_value = invested_capital + mva
+    equity_value = max(enterprise_value - net_debt, 0.0) * (1 - margin_of_safety)
+    return {
+        "equity_value": equity_value,
+        "invested_capital": invested_capital,
+        "ic_basis": ic_basis,
+        "roic": roic,
+        "wacc": wacc,
+        "spread": spread,
+        "eva_0": eva_0,
+        "mva": mva,
+        "enterprise_value": enterprise_value,
+        "net_debt": net_debt,
+        "fade_growth": g,
+        "terminal_growth": term_g,
+        "margin_of_safety": margin_of_safety,
+    }
 
 
 def calculate_justified_pbr_breakdown(

@@ -1,0 +1,61 @@
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+FRONTEND = REPO_ROOT / "app/frontend/src"
+
+
+def _read(rel: str) -> str:
+    return (FRONTEND / rel).read_text(encoding="utf-8")
+
+
+def test_stock_compare_tab_component_exists():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "export function StockCompareTab" in src
+    # Reuses the existing valuation parsing rather than re-implementing it.
+    assert "buildValuationDeepDive" in src
+
+
+def test_tab_service_wires_stock_compare():
+    src = _read("services/tab-service.ts")
+    assert "createStockCompareTab" in src
+    assert "'stock-compare'" in src
+    assert "StockCompareTab" in src
+
+
+def test_tabs_context_registers_stock_compare():
+    src = _read("contexts/tabs-context.tsx")
+    assert "'stock-compare'" in src
+
+
+def test_tab_bar_renders_stock_compare():
+    src = _read("components/tabs/tab-bar.tsx")
+    assert "stock-compare" in src
+    assert "stockCompare" in src
+
+
+def test_top_bar_has_connection_icon_entry():
+    src = _read("components/layout/top-bar.tsx")
+    assert "onStockCompareClick" in src
+    # Connection (network) icon next to the existing menu.
+    assert "Network" in src
+    assert "stockCompare" in src
+
+
+def test_layout_opens_stock_compare_tab():
+    src = _read("components/Layout.tsx")
+    assert "handleStockCompareClick" in src
+    assert "createStockCompareTab" in src
+
+
+def test_i18n_has_stock_compare_in_both_languages():
+    src = _read("lib/language-preferences.ts")
+    assert src.count("stockCompare:") >= 2
+
+
+def test_valuation_matrix_does_not_hardcode_exclude_new_models():
+    # The matrix must render the union of model keys (dynamic), so the new
+    # EBITDA-normalized and ROIC-WACC models appear automatically.
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "ebitda_valuation" in src
+    assert "roic_wacc_valuation" in src
+    assert "PREFERRED_MODEL_ORDER" in src

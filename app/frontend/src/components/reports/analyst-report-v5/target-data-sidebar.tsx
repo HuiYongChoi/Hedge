@@ -537,6 +537,8 @@ function ValuationSidebarPanel({
   const pbrModel = dive.models.find(model => model.key === 'pbr_band');
   const rimModel = dive.models.find(model => model.key === 'residual_income');
   const evModel = dive.models.find(model => model.key === 'ev_ebitda');
+  const ebitdaModel = dive.models.find(model => model.key === 'ebitda_valuation');
+  const evaModel = dive.models.find(model => model.key === 'roic_wacc_valuation');
   const pbrValue = dive.pbr
     ? derivePbrFairPrice(dive.pbr, dive.pbr.percentiles.p50, dive.pbr.fairPriceP50, currentPrice)
     : pbrModel?.intrinsicPerShare ?? null;
@@ -564,8 +566,10 @@ function ValuationSidebarPanel({
   const hasRim = rimValue !== null || dive.rim;
   const hasEv = evValue !== null;
   const hasJustifiedPbr = Boolean(dive.justifiedPbr);
+  const hasEbitdaModel = (ebitdaModel?.intrinsicPerShare ?? null) !== null;
+  const hasEvaModel = (evaModel?.intrinsicPerShare ?? null) !== null;
 
-  if (!hasPbr && !hasRim && !hasEv && !hasJustifiedPbr) return null;
+  if (!hasPbr && !hasRim && !hasEv && !hasJustifiedPbr && !hasEbitdaModel && !hasEvaModel) return null;
 
   const evSubtitle = evModel?.medianMultiple !== null
     && evModel?.medianMultiple !== undefined
@@ -590,6 +594,57 @@ function ValuationSidebarPanel({
           {formatCurrency(evValue, currency)}
         </div>
         <div className="text-[10px] text-muted-foreground">{evSubtitle}</div>
+      </div>
+    );
+  })();
+  const ebitdaValue = ebitdaModel?.intrinsicPerShare ?? null;
+  const hasEbitda = ebitdaValue !== null;
+  const ebitdaCard = hasEbitda && (() => {
+    const classes = toneToClasses(ebitdaModel?.signal ?? 'neutral');
+    const subtitle = ebitdaModel?.targetMultiple !== null && ebitdaModel?.targetMultiple !== undefined
+      ? fillTemplate(t('ebitdaValuationSubtitle', language), {
+          multiple: ebitdaModel.targetMultiple.toFixed(1),
+        })
+      : t('ebitdaValuationSubtitleFallback', language);
+    return (
+      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {t('ebitdaValuationLabel', language)}
+          </div>
+          <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(ebitdaModel?.gapToMarket ?? null)}</div>
+        </div>
+        <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+          {formatCurrency(ebitdaValue, currency)}
+        </div>
+        <div className="text-[10px] text-muted-foreground">{subtitle}</div>
+      </div>
+    );
+  })();
+  const evaValue = evaModel?.intrinsicPerShare ?? null;
+  const hasEva = evaValue !== null;
+  const evaCard = hasEva && (() => {
+    const classes = toneToClasses(evaModel?.signal ?? 'neutral');
+    const subtitle = evaModel?.roic !== null && evaModel?.roic !== undefined
+      && evaModel?.wacc !== null && evaModel?.wacc !== undefined
+      ? fillTemplate(t('roicWaccSubtitle', language), {
+          roic: formatPercent(evaModel.roic),
+          wacc: formatPercent(evaModel.wacc),
+          spread: formatPercent(evaModel.spread ?? null),
+        })
+      : t('roicWaccSubtitleFallback', language);
+    return (
+      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {t('roicWaccLabel', language)}
+          </div>
+          <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(evaModel?.gapToMarket ?? null)}</div>
+        </div>
+        <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+          {formatCurrency(evaValue, currency)}
+        </div>
+        <div className="text-[10px] text-muted-foreground">{subtitle}</div>
       </div>
     );
   })();
@@ -672,6 +727,8 @@ function ValuationSidebarPanel({
         {justifiedCard}
         {rimCard}
         {evCard}
+        {ebitdaCard}
+        {evaCard}
         {gapNotice}
       </div>
     );
@@ -685,6 +742,8 @@ function ValuationSidebarPanel({
       {dive.regime === 'capex_heavy' ? (
         <>
           {evCard}
+          {ebitdaCard}
+          {evaCard}
           {pbrCard}
           {justifiedCard}
           {rimCard}
@@ -696,6 +755,8 @@ function ValuationSidebarPanel({
           {justifiedCard}
           {rimCard}
           {evCard}
+          {ebitdaCard}
+          {evaCard}
           {gapNotice}
         </>
       )}

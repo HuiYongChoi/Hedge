@@ -1826,6 +1826,8 @@ const MODEL_LABEL_MAP: Record<string, string> = {
   dcf: 'DCF',
   owner_earnings: 'Owner Earnings',
   ev_ebitda: 'EV/EBITDA',
+  ebitda_valuation: 'EBITDA (정규화)',
+  roic_wacc_valuation: 'ROIC−WACC EVA',
   residual_income: 'RIM',
   pbr_band: 'PBR Band',
 };
@@ -1849,20 +1851,40 @@ export function buildValuationDeepDive(
     : null;
 
   const models: ValuationModel[] = [];
-  (['dcf', 'owner_earnings', 'ev_ebitda', 'residual_income', 'pbr_band'] as const).forEach(key => {
+  (['dcf', 'owner_earnings', 'ev_ebitda', 'ebitda_valuation', 'roic_wacc_valuation', 'residual_income', 'pbr_band'] as const).forEach(key => {
     const raw = reasoning[`${key}_analysis`] as Record<string, unknown> | undefined;
     if (!raw || typeof raw !== 'object') return;
     const intrinsicPerShare = safeNum(raw.intrinsic_per_share);
     const intrinsicTotal = safeNum(raw.intrinsic_total ?? raw.value);
     if (intrinsicPerShare === null && intrinsicTotal === null) return;
-    const evEbitdaFields = key === 'ev_ebitda'
-      ? {
-          medianMultiple: safeNum(raw.median_multiple),
-          currentMultiple: safeNum(raw.current_multiple),
-          ebitdaNow: safeNum(raw.ebitda_now),
-          netDebt: safeNum(raw.net_debt),
-        }
-      : {};
+    let extraFields: Partial<ValuationModel> = {};
+    if (key === 'ev_ebitda') {
+      extraFields = {
+        medianMultiple: safeNum(raw.median_multiple),
+        currentMultiple: safeNum(raw.current_multiple),
+        ebitdaNow: safeNum(raw.ebitda_now),
+        netDebt: safeNum(raw.net_debt),
+      };
+    } else if (key === 'ebitda_valuation') {
+      extraFields = {
+        normalizedEbitda: safeNum(raw.normalized_ebitda),
+        currentEbitda: safeNum(raw.current_ebitda),
+        targetMultiple: safeNum(raw.target_multiple),
+        multipleBasis: safeStr(raw.multiple_basis),
+        netDebt: safeNum(raw.net_debt),
+      };
+    } else if (key === 'roic_wacc_valuation') {
+      extraFields = {
+        investedCapital: safeNum(raw.invested_capital),
+        roic: safeNum(raw.roic),
+        wacc: safeNum(raw.wacc),
+        spread: safeNum(raw.spread),
+        eva0: safeNum(raw.eva_0),
+        mva: safeNum(raw.mva),
+        enterpriseValue: safeNum(raw.enterprise_value),
+        icBasis: safeStr(raw.ic_basis),
+      };
+    }
     models.push({
       key,
       labelKey: MODEL_LABEL_MAP[key] ?? key,
@@ -1873,7 +1895,7 @@ export function buildValuationDeepDive(
       gapToMarket: currentPrice && currentPrice > 0 && intrinsicPerShare !== null
         ? (intrinsicPerShare - currentPrice) / currentPrice
         : safeNum(raw.gap_to_market ?? raw.gap),
-      ...evEbitdaFields,
+      ...extraFields,
     });
   });
 

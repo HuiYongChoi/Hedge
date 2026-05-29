@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/contexts/language-context';
 import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
-import { Archive, Database, PanelBottom, PanelLeft, PanelRight, Search, Settings, Workflow } from 'lucide-react';
+import { Archive, Database, Network, PanelBottom, PanelLeft, PanelRight, Search, Settings, Workflow } from 'lucide-react';
 
 interface TopBarProps {
   isFlowTab: boolean;
@@ -20,6 +20,7 @@ interface TopBarProps {
   isOpeningFlow: boolean;
   onFlowClick: () => void;
   onSavedAnalysesClick: () => void;
+  onStockCompareClick: () => void;
 }
 
 export function TopBar({
@@ -38,6 +39,7 @@ export function TopBar({
   isOpeningFlow,
   onFlowClick,
   onSavedAnalysesClick,
+  onStockCompareClick,
 }: TopBarProps) {
   const { language } = useLanguage();
   const navButtonClass = "h-8 gap-1.5 rounded-full px-2.5 text-muted-foreground hover:text-foreground hover:bg-ramp-grey-700 transition-colors";
@@ -137,6 +139,19 @@ export function TopBar({
       >
         <Search size={16} />
         <span className="hidden 2xl:inline">{t('stockAnalysis', language)}</span>
+      </Button>
+
+      {/* Stock Comparison */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onStockCompareClick}
+        className={navButtonClass}
+        aria-label="Open Stock Comparison"
+        title="Stock Comparison (종목간 비교)"
+      >
+        <Network size={16} />
+        <span className="hidden 2xl:inline">{t('stockCompare', language)}</span>
       </Button>
 
       {/* Saved Analyses */}

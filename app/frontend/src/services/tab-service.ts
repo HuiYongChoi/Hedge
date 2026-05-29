@@ -2,12 +2,13 @@ import { Settings } from '@/components/settings/settings';
 import { DataSandboxTab } from '@/components/tabs/data-sandbox-tab';
 import { FlowTabContent } from '@/components/tabs/flow-tab-content';
 import { SavedAnalysesTab } from '@/components/tabs/saved-analyses-tab';
+import { StockCompareTab } from '@/components/tabs/stock-compare-tab';
 import { StockSearchTab } from '@/components/tabs/stock-search-tab';
 import { Flow } from '@/types/flow';
 import { ReactNode, createElement } from 'react';
 
 export interface TabData {
-  type: 'flow' | 'settings' | 'stock-search' | 'data-sandbox' | 'saved-analyses';
+  type: 'flow' | 'settings' | 'stock-search' | 'data-sandbox' | 'saved-analyses' | 'stock-compare';
   title: string;
   flow?: Flow;
   metadata?: Record<string, any>;
@@ -33,6 +34,9 @@ export class TabService {
 
       case 'saved-analyses':
         return createElement(SavedAnalysesTab);
+
+      case 'stock-compare':
+        return createElement(StockCompareTab);
 
       default:
         throw new Error(`Unsupported tab type: ${tabData.type}`);
@@ -80,6 +84,14 @@ export class TabService {
     };
   }
 
+  static createStockCompareTab(): TabData & { content: ReactNode } {
+    return {
+      type: 'stock-compare',
+      title: 'Stock Comparison',
+      content: TabService.createTabContent({ type: 'stock-compare', title: 'Stock Comparison' }),
+    };
+  }
+
   // Restore tab content for persisted tabs (used when loading from localStorage)
   static restoreTabContent(tabData: TabData): ReactNode {
     return TabService.createTabContent(tabData);
@@ -105,6 +117,9 @@ export class TabService {
 
       case 'saved-analyses':
         return TabService.createSavedAnalysesTab();
+
+      case 'stock-compare':
+        return TabService.createStockCompareTab();
 
       default:
         throw new Error(`Cannot restore unsupported tab type: ${savedTab.type}`);
