@@ -3,6 +3,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import asyncio
+import time
 
 from app.backend.database import get_db
 from app.backend.models.schemas import (
@@ -25,6 +26,10 @@ from src.tools.forward_metrics import (
 )
 
 router = APIRouter(prefix="/hedge-fund")
+
+# Keep the proxied SSE connection alive during long, silent LLM calls. Must stay
+# comfortably below the Apache mod_proxy read timeout (default `Timeout 60`).
+HEARTBEAT_INTERVAL_SECONDS = 15.0
 
 # Union of all line_items fields requested by any of the 18 agents.
 # Used by /fetch-metrics to batch-fetch everything in one call.
@@ -362,6 +367,7 @@ async def run(request_data: HedgeFundRequest, request: Request, db: Session = De
                 
                 # Send initial message
                 yield StartEvent().to_sse()
+                last_activity = time.monotonic()
 
                 # Stream progress updates until run_task completes or client disconnects
                 while not run_task.done():
@@ -379,9 +385,19 @@ async def run(request_data: HedgeFundRequest, request: Request, db: Session = De
                     try:
                         event = await asyncio.wait_for(progress_queue.get(), timeout=1.0)
                         yield event.to_sse()
+                        last_activity = time.monotonic()
                     except asyncio.TimeoutError:
-                        # Just continue the loop
-                        pass
+                        # A single LLM call (e.g. the Damodaran narrative) can run far
+                        # longer than the upstream Apache mod_proxy read timeout
+                        # (default `Timeout 60`) without emitting any progress event.
+                        # If the stream stays silent past that timeout the proxy drops
+                        # the connection, surfacing as a "network error" / stuck
+                        # "분석 중" in the UI. Emit an SSE comment heartbeat to keep the
+                        # proxied connection alive during these long, silent gaps. The
+                        # frontend SSE parser ignores comment lines (no event:/data:).
+                        if time.monotonic() - last_activity >= HEARTBEAT_INTERVAL_SECONDS:
+                            yield ": keepalive\n\n"
+                            last_activity = time.monotonic()
 
                 # Get the final result
                 try:
