@@ -33,9 +33,42 @@ CONCRETE_CONCLUSION_GUIDANCE = (
 # excluded from the weighted blend so a single broken model cannot drag the
 # headline value, but they stay visible (rendered at the bottom with a
 # low-confidence badge on the frontend).
+#
+# Exception: a model whose value sits within OUTLIER_MARKET_GUARD of the market
+# price is never flagged. Agreeing with the market is itself a credibility
+# signal, and on deep cyclicals the earnings-based models (DCF/RIM/EVA) can all
+# cluster at a depressed level — which would otherwise flag the one multiple
+# that matches the market as the "too high" outlier and keep the depressed
+# cluster instead.
 OUTLIER_MIN_PEERS = 4         # need a credible consensus before calling an outlier
 OUTLIER_HIGH_RATIO = 3.0      # value > 3x peer median → flagged (too high)
 OUTLIER_LOW_RATIO = 1.0 / 3.0  # value < 1/3 peer median → flagged (too low)
+OUTLIER_MARKET_GUARD = 0.35   # within ±35% of market cap → never an outlier (agrees with the market)
+
+
+def flag_peer_outliers(valid_models: dict) -> None:
+    """Flag models that diverge sharply from the leave-one-out median of the OTHER
+    models, mutating each in place (is_outlier / peer_median_value /
+    value_to_peer_median). A model whose ``gap`` (= (value - market_cap)/market_cap)
+    is within OUTLIER_MARKET_GUARD of the market price is never flagged, so a
+    market-agreeing model can't be excluded just because the other models cluster
+    at a depressed (cyclical) level."""
+    for v in valid_models.values():
+        v["is_outlier"] = False
+        v["peer_median_value"] = None
+        v["value_to_peer_median"] = None
+    if len(valid_models) < OUTLIER_MIN_PEERS:
+        return
+    for m, v in valid_models.items():
+        peers = [vv["value"] for mm, vv in valid_models.items() if mm != m]
+        peer_median = statistics.median(peers)
+        v["peer_median_value"] = peer_median
+        if peer_median > 0:
+            ratio = v["value"] / peer_median
+            v["value_to_peer_median"] = ratio
+            diverges = ratio > OUTLIER_HIGH_RATIO or ratio < OUTLIER_LOW_RATIO
+            near_market = v["gap"] is not None and abs(v["gap"]) <= OUTLIER_MARKET_GUARD
+            v["is_outlier"] = diverges and not near_market
 
 
 def _format_ratio(value: float | None) -> str:
@@ -549,19 +582,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         # from the blend (see OUTLIER_* constants). The reference is the median of
         # the OTHER valid models, so a single broken model can't endorse itself.
         valid_models = {m: v for m, v in method_values.items() if v["value"] and v["value"] > 0}
-        for v in valid_models.values():
-            v["is_outlier"] = False
-            v["peer_median_value"] = None
-            v["value_to_peer_median"] = None
-        if len(valid_models) >= OUTLIER_MIN_PEERS:
-            for m, v in valid_models.items():
-                peers = [vv["value"] for mm, vv in valid_models.items() if mm != m]
-                peer_median = statistics.median(peers)
-                v["peer_median_value"] = peer_median
-                if peer_median > 0:
-                    ratio = v["value"] / peer_median
-                    v["value_to_peer_median"] = ratio
-                    v["is_outlier"] = ratio > OUTLIER_HIGH_RATIO or ratio < OUTLIER_LOW_RATIO
+        flag_peer_outliers(valid_models)
 
         blend_weight = sum(v["weight"] for v in valid_models.values() if not v["is_outlier"])
         if blend_weight <= 0:
