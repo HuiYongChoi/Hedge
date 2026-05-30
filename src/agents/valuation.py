@@ -27,6 +27,16 @@ CONCRETE_CONCLUSION_GUIDANCE = (
     "(percentage, multiple, currency value, or growth rate)."
 )
 
+# Outlier handling for the blended valuation. A model is flagged when its
+# intrinsic value diverges sharply from the leave-one-out median of the OTHER
+# credible models (peer consensus, NOT the market price). Flagged models are
+# excluded from the weighted blend so a single broken model cannot drag the
+# headline value, but they stay visible (rendered at the bottom with a
+# low-confidence badge on the frontend).
+OUTLIER_MIN_PEERS = 4         # need a credible consensus before calling an outlier
+OUTLIER_HIGH_RATIO = 3.0      # value > 3x peer median → flagged (too high)
+OUTLIER_LOW_RATIO = 1.0 / 3.0  # value < 1/3 peer median → flagged (too low)
+
 
 def _format_ratio(value: float | None) -> str:
     return f"{value:.2f}" if value is not None else "N/A"
@@ -482,9 +492,37 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         for v in method_values.values():
             v["gap"] = (v["value"] - market_cap) / market_cap if v["value"] > 0 else None
 
+        # Flag models that diverge sharply from the peer consensus and drop them
+        # from the blend (see OUTLIER_* constants). The reference is the median of
+        # the OTHER valid models, so a single broken model can't endorse itself.
+        valid_models = {m: v for m, v in method_values.items() if v["value"] and v["value"] > 0}
+        for v in valid_models.values():
+            v["is_outlier"] = False
+            v["peer_median_value"] = None
+            v["value_to_peer_median"] = None
+        if len(valid_models) >= OUTLIER_MIN_PEERS:
+            for m, v in valid_models.items():
+                peers = [vv["value"] for mm, vv in valid_models.items() if mm != m]
+                peer_median = statistics.median(peers)
+                v["peer_median_value"] = peer_median
+                if peer_median > 0:
+                    ratio = v["value"] / peer_median
+                    v["value_to_peer_median"] = ratio
+                    v["is_outlier"] = ratio > OUTLIER_HIGH_RATIO or ratio < OUTLIER_LOW_RATIO
+
+        blend_weight = sum(v["weight"] for v in valid_models.values() if not v["is_outlier"])
+        if blend_weight <= 0:
+            # Degenerate case (every model flagged) — keep the full blend rather
+            # than emit nothing.
+            for v in valid_models.values():
+                v["is_outlier"] = False
+            blend_weight = total_weight
+
         weighted_gap = sum(
-            v["weight"] * v["gap"] for v in method_values.values() if v["gap"] is not None
-        ) / total_weight
+            v["weight"] * v["gap"]
+            for v in valid_models.values()
+            if v["gap"] is not None and not v["is_outlier"]
+        ) / blend_weight
 
         signal = "bullish" if weighted_gap > 0.15 else "bearish" if weighted_gap < -0.15 else "neutral"
         confidence = round(min(abs(weighted_gap) / 0.30 * 100, 100))
@@ -525,6 +563,19 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                 else:
                     enhanced_details = base_details
 
+                is_outlier = bool(vals.get("is_outlier"))
+                peer_median_value = vals.get("peer_median_value")
+                peer_median_per_share = (
+                    peer_median_value / shares_outstanding
+                    if (peer_median_value and shares_outstanding) else None
+                )
+                outlier_note = None
+                if is_outlier and vals.get("value_to_peer_median"):
+                    outlier_note = (
+                        f"또래 가치평가 중앙값 대비 {vals['value_to_peer_median']:.1f}배로 크게 벗어나 "
+                        "블렌드(종합 내재가치)에서 제외됨 — 신뢰도 낮음."
+                    )
+
                 reasoning[f"{m}_analysis"] = {
                     "signal": (
                         "bullish" if vals["gap"] and vals["gap"] > 0.15 else
@@ -540,6 +591,11 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                     "intrinsic_per_share": intrinsic_per_share,
                     "weight_used": vals["weight"],
                     "gap_to_market": vals["gap"],
+                    "is_outlier": is_outlier,
+                    "blend_excluded": is_outlier,
+                    "peer_median_per_share": peer_median_per_share,
+                    "value_to_peer_median": vals.get("value_to_peer_median"),
+                    "outlier_note": outlier_note,
                 }
 
         if ev_breakdown and "ev_ebitda_analysis" in reasoning:

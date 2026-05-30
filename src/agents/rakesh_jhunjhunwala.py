@@ -5,7 +5,8 @@ from pydantic import BaseModel
 import json
 from typing_extensions import Literal
 from src.tools.api import get_financial_metrics, get_market_cap, search_line_items
-from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT, VALUATION_CONFIDENCE_REQUIREMENT
+from src.utils.agent_data_quality import valuation_confidence_flag, low_confidence_caps_signal
 from src.tools.company_name import resolve_company_name
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
@@ -97,13 +98,17 @@ def rakesh_jhunjhunwala_agent(state: AgentState, agent_id: str = "rakesh_jhunjhu
             (intrinsic_value - market_cap) / market_cap if intrinsic_value and market_cap else None
         )
 
+        # Flag low-confidence (large-divergence) intrinsic-value estimates so an
+        # untrustworthy margin of safety cannot auto-fire the strong conviction branch.
+        valuation_confidence, valuation_confidence_note = valuation_confidence_flag(margin_of_safety)
+
         # Jhunjhunwala's decision rules (30% minimum margin of safety for conviction)
-        if margin_of_safety is not None and margin_of_safety >= 0.30:
+        if valuation_confidence != "low" and margin_of_safety is not None and margin_of_safety >= 0.30:
             signal = "bullish"
-        elif margin_of_safety is not None and margin_of_safety <= -0.30:
+        elif valuation_confidence != "low" and margin_of_safety is not None and margin_of_safety <= -0.30:
             signal = "bearish"
         else:
-            # Use quality score as tie-breaker for neutral cases
+            # Use quality score as tie-breaker for neutral / low-confidence valuation cases
             quality_score = assess_quality_metrics(financial_line_items)
             if quality_score >= 0.7 and total_score >= max_score * 0.6:
                 signal = "bullish"  # High quality company at fair price
@@ -144,7 +149,10 @@ def rakesh_jhunjhunwala_agent(state: AgentState, agent_id: str = "rakesh_jhunjhu
             "intrinsic_value": intrinsic_value,
             "market_cap": market_cap,
             "forward_outlook": forward_outlook,
+            "valuation_confidence": valuation_confidence,
         }
+        if valuation_confidence_note:
+            analysis_data[ticker]["valuation_confidence_note"] = valuation_confidence_note
         company_name = resolve_company_name(ticker)
         analysis_data[ticker]["company_name"] = company_name
 
@@ -157,7 +165,12 @@ def rakesh_jhunjhunwala_agent(state: AgentState, agent_id: str = "rakesh_jhunjhu
             agent_id=agent_id,
         )
 
-        jhunjhunwala_analysis[ticker] = jhunjhunwala_output.model_dump()
+        capped_sig, capped_conf = low_confidence_caps_signal(valuation_confidence, jhunjhunwala_output.signal, jhunjhunwala_output.confidence)
+        jhunjhunwala_output.signal = capped_sig
+        jhunjhunwala_output.confidence = capped_conf
+        jhunjhunwala_result = jhunjhunwala_output.model_dump()
+        jhunjhunwala_result["valuation_confidence"] = valuation_confidence
+        jhunjhunwala_analysis[ticker] = jhunjhunwala_result
 
         progress.update_status(agent_id, ticker, "Done", analysis=jhunjhunwala_output.reasoning)
 
@@ -699,6 +712,8 @@ def generate_jhunjhunwala_output(
                 {COMPANY_IDENTITY_REQUIREMENT}
 
                 {SENTIMENT_MARKER_REQUIREMENT}
+
+                {VALUATION_CONFIDENCE_REQUIREMENT}
                 """,
             ),
             (

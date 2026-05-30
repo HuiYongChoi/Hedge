@@ -169,6 +169,10 @@ export interface ValuationModel {
   weight: number;
   signal: 'bullish' | 'neutral' | 'bearish';
   gapToMarket: number | null;
+  // Flagged when the model diverges sharply from the peer consensus; excluded
+  // from the blended headline value and rendered at the bottom of the list.
+  isOutlier?: boolean;
+  outlierNote?: string | null;
   medianMultiple?: number | null;
   currentMultiple?: number | null;
   ebitdaNow?: number | null;

@@ -1880,6 +1880,8 @@ export function buildValuationDeepDive(
       gapToMarket: currentPrice && currentPrice > 0 && intrinsicPerShare !== null
         ? (intrinsicPerShare - currentPrice) / currentPrice
         : safeNum(raw.gap_to_market ?? raw.gap),
+      isOutlier: raw.is_outlier === true,
+      outlierNote: typeof raw.outlier_note === 'string' ? raw.outlier_note : null,
       ...extraFields,
     });
   });

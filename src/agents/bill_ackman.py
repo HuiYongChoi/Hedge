@@ -6,7 +6,13 @@ from pydantic import BaseModel
 import json
 from typing_extensions import Literal
 from src.utils.progress import progress
-from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.utils.llm import (
+    call_llm,
+    COMPANY_IDENTITY_REQUIREMENT,
+    SENTIMENT_MARKER_REQUIREMENT,
+    VALUATION_CONFIDENCE_REQUIREMENT,
+)
+from src.utils.agent_data_quality import valuation_confidence_flag, low_confidence_caps_signal
 from src.tools.company_name import resolve_company_name
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
@@ -98,6 +104,10 @@ def bill_ackman_agent(state: AgentState, agent_id: str = "bill_ackman_agent"):
         else:
             signal = "neutral"
         
+        valuation_confidence, valuation_confidence_note = valuation_confidence_flag(
+            valuation_analysis.get("margin_of_safety")
+        )
+
         analysis_data[ticker] = {
             "signal": signal,
             "score": total_score,
@@ -106,23 +116,33 @@ def bill_ackman_agent(state: AgentState, agent_id: str = "bill_ackman_agent"):
             "balance_sheet_analysis": balance_sheet_analysis,
             "activism_analysis": activism_analysis,
             "valuation_analysis": valuation_analysis,
+            "valuation_confidence": valuation_confidence,
             "forward_outlook": forward_outlook,
         }
+        if valuation_confidence_note:
+            analysis_data[ticker]["valuation_confidence_note"] = valuation_confidence_note
         company_name = resolve_company_name(ticker)
         analysis_data[ticker]["company_name"] = company_name
 
         progress.update_status(agent_id, ticker, "Generating Bill Ackman analysis")
         ackman_output = generate_ackman_output(
-            ticker=ticker, 
+            ticker=ticker,
             analysis_data=analysis_data,
             state=state,
             agent_id=agent_id,
         )
-        
+
+        capped_sig, capped_conf = low_confidence_caps_signal(
+            valuation_confidence, ackman_output.signal, ackman_output.confidence
+        )
+        ackman_output.signal = capped_sig
+        ackman_output.confidence = capped_conf
+
         ackman_analysis[ticker] = {
             "signal": ackman_output.signal,
             "confidence": ackman_output.confidence,
-            "reasoning": ackman_output.reasoning
+            "reasoning": ackman_output.reasoning,
+            "valuation_confidence": valuation_confidence,
         }
         
         progress.update_status(agent_id, ticker, "Done", analysis=ackman_output.reasoning)
@@ -447,6 +467,8 @@ def generate_ackman_output(
             {COMPANY_IDENTITY_REQUIREMENT}
 
             {SENTIMENT_MARKER_REQUIREMENT}
+
+            {VALUATION_CONFIDENCE_REQUIREMENT}
             """
         ),
         (

@@ -85,3 +85,43 @@ def coverage_caps_signal(coverage: float, raw_signal: str, raw_confidence: float
     if coverage < 0.6:
         return raw_signal, min(raw_confidence, 60.0)
     return raw_signal, raw_confidence
+
+
+# Valuation-confidence guardrail. A single-estimate intrinsic value is treated as
+# low-confidence when it diverges sharply from the market — deeply below (a
+# trough/over-conservative model) or far above (aggressive growth/beta
+# assumptions). This mirrors the multi-model outlier exclusion in valuation.py,
+# but here the reference is the market price because each persona analyst has
+# only one estimate, not a peer panel.
+VALUATION_LOW_CONF_FLOOR = -0.50   # intrinsic <= 50% below market cap
+VALUATION_LOW_CONF_CEILING = 1.0   # intrinsic >= 2x market cap
+VALUATION_LOW_CONF_CAP = 50.0      # confidence ceiling when valuation is low-confidence
+
+
+def valuation_confidence_flag(margin_of_safety: Optional[float]) -> tuple[str, Optional[str]]:
+    """Flag a single-estimate valuation as low-confidence when it diverges sharply
+    from the market. Returns ("low"|"normal", korean_note_or_None). The note is
+    meant to be injected into the LLM prompt so the narrative hedges."""
+    if margin_of_safety is None:
+        return "normal", None
+    if margin_of_safety <= VALUATION_LOW_CONF_FLOOR or margin_of_safety >= VALUATION_LOW_CONF_CEILING:
+        note = (
+            f"내재가치가 현재 시가총액 대비 {margin_of_safety:+.0%}로 크게 괴리되어 "
+            "이 가치평가의 신뢰도가 낮습니다. 수치를 단정적 목표가로 제시하지 말고, "
+            "불확실성을 본문에서 명시하며 질적·상대가치 근거에 더 무게를 두고 "
+            "confidence도 낮추세요."
+        )
+        return "low", note
+    return "normal", None
+
+
+def low_confidence_caps_signal(
+    valuation_confidence: str, raw_signal: str, raw_confidence: float
+) -> tuple[str, float]:
+    """When the valuation is low-confidence, cap conviction so no high-confidence
+    verdict rests on an untrustworthy intrinsic value. Direction is preserved
+    (an extreme divergence may still be a genuine over/under-valuation), but the
+    confidence is capped — the analyst keeps its read while admitting low trust."""
+    if valuation_confidence == "low":
+        return raw_signal, min(raw_confidence, VALUATION_LOW_CONF_CAP)
+    return raw_signal, raw_confidence

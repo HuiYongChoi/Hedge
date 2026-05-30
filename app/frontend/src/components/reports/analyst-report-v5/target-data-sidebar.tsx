@@ -460,8 +460,14 @@ function ValuationModelsSummary({
 }) {
   // Compact at-a-glance list of every valuation model the agent emitted, so
   // EV/EBITDA, EBITDA (normalized) and ROIC−WACC EVA surface alongside DCF/RIM.
-  const rows = dive.models.filter(m => m.intrinsicPerShare !== null && m.intrinsicPerShare !== undefined);
-  if (rows.length === 0) return null;
+  // Flagged outliers (excluded from the blend) are pushed to the bottom and
+  // tagged low-confidence so they stay visible without distorting the read.
+  const visible = dive.models.filter(m => m.intrinsicPerShare !== null && m.intrinsicPerShare !== undefined);
+  if (visible.length === 0) return null;
+  const rows = [
+    ...visible.filter(m => !m.isOutlier),
+    ...visible.filter(m => m.isOutlier),
+  ];
   return (
     <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
       <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -471,9 +477,22 @@ function ValuationModelsSummary({
         {rows.map(model => {
           const classes = toneToClasses(model.signal);
           return (
-            <div key={model.key} className="flex items-center justify-between gap-2">
-              <dt className="truncate text-muted-foreground">{model.labelKey}</dt>
-              <dd className={`flex items-center gap-1.5 font-mono ${classes.text}`}>
+            <div
+              key={model.key}
+              className={`flex items-center justify-between gap-2${model.isOutlier ? ' opacity-60' : ''}`}
+            >
+              <dt className="flex min-w-0 items-center gap-1 truncate text-muted-foreground">
+                <span className="truncate">{model.labelKey}</span>
+                {model.isOutlier && (
+                  <span
+                    title={model.outlierNote ?? undefined}
+                    className="shrink-0 rounded-sm border border-amber-500/40 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400"
+                  >
+                    {t('valuationLowConfidenceBadge', language)}
+                  </span>
+                )}
+              </dt>
+              <dd className={`flex items-center gap-1.5 font-mono ${model.isOutlier ? 'text-muted-foreground line-through decoration-1' : classes.text}`}>
                 <span>{formatCurrency(model.intrinsicPerShare, currency)}</span>
                 {model.gapToMarket !== null && model.gapToMarket !== undefined && (
                   <span className="text-[9px]">{formatPercent(model.gapToMarket)}</span>

@@ -5,7 +5,13 @@ from pydantic import BaseModel, Field
 import json
 from typing_extensions import Literal
 from src.tools.api import get_financial_metrics, get_market_cap, search_line_items
-from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.utils.llm import (
+    call_llm,
+    COMPANY_IDENTITY_REQUIREMENT,
+    SENTIMENT_MARKER_REQUIREMENT,
+    VALUATION_CONFIDENCE_REQUIREMENT,
+)
+from src.utils.agent_data_quality import valuation_confidence_flag, low_confidence_caps_signal
 from src.tools.company_name import resolve_company_name
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
@@ -119,6 +125,7 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
         intrinsic_value = intrinsic_value_analysis["intrinsic_value"]
         if intrinsic_value and market_cap:
             margin_of_safety = (intrinsic_value - market_cap) / market_cap
+        valuation_confidence, valuation_confidence_note = valuation_confidence_flag(margin_of_safety)
 
         progress.update_status(agent_id, ticker, "Preparing forward outlook")
         forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
@@ -139,8 +146,11 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
             "intrinsic_value_analysis": intrinsic_value_analysis,
             "market_cap": market_cap,
             "margin_of_safety": margin_of_safety,
+            "valuation_confidence": valuation_confidence,
             "forward_outlook": forward_outlook,
         }
+        if valuation_confidence_note:
+            analysis_data[ticker]["valuation_confidence_note"] = valuation_confidence_note
         company_name = resolve_company_name(ticker)
         analysis_data[ticker]["company_name"] = company_name
 
@@ -152,11 +162,19 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
             agent_id=agent_id,
         )
 
+        # Cap conviction when the intrinsic value is low-confidence.
+        capped_sig, capped_conf = low_confidence_caps_signal(
+            valuation_confidence, buffett_output.signal, buffett_output.confidence
+        )
+        buffett_output.signal = capped_sig
+        buffett_output.confidence = capped_conf
+
         # Store analysis in consistent format with other agents
         buffett_analysis[ticker] = {
             "signal": buffett_output.signal,
             "confidence": buffett_output.confidence,
             "reasoning": buffett_output.reasoning,
+            "valuation_confidence": valuation_confidence,
         }
 
         progress.update_status(agent_id, ticker, "Done", analysis=buffett_output.reasoning)
@@ -878,6 +896,7 @@ def generate_buffett_output(
                 f"{FORWARD_OUTLOOK_SYSTEM_INSTRUCTION} "
                 f"{COMPANY_IDENTITY_REQUIREMENT} "
                 f"{SENTIMENT_MARKER_REQUIREMENT} "
+                f"{VALUATION_CONFIDENCE_REQUIREMENT} "
                 "and do not invent data. Return JSON only."
             ),
             (

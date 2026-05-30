@@ -6,7 +6,12 @@ from pydantic import BaseModel
 import json
 from typing_extensions import Literal
 from src.utils.progress import progress
-from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.utils.llm import (
+    call_llm,
+    COMPANY_IDENTITY_REQUIREMENT,
+    SENTIMENT_MARKER_REQUIREMENT,
+    VALUATION_CONFIDENCE_REQUIREMENT,
+)
 from src.tools.company_name import resolve_company_name
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
@@ -15,7 +20,12 @@ from src.utils.forward_outlook import (
     get_cached_forward_metrics,
 )
 from src.utils.financial_formatting import format_debt_ratio_percent, format_korean_won_amount
-from src.utils.agent_data_quality import sanitize_for_llm, coverage_caps_signal
+from src.utils.agent_data_quality import (
+    sanitize_for_llm,
+    coverage_caps_signal,
+    valuation_confidence_flag,
+    low_confidence_caps_signal,
+)
 
 MIN_PREDICTABILITY_PERIODS = 4
 
@@ -121,11 +131,16 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
             signal = "bearish"
         else:
             signal = "neutral"
-        
+
+        valuation_confidence, valuation_confidence_note = valuation_confidence_flag(
+            valuation_analysis.get("margin_of_safety_vs_fair_value")
+        )
+
         analysis_data[ticker] = {
             "signal": signal,
             "score": total_score,
             "max_score": max_possible_score,
+            "valuation_confidence": valuation_confidence,
             "moat_analysis": moat_analysis,
             "management_analysis": management_analysis,
             "predictability_analysis": predictability_analysis,
@@ -145,6 +160,8 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
             # Include some qualitative assessment from news
             "news_sentiment": analyze_news_sentiment(company_news) if company_news else "No news data available"
         }
+        if valuation_confidence_note:
+            analysis_data[ticker]["valuation_confidence_note"] = valuation_confidence_note
         company_name = resolve_company_name(ticker)
         analysis_data[ticker]["company_name"] = company_name
 
@@ -162,6 +179,7 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
         raw_sig = munger_output.signal
         raw_conf = munger_output.confidence
         capped_sig, capped_conf = coverage_caps_signal(score_weight_used, raw_sig, raw_conf)
+        capped_sig, capped_conf = low_confidence_caps_signal(valuation_confidence, capped_sig, capped_conf)
         munger_output.signal = capped_sig
         munger_output.confidence = capped_conf
         if score_weight_used < 0.4 and "데이터 커버리지" not in munger_output.reasoning:
@@ -173,7 +191,8 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
         munger_analysis[ticker] = {
             "signal": munger_output.signal,
             "confidence": munger_output.confidence,
-            "reasoning": munger_output.reasoning
+            "reasoning": munger_output.reasoning,
+            "valuation_confidence": valuation_confidence,
         }
         
         progress.update_status(agent_id, ticker, "Done", analysis=munger_output.reasoning)
@@ -981,6 +1000,7 @@ def generate_munger_output(
          f"{FORWARD_OUTLOOK_SYSTEM_INSTRUCTION} "
          f"{COMPANY_IDENTITY_REQUIREMENT} "
          f"{SENTIMENT_MARKER_REQUIREMENT} "
+         f"{VALUATION_CONFIDENCE_REQUIREMENT} "
          "and the provided facts. Return JSON only. "
          "Use the provided confidence exactly; do not change it."),
         ("human",

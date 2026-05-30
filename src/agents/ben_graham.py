@@ -6,7 +6,13 @@ from pydantic import BaseModel
 import json
 from typing_extensions import Literal
 from src.utils.progress import progress
-from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.utils.llm import (
+    call_llm,
+    COMPANY_IDENTITY_REQUIREMENT,
+    SENTIMENT_MARKER_REQUIREMENT,
+    VALUATION_CONFIDENCE_REQUIREMENT,
+)
+from src.utils.agent_data_quality import valuation_confidence_flag, low_confidence_caps_signal
 from src.tools.company_name import resolve_company_name
 from src.utils.financial_formatting import format_period_note
 import math
@@ -99,10 +105,15 @@ def ben_graham_agent(state: AgentState, agent_id: str = "ben_graham_agent"):
         else:
             signal = "neutral"
 
+        valuation_confidence, valuation_confidence_note = valuation_confidence_flag(
+            (valuation_analysis.get("metrics") or {}).get("margin_of_safety")
+        )
+
         analysis_data[ticker] = {
             "signal": signal,
             "score": total_score,
             "max_score": max_possible_score,
+            "valuation_confidence": valuation_confidence,
             "period_note": _build_graham_period_note(metrics, financial_line_items),
             "source_note": _build_graham_source_note(metrics),
             "earnings_analysis": earnings_analysis,
@@ -116,6 +127,8 @@ def ben_graham_agent(state: AgentState, agent_id: str = "ben_graham_agent"):
                 "Liabilities-to-assets is a separate balance-sheet ratio and must not be described as debt-to-equity."
             ),
         }
+        if valuation_confidence_note:
+            analysis_data[ticker]["valuation_confidence_note"] = valuation_confidence_note
         company_name = resolve_company_name(ticker)
         analysis_data[ticker]["company_name"] = company_name
 
@@ -127,7 +140,13 @@ def ben_graham_agent(state: AgentState, agent_id: str = "ben_graham_agent"):
             agent_id=agent_id,
         )
 
-        graham_analysis[ticker] = {"signal": graham_output.signal, "confidence": graham_output.confidence, "reasoning": graham_output.reasoning}
+        capped_sig, capped_conf = low_confidence_caps_signal(
+            valuation_confidence, graham_output.signal, graham_output.confidence
+        )
+        graham_output.signal = capped_sig
+        graham_output.confidence = capped_conf
+
+        graham_analysis[ticker] = {"signal": graham_output.signal, "confidence": graham_output.confidence, "reasoning": graham_output.reasoning, "valuation_confidence": valuation_confidence}
 
         progress.update_status(agent_id, ticker, "Done", analysis=graham_output.reasoning)
 
@@ -430,6 +449,8 @@ def generate_graham_output(
             {COMPANY_IDENTITY_REQUIREMENT}
 
             {SENTIMENT_MARKER_REQUIREMENT}
+
+            {VALUATION_CONFIDENCE_REQUIREMENT}
             """,
             ),
             (

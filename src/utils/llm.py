@@ -42,6 +42,16 @@ COMPANY_IDENTITY_REQUIREMENT = (
     "explicitly contains it."
 )
 
+VALUATION_CONFIDENCE_REQUIREMENT = (
+    "VALUATION CONFIDENCE REQUIREMENT: 입력 데이터에 `valuation_confidence` 가 "
+    "`\"low\"` 로 표시되어 있으면, 내재가치 추정이 현재 시장가와 크게 괴리되어 "
+    "신뢰도가 낮다는 뜻이다. 이 경우 내재가치/목표가 수치를 단정적으로 제시하지 말고, "
+    "`valuation_confidence_note` 의 취지대로 그 불확실성을 본문에서 명시한 뒤 "
+    "질적 분석과 상대가치 근거를 우선해 결론을 내려라. 최종 `confidence` 값도 이 "
+    "불확실성을 반영해 보수적으로 낮춰라. `valuation_confidence` 가 없거나 "
+    "`\"normal\"` 이면 이 지시는 무시한다."
+)
+
 SENTIMENT_MARKER_REQUIREMENT = (
     "TONE MARKER REQUIREMENT: Prefix every bullet point, numbered item, and "
     "standalone paragraph in the reasoning output with one of these markers:\n"

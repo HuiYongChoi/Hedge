@@ -6,7 +6,8 @@ from pydantic import BaseModel
 import json
 from typing_extensions import Literal
 from src.utils.progress import progress
-from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT, VALUATION_CONFIDENCE_REQUIREMENT
+from src.utils.agent_data_quality import valuation_confidence_flag, low_confidence_caps_signal
 from src.tools.company_name import resolve_company_name
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
@@ -93,7 +94,11 @@ def cathie_wood_agent(state: AgentState, agent_id: str = "cathie_wood_agent"):
         else:
             signal = "neutral"
 
-        analysis_data[ticker] = {"signal": signal, "score": total_score, "max_score": max_possible_score, "disruptive_analysis": disruptive_analysis, "innovation_analysis": innovation_analysis, "valuation_analysis": valuation_analysis, "forward_outlook": forward_outlook}
+        valuation_confidence, valuation_confidence_note = valuation_confidence_flag(valuation_analysis.get("margin_of_safety"))
+
+        analysis_data[ticker] = {"signal": signal, "score": total_score, "max_score": max_possible_score, "disruptive_analysis": disruptive_analysis, "innovation_analysis": innovation_analysis, "valuation_analysis": valuation_analysis, "forward_outlook": forward_outlook, "valuation_confidence": valuation_confidence}
+        if valuation_confidence_note:
+            analysis_data[ticker]["valuation_confidence_note"] = valuation_confidence_note
         company_name = resolve_company_name(ticker)
         analysis_data[ticker]["company_name"] = company_name
 
@@ -105,7 +110,8 @@ def cathie_wood_agent(state: AgentState, agent_id: str = "cathie_wood_agent"):
             agent_id=agent_id,
         )
 
-        cw_analysis[ticker] = {"signal": cw_output.signal, "confidence": cw_output.confidence, "reasoning": cw_output.reasoning}
+        capped_sig, capped_conf = low_confidence_caps_signal(valuation_confidence, cw_output.signal, cw_output.confidence)
+        cw_analysis[ticker] = {"signal": capped_sig, "confidence": capped_conf, "reasoning": cw_output.reasoning, "valuation_confidence": valuation_confidence}
 
         progress.update_status(agent_id, ticker, "Done", analysis=cw_output.reasoning)
 
@@ -417,6 +423,8 @@ def generate_cathie_wood_output(
             {COMPANY_IDENTITY_REQUIREMENT}
 
             {SENTIMENT_MARKER_REQUIREMENT}
+
+            {VALUATION_CONFIDENCE_REQUIREMENT}
             """,
             ),
             (

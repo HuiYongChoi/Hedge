@@ -19,12 +19,18 @@ from src.utils.forward_outlook import (
     build_forward_outlook_block,
     get_cached_forward_metrics,
 )
-from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
+from src.utils.llm import (
+    call_llm,
+    COMPANY_IDENTITY_REQUIREMENT,
+    SENTIMENT_MARKER_REQUIREMENT,
+    VALUATION_CONFIDENCE_REQUIREMENT,
+)
 from src.tools.company_name import resolve_company_name
 from src.utils.progress import progress
 from src.utils.agent_data_quality import (
     insufficient, ok, partial,
     aggregate_scores, sanitize_for_llm, coverage_caps_signal,
+    valuation_confidence_flag, low_confidence_caps_signal,
 )
 
 
@@ -109,6 +115,11 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             (intrinsic_value - market_cap) / market_cap if intrinsic_value and market_cap else None
         )
 
+        # Low-confidence flag for the single-scenario FCFF DCF. Unlike the
+        # multi-model valuation agent, Damodaran has only one intrinsic estimate,
+        # so its sanity reference is the market price (see valuation_confidence_flag).
+        valuation_confidence, valuation_confidence_note = valuation_confidence_flag(margin_of_safety)
+
         # Decision rules (Damodaran tends to act with ~20-25 % MOS)
         if margin_of_safety is not None and margin_of_safety >= 0.25:
             signal = "bullish"
@@ -130,7 +141,10 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             "intrinsic_val_analysis": intrinsic_val_analysis,
             "market_cap": market_cap,
             "forward_outlook": forward_outlook,
+            "valuation_confidence": valuation_confidence,
         }
+        if valuation_confidence_note:
+            analysis_data[ticker]["valuation_confidence_note"] = valuation_confidence_note
         company_name = resolve_company_name(ticker)
         analysis_data[ticker]["company_name"] = company_name
 
@@ -143,10 +157,11 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             agent_id=agent_id,
         )
 
-        # Apply data-coverage signal cap
+        # Apply data-coverage signal cap, then the low-valuation-confidence cap.
         raw_sig = damodaran_output.signal
         raw_conf = damodaran_output.confidence
         capped_sig, capped_conf = coverage_caps_signal(_coverage, raw_sig, raw_conf)
+        capped_sig, capped_conf = low_confidence_caps_signal(valuation_confidence, capped_sig, capped_conf)
         if capped_sig != raw_sig or capped_conf != raw_conf:
             damodaran_output.signal = capped_sig
             damodaran_output.confidence = capped_conf
@@ -163,6 +178,7 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         per_share_iv = intrinsic_val_analysis.get("intrinsic_per_share")
         if per_share_iv is not None:
             signal_payload["intrinsic_value_per_share"] = per_share_iv
+        signal_payload["valuation_confidence"] = valuation_confidence
         damodaran_signals[ticker] = signal_payload
 
         progress.update_status(agent_id, ticker, "Done", analysis=damodaran_output.reasoning)
@@ -466,6 +482,8 @@ def generate_damodaran_output(
                 {SENTIMENT_MARKER_REQUIREMENT}
 
                 - `score` 값이 `"DATA_INSUFFICIENT"` 인 항목은 점수를 인용하지 말고 "데이터 부족으로 평가 보류"라고 명시한다. 그 축을 근거로 단정적 매수/매도 판단을 하지 않는다.
+
+                {VALUATION_CONFIDENCE_REQUIREMENT}
 
                 Return ONLY the JSON specified below.""",
             ),
