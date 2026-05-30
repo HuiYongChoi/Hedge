@@ -214,6 +214,47 @@ def _backfill_valuation_inputs(
             m0.return_on_invested_capital = operating_income / invested_capital
 
 
+def _resolve_point_in_time_shares(
+    financial_metrics: list,
+    *,
+    ticker: str,
+    end_date: str,
+    api_key: str | None,
+) -> float | None:
+    """Return a point-in-time (snapshot) share count for per-share valuation.
+
+    The ``period="ttm"`` line item sums ``outstanding_shares`` across quarters
+    (~4x the real float on MU: 4.54B vs 1.12B), so dividing equity by it deflates
+    every per-share card by the same factor. Prefer the metrics snapshot, then a
+    point-in-time annual/quarterly line item — both carry the real float — and let
+    the caller fall back to the summed TTM count only when neither exists.
+    """
+    snapshot = (
+        _to_finite_float(getattr(financial_metrics[0], "outstanding_shares", None))
+        if financial_metrics
+        else None
+    )
+    if snapshot and snapshot > 0:
+        return snapshot
+    for period in ("annual", "quarterly"):
+        try:
+            pit_items = search_line_items(
+                ticker=ticker,
+                line_items=["outstanding_shares"],
+                end_date=end_date,
+                period=period,
+                limit=1,
+                api_key=api_key,
+            )
+        except Exception:
+            pit_items = None
+        if pit_items:
+            shares = _to_finite_float(getattr(pit_items[0], "outstanding_shares", None))
+            if shares and shares > 0:
+                return shares
+    return None
+
+
 def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analyst_agent"):
     """Run valuation across tickers and write signals back to `state`."""
 
@@ -357,9 +398,15 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         )
         ebitda_val = ebitda_breakdown["equity_value"] if ebitda_breakdown else 0
 
-        shares_outstanding: float | None = (
-            most_recent_metrics.outstanding_shares
-            or getattr(li_curr, "outstanding_shares", None)
+        # Point-in-time share count for every per-share card. The TTM line item
+        # sums outstanding_shares across quarters (~4x the real float on MU), so
+        # using it would deflate each per-share value by the same factor. Prefer
+        # the metrics snapshot, then a point-in-time annual/quarterly line item.
+        shares_outstanding: float | None = _resolve_point_in_time_shares(
+            financial_metrics,
+            ticker=ticker,
+            end_date=end_date,
+            api_key=api_key,
         )
         if shares_outstanding is not None and shares_outstanding <= 0:
             shares_outstanding = None
@@ -372,6 +419,12 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             equity = getattr(li_curr, "shareholders_equity", None)
             if bvps and bvps > 0 and equity and equity > 0:
                 shares_outstanding = equity / bvps
+        if shares_outstanding is None:
+            # Last resort: the TTM line item's share count (may be quarter-summed,
+            # but better than dropping the per-share cards entirely).
+            ttm_shares = getattr(li_curr, "outstanding_shares", None)
+            if ttm_shares and ttm_shares > 0:
+                shares_outstanding = ttm_shares
 
         # ROIC−WACC excess-return (EVA) valuation.
         eva_growth = (
