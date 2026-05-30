@@ -224,10 +224,30 @@ def analyze_growth_and_momentum(financial_line_items: list, prices: list) -> dic
     if len(eps_values) >= 2:
         latest_eps = eps_values[0]
         older_eps = eps_values[-1]
+        prior_eps = eps_values[1]
         num_years = len(eps_values) - 1
-        # Calculate CAGR for positive EPS values
-        if older_eps > 0 and latest_eps > 0:
-            # CAGR formula for EPS
+        # For deep cyclicals (e.g. memory chips) a multi-year CAGR between the two
+        # endpoints is misleading when the window contains a loss year: the
+        # endpoints are often both cyclical peaks, so the CAGR reads ~flat even
+        # though earnings just rebounded from a loss to a record. In that case use
+        # the latest year-over-year growth, which Druckenmiller reads as a
+        # cyclical inflection rather than stagnation.
+        has_loss_in_window = any(e is not None and e <= 0 for e in eps_values)
+        if has_loss_in_window and latest_eps > 0 and prior_eps not in (None, 0):
+            eps_growth = (latest_eps - prior_eps) / abs(prior_eps)
+            if eps_growth > 0.08:
+                raw_score += 3
+                details.append(f"Strong EPS YoY recovery (cyclical): {eps_growth:.1%}")
+            elif eps_growth > 0.04:
+                raw_score += 2
+                details.append(f"Moderate EPS YoY recovery (cyclical): {eps_growth:.1%}")
+            elif eps_growth > 0.01:
+                raw_score += 1
+                details.append(f"Slight EPS YoY recovery (cyclical): {eps_growth:.1%}")
+            else:
+                details.append(f"Minimal/negative EPS YoY (cyclical): {eps_growth:.1%}")
+        elif older_eps > 0 and latest_eps > 0:
+            # CAGR formula for positive-to-positive, non-cyclical EPS paths
             eps_growth = (latest_eps / older_eps) ** (1 / num_years) - 1
             if eps_growth > 0.08:  # 8% annualized (adjusted for CAGR)
                 raw_score += 3
@@ -385,17 +405,18 @@ def analyze_risk_reward(financial_line_items: list, prices: list) -> dict:
         recent_debt = debt_values[0]
         recent_equity = equity_values[0] if equity_values[0] else 1e-9
         de_ratio = recent_debt / recent_equity
+        de_pct = f"debt is {de_ratio * 100:.0f}% of equity"
         if de_ratio < 0.3:
             raw_score += 3
-            details.append(f"Low debt-to-equity: {de_ratio:.2f}")
+            details.append(f"Low debt-to-equity: {de_ratio:.2f} ({de_pct})")
         elif de_ratio < 0.7:
             raw_score += 2
-            details.append(f"Moderate debt-to-equity: {de_ratio:.2f}")
+            details.append(f"Moderate debt-to-equity: {de_ratio:.2f} ({de_pct})")
         elif de_ratio < 1.5:
             raw_score += 1
-            details.append(f"Somewhat high debt-to-equity: {de_ratio:.2f}")
+            details.append(f"Somewhat high debt-to-equity: {de_ratio:.2f} ({de_pct})")
         else:
-            details.append(f"High debt-to-equity: {de_ratio:.2f}")
+            details.append(f"High debt-to-equity: {de_ratio:.2f} ({de_pct})")
     else:
         details.append("No consistent debt/equity data available.")
 
