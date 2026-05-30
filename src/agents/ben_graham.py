@@ -86,7 +86,7 @@ def ben_graham_agent(state: AgentState, agent_id: str = "ben_graham_agent"):
         strength_analysis = analyze_financial_strength(financial_line_items)
 
         progress.update_status(agent_id, ticker, "Analyzing Graham valuation")
-        valuation_analysis = analyze_valuation_graham(financial_line_items, market_cap)
+        valuation_analysis = analyze_valuation_graham(financial_line_items, market_cap, metrics)
 
         progress.update_status(agent_id, ticker, "Preparing forward outlook")
         forward_metrics = get_cached_forward_metrics(state, ticker, end_date, api_key)
@@ -311,7 +311,7 @@ def analyze_financial_strength(financial_line_items: list) -> dict:
     }
 
 
-def analyze_valuation_graham(financial_line_items: list, market_cap: float) -> dict:
+def analyze_valuation_graham(financial_line_items: list, market_cap: float, metrics: list | None = None) -> dict:
     """
     Core Graham approach to valuation:
     1. Net-Net Check: (Current Assets - Total Liabilities) vs. Market Cap
@@ -326,7 +326,12 @@ def analyze_valuation_graham(financial_line_items: list, market_cap: float) -> d
     total_liabilities = latest.total_liabilities or 0
     book_value_ps = latest.book_value_per_share or 0
     eps = latest.earnings_per_share or 0
-    shares_outstanding = latest.outstanding_shares or 0
+    # Prefer the point-in-time TTM share count from financial metrics. The TTM
+    # line item can report outstanding_shares summed across quarters (~4x the
+    # real float on US tickers like MU), which deflates the Graham per-share
+    # price by the same factor and inflates the margin of safety. metrics[0] is a
+    # snapshot consistent with the share base behind market cap.
+    shares_outstanding = (metrics[0].outstanding_shares if metrics else None) or (latest.outstanding_shares or 0)
 
     details = []
     score = 0
