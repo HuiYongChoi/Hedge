@@ -271,6 +271,13 @@ def analyze_lynch_fundamentals(financial_line_items: list) -> dict:
     return {"score": final_score, "details": "; ".join(details)}
 
 
+# PEG guards: a depressed-base EPS CAGR can explode (tiny base year → huge growth
+# → PEG≈0 → looks artificially cheap), while a near-flat grower can blow the PEG
+# up to meaningless noise. Cap the growth fed into PEG and cap the PEG itself.
+LYNCH_PEG_GROWTH_CAP = 0.35   # max growth used in the PEG denominator
+LYNCH_PEG_CAP = 50.0          # max reported/used PEG
+
+
 def analyze_lynch_valuation(financial_line_items: list, market_cap: float | None) -> dict:
     """
     Peter Lynch's approach to 'Growth at a Reasonable Price' (GARP):
@@ -319,12 +326,19 @@ def analyze_lynch_valuation(financial_line_items: list, market_cap: float | None
     # Compute PEG if possible
     peg_ratio = None
     if pe_ratio and eps_growth_rate and eps_growth_rate > 0:
-        # PEG ratio formula: P/E divided by growth rate (as percentage)
-        # Since eps_growth_rate is stored as decimal (0.25 for 25%),
-        # we multiply by 100 to convert to percentage for the PEG calculation
-        # Example: P/E=20, growth=0.25 (25%) => PEG = 20/25 = 0.8
-        peg_ratio = pe_ratio / (eps_growth_rate * 100)
-        details.append(f"PEG ratio: {peg_ratio:.2f}")
+        # PEG = P/E divided by growth-as-percentage. Guard both ends: clamp the
+        # growth input so a depressed-base CAGR cannot fake a near-zero PEG, and
+        # clamp the PEG itself so a near-flat grower cannot print runaway noise.
+        growth_for_peg = min(eps_growth_rate, LYNCH_PEG_GROWTH_CAP)
+        peg_ratio = pe_ratio / (growth_for_peg * 100)
+        guard_notes = []
+        if eps_growth_rate > LYNCH_PEG_GROWTH_CAP:
+            guard_notes.append(f"growth capped at {LYNCH_PEG_GROWTH_CAP:.0%}")
+        if peg_ratio > LYNCH_PEG_CAP:
+            peg_ratio = LYNCH_PEG_CAP
+            guard_notes.append(f"PEG capped at {LYNCH_PEG_CAP:.0f}")
+        marker = f" [guard applied: {', '.join(guard_notes)}]" if guard_notes else ""
+        details.append(f"PEG ratio: {peg_ratio:.2f}{marker}")
 
     # Scoring logic:
     #   - P/E < 15 => +2, < 25 => +1

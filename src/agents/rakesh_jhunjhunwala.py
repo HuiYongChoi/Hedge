@@ -80,7 +80,7 @@ def rakesh_jhunjhunwala_agent(state: AgentState, agent_id: str = "rakesh_jhunjhu
         
         progress.update_status(agent_id, ticker, "Calculating intrinsic value")
         # Calculate intrinsic value once
-        intrinsic_value = calculate_intrinsic_value(financial_line_items, market_cap)
+        intrinsic_value, intrinsic_value_guard = calculate_intrinsic_value(financial_line_items, market_cap)
 
         # ─── Score & margin of safety ──────────────────────────────────────────
         total_score = (
@@ -153,6 +153,8 @@ def rakesh_jhunjhunwala_agent(state: AgentState, agent_id: str = "rakesh_jhunjhu
         }
         if valuation_confidence_note:
             analysis_data[ticker]["valuation_confidence_note"] = valuation_confidence_note
+        if intrinsic_value_guard:
+            analysis_data[ticker]["valuation_guard"] = intrinsic_value_guard
         company_name = resolve_company_name(ticker)
         analysis_data[ticker]["company_name"] = company_name
 
@@ -529,7 +531,14 @@ def assess_quality_metrics(financial_line_items: list) -> float:
     return sum(quality_factors) / len(quality_factors) if quality_factors else 0.5
 
 
-def calculate_intrinsic_value(financial_line_items: list, market_cap: float) -> float:
+# Growth guards for the intrinsic-value CAGR: dropping loss years from the window
+# compresses the year-base and overstates the CAGR; a tiny base year does the same.
+# Cap the raw historical CAGR (tighter when loss years were dropped) and mark it.
+RJ_GROWTH_CAP = 0.30             # ceiling on the raw historical CAGR
+RJ_COMPRESSED_GROWTH_CAP = 0.10  # tighter ceiling when loss years compressed the year-base
+
+
+def calculate_intrinsic_value(financial_line_items: list, market_cap: float) -> tuple[float | None, str | None]:
     """
     Calculate intrinsic value using Rakesh Jhunjhunwala's approach:
     - Focus on earnings power and growth
@@ -537,34 +546,51 @@ def calculate_intrinsic_value(financial_line_items: list, market_cap: float) -> 
     - Quality premium for consistent performers
     """
     if not financial_line_items or not market_cap:
-        return None
-    
+        return None, None
+
     try:
         latest = financial_line_items[0]
-        
+
         # Need positive earnings as base
         if not getattr(latest, 'net_income', None) or latest.net_income <= 0:
-            return None
-        
+            return None, None
+
         # Get historical earnings for growth calculation
-        net_incomes = [getattr(item, "net_income", None) for item in financial_line_items[:5] 
+        window = financial_line_items[:5]
+        net_incomes = [getattr(item, "net_income", None) for item in window
                        if getattr(item, "net_income", None) is not None and getattr(item, "net_income", None) > 0]
-        
+
         if len(net_incomes) < 2:
             # Use current earnings with conservative multiple for stable companies
-            return latest.net_income * 12  # Conservative P/E of 12
-        
+            return latest.net_income * 12, None  # Conservative P/E of 12
+
         # Calculate sustainable growth rate using historical data
         initial_income = net_incomes[-1]  # Oldest
         final_income = net_incomes[0]     # Latest
         years = len(net_incomes) - 1
-        
+
         # Calculate historical CAGR
         if initial_income > 0:  # Fixed: Add zero check
             historical_growth = ((final_income / initial_income) ** (1/years) - 1)
         else:
             historical_growth = 0.05  # Default to 5%
-        
+
+        # Guard the CAGR: loss/blank years dropped from the window compress the
+        # year-base and overstate growth; a tiny base year does the same. Clamp
+        # (tighter when years were dropped) and mark when the guard fires.
+        guard_note = None
+        dropped = len(window) - len(net_incomes)
+        growth_cap = RJ_COMPRESSED_GROWTH_CAP if dropped > 0 else RJ_GROWTH_CAP
+        if historical_growth > growth_cap:
+            historical_growth = growth_cap
+            if dropped > 0:
+                guard_note = (
+                    f"intrinsic-value growth guard applied: {dropped} loss/blank year(s) "
+                    f"dropped compressed the CAGR base, capped at {growth_cap:.0%}"
+                )
+            else:
+                guard_note = f"intrinsic-value growth guard applied: CAGR capped at {growth_cap:.0%}"
+
         # Conservative growth assumptions (Jhunjhunwala style)
         if historical_growth > 0.25:  # Cap at 25% for sustainability
             sustainable_growth = 0.20  # Conservative 20%
@@ -605,14 +631,14 @@ def calculate_intrinsic_value(financial_line_items: list, market_cap: float) -> 
         terminal_value = (year_5_earnings * terminal_multiple) / ((1 + discount_rate) ** 5)
         
         total_intrinsic_value = dcf_value + terminal_value
-        
-        return total_intrinsic_value
-        
+
+        return total_intrinsic_value, guard_note
+
     except Exception:
         # Fallback to simple earnings multiple
         if getattr(latest, 'net_income', None) and latest.net_income > 0:
-            return latest.net_income * 15
-        return None
+            return latest.net_income * 15, None
+        return None, None
 
 
 def analyze_rakesh_jhunjhunwala_style(
@@ -649,7 +675,7 @@ def analyze_rakesh_jhunjhunwala_style(
 
     # Use provided intrinsic value or calculate if not provided
     if not intrinsic_value:
-        intrinsic_value = calculate_intrinsic_value(financial_line_items, current_price)
+        intrinsic_value, _ = calculate_intrinsic_value(financial_line_items, current_price)
 
     valuation_gap = None
     if intrinsic_value and current_price:
