@@ -21,7 +21,7 @@ import {
   extractMetricValue,
   extractReasoningMetricValue,
   extractTargetTiles,
-  extractValuationDcfPerShare,
+  extractValuationHeadlinePerShare,
   findFirstRenderableAgentKey,
   getAgentMeta,
   getAgentReport,
@@ -285,9 +285,11 @@ export function ReportLayout({
     agentResults.get('valuation_analyst'),
   );
   // For the valuation_analyst report, anchor the headline 1주당 내재가치 to the
-  // DCF model's per-share output rather than the regex-scraped narrative number.
+  // backend headline per-share. It tracks DCF normally but falls back to the
+  // blended value when DCF is a low-confidence outlier, so the headline and
+  // margin of safety stop being dominated by a model the signal already excludes.
   const dcfHeadlineIntrinsic = displayAgentKey === 'valuation_analyst'
-    ? extractValuationDcfPerShare(valuationReport)
+    ? extractValuationHeadlinePerShare(valuationReport)
     : null;
   const reportPerShareIntrinsicValue = extractMetricValue(displayReport, [
     'intrinsic_value_per_share',

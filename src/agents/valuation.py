@@ -577,6 +577,34 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             if v["gap"] is not None and not v["is_outlier"]
         ) / blend_weight
 
+        # Headline 1주당 내재가치: normally the DCF per-share, but when DCF is
+        # flagged as a peer outlier (low confidence) it must NOT anchor the
+        # headline. Fall back to the blended (non-outlier weighted-average)
+        # per-share so the headline and margin-of-safety match the consensus the
+        # signal is already based on. DCF stays in the model summary with its
+        # low-confidence badge for transparency.
+        blended_intrinsic_total = sum(
+            v["weight"] * v["value"]
+            for v in valid_models.values()
+            if not v["is_outlier"]
+        ) / blend_weight
+        blended_intrinsic_per_share = (
+            blended_intrinsic_total / shares_outstanding
+            if shares_outstanding else None
+        )
+        dcf_vals = valid_models.get("dcf")
+        dcf_is_outlier = bool(dcf_vals and dcf_vals.get("is_outlier"))
+        dcf_per_share = (
+            dcf_vals["value"] / shares_outstanding
+            if (dcf_vals and shares_outstanding and dcf_vals["value"] > 0) else None
+        )
+        if dcf_per_share and not dcf_is_outlier:
+            headline_intrinsic_per_share = dcf_per_share
+            headline_source = "dcf"
+        else:
+            headline_intrinsic_per_share = blended_intrinsic_per_share
+            headline_source = "blended"
+
         signal = "bullish" if weighted_gap > 0.15 else "bearish" if weighted_gap < -0.15 else "neutral"
         confidence = round(min(abs(weighted_gap) / 0.30 * 100, 100))
 
@@ -593,6 +621,10 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         reasoning = {
             "regime": regime,
             "regime_note": regime_note,
+            "headline_intrinsic_per_share": headline_intrinsic_per_share,
+            "headline_source": headline_source,
+            "blended_intrinsic_per_share": blended_intrinsic_per_share,
+            "dcf_is_outlier": dcf_is_outlier,
         }
         for m, vals in method_values.items():
             if vals["value"] > 0:

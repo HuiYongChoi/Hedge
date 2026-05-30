@@ -1820,6 +1820,23 @@ export function extractValuationDcfPerShare(
   return safeNum(dcf.intrinsic_per_share);
 }
 
+// Headline 1주당 내재가치: prefer the backend-computed headline per-share, which
+// switches from the DCF value to the blended (non-outlier weighted-average)
+// value whenever DCF is flagged as a low-confidence peer outlier. Falls back to
+// the DCF per-share for older reports that predate the headline field.
+export function extractValuationHeadlinePerShare(
+  valuationReport: AgentReport | null,
+): number | null {
+  const rawReasoning = valuationReport?.reasoning;
+  if (!rawReasoning || typeof rawReasoning !== 'object') {
+    return extractValuationDcfPerShare(valuationReport);
+  }
+  const reasoning = rawReasoning as Record<string, unknown>;
+  const headline = safeNum(reasoning.headline_intrinsic_per_share);
+  if (headline !== null) return headline;
+  return extractValuationDcfPerShare(valuationReport);
+}
+
 export function buildValuationDeepDive(
   valuationReport: AgentReport | null,
   currentPrice: number | null,
