@@ -347,18 +347,18 @@ def analyze_risk_reward(financial_line_items: list, prices: list) -> dict:
         recent_debt = debt_values[0]
         recent_equity = equity_values[0] if equity_values[0] else 1e-9
         de_ratio = recent_debt / recent_equity
-        de_pct = f"debt is {de_ratio * 100:.0f}% of equity"
+        de_pct = de_ratio * 100
         if de_ratio < 0.3:
             raw_score += 3
-            details.append(f"Low debt-to-equity: {de_ratio:.2f} ({de_pct})")
+            details.append(f"Low debt/equity: {de_pct:.0f}%")
         elif de_ratio < 0.7:
             raw_score += 2
-            details.append(f"Moderate debt-to-equity: {de_ratio:.2f} ({de_pct})")
+            details.append(f"Moderate debt/equity: {de_pct:.0f}%")
         elif de_ratio < 1.5:
             raw_score += 1
-            details.append(f"Somewhat high debt-to-equity: {de_ratio:.2f} ({de_pct})")
+            details.append(f"Somewhat high debt/equity: {de_pct:.0f}%")
         else:
-            details.append(f"High debt-to-equity: {de_ratio:.2f} ({de_pct})")
+            details.append(f"High debt/equity: {de_pct:.0f}%")
     else:
         details.append("No consistent debt/equity data available.")
 
@@ -378,15 +378,15 @@ def analyze_risk_reward(financial_line_items: list, prices: list) -> dict:
                 stdev = statistics.pstdev(daily_returns)  # population stdev
                 if stdev < 0.01:
                     raw_score += 3
-                    details.append(f"Low volatility: daily returns stdev {stdev:.2%}")
+                    details.append(f"Low volatility: {stdev:.1%}/day")
                 elif stdev < 0.02:
                     raw_score += 2
-                    details.append(f"Moderate volatility: daily returns stdev {stdev:.2%}")
+                    details.append(f"Moderate volatility: {stdev:.1%}/day")
                 elif stdev < 0.04:
                     raw_score += 1
-                    details.append(f"High volatility: daily returns stdev {stdev:.2%}")
+                    details.append(f"High volatility: {stdev:.1%}/day")
                 else:
-                    details.append(f"Very high volatility: daily returns stdev {stdev:.2%}")
+                    details.append(f"Very high volatility: {stdev:.1%}/day")
             else:
                 details.append("Insufficient daily returns data for volatility calc.")
         else:

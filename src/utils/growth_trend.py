@@ -63,38 +63,35 @@ def assess_trend(
 
     if cyclical:
         if latest <= 0:
-            return 0, f"{noun} still negative — cyclical trough not yet cleared"
+            return 0, f"Cyclical {noun} still negative"
         near_peak = pct_of_peak is not None and pct_of_peak >= 0.85
         if recovering and pct_of_peak is not None and pct_of_peak >= 0.999:
-            return 3, f"Cyclical {noun} at a fresh cycle high ({up_years}/{steps} yrs up)"
+            return 3, f"Cyclical {noun} at a fresh high"
         if recovering and near_peak:
-            return 3, (
-                f"Cyclical {noun} recovered to {pct_of_peak:.0%} of the prior peak "
-                f"({up_years}/{steps} yrs up)"
-            )
+            return 3, f"Cyclical {noun} recovered to {pct_of_peak:.0%} of peak"
         if recovering:
-            tail = f" to {pct_of_peak:.0%} of the prior peak" if pct_of_peak is not None else ""
-            return 2, f"Cyclical {noun} recovering off the trough{tail}"
+            tail = f" to {pct_of_peak:.0%} of peak" if pct_of_peak is not None else " off the trough"
+            return 2, f"Cyclical {noun} recovering{tail}"
         if yoy is not None:
-            return 1, f"Cyclical {noun} easing back ({yoy:+.1%} YoY) after a rebound"
-        return 1, f"Cyclical {noun} easing back after a rebound"
+            return 1, f"Cyclical {noun} easing back {yoy:+.0%}"
+        return 1, f"Cyclical {noun} easing back"
 
     # Steady (no loss, contained swings): combine the multi-year trend with
     # recent momentum and consistency so a single strong endpoint can't carry
     # the score on its own.
     cagr = _cagr(latest, oldest, steps)
     if cagr is None:
-        return 1, f"{noun} positive but trend unclear"
+        return 1, f"{noun} trend unclear"
     mostly_up = up_years >= max(1, steps - 1)
     if cagr > strong and (yoy is None or yoy > 0) and mostly_up:
-        return 3, f"Strong, consistent {noun} growth: {cagr:.1%} CAGR/yr ({up_years}/{steps} yrs up)"
+        return 3, f"Strong {noun} growth: {cagr:.1%}/yr"
     if cagr > strong and yoy is not None and yoy <= 0:
-        return 2, f"{noun} up {cagr:.1%} CAGR/yr but the latest year softened ({yoy:+.1%} YoY)"
+        return 2, f"{noun} growth {cagr:.1%}/yr but latest year softened"
     if cagr > moderate:
-        return 2, f"Moderate {noun} growth: {cagr:.1%} CAGR/yr"
+        return 2, f"Moderate {noun} growth: {cagr:.1%}/yr"
     if cagr > slight:
-        return 1, f"Slight {noun} growth: {cagr:.1%} CAGR/yr"
-    return 0, f"Flat/declining {noun}: {cagr:.1%} CAGR/yr"
+        return 1, f"Slight {noun} growth: {cagr:.1%}/yr"
+    return 0, f"Flat/declining {noun}: {cagr:.1%}/yr"
 
 
 def scale_points(points: int, max_points: int) -> int:

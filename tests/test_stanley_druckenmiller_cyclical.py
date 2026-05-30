@@ -38,7 +38,7 @@ def test_cyclical_recovery_not_read_as_decline():
     # Must read the V-shaped recovery from the full series, not the misleading
     # flat/negative endpoint CAGR nor a raw +992% latest-YoY base artifact.
     assert "Cyclical EPS recovered to" in details
-    assert "of the prior peak" in details
+    assert "of peak" in details
     assert "Minimal/negative annualized EPS growth" not in details
     # The +992% YoY base-effect number must never leak into the narrative.
     assert "992" not in details
@@ -53,8 +53,8 @@ def test_normal_monotonic_eps_still_uses_cagr():
         _li(revenue=100.0, earnings_per_share=1.5),
     ]
     result = analyze_growth_and_momentum(items, prices=[])
-    # No loss year, contained swings -> keep annualized CAGR wording.
-    assert "CAGR/yr" in result["details"]
+    # No loss year, contained swings -> keep annualized growth wording.
+    assert "/yr" in result["details"]
     assert "Cyclical" not in result["details"]
 
 
@@ -65,6 +65,7 @@ def test_risk_reward_emits_explicit_debt_percentage():
     ]
     prices = [_price(100.0 + i) for i in range(15)]
     result = analyze_risk_reward(items, prices)
-    # ~0.28 ratio must surface as a clean "28% of equity", never a fabricated 200%.
-    assert "Low debt-to-equity" in result["details"]
-    assert "28% of equity" in result["details"]
+    # ~0.28 ratio must surface as a clean "28%", never a fabricated 200%.
+    assert "Low debt/equity" in result["details"]
+    assert "28%" in result["details"]
+    assert "200%" not in result["details"]

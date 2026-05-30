@@ -16,7 +16,7 @@ def test_cyclical_v_recovery_not_decline():
     points, label = assess_trend(MU_EPS, noun="EPS")
     assert points == 3
     assert "Cyclical EPS recovered to" in label
-    assert "of the prior peak" in label
+    assert "of peak" in label
     # The +992% base-effect YoY must never surface.
     assert "992" not in label
 
@@ -24,7 +24,7 @@ def test_cyclical_v_recovery_not_decline():
 def test_cyclical_fresh_high():
     points, label = assess_trend(MU_REV, noun="revenue")
     assert points == 3
-    assert "fresh cycle high" in label
+    assert "fresh high" in label
 
 
 def test_still_negative_trough_scores_zero():
@@ -37,7 +37,7 @@ def test_still_negative_trough_scores_zero():
 def test_monotonic_growth_uses_cagr():
     points, label = assess_trend([2.0, 1.8, 1.5], noun="EPS")
     assert points == 3
-    assert "CAGR/yr" in label
+    assert "/yr" in label
     assert "Cyclical" not in label
 
 
