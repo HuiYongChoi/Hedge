@@ -506,6 +506,20 @@ function ValuationModelsSummary({
   );
 }
 
+// Amber "low-confidence" badge for a model excluded from the blend, shared by
+// the compact summary list and the prominent per-model detail cards so a
+// flagged model never looks like a live valuation in either place.
+function ModelLowConfidenceBadge({ note, language }: { note?: string | null; language: ReportLanguage }) {
+  return (
+    <span
+      title={note ?? undefined}
+      className="shrink-0 rounded-sm border border-amber-500/40 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400"
+    >
+      {t('valuationLowConfidenceBadge', language)}
+    </span>
+  );
+}
+
 function ValuationSidebarPanel({
   dive,
   currency,
@@ -568,15 +582,17 @@ function ValuationSidebarPanel({
     : t('evEbitdaSubtitleFallback', language);
   const evCard = hasEv && (() => {
     const classes = toneToClasses(evTone);
+    const isOutlier = evModel?.isOutlier === true;
     return (
-      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}${isOutlier ? ' opacity-60' : ''}`}>
         <div className="flex items-start justify-between gap-2">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {t('evEbitdaLabel', language)}
+          <div className="flex min-w-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="truncate">{t('evEbitdaLabel', language)}</span>
+            {isOutlier && <ModelLowConfidenceBadge note={evModel?.outlierNote} language={language} />}
           </div>
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(evGap)}</div>
         </div>
-        <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+        <div className={`mt-1 font-mono text-lg font-semibold ${isOutlier ? 'text-muted-foreground line-through decoration-1' : classes.text}`}>
           {formatCurrency(evValue, currency)}
         </div>
         <div className="text-[10px] text-muted-foreground">{evSubtitle}</div>
@@ -587,20 +603,22 @@ function ValuationSidebarPanel({
   const hasEbitda = ebitdaValue !== null;
   const ebitdaCard = hasEbitda && (() => {
     const classes = toneToClasses(ebitdaModel?.signal ?? 'neutral');
+    const isOutlier = ebitdaModel?.isOutlier === true;
     const subtitle = ebitdaModel?.targetMultiple !== null && ebitdaModel?.targetMultiple !== undefined
       ? fillTemplate(t('ebitdaValuationSubtitle', language), {
           multiple: ebitdaModel.targetMultiple.toFixed(1),
         })
       : t('ebitdaValuationSubtitleFallback', language);
     return (
-      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}${isOutlier ? ' opacity-60' : ''}`}>
         <div className="flex items-start justify-between gap-2">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {t('ebitdaValuationLabel', language)}
+          <div className="flex min-w-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="truncate">{t('ebitdaValuationLabel', language)}</span>
+            {isOutlier && <ModelLowConfidenceBadge note={ebitdaModel?.outlierNote} language={language} />}
           </div>
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(ebitdaModel?.gapToMarket ?? null)}</div>
         </div>
-        <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+        <div className={`mt-1 font-mono text-lg font-semibold ${isOutlier ? 'text-muted-foreground line-through decoration-1' : classes.text}`}>
           {formatCurrency(ebitdaValue, currency)}
         </div>
         <div className="text-[10px] text-muted-foreground">{subtitle}</div>
@@ -611,6 +629,7 @@ function ValuationSidebarPanel({
   const hasEva = evaValue !== null;
   const evaCard = hasEva && (() => {
     const classes = toneToClasses(evaModel?.signal ?? 'neutral');
+    const isOutlier = evaModel?.isOutlier === true;
     const subtitle = evaModel?.roic !== null && evaModel?.roic !== undefined
       && evaModel?.wacc !== null && evaModel?.wacc !== undefined
       ? fillTemplate(t('roicWaccSubtitle', language), {
@@ -620,14 +639,15 @@ function ValuationSidebarPanel({
         })
       : t('roicWaccSubtitleFallback', language);
     return (
-      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}${isOutlier ? ' opacity-60' : ''}`}>
         <div className="flex items-start justify-between gap-2">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {t('roicWaccLabel', language)}
+          <div className="flex min-w-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="truncate">{t('roicWaccLabel', language)}</span>
+            {isOutlier && <ModelLowConfidenceBadge note={evaModel?.outlierNote} language={language} />}
           </div>
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(evaModel?.gapToMarket ?? null)}</div>
         </div>
-        <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+        <div className={`mt-1 font-mono text-lg font-semibold ${isOutlier ? 'text-muted-foreground line-through decoration-1' : classes.text}`}>
           {formatCurrency(evaValue, currency)}
         </div>
         <div className="text-[10px] text-muted-foreground">{subtitle}</div>
@@ -646,14 +666,15 @@ function ValuationSidebarPanel({
         marketCurrentPrice={currentPrice}
       />
     ) : (
-      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}${pbrModel?.isOutlier === true ? ' opacity-60' : ''}`}>
         <div className="flex items-start justify-between gap-2">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {language === 'ko' ? 'PBR 밴드' : 'PBR Band'}
+          <div className="flex min-w-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="truncate">{language === 'ko' ? 'PBR 밴드' : 'PBR Band'}</span>
+            {pbrModel?.isOutlier === true && <ModelLowConfidenceBadge note={pbrModel?.outlierNote} language={language} />}
           </div>
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(pbrGap)}</div>
         </div>
-        <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+        <div className={`mt-1 font-mono text-lg font-semibold ${pbrModel?.isOutlier === true ? 'text-muted-foreground line-through decoration-1' : classes.text}`}>
           {formatCurrency(pbrValue, currency)}
         </div>
         <div className="text-[10px] text-muted-foreground">
@@ -664,15 +685,17 @@ function ValuationSidebarPanel({
   })();
   const rimCard = hasRim && (() => {
     const classes = toneToClasses(rimTone);
+    const isOutlier = rimModel?.isOutlier === true;
     return (
-      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}${isOutlier ? ' opacity-60' : ''}`}>
         <div className="flex items-start justify-between gap-2">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {language === 'ko' ? 'RIM 평가' : 'RIM Valuation'}
+          <div className="flex min-w-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="truncate">{language === 'ko' ? 'RIM 평가' : 'RIM Valuation'}</span>
+            {isOutlier && <ModelLowConfidenceBadge note={rimModel?.outlierNote} language={language} />}
           </div>
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(rimGap)}</div>
         </div>
-        <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+        <div className={`mt-1 font-mono text-lg font-semibold ${isOutlier ? 'text-muted-foreground line-through decoration-1' : classes.text}`}>
           {formatCurrency(rimValue, currency)}
         </div>
         <div className="text-[10px] text-muted-foreground">
