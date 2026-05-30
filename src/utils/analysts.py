@@ -20,6 +20,7 @@ from src.agents.mohnish_pabrai import mohnish_pabrai_agent
 from src.agents.nassim_taleb import nassim_taleb_agent
 from src.agents.news_sentiment import news_sentiment_agent
 from src.agents.growth_agent import growth_analyst_agent
+from src.agents.semiconductor_rerating import semiconductor_rerating_analyst_agent
 
 # Define analyst configuration - single source of truth
 ANALYST_CONFIG = {
@@ -231,6 +232,17 @@ ANALYST_CONFIG = {
         "agent_func": valuation_analyst_agent,
         "type": "analyst", "category": "Technical & Analysis", "category_ko": "기술 및 분석",
         "order": 18,
+    },
+    "semiconductor_rerating_analyst": {
+        "display_name": "Semiconductor Rerating Analyst",
+        "display_name_ko": "반도체 리레이팅 분석가",
+        "description": "Memory & Semiconductor Cycle Specialist",
+        "description_ko": "반도체 사이클 전문가",
+        "investing_style": "Specializes in memory and semiconductor stocks, using a probability-weighted expected-value framework to assess cyclical rerating potential (HBM/DRAM demand, capex, forward earnings) where conventional DCF often understates intrinsic value.",
+        "investing_style_ko": "메모리·반도체 종목에 특화되어, 일반 DCF가 내재가치를 과소평가하기 쉬운 사이클 리레이팅 잠재력(HBM/DRAM 수요, 설비투자, 선행 이익)을 확률 가중 기대값 방식으로 평가합니다.",
+        "agent_func": semiconductor_rerating_analyst_agent,
+        "type": "analyst", "category": "Technical & Analysis", "category_ko": "기술 및 분석",
+        "order": 19,
     },
 }
 

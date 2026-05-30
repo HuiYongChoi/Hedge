@@ -283,6 +283,9 @@ def _build_decision_context(
                 "moat_analysis",
                 "predictability_analysis",
                 "financial_discipline_analysis",
+                "rerating_analysis",
+                "scenario_analysis",
+                "recommended_agent_mix",
             ):
                 if key in raw:
                     compact_value = _compact_json_value(raw.get(key))
