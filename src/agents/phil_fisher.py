@@ -20,6 +20,7 @@ from src.utils.forward_outlook import (
     build_forward_outlook_block,
     get_cached_forward_metrics,
 )
+from src.utils.growth_trend import assess_trend
 
 class PhilFisherSignal(BaseModel):
     signal: Literal["bullish", "bearish", "neutral"]
@@ -195,56 +196,19 @@ def analyze_fisher_growth_quality(financial_line_items: list) -> dict:
     details = []
     raw_score = 0  # up to 9 raw points => scale to 0–10
 
-    # 1. Revenue Growth (annualized CAGR)
+    # Read the full series (not just endpoints) so a cyclical V-recovery isn't
+    # mislabeled as flat/negative, while keeping Fisher's demanding 20/10/3% bar.
+    # 1. Revenue Growth (annualized CAGR / cycle-aware)
     revenues = [fi.revenue for fi in financial_line_items if fi.revenue is not None]
-    if len(revenues) >= 2:
-        # Calculate annualized growth rate (CAGR) for proper comparison
-        latest_rev = revenues[0]
-        oldest_rev = revenues[-1]
-        num_years = len(revenues) - 1
-        if oldest_rev > 0 and latest_rev > 0:
-            # CAGR formula: (ending_value/beginning_value)^(1/years) - 1
-            rev_growth = (latest_rev / oldest_rev) ** (1 / num_years) - 1
-            if rev_growth > 0.20:  # 20% annualized
-                raw_score += 3
-                details.append(f"Very strong annualized revenue growth: {rev_growth:.1%}")
-            elif rev_growth > 0.10:  # 10% annualized
-                raw_score += 2
-                details.append(f"Moderate annualized revenue growth: {rev_growth:.1%}")
-            elif rev_growth > 0.03:  # 3% annualized
-                raw_score += 1
-                details.append(f"Slight annualized revenue growth: {rev_growth:.1%}")
-            else:
-                details.append(f"Minimal or negative annualized revenue growth: {rev_growth:.1%}")
-        else:
-            details.append("Oldest revenue is zero/negative; cannot compute growth.")
-    else:
-        details.append("Not enough revenue data points for growth calculation.")
+    rev_points, rev_detail = assess_trend(revenues, noun="revenue", strong=0.20, moderate=0.10, slight=0.03)
+    raw_score += rev_points
+    details.append(rev_detail)
 
-    # 2. EPS Growth (annualized CAGR)
+    # 2. EPS Growth (annualized CAGR / cycle-aware)
     eps_values = [fi.earnings_per_share for fi in financial_line_items if fi.earnings_per_share is not None]
-    if len(eps_values) >= 2:
-        latest_eps = eps_values[0]
-        oldest_eps = eps_values[-1]
-        num_years = len(eps_values) - 1
-        if oldest_eps > 0 and latest_eps > 0:
-            # CAGR formula for EPS
-            eps_growth = (latest_eps / oldest_eps) ** (1 / num_years) - 1
-            if eps_growth > 0.20:  # 20% annualized
-                raw_score += 3
-                details.append(f"Very strong annualized EPS growth: {eps_growth:.1%}")
-            elif eps_growth > 0.10:  # 10% annualized
-                raw_score += 2
-                details.append(f"Moderate annualized EPS growth: {eps_growth:.1%}")
-            elif eps_growth > 0.03:  # 3% annualized
-                raw_score += 1
-                details.append(f"Slight annualized EPS growth: {eps_growth:.1%}")
-            else:
-                details.append(f"Minimal or negative annualized EPS growth: {eps_growth:.1%}")
-        else:
-            details.append("Oldest EPS near zero; skipping EPS growth calculation.")
-    else:
-        details.append("Not enough EPS data points for growth calculation.")
+    eps_points, eps_detail = assess_trend(eps_values, noun="EPS", strong=0.20, moderate=0.10, slight=0.03)
+    raw_score += eps_points
+    details.append(eps_detail)
 
     # 3. R&D as % of Revenue (if we have R&D data)
     rnd_values = [fi.research_and_development for fi in financial_line_items if fi.research_and_development is not None]

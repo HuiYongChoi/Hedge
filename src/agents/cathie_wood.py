@@ -15,6 +15,7 @@ from src.utils.forward_outlook import (
     build_forward_outlook_block,
     get_cached_forward_metrics,
 )
+from src.utils.growth_trend import assess_trend
 
 
 class CathieWoodSignal(BaseModel):
@@ -157,17 +158,12 @@ def analyze_disruptive_potential(metrics: list, financial_line_items: list) -> d
             score += 2
             details.append(f"Revenue growth is accelerating: {(growth_rates[0]*100):.1f}% vs {(growth_rates[-1]*100):.1f}%")
 
-        # Check absolute growth rate (most recent growth rate is at index 0)
-        latest_growth = growth_rates[0] if growth_rates else 0
-        if latest_growth > 1.0:
-            score += 3
-            details.append(f"Exceptional revenue growth: {(latest_growth*100):.1f}%")
-        elif latest_growth > 0.5:
-            score += 2
-            details.append(f"Strong revenue growth: {(latest_growth*100):.1f}%")
-        elif latest_growth > 0.2:
-            score += 1
-            details.append(f"Moderate revenue growth: {(latest_growth*100):.1f}%")
+        # Absolute growth strength: read the full series (cycle-aware) instead of
+        # the single most-recent YoY, so a base-effect bounce off a trough isn't
+        # mislabeled as disruptive hypergrowth; keep Cathie's 100/50/20% bars.
+        rev_points, rev_detail = assess_trend(revenues, noun="revenue", strong=1.0, moderate=0.5, slight=0.2)
+        score += rev_points
+        details.append(rev_detail)
     else:
         details.append("Insufficient revenue data for growth analysis")
 

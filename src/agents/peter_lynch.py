@@ -19,6 +19,7 @@ from src.utils.forward_outlook import (
     build_forward_outlook_block,
     get_cached_forward_metrics,
 )
+from src.utils.growth_trend import assess_trend
 
 
 class PeterLynchSignal(BaseModel):
@@ -187,51 +188,20 @@ def analyze_lynch_growth(financial_line_items: list) -> dict:
     details = []
     raw_score = 0  # We'll sum up points, then scale to 0–10 eventually
 
+    # Lynch hunts fast, consistent compounders. Read the whole series (not just
+    # the endpoints) so a cyclical V-recovery isn't mislabeled flat/negative, and
+    # keep Lynch's higher growth bar via the CAGR cutoffs.
     # 1) Revenue Growth
     revenues = [fi.revenue for fi in financial_line_items if fi.revenue is not None]
-    if len(revenues) >= 2:
-        latest_rev = revenues[0]
-        older_rev = revenues[-1]
-        if older_rev > 0:
-            rev_growth = (latest_rev - older_rev) / abs(older_rev)
-            if rev_growth > 0.25:
-                raw_score += 3
-                details.append(f"Strong revenue growth: {rev_growth:.1%}")
-            elif rev_growth > 0.10:
-                raw_score += 2
-                details.append(f"Moderate revenue growth: {rev_growth:.1%}")
-            elif rev_growth > 0.02:
-                raw_score += 1
-                details.append(f"Slight revenue growth: {rev_growth:.1%}")
-            else:
-                details.append(f"Flat or negative revenue growth: {rev_growth:.1%}")
-        else:
-            details.append("Older revenue is zero/negative; can't compute revenue growth.")
-    else:
-        details.append("Not enough revenue data to assess growth.")
+    rev_points, rev_detail = assess_trend(revenues, noun="revenue", strong=0.15, moderate=0.08, slight=0.02)
+    raw_score += rev_points
+    details.append(rev_detail)
 
     # 2) EPS Growth
     eps_values = [fi.earnings_per_share for fi in financial_line_items if fi.earnings_per_share is not None]
-    if len(eps_values) >= 2:
-        latest_eps = eps_values[0]
-        older_eps = eps_values[-1]
-        if abs(older_eps) > 1e-9:
-            eps_growth = (latest_eps - older_eps) / abs(older_eps)
-            if eps_growth > 0.25:
-                raw_score += 3
-                details.append(f"Strong EPS growth: {eps_growth:.1%}")
-            elif eps_growth > 0.10:
-                raw_score += 2
-                details.append(f"Moderate EPS growth: {eps_growth:.1%}")
-            elif eps_growth > 0.02:
-                raw_score += 1
-                details.append(f"Slight EPS growth: {eps_growth:.1%}")
-            else:
-                details.append(f"Minimal or negative EPS growth: {eps_growth:.1%}")
-        else:
-            details.append("Older EPS is near zero; skipping EPS growth calculation.")
-    else:
-        details.append("Not enough EPS data for growth calculation.")
+    eps_points, eps_detail = assess_trend(eps_values, noun="EPS", strong=0.15, moderate=0.08, slight=0.02)
+    raw_score += eps_points
+    details.append(eps_detail)
 
     # raw_score can be up to 6 => scale to 0–10
     final_score = min(10, (raw_score / 6) * 10)

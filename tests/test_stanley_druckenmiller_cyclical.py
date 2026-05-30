@@ -35,11 +35,14 @@ MU_LINE_ITEMS = [
 def test_cyclical_recovery_not_read_as_decline():
     result = analyze_growth_and_momentum(MU_LINE_ITEMS, prices=[])
     details = result["details"]
-    # Must recognize the YoY rebound, not the misleading flat/negative CAGR.
-    assert "recovery (cyclical)" in details
-    assert "Strong EPS YoY recovery" in details
+    # Must read the V-shaped recovery from the full series, not the misleading
+    # flat/negative endpoint CAGR nor a raw +992% latest-YoY base artifact.
+    assert "Cyclical EPS recovered to" in details
+    assert "of the prior peak" in details
     assert "Minimal/negative annualized EPS growth" not in details
-    # Revenue (+6.7% CAGR -> moderate) + EPS recovery (strong) should score well.
+    # The +992% YoY base-effect number must never leak into the narrative.
+    assert "992" not in details
+    # Cyclical revenue at a fresh high (strong) + EPS recovery (strong) score well.
     assert result["score"] > 4.0
 
 
@@ -50,9 +53,9 @@ def test_normal_monotonic_eps_still_uses_cagr():
         _li(revenue=100.0, earnings_per_share=1.5),
     ]
     result = analyze_growth_and_momentum(items, prices=[])
-    # No loss year -> keep annualized CAGR wording.
-    assert "annualized EPS growth" in result["details"]
-    assert "recovery (cyclical)" not in result["details"]
+    # No loss year, contained swings -> keep annualized CAGR wording.
+    assert "CAGR/yr" in result["details"]
+    assert "Cyclical" not in result["details"]
 
 
 def test_risk_reward_emits_explicit_debt_percentage():

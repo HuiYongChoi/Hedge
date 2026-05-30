@@ -20,6 +20,7 @@ from src.utils.forward_outlook import (
     build_forward_outlook_block,
     get_cached_forward_metrics,
 )
+from src.utils.growth_trend import assess_trend, scale_points
 
 
 class BillAckmanSignal(BaseModel):
@@ -183,20 +184,14 @@ def analyze_business_quality(metrics: list, financial_line_items: list) -> dict:
             "details": "Insufficient data to analyze business quality"
         }
     
-    # 1. Multi-period revenue growth analysis
+    # 1. Multi-period revenue growth analysis. Read the whole series (cycle-aware)
+    # rather than two endpoints, so a cyclical recovery isn't dismissed as "did
+    # not grow"; map the 0..3 strength onto Ackman's 0..2 bucket.
     revenues = [item.revenue for item in financial_line_items if item.revenue is not None]
     if len(revenues) >= 2:
-        initial, final = revenues[-1], revenues[0]
-        if initial and final and final > initial:
-            growth_rate = (final - initial) / abs(initial)
-            if growth_rate > 0.5:  # e.g., 50% cumulative growth
-                score += 2
-                details.append(f"Revenue grew by {(growth_rate*100):.1f}% over the full period (strong growth).")
-            else:
-                score += 1
-                details.append(f"Revenue growth is positive but under 50% cumulatively ({(growth_rate*100):.1f}%).")
-        else:
-            details.append("Revenue did not grow significantly or data insufficient.")
+        rev_points, rev_detail = assess_trend(revenues, noun="revenue", strong=0.10, moderate=0.05, slight=0.02)
+        score += scale_points(rev_points, 2)
+        details.append(rev_detail)
     else:
         details.append("Not enough revenue data for multi-period trend.")
     

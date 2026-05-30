@@ -22,6 +22,7 @@ from src.utils.forward_outlook import (
     build_forward_outlook_block,
     get_cached_forward_metrics,
 )
+from src.utils.growth_trend import assess_trend
 
 class StanleyDruckenmillerSignal(BaseModel):
     signal: Literal["bullish", "bearish", "neutral"]
@@ -191,79 +192,20 @@ def analyze_growth_and_momentum(financial_line_items: list, prices: list) -> dic
     raw_score = 0  # We'll sum up a maximum of 9 raw points, then scale to 0–10
 
     #
-    # 1. Revenue Growth (annualized CAGR)
+    # 1. Revenue Growth (full-series context, not endpoint-only CAGR)
     #
     revenues = [fi.revenue for fi in financial_line_items if fi.revenue is not None]
-    if len(revenues) >= 2:
-        latest_rev = revenues[0]
-        older_rev = revenues[-1]
-        num_years = len(revenues) - 1
-        if older_rev > 0 and latest_rev > 0:
-            # CAGR formula: (ending_value/beginning_value)^(1/years) - 1
-            rev_growth = (latest_rev / older_rev) ** (1 / num_years) - 1
-            if rev_growth > 0.08:  # 8% annualized (adjusted for CAGR)
-                raw_score += 3
-                details.append(f"Strong annualized revenue growth: {rev_growth:.1%}")
-            elif rev_growth > 0.04:  # 4% annualized
-                raw_score += 2
-                details.append(f"Moderate annualized revenue growth: {rev_growth:.1%}")
-            elif rev_growth > 0.01:  # 1% annualized
-                raw_score += 1
-                details.append(f"Slight annualized revenue growth: {rev_growth:.1%}")
-            else:
-                details.append(f"Minimal/negative revenue growth: {rev_growth:.1%}")
-        else:
-            details.append("Older revenue is zero/negative; can't compute revenue growth.")
-    else:
-        details.append("Not enough revenue data points for growth calculation.")
+    rev_points, rev_detail = assess_trend(revenues, noun="revenue")
+    raw_score += rev_points
+    details.append(rev_detail)
 
     #
-    # 2. EPS Growth (annualized CAGR)
+    # 2. EPS Growth (full-series context, handles cyclical V-recoveries)
     #
     eps_values = [fi.earnings_per_share for fi in financial_line_items if fi.earnings_per_share is not None]
-    if len(eps_values) >= 2:
-        latest_eps = eps_values[0]
-        older_eps = eps_values[-1]
-        prior_eps = eps_values[1]
-        num_years = len(eps_values) - 1
-        # For deep cyclicals (e.g. memory chips) a multi-year CAGR between the two
-        # endpoints is misleading when the window contains a loss year: the
-        # endpoints are often both cyclical peaks, so the CAGR reads ~flat even
-        # though earnings just rebounded from a loss to a record. In that case use
-        # the latest year-over-year growth, which Druckenmiller reads as a
-        # cyclical inflection rather than stagnation.
-        has_loss_in_window = any(e is not None and e <= 0 for e in eps_values)
-        if has_loss_in_window and latest_eps > 0 and prior_eps not in (None, 0):
-            eps_growth = (latest_eps - prior_eps) / abs(prior_eps)
-            if eps_growth > 0.08:
-                raw_score += 3
-                details.append(f"Strong EPS YoY recovery (cyclical): {eps_growth:.1%}")
-            elif eps_growth > 0.04:
-                raw_score += 2
-                details.append(f"Moderate EPS YoY recovery (cyclical): {eps_growth:.1%}")
-            elif eps_growth > 0.01:
-                raw_score += 1
-                details.append(f"Slight EPS YoY recovery (cyclical): {eps_growth:.1%}")
-            else:
-                details.append(f"Minimal/negative EPS YoY (cyclical): {eps_growth:.1%}")
-        elif older_eps > 0 and latest_eps > 0:
-            # CAGR formula for positive-to-positive, non-cyclical EPS paths
-            eps_growth = (latest_eps / older_eps) ** (1 / num_years) - 1
-            if eps_growth > 0.08:  # 8% annualized (adjusted for CAGR)
-                raw_score += 3
-                details.append(f"Strong annualized EPS growth: {eps_growth:.1%}")
-            elif eps_growth > 0.04:  # 4% annualized
-                raw_score += 2
-                details.append(f"Moderate annualized EPS growth: {eps_growth:.1%}")
-            elif eps_growth > 0.01:  # 1% annualized
-                raw_score += 1
-                details.append(f"Slight annualized EPS growth: {eps_growth:.1%}")
-            else:
-                details.append(f"Minimal/negative annualized EPS growth: {eps_growth:.1%}")
-        else:
-            details.append("Older EPS is near zero; skipping EPS growth calculation.")
-    else:
-        details.append("Not enough EPS data points for growth calculation.")
+    eps_points, eps_detail = assess_trend(eps_values, noun="EPS")
+    raw_score += eps_points
+    details.append(eps_detail)
 
     #
     # 3. Price Momentum
