@@ -177,6 +177,7 @@ def test_semiconductor_rerating_agent_registered_and_emits_decision_grade_contex
         "current_pbr": 3.5,
         "percentiles": {"p50": 2.4, "p75": 3.1, "p90": 3.7},
         "position_label": "upper_band",
+        "rerating_note": "HBM/구조적 성장 — 상단 밴드 +25% 확장 고려",
     })
 
     assert "semiconductor_rerating_analyst" in ANALYST_CONFIG
