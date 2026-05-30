@@ -40,6 +40,7 @@ import { Bot, ChevronDown, ChevronUp, Database, Loader2, PanelLeftClose, PanelLe
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { AgentFormulaTooltip, extractBaseAgentKey } from '@/components/ui/agent-formula-tooltip';
+import { AgentPresetBar } from '@/components/ui/agent-preset-bar';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 
   (typeof window !== 'undefined' && 
@@ -1311,6 +1312,14 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
               </label>
               <span className="ml-auto text-xs text-muted-foreground">{selectedAgents.size}/{agents.length}</span>
             </div>
+
+            {/* Recommended preset combos */}
+            <AgentPresetBar
+              agents={agents}
+              selectedKeys={selectedAgents}
+              onApply={(keys) => setSelectedAgents(new Set(keys))}
+              language={language}
+            />
 
             {/* Categories Accordion */}
             <Accordion type="multiple" defaultValue={Array.from(new Set(agents.map(a => a.category || 'Other')))}>

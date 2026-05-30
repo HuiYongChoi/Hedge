@@ -15,6 +15,7 @@ import { useLanguage } from '@/contexts/language-context';
 import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
 import { extractBaseAgentKey } from '@/components/ui/agent-formula-tooltip';
+import { AgentPresetBar } from '@/components/ui/agent-preset-bar';
 import { useToastManager } from '@/hooks/use-toast-manager';
 import { t } from '@/lib/language-preferences';
 import { MetricsGrid, parseOverrideInput, compareOverrideVsLineItem0, getFinancialFieldLabel } from './data-sandbox/metrics-grid';
@@ -1271,6 +1272,13 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
                 </label>
                 <span className="ml-auto text-xs text-muted-foreground">{selectedAgents.size}/{agents.length}</span>
               </div>
+
+              <AgentPresetBar
+                agents={agents}
+                selectedKeys={selectedAgents}
+                onApply={(keys) => setSelectedAgents(new Set(keys))}
+                language={language}
+              />
 
               <Accordion type="multiple" defaultValue={Array.from(new Set(agents.map(a => a.category || 'Other')))}>
                 {Array.from(new Set(agents.map(a => a.category || 'Other'))).map(category => {
