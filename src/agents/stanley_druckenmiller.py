@@ -16,6 +16,7 @@ from src.utils.progress import progress
 from src.utils.llm import call_llm, COMPANY_IDENTITY_REQUIREMENT, SENTIMENT_MARKER_REQUIREMENT
 from src.tools.company_name import resolve_company_name
 import statistics
+from datetime import datetime
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
     FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
@@ -178,6 +179,32 @@ def stanley_druckenmiller_agent(state: AgentState, agent_id: str = "stanley_druc
     return {"messages": [message], "data": state["data"]}
 
 
+def _format_price_window(start_time: str | None, end_time: str | None) -> str:
+    """Describe the price window for momentum so the figure is never undated.
+
+    Returns e.g. ``over the trailing ~12 months (2025-05-30 → 2026-05-29)`` so
+    the LLM can quote an explicit period instead of a vague "최근". Falls back to
+    a generic phrase when timestamps can't be parsed.
+    """
+    def _parse(value: str | None):
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value)[:10]).date()
+        except ValueError:
+            return None
+
+    start = _parse(start_time)
+    end = _parse(end_time)
+    if start is None or end is None:
+        return "over the measured price window"
+    days = (end - start).days
+    if days <= 0:
+        return f"as of {end.isoformat()}"
+    months = max(1, round(days / 30.44))
+    return f"over the trailing ~{months} months ({start.isoformat()} → {end.isoformat()})"
+
+
 def analyze_growth_and_momentum(financial_line_items: list, prices: list) -> dict:
     """
     Evaluate:
@@ -213,23 +240,26 @@ def analyze_growth_and_momentum(financial_line_items: list, prices: list) -> dic
     # We'll give up to 3 points for strong momentum
     if prices and len(prices) > 30:
         sorted_prices = sorted(prices, key=lambda p: p.time)
-        close_prices = [p.close for p in sorted_prices if p.close is not None]
+        priced = [p for p in sorted_prices if p.close is not None]
+        close_prices = [p.close for p in priced]
         if len(close_prices) >= 2:
             start_price = close_prices[0]
             end_price = close_prices[-1]
+            # Always state the measurement window so "최근 X% 상승" is never undated.
+            period_text = _format_price_window(priced[0].time, priced[-1].time)
             if start_price > 0:
                 pct_change = (end_price - start_price) / start_price
                 if pct_change > 0.50:
                     raw_score += 3
-                    details.append(f"Very strong price momentum: {pct_change:.1%}")
+                    details.append(f"Very strong price momentum: {pct_change:.1%} {period_text}")
                 elif pct_change > 0.20:
                     raw_score += 2
-                    details.append(f"Moderate price momentum: {pct_change:.1%}")
+                    details.append(f"Moderate price momentum: {pct_change:.1%} {period_text}")
                 elif pct_change > 0:
                     raw_score += 1
-                    details.append(f"Slight positive momentum: {pct_change:.1%}")
+                    details.append(f"Slight positive momentum: {pct_change:.1%} {period_text}")
                 else:
-                    details.append(f"Negative price momentum: {pct_change:.1%}")
+                    details.append(f"Negative price momentum: {pct_change:.1%} {period_text}")
             else:
                 details.append("Invalid start price (<= 0); can't compute momentum.")
         else:
@@ -378,15 +408,15 @@ def analyze_risk_reward(financial_line_items: list, prices: list) -> dict:
                 stdev = statistics.pstdev(daily_returns)  # population stdev
                 if stdev < 0.01:
                     raw_score += 3
-                    details.append(f"Low volatility: {stdev:.1%}/day")
+                    details.append(f"Low volatility: {stdev:.1%}/d")
                 elif stdev < 0.02:
                     raw_score += 2
-                    details.append(f"Moderate volatility: {stdev:.1%}/day")
+                    details.append(f"Moderate volatility: {stdev:.1%}/d")
                 elif stdev < 0.04:
                     raw_score += 1
-                    details.append(f"High volatility: {stdev:.1%}/day")
+                    details.append(f"High volatility: {stdev:.1%}/d")
                 else:
-                    details.append(f"Very high volatility: {stdev:.1%}/day")
+                    details.append(f"Very high volatility: {stdev:.1%}/d")
             else:
                 details.append("Insufficient daily returns data for volatility calc.")
         else:

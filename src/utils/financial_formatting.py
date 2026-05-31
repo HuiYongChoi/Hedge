@@ -306,21 +306,38 @@ def _normalize_per_ratio_text(text: str) -> str:
     def _replace(match: re.Match[str]) -> str:
         label = match.group("label")
         separator = match.group("separator")
-        number = float(match.group("number").replace(",", ""))
+        raw = match.group("number").replace(",", "")
+        # Repair malformed multi-decimal numbers like "6.0.9" (a number can never
+        # carry two decimal points). Keep the integer part and the final fraction
+        # so "6.0.9" → "6.9" — matching the canonical one-decimal convention.
+        parts = raw.split(".")
+        if len(parts) > 2:
+            raw = f"{parts[0]}.{parts[-1]}"
+        number = float(raw)
         return f"{label}{separator}{number:.1f}"
 
+    # NOTE: the trailing boundary is ``(?!\d)`` rather than ``\b``. A word
+    # boundary fails between a digit and a directly-attached Korean particle
+    # ("6.9는", "24.4보다"), which made the engine backtrack to the integer part
+    # ("6"), reformat it to "6.0", and strand the lost fraction — turning
+    # "선행 PER 6.9는" into the malformed "선행 PER 6.0.9는". ``(?!\d)`` lets the
+    # greedy number group keep the full decimal regardless of a trailing particle.
     pattern = re.compile(
         r"(?P<label>FwdPER|(?<![A-Za-z])PER|(?<![A-Za-z/])P\s*/\s*E)"
         r"(?P<separator>\s*(?:=|:|of|은|는|이|가|을|를)?\s*)"
-        r"(?P<number>-?\d[\d,]*(?:\.\d+)?)"
-        r"\s*(?:x|배)?\b"
+        r"(?P<number>-?\d[\d,]*(?:\.\d+)*)"
+        r"\s*(?:x|배)?(?!\d)"
     )
     return pattern.sub(_replace, text)
 
 
 def _normalize_volatility_unit_text(text: str) -> str:
-    """Use ``/day`` instead of the Korean ``/일`` for daily-volatility units."""
-    return re.sub(r"%\s*/\s*일\b", "%/day", text)
+    """Render daily-volatility units as the compact ``%/d``.
+
+    Collapses the Korean ``%/일`` and the verbose English ``%/day`` / ``%/days``
+    (with or without surrounding spaces) into a single ``%/d`` form. Idempotent.
+    """
+    return re.sub(r"%\s*/\s*(?:일|days?|d)\b", "%/d", text)
 
 
 def _normalize_korean_market_cap_text(text: str) -> str:

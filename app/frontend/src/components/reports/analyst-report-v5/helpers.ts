@@ -1697,6 +1697,24 @@ export function sanitizeForwardPeNarrative(
     next = next.replace(comparisonPattern, comparisonNote);
   }
 
+  // ── Pass 4b: drop "alternate forward-PER value + splice" asides ─────────────
+  // There is exactly one investor-facing 선행 PER. The model sometimes still
+  // leaks an internal cross-check such as
+  //   "전방 PER의 다른 산출값 (24.4)과 스플라이스 정보가 함께 존재해, …"
+  // which only confuses the reader. Strip the alternate-value / splice clause
+  // while leaving the surrounding (valid) sentence intact.
+  next = next
+    .replace(
+      /(?:,\s*)?(?:또한\s*)?(?:기록에\s*따르면\s*)?(?:전방|선행)?\s*P(?:ER|\/?E)?의?\s*다른\s*산출값\s*\([^)]*\)\s*(?:(?:과|와)\s*스플라이스\s*정보가?\s*함께\s*존재[^,.!?。\n]*)?[,，]?/giu,
+      '',
+    )
+    .replace(
+      /(?:,\s*)?(?:또한\s*)?(?:기록에\s*따르면\s*)?스플라이스\s*정보가?\s*함께\s*존재[^,.!?。\n]*[,，]?/giu,
+      '',
+    )
+    .replace(/\ban?\s+alternate\s+forward\s+p\/?e[^,.!?\n]*[,.]?/gi, '')
+    .replace(/[,，]?\s*(?:also\s+)?(?:per\s+the\s+record\s+)?spliced?\s+(?:value|figure|data)[^,.!?\n]*[,.]?/gi, '');
+
   // ── Pass 5: strip developer tokens (Price Compass / canonical / etc.) ────────
   for (const { pattern, ko, en } of DEVELOPER_TOKEN_PATTERNS) {
     next = next.replace(pattern, language === 'ko' ? ko : en);
@@ -1710,9 +1728,63 @@ export function sanitizeForwardPeNarrative(
   next = next.replace(/([가-힣A-Za-z0-9])\s*\(\s*-?\d/g, (match, prefix) => match.startsWith(' ') ? match : `${prefix} ${match.slice(prefix.length).trimStart()}`);
 
   // collapse double spaces / orphan particles caused by replacement
-  next = next.replace(/\s{2,}/g, ' ').replace(/\s+([,.])/g, '$1');
+  next = next
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.])/g, '$1')
+    // tidy leftover punctuation after stripping a clause (", ," / ". ," / "（ ,")
+    .replace(/([,，])\s*([,，])/g, '$1')
+    .replace(/([.!?。！？])\s*[,，]/g, '$1')
+    .replace(/(^|[.!?。！？]\s*)[,，]\s*/g, '$1');
+
+  // ── Pass 7: drop verbatim-duplicate sentences within the section ────────────
+  next = dropDuplicateSentences(next);
 
   return next;
+}
+
+// Remove sentences that repeat verbatim earlier in the same section. Keeps the
+// first occurrence and drops later exact duplicates so the narrative reads
+// without the boilerplate echoes the model tends to emit. Short fragments
+// (≤ 12 chars, e.g. list markers) are never deduplicated.
+function dropDuplicateSentences(text: string): string {
+  if (!text) return text;
+  // Split at two kinds of zero-width boundaries:
+  //   (a) right after sentence-ending punctuation that is followed by
+  //       whitespace, and
+  //   (b) at a newline → non-whitespace transition (paragraph / header edge).
+  // Both are lookaround-only, so join('') reproduces the input exactly when
+  // nothing is dropped. Because (a)'s lookahead requires whitespace, a period
+  // inside a decimal (e.g. "30.0") is never a boundary, and every original
+  // space/newline stays attached to the segment that follows it — so
+  // parseEvidenceItems' newline-based block splitting keeps working after a
+  // round-trip through this function.
+  const parts = text.split(/(?<=[.!?。！？])(?=\s)|(?<=\n)(?=\S)/u);
+  if (parts.length < 2) return text;
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  let dropped = false;
+  for (const part of parts) {
+    const key = part.replace(/\s+/g, ' ').trim();
+    // Only dedupe full sentences (> 12 chars); short fragments such as list
+    // markers or labels are always kept.
+    if (key.length > 12 && seen.has(key)) {
+      dropped = true;
+      continue;
+    }
+    if (key.length > 12) seen.add(key);
+    out.push(part);
+  }
+  if (!dropped) return text; // byte-exact round-trip when nothing was removed
+
+  // Dropping a block leaves its separator behind (e.g. "\n\n" + "\n\n"). Tidy
+  // the resulting whitespace artifacts; collapsing 3+ newlines to 2 is safe
+  // because parseEvidenceItems treats any run of 2+ as one block boundary.
+  return out
+    .join('')
+    .replace(/[ \t]*\n{3,}[ \t]*/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\s+$/g, '');
 }
 
 function safeNum(v: unknown): number | null {

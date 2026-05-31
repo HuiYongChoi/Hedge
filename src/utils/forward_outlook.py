@@ -43,6 +43,12 @@ FORWARD_OUTLOOK_SYSTEM_INSTRUCTION = (
     "12-month forward / annualized figure.\n"
     "- Do NOT splice two different forward P/E values into a 'A x vs B x' "
     "comparison. There is exactly one baseline forward P/E; quote it once.\n"
+    "- There is exactly ONE investor-facing 선행 PER (the baseline). NEVER present, "
+    "quote, or allude to a second / alternate / 'raw' forward P/E figure (e.g. a "
+    "TTM-splice value), and NEVER describe EPS-splice mechanics or data-pipeline "
+    "notes such as '다른 산출값', '스플라이스 정보', or 'splice'. If confidence is "
+    "low, acknowledge it in one plain sentence without naming any internal "
+    "alternate figure.\n"
 )
 
 
@@ -103,6 +109,15 @@ def build_forward_outlook_block(
 
     raw_spliced_forward_pe = getattr(forward_metrics, "forward_pe", None)
     forward_pe = getattr(forward_metrics, "canonical_forward_pe", None) or raw_spliced_forward_pe
+
+    # Keep the splice mechanics out of the LLM payload. The raw TTM-splice P/E is
+    # an internal cross-check, not an investor-facing figure; when the model sees
+    # the splice note it tends to surface "전방 PER의 다른 산출값 (24.4)과 스플라이스
+    # 정보가 함께 존재한다"-style asides that confuse readers. We expose exactly one
+    # baseline 선행 PER and drop any splice-mechanics note from the narrative input.
+    safe_notes = [
+        note for note in forward_metrics.notes if "splice" not in str(note).lower()
+    ]
     canonical_forward_eps = getattr(forward_metrics, "canonical_forward_eps", None)
     canonical_current_price = getattr(forward_metrics, "canonical_current_price", None)
     display_forward_eps = canonical_forward_eps or forward_metrics.forward_eps_ttm
@@ -150,7 +165,7 @@ def build_forward_outlook_block(
         "pe_change_pct": pe_change_pct,
         "confidence": forward_metrics.confidence,
         "composition": composition,
-        "notes": list(forward_metrics.notes),
+        "notes": safe_notes,
         "canonical_multiples": {
             "price_compass_fwd_per": _round1(forward_pe),
             "ttm_per": _round1(trailing_pe),
