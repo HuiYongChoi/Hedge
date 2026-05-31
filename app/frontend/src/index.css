@@ -442,27 +442,36 @@
     visibility: visible !important;
   }
 
-  /* Stack the report's internal columns (body + target sidebar) vertically so
-     nothing overflows the page width, and keep each section together when it
-     fits — long sections still break across pages. */
+  /* Two-column print layout that mirrors the on-screen body + sidebar (minus
+     the .no-print TOC aside): the body fills the left and the target-data
+     sidebar keeps its ~280px design width on the right, so it sits BESIDE the
+     body instead of being stranded as a narrow box on its own page below. Its
+     justify-between label/value rows stay tight because the column is narrow,
+     and long values wrap inside it. */
   #analyst-report-root .report-print-stack {
-    display: block !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    gap: 16px !important;
   }
 
   #analyst-report-root .report-print-stack > * {
-    width: auto !important;
     max-width: none !important;
   }
 
-  /* The target-data sidebar (the only printable <aside>; the TOC aside is
-     .no-print) is designed for a ~280px column. Once stacked it would inherit
-     the full page width from the rule above, stretching its justify-between
-     label/value rows edge-to-edge with unreadable gaps. Cap it to a narrow,
-     left-aligned column so labels sit close to their values. */
+  /* Body column (the only printable <div> child) takes the remaining width. */
+  #analyst-report-root .report-print-stack > div {
+    flex: 1 1 0% !important;
+    min-width: 0 !important;
+    width: auto !important;
+  }
+
+  /* Target-data sidebar (the only printable <aside>) holds a fixed narrow
+     column on the right. */
   #analyst-report-root .report-print-stack > aside {
-    width: 100% !important;
-    max-width: 380px !important;
-    margin-right: auto !important;
+    flex: 0 0 280px !important;
+    width: 280px !important;
+    max-width: 280px !important;
   }
 
   #analyst-report-root section,
