@@ -356,11 +356,22 @@
 }
 
 /* PDF export: window.print() captures only the analyst report, preserving the
-   dark theme colors. Everything outside #analyst-report-root is hidden. */
+   dark theme. Light text only stays legible if the page itself is painted dark,
+   so we force an opaque dark background onto the page (html/body) and the report
+   root — not just the panels, whose semi-transparent fills wash out over the
+   browser's default white print sheet. print-color-adjust: exact makes the
+   browser honour those backgrounds regardless of the "Background graphics"
+   toggle. Everything outside #analyst-report-root is hidden. */
 @media print {
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+
+  html,
+  body {
+    background: hsl(0 0% 3.9%) !important;
+    color-scheme: dark !important;
   }
 
   body * {
@@ -376,12 +387,17 @@
     position: absolute !important;
     inset: 0 !important;
     width: 100% !important;
+    min-height: 100% !important;
     margin: 0 !important;
     padding: 16px !important;
+    background: hsl(0 0% 3.9%) !important;
+    color: hsl(0 0% 98%) !important;
   }
 
-  .no-print,
-  .no-print * {
-    visibility: hidden !important;
+  /* display:none (not visibility) so action chrome is fully removed: the
+     #analyst-report-root * rule above forces visibility:visible at a higher
+     specificity, but it never touches display, so this reliably wins. */
+  .no-print {
+    display: none !important;
   }
 }
