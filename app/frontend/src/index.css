@@ -474,6 +474,22 @@
     max-width: 280px !important;
   }
 
+  /* Sidebar pagination: the broker/forward consensus tiles (증권사 평균 목표가,
+     선행 12M 컨센 EPS) finish the first page, then everything after them starts
+     on the next page. Chrome honours a forced break inside the fragmented flex
+     column, leaving the body column to flow independently. */
+  #analyst-report-root .report-print-stack > aside .report-sidebar-page1-end + * {
+    break-before: page !important;
+  }
+
+  /* Keep each sidebar card (and the consensus tile pair) intact so nothing is
+     split across the page boundary. Cards taller than a page still break to
+     avoid losing content. */
+  #analyst-report-root .report-print-stack > aside .rounded-lg,
+  #analyst-report-root .report-print-stack > aside [class*="grid-cols"] {
+    break-inside: avoid !important;
+  }
+
   #analyst-report-root section,
   #analyst-report-root > header {
     break-inside: avoid;

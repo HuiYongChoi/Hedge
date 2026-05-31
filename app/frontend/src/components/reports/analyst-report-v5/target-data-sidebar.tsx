@@ -996,7 +996,7 @@ export function TargetDataSidebar({
         {hasAnyContent ? (
           <>
             {(hasBrokerConsensus || hasForwardConsensus) && (
-              <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
+              <div className="report-sidebar-page1-end grid grid-cols-2 gap-2 lg:grid-cols-1">
                 <BrokerConsensusTile
                   brokerConsensus={brokerConsensus}
                   currency={currency}
