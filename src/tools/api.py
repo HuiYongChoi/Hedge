@@ -1212,8 +1212,16 @@ def get_financial_metrics(
         if response.status_code == 200:
             raw_response = response.json()
             raw_metrics = raw_response.get("financial_metrics", []) if isinstance(raw_response, dict) else []
+            # financialdatasets' /financial-metrics/ ships a precomputed debt_to_equity that
+            # uses a liabilities-inclusive definition (e.g. AAPL ≈ 3.77) and carries NO
+            # balance-sheet primitives, so that inflated ratio used to pass straight through
+            # to every agent (MU read ~200% instead of the interest-bearing ~28%). Drop it so
+            # it is recomputed from total_debt/shareholders_equity once enrichment supplies the
+            # primitives; if those never arrive, we surface null rather than a wrong number.
             financial_metrics = [
-                FinancialMetrics(**_build_financial_metric(metric))
+                FinancialMetrics(**_build_financial_metric(
+                    {k: v for k, v in metric.items() if k != "debt_to_equity"}
+                ))
                 for metric in raw_metrics
                 if isinstance(metric, dict)
             ]

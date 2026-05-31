@@ -123,8 +123,15 @@ def derive_financial_fields(row: dict[str, Any]) -> dict[str, Any]:
         derived["working_capital"] = current_assets - current_liabilities
     working_capital = _safe_float(derived.get("working_capital"))
 
-    if derived.get("debt_to_equity") is None:
-        derived["debt_to_equity"] = _safe_div(total_debt, shareholders_equity)
+    # Always recompute Debt-To-Equity from reported primitives (interest-bearing
+    # total_debt ÷ shareholders_equity). Provider feeds use inconsistent debt
+    # definitions, which inflated leverage reads such as MU's 부채비율 200%; one
+    # derivation keeps every agent on the same number (MU ≈ 28%).
+    recomputed_debt_to_equity = _safe_div(total_debt, shareholders_equity)
+    if recomputed_debt_to_equity is not None:
+        derived["debt_to_equity"] = recomputed_debt_to_equity
+    else:
+        derived.setdefault("debt_to_equity", None)
     if derived.get("debt_to_assets") is None:
         derived["debt_to_assets"] = _safe_div(total_liabilities, total_assets)
     if derived.get("current_ratio") is None:
