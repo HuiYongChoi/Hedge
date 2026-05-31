@@ -178,8 +178,8 @@ function LayoutContent() {
   return (
     <div className="flex h-screen w-screen overflow-hidden relative bg-background">
       {/* Header rail: tabs, workspace context, and app navigation share one layer. */}
-      <div 
-        className="absolute top-0 z-40 flex items-stretch gap-2 border-b bg-panel pr-2 transition-all duration-200"
+      <div
+        className="no-print absolute top-0 z-40 flex items-stretch gap-2 border-b bg-panel pr-2 transition-all duration-200"
         style={getSidebarBasedStyle()}
       >
         <TabBar className="min-w-0 flex-1 border-b-0" />
@@ -223,7 +223,7 @@ function LayoutContent() {
 
       {/* Floating left sidebar */}
       <div className={cn(
-        "absolute top-0 left-0 z-30 h-full transition-transform",
+        "no-print absolute top-0 left-0 z-30 h-full transition-transform",
         effectiveIsLeftCollapsed && "transform -translate-x-full opacity-0"
       )}>
         <LeftSidebar
@@ -236,7 +236,7 @@ function LayoutContent() {
 
       {/* Floating right sidebar */}
       <div className={cn(
-        "absolute top-0 right-0 z-30 h-full transition-transform",
+        "no-print absolute top-0 right-0 z-30 h-full transition-transform",
         effectiveIsRightCollapsed && "transform translate-x-full opacity-0"
       )}>
         <RightSidebar
@@ -248,9 +248,9 @@ function LayoutContent() {
       </div>
 
       {/* Bottom panel */}
-      <div 
+      <div
         className={cn(
-          "absolute bottom-0 z-20 transition-transform",
+          "no-print absolute bottom-0 z-20 transition-transform",
           effectiveIsBottomCollapsed && "transform translate-y-full opacity-0"
         )}
         style={getSidebarBasedStyle()}

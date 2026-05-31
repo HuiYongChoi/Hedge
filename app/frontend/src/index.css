@@ -355,18 +355,27 @@
   border-left: none !important;
 }
 
-/* PDF export: window.print() captures only the analyst report and pins it to
-   the dark theme. The report's panels are painted from the --background/--card/
-   etc. custom properties, which are dark only while the .dark class sits on
-   <html>. The app theme is "system" (next-themes), and Chrome emulates
-   prefers-color-scheme: light while printing, which makes next-themes strip
-   .dark mid-print — the panels flip to the light palette and the dark-theme
-   light text (incl. hardcoded text-white price chips) vanishes on white.
-   So we re-pin the entire dark palette onto :root inside the print context,
-   independent of the .dark class, and paint the page (html/body/root) opaque
-   dark. print-color-adjust: exact makes the browser honour those backgrounds
-   regardless of the "Background graphics" toggle. Everything outside
-   #analyst-report-root is hidden. */
+/* PDF export: window.print() captures only the analyst report, pins it to the
+   dark theme, and lets it flow across multiple pages.
+
+   Theme — the report's panels are painted from --background/--card/etc., which
+   are dark only while .dark sits on <html>. Chrome emulates prefers-color-
+   scheme: light during print, so next-themes ("system") strips .dark mid-print
+   and the panels would flip to the light palette (light text vanishing on
+   white). We re-pin the full dark palette onto :root inside print so panels
+   stay dark regardless of the .dark class. print-color-adjust: exact makes the
+   browser honour those backgrounds regardless of the "Background graphics"
+   toggle.
+
+   Pagination — the report lives deep inside a stack of h-screen / h-full /
+   overflow-hidden app-shell containers (Layout > main > tab > scroll pane). The
+   old fix pinned the report with position:absolute; inset:0, which clamped it
+   to exactly one page and clipped everything below the fold. Instead we un-clamp
+   the chrome ancestors (height:auto, overflow:visible, position:static — scoped
+   to NON-report elements so the report's own absolutely-positioned internals,
+   e.g. the Price Compass markers, survive) and pin the report with top/left/
+   right:0 and NO bottom, so its height is the full content height and Chrome
+   paginates it. The chrome is hidden via visibility + .no-print. */
 @media print {
   :root {
     --background: 0 0% 3.9%;
@@ -405,8 +414,23 @@
 
   html,
   body {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
     background: hsl(0 0% 3.9%) !important;
     color-scheme: dark !important;
+  }
+
+  /* Un-clamp ONLY the chrome ancestors (Layout > main > tab > scroll pane) so
+     the deeply-nested report can grow to its full height and paginate. The
+     :not() scope leaves the report subtree's own positioning untouched, e.g.
+     the Price Compass absolute markers. */
+  body :not(#analyst-report-root):not(#analyst-report-root *) {
+    position: static !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
   }
 
   body * {
@@ -418,11 +442,32 @@
     visibility: visible !important;
   }
 
+  /* Stack the report's internal columns (body + target sidebar) vertically so
+     nothing overflows the page width, and keep each section together when it
+     fits — long sections still break across pages. */
+  #analyst-report-root .report-print-stack {
+    display: block !important;
+  }
+
+  #analyst-report-root .report-print-stack > * {
+    width: auto !important;
+    max-width: none !important;
+  }
+
+  #analyst-report-root section,
+  #analyst-report-root > header {
+    break-inside: avoid;
+  }
+
+  /* top/left/right:0 with NO bottom and NO fixed height → the report's height is
+     its full content height, so Chrome paginates it across pages instead of
+     clamping to a single page (the old inset:0 clipped everything below). */
   #analyst-report-root {
     position: absolute !important;
-    inset: 0 !important;
-    width: 100% !important;
-    min-height: 100% !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: auto !important;
     margin: 0 !important;
     padding: 16px !important;
     background: hsl(0 0% 3.9%) !important;

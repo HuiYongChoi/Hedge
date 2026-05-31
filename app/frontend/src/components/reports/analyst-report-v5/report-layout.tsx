@@ -468,7 +468,7 @@ export function ReportLayout({
         language={language}
       />
 
-      <div className="flex flex-col gap-4 md:grid md:grid-cols-[minmax(0,1fr)_280px] md:gap-5 lg:flex lg:flex-row lg:items-start lg:gap-6">
+      <div className="report-print-stack flex flex-col gap-4 md:grid md:grid-cols-[minmax(0,1fr)_280px] md:gap-5 lg:flex lg:flex-row lg:items-start lg:gap-6">
         <ReportTocSidebar
           sections={SECTION_DEFS}
           activeSectionId={activeSectionId}
@@ -476,7 +476,7 @@ export function ReportLayout({
           language={language}
           activeCitationLetter={activeCitationLetter}
           onCitationUnavailable={handleCitationUnavailable}
-          className="hidden lg:block"
+          className="hidden lg:block no-print"
         />
         <div className="min-w-0 flex-1 space-y-4">
           <MobileToc
@@ -486,7 +486,7 @@ export function ReportLayout({
             language={language}
             activeCitationLetter={activeCitationLetter}
             onCitationUnavailable={handleCitationUnavailable}
-            className="lg:hidden"
+            className="lg:hidden no-print"
           />
           <ReportBody
             sections={SECTION_DEFS}

@@ -1173,7 +1173,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Config Panel */}
-        <div className={`${isConfigPanelCollapsed ? 'w-14 p-2' : 'w-72 p-4'} flex-shrink-0 space-y-4 overflow-y-auto border-r transition-all duration-200`}>
+        <div className={`no-print ${isConfigPanelCollapsed ? 'w-14 p-2' : 'w-72 p-4'} flex-shrink-0 space-y-4 overflow-y-auto border-r transition-all duration-200`}>
           <div className={`flex items-center ${isConfigPanelCollapsed ? 'justify-center' : 'justify-between gap-2'}`}>
             {!isConfigPanelCollapsed && (
               <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
