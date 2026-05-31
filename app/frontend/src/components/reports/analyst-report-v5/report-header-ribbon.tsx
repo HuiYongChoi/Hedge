@@ -228,7 +228,7 @@ export function ReportHeaderRibbon({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+        <div className="no-print flex flex-wrap items-center gap-2 lg:justify-end">
           {onRefreshMarketData && (
             <Button
               type="button"
@@ -244,7 +244,7 @@ export function ReportHeaderRibbon({
               {t('refreshMarketDataButton', language)}
             </Button>
           )}
-          <Button variant="outline" size="sm" className="min-h-[44px]" disabled aria-disabled="true" title={t('comingSoonLabel', language)}>
+          <Button variant="outline" size="sm" className="min-h-[44px]" onClick={() => window.print()}>
             <FileText className="mr-1.5 h-3.5 w-3.5" />
             {t('pdfExportButton', language)}
           </Button>

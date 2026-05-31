@@ -354,3 +354,34 @@
 .react-flow__controls .react-flow__controls-button + .react-flow__controls-button {
   border-left: none !important;
 }
+
+/* PDF export: window.print() captures only the analyst report, preserving the
+   dark theme colors. Everything outside #analyst-report-root is hidden. */
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  #analyst-report-root,
+  #analyst-report-root * {
+    visibility: visible !important;
+  }
+
+  #analyst-report-root {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 16px !important;
+  }
+
+  .no-print,
+  .no-print * {
+    visibility: hidden !important;
+  }
+}

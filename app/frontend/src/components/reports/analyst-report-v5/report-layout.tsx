@@ -432,7 +432,7 @@ export function ReportLayout({
   );
 
   return (
-    <div className="space-y-4">
+    <div id="analyst-report-root" className="space-y-4">
       {stickyHeaderHost ? createPortal(stickyHeaderNode, stickyHeaderHost) : stickyHeaderNode}
 
       <TickerSwitcher
