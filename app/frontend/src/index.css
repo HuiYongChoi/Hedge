@@ -454,6 +454,17 @@
     max-width: none !important;
   }
 
+  /* The target-data sidebar (the only printable <aside>; the TOC aside is
+     .no-print) is designed for a ~280px column. Once stacked it would inherit
+     the full page width from the rule above, stretching its justify-between
+     label/value rows edge-to-edge with unreadable gaps. Cap it to a narrow,
+     left-aligned column so labels sit close to their values. */
+  #analyst-report-root .report-print-stack > aside {
+    width: 100% !important;
+    max-width: 380px !important;
+    margin-right: auto !important;
+  }
+
   #analyst-report-root section,
   #analyst-report-root > header {
     break-inside: avoid;
