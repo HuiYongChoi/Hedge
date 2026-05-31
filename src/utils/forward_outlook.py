@@ -46,6 +46,21 @@ FORWARD_OUTLOOK_SYSTEM_INSTRUCTION = (
 )
 
 
+def _round1(value: Any) -> Any:
+    """Round a numeric to one decimal for narrative display.
+
+    EPS values reach the LLM as raw floats (e.g. 105.28448) and get quoted
+    verbatim — there is no post-processing pass for EPS the way there is for
+    PER — so they must be rounded at the source to keep the narrative to one
+    decimal. None / non-numeric pass through unchanged.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return round(float(value), 1)
+    return value
+
+
 def _cache_ticker(ticker: str) -> str:
     return ticker.strip().upper()
 
@@ -94,13 +109,13 @@ def build_forward_outlook_block(
     display_current_price = canonical_current_price or forward_metrics.current_price
     pe_change_pct: float | None = None
     if trailing_pe is not None and forward_pe is not None and trailing_pe > 0:
-        pe_change_pct = round((forward_pe - trailing_pe) / trailing_pe * 100, 2)
+        pe_change_pct = round((forward_pe - trailing_pe) / trailing_pe * 100, 1)
 
     composition = [
         {
             "period": quarter.period,
             "fiscal_period_end": quarter.fiscal_period_end.isoformat(),
-            "eps": quarter.eps,
+            "eps": _round1(quarter.eps),
             "source": quarter.source,
             "provider": quarter.provider,
             "analyst_count": quarter.analyst_count,
@@ -118,32 +133,32 @@ def build_forward_outlook_block(
     def _pct_vs_ttm(fy_pe: float | None) -> float | None:
         if fy_pe is None or forward_pe is None or forward_pe == 0:
             return None
-        return round((fy_pe - forward_pe) / abs(forward_pe) * 100, 2)
+        return round((fy_pe - forward_pe) / abs(forward_pe) * 100, 1)
 
     block: dict[str, Any] = {
         "available": True,
         "as_of_date": forward_metrics.as_of_date.isoformat(),
         "currency": forward_metrics.currency,
         "current_price": display_current_price,
-        "forward_eps_ttm": display_forward_eps,
-        "forward_pe": forward_pe,
-        "canonical_forward_pe": getattr(forward_metrics, "canonical_forward_pe", None),
-        "canonical_forward_eps": canonical_forward_eps,
-        "raw_spliced_forward_pe": raw_spliced_forward_pe,
-        "raw_spliced_forward_eps_ttm": forward_metrics.forward_eps_ttm,
-        "trailing_pe": trailing_pe,
+        "forward_eps_ttm": _round1(display_forward_eps),
+        "forward_pe": _round1(forward_pe),
+        "canonical_forward_pe": _round1(getattr(forward_metrics, "canonical_forward_pe", None)),
+        "canonical_forward_eps": _round1(canonical_forward_eps),
+        "raw_spliced_forward_pe": _round1(raw_spliced_forward_pe),
+        "raw_spliced_forward_eps_ttm": _round1(forward_metrics.forward_eps_ttm),
+        "trailing_pe": _round1(trailing_pe),
         "pe_change_pct": pe_change_pct,
         "confidence": forward_metrics.confidence,
         "composition": composition,
         "notes": list(forward_metrics.notes),
         "canonical_multiples": {
-            "price_compass_fwd_per": forward_pe,
-            "ttm_per": trailing_pe,
-            "current_fy_per": fy0_pe,
-            "next_fy_per": fy1_pe,
-            "fwd_eps_ttm": display_forward_eps,
-            "current_fy_eps": getattr(forward_metrics, "forward_eps_fy0", None),
-            "next_fy_eps": getattr(forward_metrics, "forward_eps_fy1", None) or canonical_forward_eps,
+            "price_compass_fwd_per": _round1(forward_pe),
+            "ttm_per": _round1(trailing_pe),
+            "current_fy_per": _round1(fy0_pe),
+            "next_fy_per": _round1(fy1_pe),
+            "fwd_eps_ttm": _round1(display_forward_eps),
+            "current_fy_eps": _round1(getattr(forward_metrics, "forward_eps_fy0", None)),
+            "next_fy_eps": _round1(getattr(forward_metrics, "forward_eps_fy1", None) or canonical_forward_eps),
             "formula": "Baseline forward P/E = current_price / forward_eps",
         },
         "interpretation_hint": _build_interpretation_hint(
@@ -155,15 +170,15 @@ def build_forward_outlook_block(
     }
 
     if fy0_pe is not None:
-        block["forward_pe_fy0"] = fy0_pe
-        block["forward_eps_fy0"] = getattr(forward_metrics, "forward_eps_fy0", None)
+        block["forward_pe_fy0"] = _round1(fy0_pe)
+        block["forward_eps_fy0"] = _round1(getattr(forward_metrics, "forward_eps_fy0", None))
         block["fy0_fiscal_year"] = fy0_est.fiscal_year if fy0_est else None
         block["fy0_analyst_count"] = fy0_est.analyst_count if fy0_est else None
         block["fy0_confidence"] = fy0_est.confidence if fy0_est else None
 
     if fy1_pe is not None:
-        block["forward_pe_fy1"] = fy1_pe
-        block["forward_eps_fy1"] = getattr(forward_metrics, "forward_eps_fy1", None)
+        block["forward_pe_fy1"] = _round1(fy1_pe)
+        block["forward_eps_fy1"] = _round1(getattr(forward_metrics, "forward_eps_fy1", None))
         block["fy1_fiscal_year"] = fy1_est.fiscal_year if fy1_est else None
         block["fy1_analyst_count"] = fy1_est.analyst_count if fy1_est else None
         block["fy1_confidence"] = fy1_est.confidence if fy1_est else None
@@ -192,12 +207,12 @@ def _build_interpretation_hint(
             else "earnings contraction or valuation pressure"
         )
         parts.append(
-            f"Baseline forward P/E {forward_pe:.2f}x vs TTM P/E {trailing_pe:.2f}x "
+            f"Baseline forward P/E {forward_pe:.1f}x vs TTM P/E {trailing_pe:.1f}x "
             f"({pe_change_pct:+.1f}%) — consensus implies {direction}."
         )
     elif forward_pe is not None:
         parts.append(
-            f"Baseline forward P/E {forward_pe:.2f}x; no TTM P/E available "
+            f"Baseline forward P/E {forward_pe:.1f}x; no TTM P/E available "
             f"for direct comparison."
         )
 
@@ -217,7 +232,7 @@ def _build_interpretation_hint(
         )
         parts.append(
             f"Forward consensus EPS ({consensus_quarter.period}): "
-            f"{consensus_quarter.eps:.2f} {forward_metrics.currency}{analyst_text}."
+            f"{consensus_quarter.eps:.1f} {forward_metrics.currency}{analyst_text}."
         )
 
     if forward_metrics.confidence == "low":
@@ -229,10 +244,10 @@ def _build_interpretation_hint(
         fy0_year = fy0_est.fiscal_year if fy0_est else "FY"
         if forward_pe is not None:
             parts.append(
-                f"Current-year P/E {fy0_pe:.2f}x (FY{fy0_year}) is the annual "
+                f"Current-year P/E {fy0_pe:.1f}x (FY{fy0_year}) is the annual "
                 f"anchor and is separate from the baseline forward P/E."
             )
         else:
-            parts.append(f"Current-year P/E (FY{fy0_year}) {fy0_pe:.2f}x.")
+            parts.append(f"Current-year P/E (FY{fy0_year}) {fy0_pe:.1f}x.")
 
     return " ".join(parts) if parts else "No interpretive hint available."
