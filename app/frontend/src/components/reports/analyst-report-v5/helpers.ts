@@ -1600,7 +1600,7 @@ export function buildCanonicalMetrics(
 }
 
 function formatOneDecimalMultiple(value: number | null | undefined) {
-  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)}x` : null;
+  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)}` : null;
 }
 
 function buildForwardPeComparisonNote(

@@ -850,7 +850,7 @@ function ForwardConsensusTile({
 
   const forwardPer = brokerConsensus?.forwardPer ?? null;
   const forwardPerText = forwardPer !== null && Number.isFinite(forwardPer) && forwardPer > 0
-    ? `${forwardPer.toFixed(1)}x`
+    ? `${forwardPer.toFixed(1)}`
     : '—';
 
   return (
@@ -908,7 +908,7 @@ function ConsensusBridgeTile({
   const displayCurrentPrice = currentPrice ?? pbr.currentPrice;
   const upsideToCurrent = displayCurrentPrice ? (consensus - displayCurrentPrice) / displayCurrentPrice : null;
   const rimValue = dive?.rim?.intrinsicPerShare ?? null;
-  const perText = (value: number | null) => value === null ? '—' : `${value.toFixed(1)}x`;
+  const perText = (value: number | null) => value === null ? '—' : `${value.toFixed(1)}`;
   const p90Text = gapToP90 === null
     ? '—'
     : (language === 'ko'

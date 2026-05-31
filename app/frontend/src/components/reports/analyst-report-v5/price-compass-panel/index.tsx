@@ -97,15 +97,15 @@ function FundamentalsRow({
       : null;
   const ttmItems = compactMetrics([
     trailingEps != null ? { label: t('pcpEpsTtm', language), value: formatMoney(trailingEps, currency) } : null,
-    trailingPe != null ? { label: t('pcpPerTtm', language), value: `${trailingPe.toFixed(1)}×` } : null,
+    trailingPe != null ? { label: t('pcpPerTtm', language), value: `${trailingPe.toFixed(1)}` } : null,
   ]);
   const currentFyItems = compactMetrics([
     currentFyEps != null ? { label: t('pcpEpsCurFy', language), value: formatMoney(currentFyEps, currency) } : null,
-    currentFyPe != null ? { label: t('pcpPerCurFy', language), value: `${currentFyPe.toFixed(1)}×` } : null,
+    currentFyPe != null ? { label: t('pcpPerCurFy', language), value: `${currentFyPe.toFixed(1)}` } : null,
   ]);
   const forwardItems = compactMetrics([
     forwardEps != null ? { label: t('pcpFwdEps', language), value: formatMoney(forwardEps, currency) } : null,
-    forwardPe != null ? { label: t('pcpBrokerFwdPer', language), value: `${forwardPe.toFixed(1)}×` } : null,
+    forwardPe != null ? { label: t('pcpBrokerFwdPer', language), value: `${forwardPe.toFixed(1)}` } : null,
   ]);
   const priceItems = compactMetrics([
     currentPrice != null ? { label: t('pcpLegendCurrent', language), value: formatMoney(currentPrice, currency) } : null,

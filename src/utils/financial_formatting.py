@@ -296,6 +296,33 @@ def _normalize_debt_ratio_percent_text(text: str) -> str:
     )
 
 
+def _normalize_per_ratio_text(text: str) -> str:
+    """Render PER / P/E as a single decimal with no trailing ``x``.
+
+    PER is a plain earnings multiple, so the user-facing convention is e.g.
+    ``PER 45.4`` rather than ``PER 45.42x``. Matched case-sensitively on the
+    uppercase ``PER`` token so the English word "per" is never touched.
+    """
+    def _replace(match: re.Match[str]) -> str:
+        label = match.group("label")
+        separator = match.group("separator")
+        number = float(match.group("number").replace(",", ""))
+        return f"{label}{separator}{number:.1f}"
+
+    pattern = re.compile(
+        r"(?P<label>FwdPER|(?<![A-Za-z])PER|(?<![A-Za-z/])P\s*/\s*E)"
+        r"(?P<separator>\s*(?:=|:|of|은|는|이|가|을|를)?\s*)"
+        r"(?P<number>-?\d[\d,]*(?:\.\d+)?)"
+        r"\s*(?:x|배)?\b"
+    )
+    return pattern.sub(_replace, text)
+
+
+def _normalize_volatility_unit_text(text: str) -> str:
+    """Use ``/day`` instead of the Korean ``/일`` for daily-volatility units."""
+    return re.sub(r"%\s*/\s*일\b", "%/day", text)
+
+
 def _normalize_korean_market_cap_text(text: str) -> str:
     market_cap_pattern = re.compile(
         r"(?P<label>시가\s*총액|시가총액|Market\s+Cap\(시가총액\)|시가총액\s*\(market\s*cap\))"
@@ -401,4 +428,6 @@ def normalize_financial_language(text: str) -> str:
     normalized = _normalize_korean_first_financial_terms(normalized)
     normalized = _normalize_machine_report_text(normalized)
     normalized = _normalize_debt_ratio_percent_text(normalized)
+    normalized = _normalize_per_ratio_text(normalized)
+    normalized = _normalize_volatility_unit_text(normalized)
     return _normalize_korean_market_cap_text(normalized)
