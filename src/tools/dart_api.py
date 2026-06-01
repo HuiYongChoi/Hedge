@@ -678,6 +678,10 @@ def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
         "free_cash_flow": free_cash_flow,
         "operating_cash_flow": fin.get("operating_cash_flow"),
         "capital_expenditure": fin.get("capital_expenditure"),
+        # EBITDA 원시값을 함께 싣는다. get_financial_metrics 의 enrich 단계가
+        # 밸류에이션 비율을 모두 None 으로 리셋한 뒤 base 값으로 재파생하므로,
+        # ebitda 가 없으면 EV/EBITDA 가 다시 N/A 로 돌아간다. (extra=allow 로 통과)
+        "ebitda": ebitda,
         "depreciation_and_amortization": fin.get("depreciation_and_amortization"),
         "interest_expense": fin.get("interest_expense"),
         "total_debt": total_debt,
