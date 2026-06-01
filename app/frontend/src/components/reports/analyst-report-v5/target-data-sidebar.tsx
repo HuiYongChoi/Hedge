@@ -677,6 +677,7 @@ function ValuationSidebarPanel({
   const hasEvEbit = evEbitValue !== null;
   const evEbitCard = hasEvEbit && (() => {
     const classes = toneToClasses(evEbitModel?.signal ?? 'neutral');
+    const isOutlier = evEbitModel?.isOutlier === true;
     const subtitle = evEbitModel?.medianMultiple !== null && evEbitModel?.medianMultiple !== undefined
       && evEbitModel?.currentMultiple !== null && evEbitModel?.currentMultiple !== undefined
       ? fillTemplate(t('evEbitSubtitleMedian', language), {
@@ -685,15 +686,16 @@ function ValuationSidebarPanel({
         })
       : t('evEbitSubtitleFallback', language);
     return (
-      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}${isOutlier ? ' opacity-60' : ''}`}>
         <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            <span>{t('evEbitLabel', language)}</span>
+          <div className="flex min-w-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="truncate">{t('evEbitLabel', language)}</span>
             <InfoDot title={t('evEbitTip', language)} />
+            {isOutlier && <ModelLowConfidenceBadge note={evEbitModel?.outlierNote} language={language} />}
           </div>
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(evEbitModel?.gapToMarket ?? null)}</div>
         </div>
-        <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+        <div className={`mt-1 font-mono text-lg font-semibold ${isOutlier ? 'text-muted-foreground line-through decoration-1' : classes.text}`}>
           {formatCurrency(evEbitValue, currency)}
         </div>
         <div className="text-[10px] text-muted-foreground">{subtitle}</div>
