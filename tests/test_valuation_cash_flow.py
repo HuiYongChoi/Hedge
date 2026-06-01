@@ -41,8 +41,8 @@ def test_fcff_fcfe_levels_and_yields():
     assert result["fcfe"] == pytest.approx(190.0)
     assert result["fcff_yield"] == pytest.approx(0.125)
     assert result["fcfe_yield"] == pytest.approx(0.19)
-    # FCFE fair value: 190*(1.09)/(0.10-0.09) per share / 100.
-    assert result["fcfe_intrinsic_per_share"] == pytest.approx(190 * 1.09 / 0.01 / 100)
+    # FCFE fair value uses a conservative 5% growth cap even if reported FCF grew faster.
+    assert result["fcfe_intrinsic_per_share"] == pytest.approx(190 * 1.05 / 0.05 / 100)
 
 
 def test_value_trap_flags():
@@ -63,6 +63,30 @@ def test_value_trap_flags():
         market_cap=1_000.0, enterprise_value=1_200.0, ev_ebitda_multiple=20.0,
     )
     assert rich["value_trap_flag"] == "neutral"
+
+
+def test_fcf_growth_uses_recent_positive_history_when_cycle_has_losses():
+    li0, li1 = _items(fcf0=120.0, fcf1=100.0)
+    history = [
+        SimpleNamespace(free_cash_flow=258.0),
+        SimpleNamespace(free_cash_flow=138.0),
+        SimpleNamespace(free_cash_flow=-40.0),
+        SimpleNamespace(free_cash_flow=-42.0),
+        SimpleNamespace(free_cash_flow=73.0),
+    ]
+
+    result = calculate_cash_flow_profile(
+        [li0, li1],
+        market_cap=1_000.0,
+        enterprise_value=1_200.0,
+        ev_ebitda_multiple=6.0,
+        fcf_growth_line_items=history,
+    )
+
+    assert result is not None
+    assert result["fcf_growth"] == pytest.approx((258.0 / 138.0) - 1)
+    assert result["fcfe_growth_used"] == pytest.approx(0.05)
+    assert result["value_trap_flag"] == "genuine_value"
 
 
 def test_shareholder_capacity_buckets():

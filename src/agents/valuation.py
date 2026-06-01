@@ -680,6 +680,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             ev_ebitda_multiple=most_recent_metrics.enterprise_value_to_ebitda_ratio,
             cost_of_equity=ke_for_justified,
             shares_outstanding=shares_outstanding,
+            fcf_growth_line_items=valuation_history_items,
         )
 
         if regime == "capex_heavy":
@@ -1580,6 +1581,7 @@ def calculate_cash_flow_profile(
     ev_ebitda_multiple: float | None = None,
     cost_of_equity: float = 0.10,
     shares_outstanding: float | None = None,
+    fcf_growth_line_items: list | None = None,
     tax_rate: float = 0.25,
 ) -> dict | None:
     """FCFF / FCFE cash-flow insight block (independent of the weighted blend).
@@ -1612,23 +1614,34 @@ def calculate_cash_flow_profile(
     fcff_yield = (fcff / enterprise_value) if (fcff is not None and enterprise_value) else None
     fcfe_yield = (fcfe / market_cap) if (fcfe is not None and market_cap) else None
 
-    # Growth proxy from the reported FCF history (newest-first ordering).
+    # Growth proxy from the reported FCF history (newest-first ordering). Cyclical
+    # names can have negative trough years, so use the most recent two positive
+    # observations instead of requiring the oldest point in the whole window to
+    # be positive.
+    growth_items = fcf_growth_line_items or line_items
     fcf_hist = [
-        li.free_cash_flow for li in line_items if getattr(li, "free_cash_flow", None) is not None
+        _to_finite_float(getattr(li, "free_cash_flow", None))
+        for li in growth_items
+        if _to_finite_float(getattr(li, "free_cash_flow", None)) is not None
     ]
     fcf_growth = None
-    if len(fcf_hist) >= 2 and fcf_hist[0] and fcf_hist[0] > 0 and fcf_hist[-1] and fcf_hist[-1] > 0:
-        periods = len(fcf_hist) - 1
+    positive_points = [(idx, value) for idx, value in enumerate(fcf_hist) if value and value > 0]
+    if len(positive_points) >= 2:
+        recent_idx, recent_fcf = positive_points[0]
+        prior_idx, prior_fcf = positive_points[1]
+        periods = max(prior_idx - recent_idx, 1)
         try:
-            fcf_growth = (fcf_hist[0] / fcf_hist[-1]) ** (1 / periods) - 1
+            fcf_growth = (recent_fcf / prior_fcf) ** (1 / periods) - 1
         except (ZeroDivisionError, ValueError):
             fcf_growth = None
 
     # FCFE-discounted equity value (single-stage Gordon on FCFE at cost of equity).
     fcfe_intrinsic_total = None
     fcfe_intrinsic_per_share = None
+    fcfe_growth_used = None
     if fcfe and fcfe > 0:
-        g = max(min(fcf_growth if fcf_growth is not None else 0.03, cost_of_equity - 0.01), 0.0)
+        g = max(min(fcf_growth if fcf_growth is not None else 0.03, 0.05, cost_of_equity - 0.01), 0.0)
+        fcfe_growth_used = g
         if cost_of_equity > g:
             fcfe_intrinsic_total = fcfe * (1 + g) / (cost_of_equity - g)
             if shares_outstanding:
@@ -1668,6 +1681,7 @@ def calculate_cash_flow_profile(
         "fcf_growth": fcf_growth,
         "fcfe_intrinsic_total": fcfe_intrinsic_total,
         "fcfe_intrinsic_per_share": fcfe_intrinsic_per_share,
+        "fcfe_growth_used": fcfe_growth_used,
         "ev_ebitda_multiple": ev_ebitda_multiple,
         "cost_of_equity": cost_of_equity,
         "value_trap_flag": value_trap_flag,
