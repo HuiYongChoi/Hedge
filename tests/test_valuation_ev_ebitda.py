@@ -49,7 +49,7 @@ def test_ev_ebitda_breakdown_returns_none_without_enterprise_value():
     assert result is None
 
 
-def test_ev_ebitda_breakdown_accepts_single_snapshot_fallback():
+def test_ev_ebitda_breakdown_skips_single_snapshot_tautology():
     from src.agents.valuation import calculate_ev_ebitda_breakdown
 
     result = calculate_ev_ebitda_breakdown([
@@ -60,10 +60,7 @@ def test_ev_ebitda_breakdown_accepts_single_snapshot_fallback():
         )
     ])
 
-    assert result is not None
-    assert result["median_multiple"] == pytest.approx(result["current_multiple"])
-    assert result["equity_value"] == pytest.approx(1_000.0)
-    assert result["sample_size"] == 1
+    assert result is None
 
 
 def test_ev_ebitda_breakdown_clips_extreme_multiples_before_median():

@@ -51,17 +51,23 @@ def test_multiple_basis_matches_capex_heavy_selector():
     assert result["multiple_basis"] == "capex_heavy_p75_clipped"
 
 
-def test_single_sample_fallback_equals_current_ebitda_without_growth():
+def test_single_sample_fallback_skips_current_price_tautology_without_growth():
     # EV 1200 / current multiple 8 = 150 current EBITDA; single line item also 150.
     metrics = _metrics([8.0], ebitda_growth=None)
     line_items = _line_items([150.0])
 
-    result = calculate_ebitda_valuation_breakdown(metrics, line_items)
+    assert calculate_ebitda_valuation_breakdown(metrics, line_items) is None
 
+
+def test_single_sample_with_growth_keeps_independent_normalized_ebitda():
+    metrics = _metrics([8.0], ebitda_growth=0.10)
+    line_items = _line_items([150.0])
+
+    result = calculate_ebitda_valuation_breakdown(metrics, line_items)
     assert result is not None
     assert result["current_ebitda"] == pytest.approx(150.0)
-    assert result["normalized_ebitda"] == pytest.approx(150.0)
-    assert result["ebitda_growth_applied"] is None
+    assert result["normalized_ebitda"] == pytest.approx(165.0)
+    assert result["ebitda_growth_applied"] == pytest.approx(0.10)
 
 
 def test_negative_normalized_ebitda_returns_none():

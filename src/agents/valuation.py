@@ -1060,7 +1060,7 @@ def calculate_ev_ebitda_breakdown(financial_metrics: list, capex_heavy: bool = F
     multiples = [
         m.enterprise_value_to_ebitda_ratio for m in financial_metrics if m.enterprise_value_to_ebitda_ratio
     ]
-    if not multiples:
+    if len(multiples) < 2:
         return None
     med_mult, multiple_basis, clipped_sample_size = _select_ev_ebitda_multiple(multiples, capex_heavy)
     ev_implied = med_mult * ebitda_now
@@ -1116,7 +1116,7 @@ def calculate_ev_ebit_breakdown(financial_metrics: list, capex_heavy: bool = Fal
 
     ebit_now = m0.enterprise_value / current_mult
     multiples = [r for m in financial_metrics if (r := _ev_ebit_ratio(m)) and r > 0]
-    if not multiples:
+    if len(multiples) < 2:
         return None
     med_mult, multiple_basis, clipped_sample_size = _select_ev_ebitda_multiple(multiples, capex_heavy)
     ev_implied = med_mult * ebit_now
@@ -1189,6 +1189,15 @@ def calculate_ebitda_valuation_breakdown(
     elif current_mult:
         target_multiple, multiple_basis = current_mult, "current_only"
     else:
+        return None
+
+    lacks_independent_smoothing = len(ebitda_samples) < 2 and growth_applied in (None, 0)
+    uses_current_only_multiple = len(multiples) < 2
+    mirrors_current_ebitda = (
+        current_ebitda is not None
+        and math.isclose(normalized_ebitda, current_ebitda, rel_tol=1e-9, abs_tol=1e-9)
+    )
+    if lacks_independent_smoothing and uses_current_only_multiple and mirrors_current_ebitda:
         return None
 
     ev_implied = target_multiple * normalized_ebitda

@@ -45,12 +45,9 @@ def test_ev_ebit_breakdown_guards_negative_ebit():
     assert calculate_ev_ebit_breakdown(metrics) is None
 
 
-def test_ev_ebit_breakdown_single_snapshot():
+def test_ev_ebit_breakdown_skips_single_snapshot_tautology():
     metrics = _metrics([(1_200.0, 150.0, 1_000.0)])
-    result = calculate_ev_ebit_breakdown(metrics)
-    assert result is not None
-    assert result["median_multiple"] == pytest.approx(result["current_multiple"])
-    assert result["sample_size"] == 1
+    assert calculate_ev_ebit_breakdown(metrics) is None
 
 
 def test_ev_ebit_breakdown_uses_p75_for_capex_heavy():
@@ -74,7 +71,13 @@ def test_ev_ebit_breakdown_prefers_direct_ratio():
             enterprise_value_to_ebit_ratio=10.0,
             operating_income=150.0,
             market_cap=1_000.0,
-        )
+        ),
+        SimpleNamespace(
+            enterprise_value=1_600.0,
+            enterprise_value_to_ebit_ratio=12.0,
+            operating_income=200.0,
+            market_cap=1_200.0,
+        ),
     ]
     result = calculate_ev_ebit_breakdown(metrics)
     assert result is not None
