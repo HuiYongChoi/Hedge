@@ -9,6 +9,7 @@ configurable weights.
 import json
 import math
 import statistics
+from datetime import datetime, timedelta
 from langchain_core.messages import HumanMessage
 from src.graph.state import AgentState, show_agent_reasoning
 from src.utils.progress import progress
@@ -17,6 +18,7 @@ from src.tools.api import (
     get_financial_metrics,
     get_market_cap,
     get_pbr_history,
+    get_prices,
     search_line_items,
 )
 from src.utils.forward_outlook import get_cached_forward_metrics
@@ -288,6 +290,123 @@ def _resolve_point_in_time_shares(
     return None
 
 
+def _parse_yyyy_mm_dd(value: object) -> datetime | None:
+    if value is None:
+        return None
+    text = str(value)[:10]
+    try:
+        return datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _fetch_line_item_price_history(
+    ticker: str,
+    line_items: list,
+    *,
+    end_date: str,
+    api_key: str | None,
+) -> list:
+    periods = [
+        parsed for item in (line_items or [])
+        if (parsed := _parse_yyyy_mm_dd(getattr(item, "report_period", None))) is not None
+    ]
+    if not periods:
+        return []
+    start = (min(periods) - timedelta(days=10)).strftime("%Y-%m-%d")
+    try:
+        return get_prices(ticker, start, end_date, api_key=api_key)
+    except Exception:
+        return []
+
+
+VALUATION_HISTORY_FIELDS = [
+    "free_cash_flow",
+    "net_income",
+    "depreciation_and_amortization",
+    "capital_expenditure",
+    "working_capital",
+    "total_debt",
+    "cash_and_equivalents",
+    "interest_expense",
+    "revenue",
+    "operating_income",
+    "ebit",
+    "ebitda",
+    "outstanding_shares",
+]
+
+
+def _merge_line_item_history(primary: list, fallback: list) -> list:
+    by_period = {getattr(item, "report_period", None): item for item in primary or []}
+    for fb in fallback or []:
+        period = getattr(fb, "report_period", None)
+        if not period:
+            continue
+        target = by_period.get(period)
+        if target is None:
+            by_period[period] = fb
+            continue
+        for field in VALUATION_HISTORY_FIELDS:
+            if getattr(target, field, None) is None and getattr(fb, field, None) is not None:
+                setattr(target, field, getattr(fb, field))
+    return sorted(
+        by_period.values(),
+        key=lambda item: str(getattr(item, "report_period", "")),
+        reverse=True,
+    )
+
+
+def _has_enough_positive_field(items: list, field: str, minimum: int = 2) -> bool:
+    count = 0
+    for item in items or []:
+        value = _to_finite_float(getattr(item, field, None))
+        if value is not None and value > 0:
+            count += 1
+    return count >= minimum
+
+
+def _fetch_valuation_history_line_items(
+    ticker: str,
+    current_line_items: list,
+    *,
+    end_date: str,
+    api_key: str | None,
+) -> list:
+    try:
+        annual = search_line_items(
+            ticker=ticker,
+            line_items=VALUATION_HISTORY_FIELDS,
+            end_date=end_date,
+            period="annual",
+            limit=8,
+            api_key=api_key,
+        )
+    except Exception:
+        annual = []
+
+    history = annual or current_line_items
+    needs_yfinance_fill = (
+        not _has_enough_positive_field(history, "ebitda")
+        or not _has_enough_positive_field(history, "total_debt")
+    )
+    if needs_yfinance_fill:
+        try:
+            from src.tools.api import _fetch_yfinance_line_items
+            yf_items = _fetch_yfinance_line_items(
+                ticker,
+                VALUATION_HISTORY_FIELDS,
+                end_date,
+                period="annual",
+                limit=8,
+            )
+        except Exception:
+            yf_items = []
+        history = _merge_line_item_history(history, yf_items)
+
+    return history
+
+
 def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analyst_agent"):
     """Run valuation across tickers and write signals back to `state`."""
 
@@ -358,6 +477,12 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             api_key=api_key,
         )
         most_recent_metrics = financial_metrics[0]
+        valuation_history_items = _fetch_valuation_history_line_items(
+            ticker,
+            line_items,
+            end_date=end_date,
+            api_key=api_key,
+        )
 
         # ------------------------------------------------------------------
         # Valuation models
@@ -416,32 +541,9 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         
         dcf_val = dcf_results['expected_value']
 
-        # Implied Equity Value
-        ev_breakdown = calculate_ev_ebitda_breakdown(
-            financial_metrics,
-            capex_heavy=regime == "capex_heavy",
-        )
-        ev_ebitda_val = ev_breakdown["equity_value"] if ev_breakdown else 0
-
-        # Normalized/forward EBITDA earnings-power view (distinct from trailing EV/EBITDA).
-        ebitda_breakdown = calculate_ebitda_valuation_breakdown(
-            financial_metrics,
-            line_items,
-            capex_heavy=regime == "capex_heavy",
-        )
-        ebitda_val = ebitda_breakdown["equity_value"] if ebitda_breakdown else 0
-
-        # EV/EBIT — depreciation-aware multiple, conservative cross-check vs EV/EBITDA.
-        ev_ebit_breakdown = calculate_ev_ebit_breakdown(
-            financial_metrics,
-            capex_heavy=regime == "capex_heavy",
-        )
-        ev_ebit_val = ev_ebit_breakdown["equity_value"] if ev_ebit_breakdown else 0
-
-        # Point-in-time share count for every per-share card. The TTM line item
-        # sums outstanding_shares across quarters (~4x the real float on MU), so
-        # using it would deflate each per-share value by the same factor. Prefer
-        # the metrics snapshot, then a point-in-time annual/quarterly line item.
+        # Point-in-time share count for every per-share card and for price-backed
+        # historical multiple samples. The TTM line item sums outstanding_shares
+        # across quarters (~4x the real float on MU), so prefer a snapshot source.
         shares_outstanding: float | None = _resolve_point_in_time_shares(
             financial_metrics,
             ticker=ticker,
@@ -465,6 +567,43 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             ttm_shares = getattr(li_curr, "outstanding_shares", None)
             if ttm_shares and ttm_shares > 0:
                 shares_outstanding = ttm_shares
+
+        historical_prices = _fetch_line_item_price_history(
+            ticker,
+            valuation_history_items,
+            end_date=end_date,
+            api_key=api_key,
+        ) if shares_outstanding else []
+
+        # Implied Equity Value
+        ev_breakdown = calculate_ev_ebitda_breakdown(
+            financial_metrics,
+            capex_heavy=regime == "capex_heavy",
+            line_items=valuation_history_items,
+            prices=historical_prices,
+            shares_outstanding=shares_outstanding,
+        )
+        ev_ebitda_val = ev_breakdown["equity_value"] if ev_breakdown else 0
+
+        # Normalized/forward EBITDA earnings-power view (distinct from trailing EV/EBITDA).
+        ebitda_breakdown = calculate_ebitda_valuation_breakdown(
+            financial_metrics,
+            valuation_history_items,
+            capex_heavy=regime == "capex_heavy",
+            prices=historical_prices,
+            shares_outstanding=shares_outstanding,
+        )
+        ebitda_val = ebitda_breakdown["equity_value"] if ebitda_breakdown else 0
+
+        # EV/EBIT — depreciation-aware multiple, conservative cross-check vs EV/EBITDA.
+        ev_ebit_breakdown = calculate_ev_ebit_breakdown(
+            financial_metrics,
+            capex_heavy=regime == "capex_heavy",
+            line_items=valuation_history_items,
+            prices=historical_prices,
+            shares_outstanding=shares_outstanding,
+        )
+        ev_ebit_val = ev_ebit_breakdown["equity_value"] if ev_ebit_breakdown else 0
 
         # ROIC−WACC excess-return (EVA) valuation.
         eva_growth = (
@@ -1045,7 +1184,74 @@ def _select_ev_ebitda_multiple(multiples: list[float], capex_heavy: bool) -> tup
     return selected, basis, len(clipped_multiples)
 
 
-def calculate_ev_ebitda_breakdown(financial_metrics: list, capex_heavy: bool = False) -> dict | None:
+def _close_from_price_history(prices: list | None, report_period: object) -> float | None:
+    target = _parse_yyyy_mm_dd(report_period)
+    if target is None:
+        return None
+    candidates: list[tuple[datetime, float]] = []
+    for price in prices or []:
+        ts = _parse_yyyy_mm_dd(getattr(price, "time", None))
+        close = _to_finite_float(getattr(price, "close", None))
+        if ts is not None and close is not None and close > 0:
+            candidates.append((ts, close))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    before = [item for item in candidates if item[0] <= target]
+    if before:
+        return before[-1][1]
+    return candidates[0][1]
+
+
+def _line_item_net_debt(item: object, fallback_net_debt: float) -> float:
+    debt = _to_finite_float(getattr(item, "total_debt", None))
+    cash = _to_finite_float(getattr(item, "cash_and_equivalents", None))
+    if debt is None and cash is None:
+        return fallback_net_debt
+    return (debt or 0.0) - (cash or 0.0)
+
+
+def _price_backed_multiple_samples(
+    *,
+    line_items: list | None,
+    prices: list | None,
+    shares_outstanding: float | None,
+    denominator_fields: tuple[str, ...],
+    fallback_net_debt: float,
+) -> list[float]:
+    shares = _to_finite_float(shares_outstanding)
+    if not line_items or not prices or shares is None or shares <= 0:
+        return []
+    samples: list[float] = []
+    for item in line_items:
+        denominator = None
+        for field in denominator_fields:
+            denominator = _to_finite_float(getattr(item, field, None))
+            if denominator is not None:
+                break
+        if denominator is None or denominator <= 0:
+            continue
+        close = _close_from_price_history(prices, getattr(item, "report_period", None))
+        if close is None:
+            continue
+        enterprise_value = close * shares + _line_item_net_debt(item, fallback_net_debt)
+        if enterprise_value > 0:
+            samples.append(enterprise_value / denominator)
+    return samples
+
+
+def _basis_for_price_backed_multiple(basis: str) -> str:
+    return f"price_backed_line_items_{basis}"
+
+
+def calculate_ev_ebitda_breakdown(
+    financial_metrics: list,
+    capex_heavy: bool = False,
+    *,
+    line_items: list | None = None,
+    prices: list | None = None,
+    shares_outstanding: float | None = None,
+) -> dict | None:
     """Implied equity value plus cycle-aware EV/EBITDA multiple details."""
     if not financial_metrics:
         return None
@@ -1055,16 +1261,35 @@ def calculate_ev_ebitda_breakdown(financial_metrics: list, capex_heavy: bool = F
     if m0.enterprise_value_to_ebitda_ratio == 0:
         return None
 
+    net_debt = (m0.enterprise_value or 0) - (m0.market_cap or 0)
     current_mult = m0.enterprise_value_to_ebitda_ratio
-    ebitda_now = m0.enterprise_value / current_mult
+    current_line = line_items[0] if line_items else None
+    ebitda_now = (
+        _to_finite_float(getattr(m0, "ebitda", None))
+        or _to_finite_float(getattr(current_line, "ebitda", None))
+        or (m0.enterprise_value / current_mult)
+    )
+    if ebitda_now <= 0:
+        return None
     multiples = [
         m.enterprise_value_to_ebitda_ratio for m in financial_metrics if m.enterprise_value_to_ebitda_ratio
     ]
+    multiple_basis_prefix = ""
+    if len(multiples) < 2:
+        multiples = _price_backed_multiple_samples(
+            line_items=line_items,
+            prices=prices,
+            shares_outstanding=shares_outstanding,
+            denominator_fields=("ebitda",),
+            fallback_net_debt=net_debt,
+        )
+        multiple_basis_prefix = "price_backed"
     if len(multiples) < 2:
         return None
     med_mult, multiple_basis, clipped_sample_size = _select_ev_ebitda_multiple(multiples, capex_heavy)
+    if multiple_basis_prefix:
+        multiple_basis = _basis_for_price_backed_multiple(multiple_basis)
     ev_implied = med_mult * ebitda_now
-    net_debt = (m0.enterprise_value or 0) - (m0.market_cap or 0)
     equity_implied = max(ev_implied - net_debt, 0.0)
     return {
         "equity_value": equity_implied,
@@ -1096,7 +1321,14 @@ def _ev_ebit_ratio(m) -> float | None:
     return None
 
 
-def calculate_ev_ebit_breakdown(financial_metrics: list, capex_heavy: bool = False) -> dict | None:
+def calculate_ev_ebit_breakdown(
+    financial_metrics: list,
+    capex_heavy: bool = False,
+    *,
+    line_items: list | None = None,
+    prices: list | None = None,
+    shares_outstanding: float | None = None,
+) -> dict | None:
     """Implied equity value from a cycle-aware EV/EBIT multiple.
 
     Complements EV/EBITDA by charging depreciation as a real economic cost — more
@@ -1114,13 +1346,33 @@ def calculate_ev_ebit_breakdown(financial_metrics: list, capex_heavy: bool = Fal
     if not current_mult or current_mult <= 0:
         return None  # negative/zero EBIT — skip rather than emit a garbage multiple.
 
-    ebit_now = m0.enterprise_value / current_mult
+    net_debt = (m0.enterprise_value or 0) - (getattr(m0, "market_cap", 0) or 0)
+    current_line = line_items[0] if line_items else None
+    ebit_now = (
+        _to_finite_float(getattr(m0, "operating_income", None))
+        or _to_finite_float(getattr(current_line, "operating_income", None))
+        or _to_finite_float(getattr(current_line, "ebit", None))
+        or (m0.enterprise_value / current_mult)
+    )
+    if ebit_now <= 0:
+        return None
     multiples = [r for m in financial_metrics if (r := _ev_ebit_ratio(m)) and r > 0]
+    multiple_basis_prefix = ""
+    if len(multiples) < 2:
+        multiples = _price_backed_multiple_samples(
+            line_items=line_items,
+            prices=prices,
+            shares_outstanding=shares_outstanding,
+            denominator_fields=("operating_income", "ebit"),
+            fallback_net_debt=net_debt,
+        )
+        multiple_basis_prefix = "price_backed"
     if len(multiples) < 2:
         return None
     med_mult, multiple_basis, clipped_sample_size = _select_ev_ebitda_multiple(multiples, capex_heavy)
+    if multiple_basis_prefix:
+        multiple_basis = _basis_for_price_backed_multiple(multiple_basis)
     ev_implied = med_mult * ebit_now
-    net_debt = (m0.enterprise_value or 0) - (getattr(m0, "market_cap", 0) or 0)
     equity_implied = max(ev_implied - net_debt, 0.0)
     return {
         "equity_value": equity_implied,
@@ -1139,6 +1391,8 @@ def calculate_ebitda_valuation_breakdown(
     line_items: list,
     *,
     capex_heavy: bool = False,
+    prices: list | None = None,
+    shares_outstanding: float | None = None,
 ) -> dict | None:
     """Normalized/forward EBITDA × cycle-aware target multiple → equity value.
 
@@ -1155,7 +1409,12 @@ def calculate_ebitda_valuation_breakdown(
 
     # Current EBITDA implied by EV / current multiple (fallback sample).
     current_mult = getattr(m0, "enterprise_value_to_ebitda_ratio", None)
-    current_ebitda = m0.enterprise_value / current_mult if current_mult else None
+    current_line = line_items[0] if line_items else None
+    current_ebitda = (
+        _to_finite_float(getattr(m0, "ebitda", None))
+        or _to_finite_float(getattr(current_line, "ebitda", None))
+        or (m0.enterprise_value / current_mult if current_mult else None)
+    )
 
     # EBITDA time series from line items (cycle smoothing).
     ebitda_samples = [
@@ -1184,8 +1443,24 @@ def calculate_ebitda_valuation_breakdown(
         for m in financial_metrics
         if getattr(m, "enterprise_value_to_ebitda_ratio", None)
     ]
+    multiple_basis_prefix = ""
+    if len(multiples) < 2:
+        net_debt = (m0.enterprise_value or 0) - (getattr(m0, "market_cap", 0) or 0)
+        price_backed = _price_backed_multiple_samples(
+            line_items=line_items,
+            prices=prices,
+            shares_outstanding=shares_outstanding,
+            denominator_fields=("ebitda",),
+            fallback_net_debt=net_debt,
+        )
+        if len(price_backed) >= 2:
+            multiples = price_backed
+            multiple_basis_prefix = "price_backed"
+
     if multiples:
         target_multiple, multiple_basis, _ = _select_ev_ebitda_multiple(multiples, capex_heavy)
+        if multiple_basis_prefix:
+            multiple_basis = _basis_for_price_backed_multiple(multiple_basis)
     elif current_mult:
         target_multiple, multiple_basis = current_mult, "current_only"
     else:

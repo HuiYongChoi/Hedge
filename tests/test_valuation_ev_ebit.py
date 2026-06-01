@@ -45,9 +45,45 @@ def test_ev_ebit_breakdown_guards_negative_ebit():
     assert calculate_ev_ebit_breakdown(metrics) is None
 
 
-def test_ev_ebit_breakdown_skips_single_snapshot_tautology():
+def test_ev_ebit_breakdown_skips_single_snapshot_without_external_basis():
     metrics = _metrics([(1_200.0, 150.0, 1_000.0)])
     assert calculate_ev_ebit_breakdown(metrics) is None
+
+
+def test_ev_ebit_breakdown_uses_price_backed_line_item_multiples():
+    metrics = [
+        SimpleNamespace(
+            enterprise_value=1_200.0,
+            operating_income=150.0,
+            market_cap=1_000.0,
+        )
+    ]
+    line_items = [
+        SimpleNamespace(report_period="2025-12-31", operating_income=150.0, total_debt=250.0, cash_and_equivalents=50.0),
+        SimpleNamespace(report_period="2024-12-31", operating_income=100.0, total_debt=250.0, cash_and_equivalents=50.0),
+        SimpleNamespace(report_period="2023-12-31", operating_income=90.0, total_debt=200.0, cash_and_equivalents=50.0),
+    ]
+    prices = [
+        SimpleNamespace(time="2023-12-31T00:00:00", close=75.0),
+        SimpleNamespace(time="2024-12-31T00:00:00", close=100.0),
+        SimpleNamespace(time="2025-12-31T00:00:00", close=100.0),
+    ]
+
+    result = calculate_ev_ebit_breakdown(
+        metrics,
+        line_items=line_items,
+        prices=prices,
+        shares_outstanding=10.0,
+    )
+
+    assert result is not None
+    # Price-backed EV/EBIT: 1200/150=8, 1200/100=12, 900/90=10 -> median 10.
+    assert result["median_multiple"] == pytest.approx(10.0)
+    assert result["current_multiple"] == pytest.approx(8.0)
+    assert result["ebit_now"] == pytest.approx(150.0)
+    assert result["equity_value"] == pytest.approx(1_300.0)
+    assert result["multiple_basis"] == "price_backed_line_items_median"
+    assert result["sample_size"] == 3
 
 
 def test_ev_ebit_breakdown_uses_p75_for_capex_heavy():
