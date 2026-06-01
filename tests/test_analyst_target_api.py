@@ -255,12 +255,76 @@ class AnalystTargetApiTests(unittest.TestCase):
 
         self.assertEqual(_fetch_naver_current_price("000660.KS"), 1901000.0)
 
+    @patch("src.tools.analyst_target_api.requests.get")
+    def test_naver_overtime_parses_korean_after_hours(self, mock_get):
+        """네이버 실시간 API의 시간외 단일가를 파싱하고 정규장 종가 대비 %를 계산."""
+        from src.tools.analyst_target_api import _fetch_naver_overtime
+        from datetime import datetime, timezone
+
+        fresh = datetime.now(timezone.utc).astimezone().isoformat()
+        payload = {
+            "datas": [
+                {
+                    "closePrice": "349,000",
+                    "overMarketPriceInfo": {
+                        "tradingSessionType": "AFTER_MARKET",
+                        "overPrice": "355,000",
+                        "localTradedAt": fresh,
+                    },
+                }
+            ]
+        }
+
+        class Resp:
+            ok = True
+
+            def json(self):
+                return payload
+
+        mock_get.return_value = Resp()
+
+        result = _fetch_naver_overtime("005930.KS")
+        self.assertEqual(result["extended_session"], "post")
+        self.assertEqual(result["extended_price"], 355000.0)
+        self.assertEqual(result["market_session"], "POST")
+        # (355,000 - 349,000) / 349,000 * 100 ≈ 1.72%
+        self.assertAlmostEqual(result["extended_change_percent"], 6000 / 349000 * 100, places=3)
+
+    @patch("src.tools.analyst_target_api.requests.get")
+    def test_naver_overtime_drops_stale_print(self, mock_get):
+        """전 거래일에 머무른 오래된 시간외 단일가는 표시하지 않는다."""
+        from src.tools.analyst_target_api import _fetch_naver_overtime
+
+        payload = {
+            "datas": [
+                {
+                    "closePrice": "349,000",
+                    "overMarketPriceInfo": {
+                        "tradingSessionType": "AFTER_MARKET",
+                        "overPrice": "355,000",
+                        "localTradedAt": "2020-01-01T18:00:00.000000+09:00",
+                    },
+                }
+            ]
+        }
+
+        class Resp:
+            ok = True
+
+            def json(self):
+                return payload
+
+        mock_get.return_value = Resp()
+
+        self.assertEqual(_fetch_naver_overtime("005930.KS"), {})
+
+    @patch("src.tools.analyst_target_api._fetch_naver_overtime", return_value={})
     @patch("src.tools.analyst_target_api._fetch_fnguide_consensus")
     @patch("src.tools.analyst_target_api._fetch_naver_current_price", return_value=1895000.0)
     @patch("src.tools.analyst_target_api._fetch_yfinance_analyst")
     @patch("src.tools.analyst_target_api._fetch_beta_sigma_yf", return_value=(2.03, 0.67))
     @patch("src.tools.analyst_target_api._fetch_yfinance_data")
-    def test_korean_ticker_prefers_fnguide_brokers_and_krw_currency(self, mock_fund, _bs, mock_an, _naver, mock_fg):
+    def test_korean_ticker_prefers_fnguide_brokers_and_krw_currency(self, mock_fund, _bs, mock_an, _naver, mock_fg, _naver_ot):
         mock_fund.return_value = {"trailing_pe": 40.5, "trailing_eps": 46765.0}
         mock_an.return_value = {
             "consensus": 1946076.9, "high": 3100000.0, "low": 1030000.0, "median": 1850000.0,

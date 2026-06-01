@@ -4,7 +4,7 @@ import logging
 import time
 import statistics
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 import requests
 from bs4 import BeautifulSoup
@@ -16,6 +16,9 @@ _CACHE: dict[str, tuple[float, "AnalystTarget"]] = {}
 _TTL_SECONDS = 6 * 3600  # 6 hours
 _FNGUIDE_CONSENSUS_URL = "https://wcomp.fnguide.com/CompanyInfo/Consensus"
 _NAVER_ITEM_URL = "https://finance.naver.com/item/main.naver"
+_NAVER_REALTIME_URL = "https://polling.finance.naver.com/api/realtime/domestic/stock/{code}"
+# 시간외 단일가가 직전 정규장 종가에서 얼마나 오래된 것까지 표시할지 (이보다 오래되면 staleness로 숨김)
+_OVERTIME_FRESH_HOURS = 14
 
 GRADE_TO_SIGNAL: dict[str, str] = {
     "strong buy": "BUY", "buy": "BUY", "outperform": "BUY",
@@ -616,6 +619,66 @@ def _fetch_naver_current_price(ticker: str) -> Optional[float]:
         return None
 
 
+def _fetch_naver_overtime(ticker: str) -> dict:
+    """네이버 실시간 API에서 한국 종목 시간외 단일가를 가져온다 (표시 전용).
+
+    yfinance는 한국 티커에 pre/post-market 가격을 주지 않으므로 네이버 polling API의
+    ``overMarketPriceInfo`` (시간외 단일가)를 사용한다. 변동률은 미국 칩과 동일하게
+    당일 정규장 종가 대비로 계산한다. 분석 계산에는 쓰지 않는다.
+    """
+    if not _is_korean_ticker(ticker):
+        return {}
+    try:
+        response = requests.get(
+            _NAVER_REALTIME_URL.format(code=_krx_code(ticker)),
+            timeout=8,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if not response.ok:
+            return {}
+        datas = response.json().get("datas") or []
+        if not datas:
+            return {}
+        data = datas[0] or {}
+        ov = data.get("overMarketPriceInfo") or {}
+        over_price = _parse_num(ov.get("overPrice"))
+        if not over_price or over_price <= 0:
+            return {}
+
+        session_type = ov.get("tradingSessionType")
+        if session_type == "BEFORE_MARKET":
+            ext_session = "pre"
+        elif session_type == "AFTER_MARKET":
+            ext_session = "post"
+        else:
+            return {}
+
+        # 오래된 시간외 단일가(전 거래일 잔존 등)는 숨긴다.
+        traded_at = ov.get("localTradedAt")
+        if traded_at:
+            try:
+                traded = datetime.fromisoformat(traded_at)
+                if traded.tzinfo is None:
+                    traded = traded.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) - traded > timedelta(hours=_OVERTIME_FRESH_HOURS):
+                    return {}
+            except (ValueError, TypeError):
+                pass
+
+        out: dict = {
+            "extended_session": ext_session,
+            "extended_price": over_price,
+            "market_session": "PRE" if ext_session == "pre" else "POST",
+        }
+        close_price = _parse_num(data.get("closePrice"))
+        if close_price and close_price > 0:
+            out["extended_change_percent"] = (over_price - close_price) / close_price * 100.0
+        return out
+    except Exception as e:
+        logger.debug("Naver overtime fetch failed for %s: %s", ticker, e)
+        return {}
+
+
 def _compute_distribution_v5(
     brokers: list[BrokerTarget],
     rec_summary: Optional[dict],
@@ -690,9 +753,19 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
         naver_current_price = _fetch_naver_current_price(ticker)
         current_price = naver_current_price
 
-    # 시간외 시세는 미국 종목에서만 표시 (KR/JP는 yfinance 시간외 데이터가 신뢰도 낮음)
+    # 시간외 시세 (표시 전용 — 분석 계산엔 정규장가를 계속 사용).
+    #  · 미국: yfinance marketState + pre/postMarketPrice
+    #  · 한국: yfinance가 시간외를 안 주므로 네이버 실시간 API(시간외 단일가) 사용
+    #  · 일본: 신뢰 가능한 시간외 소스가 없어 표시하지 않음
     market_session = yf_fund.get("market_session")
-    if is_kr or is_jp:
+    if is_kr:
+        naver_ot = _fetch_naver_overtime(ticker)
+        extended_price = naver_ot.get("extended_price")
+        extended_change_percent = naver_ot.get("extended_change_percent")
+        extended_session = naver_ot.get("extended_session")
+        if naver_ot.get("market_session"):
+            market_session = naver_ot["market_session"]
+    elif is_jp:
         extended_price = None
         extended_change_percent = None
         extended_session = None
