@@ -26,6 +26,7 @@ const PREFERRED_MODEL_ORDER = [
   'dcf',
   'owner_earnings',
   'ev_ebitda',
+  'ev_ebit',
   'ebitda_valuation',
   'roic_wacc_valuation',
   'residual_income',

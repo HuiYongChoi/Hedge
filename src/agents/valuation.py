@@ -431,6 +431,13 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         )
         ebitda_val = ebitda_breakdown["equity_value"] if ebitda_breakdown else 0
 
+        # EV/EBIT — depreciation-aware multiple, conservative cross-check vs EV/EBITDA.
+        ev_ebit_breakdown = calculate_ev_ebit_breakdown(
+            financial_metrics,
+            capex_heavy=regime == "capex_heavy",
+        )
+        ev_ebit_val = ev_ebit_breakdown["equity_value"] if ev_ebit_breakdown else 0
+
         # Point-in-time share count for every per-share card. The TTM line item
         # sums outstanding_shares across quarters (~4x the real float on MU), so
         # using it would deflate each per-share value by the same factor. Prefer
@@ -526,23 +533,35 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             progress.update_status(agent_id, ticker, "Failed: Market cap unavailable")
             continue
 
+        # FCFF/FCFE cash-flow insight (independent of the weighted blend).
+        cash_flow_profile = calculate_cash_flow_profile(
+            line_items,
+            market_cap=market_cap,
+            enterprise_value=most_recent_metrics.enterprise_value,
+            ev_ebitda_multiple=most_recent_metrics.enterprise_value_to_ebitda_ratio,
+            cost_of_equity=ke_for_justified,
+            shares_outstanding=shares_outstanding,
+        )
+
         if regime == "capex_heavy":
             base_weights = {
-                "dcf": 0.16,
-                "owner_earnings": 0.20,
-                "ev_ebitda": 0.16,
-                "residual_income": 0.16,
-                "pbr_band": 0.12,
+                "dcf": 0.15,
+                "owner_earnings": 0.18,
+                "ev_ebitda": 0.12,
+                "ev_ebit": 0.10,
+                "residual_income": 0.15,
+                "pbr_band": 0.10,
                 "ebitda_valuation": 0.10,
                 "roic_wacc_valuation": 0.10,
             }
         else:
             base_weights = {
-                "dcf": 0.24,
-                "owner_earnings": 0.24,
-                "ev_ebitda": 0.12,
-                "residual_income": 0.08,
-                "pbr_band": 0.12,
+                "dcf": 0.23,
+                "owner_earnings": 0.22,
+                "ev_ebitda": 0.09,
+                "ev_ebit": 0.08,
+                "residual_income": 0.07,
+                "pbr_band": 0.11,
                 "ebitda_valuation": 0.10,
                 "roic_wacc_valuation": 0.10,
             }
@@ -563,6 +582,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             "dcf": {"value": dcf_val, "weight": base_weights["dcf"]},
             "owner_earnings": {"value": owner_val, "weight": base_weights["owner_earnings"]},
             "ev_ebitda": {"value": ev_ebitda_val, "weight": base_weights["ev_ebitda"]},
+            "ev_ebit": {"value": ev_ebit_val, "weight": base_weights["ev_ebit"]},
             "residual_income": {"value": rim_val, "weight": base_weights["residual_income"]},
             "ebitda_valuation": {"value": ebitda_val, "weight": base_weights["ebitda_valuation"]},
             "roic_wacc_valuation": {"value": roic_wacc_val, "weight": base_weights["roic_wacc_valuation"]},
@@ -713,6 +733,17 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                 "sample_size": ev_breakdown["sample_size"],
                 "clipped_sample_size": ev_breakdown["clipped_sample_size"],
                 "multiple_basis": ev_breakdown["multiple_basis"],
+            })
+
+        if ev_ebit_breakdown and "ev_ebit_analysis" in reasoning:
+            reasoning["ev_ebit_analysis"].update({
+                "median_multiple": ev_ebit_breakdown["median_multiple"],
+                "current_multiple": ev_ebit_breakdown["current_multiple"],
+                "ebit_now": ev_ebit_breakdown["ebit_now"],
+                "net_debt": ev_ebit_breakdown["net_debt"],
+                "sample_size": ev_ebit_breakdown["sample_size"],
+                "clipped_sample_size": ev_ebit_breakdown["clipped_sample_size"],
+                "multiple_basis": ev_ebit_breakdown["multiple_basis"],
             })
 
         if ebitda_breakdown and "ebitda_valuation_analysis" in reasoning:
@@ -906,6 +937,9 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         if sensitivity_matrix:
             reasoning["sensitivity_matrix"] = sensitivity_matrix
 
+        if cash_flow_profile:
+            reasoning["cash_flow_insight"] = cash_flow_profile
+
         valuation_analysis[ticker] = {
             "signal": signal,
             "confidence": confidence,
@@ -1048,6 +1082,56 @@ def calculate_ev_ebitda_value(financial_metrics: list):
     """Backward-compatible EV/EBITDA equity value helper."""
     breakdown = calculate_ev_ebitda_breakdown(financial_metrics)
     return breakdown["equity_value"] if breakdown else 0
+
+
+def _ev_ebit_ratio(m) -> float | None:
+    """Per-period EV/EBIT: prefer a provided ratio, else EV / operating income (EBIT)."""
+    direct = getattr(m, "enterprise_value_to_ebit_ratio", None)
+    if direct and direct > 0:
+        return direct
+    ev = getattr(m, "enterprise_value", None)
+    ebit = getattr(m, "operating_income", None)
+    if ev and ebit and ebit > 0:
+        return ev / ebit
+    return None
+
+
+def calculate_ev_ebit_breakdown(financial_metrics: list, capex_heavy: bool = False) -> dict | None:
+    """Implied equity value from a cycle-aware EV/EBIT multiple.
+
+    Complements EV/EBITDA by charging depreciation as a real economic cost — more
+    conservative for capital-intensive/cyclical names. EBIT can turn negative at a
+    cycle trough, which makes the multiple meaningless, so non-positive EBIT is
+    guarded out (returns None and the method drops from the weighted blend).
+    """
+    if not financial_metrics:
+        return None
+    m0 = financial_metrics[0]
+    if not getattr(m0, "enterprise_value", None):
+        return None
+
+    current_mult = _ev_ebit_ratio(m0)
+    if not current_mult or current_mult <= 0:
+        return None  # negative/zero EBIT — skip rather than emit a garbage multiple.
+
+    ebit_now = m0.enterprise_value / current_mult
+    multiples = [r for m in financial_metrics if (r := _ev_ebit_ratio(m)) and r > 0]
+    if not multiples:
+        return None
+    med_mult, multiple_basis, clipped_sample_size = _select_ev_ebitda_multiple(multiples, capex_heavy)
+    ev_implied = med_mult * ebit_now
+    net_debt = (m0.enterprise_value or 0) - (getattr(m0, "market_cap", 0) or 0)
+    equity_implied = max(ev_implied - net_debt, 0.0)
+    return {
+        "equity_value": equity_implied,
+        "median_multiple": med_mult,
+        "current_multiple": current_mult,
+        "ebit_now": ebit_now,
+        "net_debt": net_debt,
+        "sample_size": len(multiples),
+        "clipped_sample_size": clipped_sample_size,
+        "multiple_basis": multiple_basis,
+    }
 
 
 def calculate_ebitda_valuation_breakdown(
@@ -1201,6 +1285,111 @@ def calculate_roic_wacc_breakdown(
         "fade_growth": g,
         "terminal_growth": term_g,
         "margin_of_safety": margin_of_safety,
+    }
+
+
+def calculate_cash_flow_profile(
+    line_items: list,
+    *,
+    market_cap: float | None,
+    enterprise_value: float | None,
+    ev_ebitda_multiple: float | None = None,
+    cost_of_equity: float = 0.10,
+    shares_outstanding: float | None = None,
+    tax_rate: float = 0.25,
+) -> dict | None:
+    """FCFF / FCFE cash-flow insight block (independent of the weighted blend).
+
+    FCFF (to the firm) drives enterprise value; FCFE (to equity) is what is left
+    for shareholders after debt service + net borrowing. We surface both levels,
+    their yields, a growth proxy, an FCFE-discounted equity value, and two reader
+    insights: a value-trap check (cheap EV/EBITDA must be backed by growing FCFF)
+    and shareholder-return capacity (FCFE yield).
+    """
+    if not line_items:
+        return None
+    li0 = line_items[0]
+    li1 = line_items[1] if len(line_items) > 1 else li0
+
+    da = getattr(li0, "depreciation_and_amortization", None) or 0.0
+    capex_out = abs(getattr(li0, "capital_expenditure", None) or 0.0)
+    ebit = getattr(li0, "ebit", None) or getattr(li0, "operating_income", None)
+    net_income = getattr(li0, "net_income", None)
+    interest_expense = getattr(li0, "interest_expense", None) or 0.0
+
+    wc0 = getattr(li0, "working_capital", None)
+    wc1 = getattr(li1, "working_capital", None)
+    wc_change = (wc0 - wc1) if (wc0 is not None and wc1 is not None) else 0.0
+    net_borrowing = (getattr(li0, "total_debt", None) or 0.0) - (getattr(li1, "total_debt", None) or 0.0)
+
+    fcff = (ebit * (1 - tax_rate) + da - capex_out - wc_change) if ebit is not None else None
+    fcfe = (net_income + da - capex_out - wc_change + net_borrowing) if net_income is not None else None
+
+    fcff_yield = (fcff / enterprise_value) if (fcff is not None and enterprise_value) else None
+    fcfe_yield = (fcfe / market_cap) if (fcfe is not None and market_cap) else None
+
+    # Growth proxy from the reported FCF history (newest-first ordering).
+    fcf_hist = [
+        li.free_cash_flow for li in line_items if getattr(li, "free_cash_flow", None) is not None
+    ]
+    fcf_growth = None
+    if len(fcf_hist) >= 2 and fcf_hist[0] and fcf_hist[0] > 0 and fcf_hist[-1] and fcf_hist[-1] > 0:
+        periods = len(fcf_hist) - 1
+        try:
+            fcf_growth = (fcf_hist[0] / fcf_hist[-1]) ** (1 / periods) - 1
+        except (ZeroDivisionError, ValueError):
+            fcf_growth = None
+
+    # FCFE-discounted equity value (single-stage Gordon on FCFE at cost of equity).
+    fcfe_intrinsic_total = None
+    fcfe_intrinsic_per_share = None
+    if fcfe and fcfe > 0:
+        g = max(min(fcf_growth if fcf_growth is not None else 0.03, cost_of_equity - 0.01), 0.0)
+        if cost_of_equity > g:
+            fcfe_intrinsic_total = fcfe * (1 + g) / (cost_of_equity - g)
+            if shares_outstanding:
+                fcfe_intrinsic_per_share = fcfe_intrinsic_total / shares_outstanding
+
+    # Value-trap check: a low EV/EBITDA is only "cheap" if FCFF is actually growing.
+    value_trap_flag = None
+    if ev_ebitda_multiple is not None and fcf_growth is not None:
+        cheap = ev_ebitda_multiple < 8.0
+        if cheap and fcf_growth <= 0:
+            value_trap_flag = "trap_risk"
+        elif cheap and fcf_growth > 0:
+            value_trap_flag = "genuine_value"
+        else:
+            value_trap_flag = "neutral"
+
+    # Shareholder-return capacity bucket from FCFE yield.
+    shareholder_capacity = None
+    if fcfe_yield is not None:
+        if fcfe_yield >= 0.06:
+            shareholder_capacity = "strong"
+        elif fcfe_yield >= 0.03:
+            shareholder_capacity = "moderate"
+        elif fcfe_yield >= 0:
+            shareholder_capacity = "limited"
+        else:
+            shareholder_capacity = "negative"
+
+    if fcff is None and fcfe is None:
+        return None
+
+    return {
+        "fcff": fcff,
+        "fcfe": fcfe,
+        "fcff_yield": fcff_yield,
+        "fcfe_yield": fcfe_yield,
+        "fcf_growth": fcf_growth,
+        "fcfe_intrinsic_total": fcfe_intrinsic_total,
+        "fcfe_intrinsic_per_share": fcfe_intrinsic_per_share,
+        "ev_ebitda_multiple": ev_ebitda_multiple,
+        "cost_of_equity": cost_of_equity,
+        "value_trap_flag": value_trap_flag,
+        "shareholder_capacity": shareholder_capacity,
+        "net_borrowing": net_borrowing,
+        "tax_rate": tax_rate,
     }
 
 

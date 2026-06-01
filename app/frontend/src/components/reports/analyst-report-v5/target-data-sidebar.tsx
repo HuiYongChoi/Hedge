@@ -3,7 +3,7 @@ import { t } from '@/lib/language-preferences';
 import { ChevronRight } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { computePbrTrend, toneToClasses } from './helpers';
-import type { OtherAgent, PbrBand, ReportLanguage, ReportTone, TargetTile, ValuationDeepDive } from './types';
+import type { CashFlowInsight, OtherAgent, PbrBand, ReportLanguage, ReportTone, TargetTile, ValuationDeepDive } from './types';
 
 interface TargetDataSidebarProps {
   tiles: TargetTile[];
@@ -41,6 +41,11 @@ function formatCurrency(value: number | null | undefined, currency: string) {
 function formatPercent(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—';
   return `${value > 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
+}
+
+function formatPercentPlain(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  return `${(value * 100).toFixed(1)}%`;
 }
 
 function formatPbrMultiple(value: number | null | undefined) {
@@ -520,6 +525,72 @@ function ModelLowConfidenceBadge({ note, language }: { note?: string | null; lan
   );
 }
 
+function CashFlowInsightCard({
+  cashFlow,
+  currency,
+  language,
+}: {
+  cashFlow: CashFlowInsight;
+  currency: string;
+  language: ReportLanguage;
+}) {
+  const ko = language === 'ko';
+  const trapTone: ReportTone =
+    cashFlow.valueTrapFlag === 'genuine_value' ? 'bullish'
+    : cashFlow.valueTrapFlag === 'trap_risk' ? 'bearish'
+    : 'neutral';
+  const capacityTone: ReportTone =
+    cashFlow.shareholderCapacity === 'strong' ? 'bullish'
+    : cashFlow.shareholderCapacity === 'negative' ? 'bearish'
+    : 'neutral';
+
+  const trapText = cashFlow.valueTrapFlag
+    ? t(`cashFlowTrap_${cashFlow.valueTrapFlag}`, language)
+    : null;
+  const capacityText = cashFlow.shareholderCapacity
+    ? t(`cashFlowCapacity_${cashFlow.shareholderCapacity}`, language)
+    : null;
+
+  return (
+    <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+      <div className="mb-1.5 flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        <span>{t('cashFlowInsightTitle', language)}</span>
+        <InfoDot title={t('cashFlowInsightTip', language)} />
+      </div>
+      <dl className="space-y-1 text-[10px]">
+        <Row label={t('cashFlowFcffYield', language)} tip={t('cashFlowFcffTip', language)}>
+          <span className="font-mono">{formatPercentPlain(cashFlow.fcffYield)}</span>
+        </Row>
+        <Row label={t('cashFlowFcfeYield', language)} tip={t('cashFlowFcfeTip', language)}>
+          <span className="font-mono">{formatPercentPlain(cashFlow.fcfeYield)}</span>
+        </Row>
+        <Row label={t('cashFlowGrowth', language)} tip={t('cashFlowGrowthTip', language)}>
+          <span className="font-mono">{formatPercent(cashFlow.fcfGrowth)}</span>
+        </Row>
+        {cashFlow.fcfeIntrinsicPerShare !== null && (
+          <Row label={t('cashFlowFcfeIntrinsic', language)} tip={t('cashFlowFcfeIntrinsicTip', language)}>
+            <span className="font-mono">{formatCurrency(cashFlow.fcfeIntrinsicPerShare, currency)}</span>
+          </Row>
+        )}
+      </dl>
+      {(trapText || capacityText) && (
+        <div className="mt-2 space-y-1">
+          {trapText && (
+            <p className={`rounded-md border px-2 py-1 text-[10px] leading-4 ${toneToClasses(trapTone).border} ${toneToClasses(trapTone).text}`}>
+              {ko ? '밸류트랩 점검: ' : 'Value-trap check: '}{trapText}
+            </p>
+          )}
+          {capacityText && (
+            <p className={`rounded-md border px-2 py-1 text-[10px] leading-4 ${toneToClasses(capacityTone).border} ${toneToClasses(capacityTone).text}`}>
+              {ko ? '주주 환원 여력: ' : 'Shareholder return: '}{capacityText}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ValuationSidebarPanel({
   dive,
   currency,
@@ -538,6 +609,7 @@ function ValuationSidebarPanel({
   const pbrModel = dive.models.find(model => model.key === 'pbr_band');
   const rimModel = dive.models.find(model => model.key === 'residual_income');
   const evModel = dive.models.find(model => model.key === 'ev_ebitda');
+  const evEbitModel = dive.models.find(model => model.key === 'ev_ebit');
   const ebitdaModel = dive.models.find(model => model.key === 'ebitda_valuation');
   const evaModel = dive.models.find(model => model.key === 'roic_wacc_valuation');
   const pbrValue = dive.pbr
@@ -568,8 +640,9 @@ function ValuationSidebarPanel({
   const hasEv = evValue !== null;
   const hasEbitdaModel = (ebitdaModel?.intrinsicPerShare ?? null) !== null;
   const hasEvaModel = (evaModel?.intrinsicPerShare ?? null) !== null;
+  const hasEvEbitModel = (evEbitModel?.intrinsicPerShare ?? null) !== null;
 
-  if (!hasPbr && !hasRim && !hasEv && !hasEbitdaModel && !hasEvaModel) return null;
+  if (!hasPbr && !hasRim && !hasEv && !hasEbitdaModel && !hasEvaModel && !hasEvEbitModel) return null;
 
   const evSubtitle = evModel?.medianMultiple !== null
     && evModel?.medianMultiple !== undefined
@@ -588,6 +661,7 @@ function ValuationSidebarPanel({
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             <span className="truncate">{t('evEbitdaLabel', language)}</span>
+            <InfoDot title={t('evEbitdaTip', language)} />
             {isOutlier && <ModelLowConfidenceBadge note={evModel?.outlierNote} language={language} />}
           </div>
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(evGap)}</div>
@@ -596,6 +670,33 @@ function ValuationSidebarPanel({
           {formatCurrency(evValue, currency)}
         </div>
         <div className="text-[10px] text-muted-foreground">{evSubtitle}</div>
+      </div>
+    );
+  })();
+  const evEbitValue = evEbitModel?.intrinsicPerShare ?? null;
+  const hasEvEbit = evEbitValue !== null;
+  const evEbitCard = hasEvEbit && (() => {
+    const classes = toneToClasses(evEbitModel?.signal ?? 'neutral');
+    const subtitle = evEbitModel?.medianMultiple !== null && evEbitModel?.medianMultiple !== undefined
+      && evEbitModel?.currentMultiple !== null && evEbitModel?.currentMultiple !== undefined
+      ? fillTemplate(t('evEbitSubtitleMedian', language), {
+          median: evEbitModel.medianMultiple.toFixed(1),
+          current: evEbitModel.currentMultiple.toFixed(1),
+        })
+      : t('evEbitSubtitleFallback', language);
+    return (
+      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span>{t('evEbitLabel', language)}</span>
+            <InfoDot title={t('evEbitTip', language)} />
+          </div>
+          <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(evEbitModel?.gapToMarket ?? null)}</div>
+        </div>
+        <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+          {formatCurrency(evEbitValue, currency)}
+        </div>
+        <div className="text-[10px] text-muted-foreground">{subtitle}</div>
       </div>
     );
   })();
@@ -614,6 +715,7 @@ function ValuationSidebarPanel({
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             <span className="truncate">{t('ebitdaValuationLabel', language)}</span>
+            <InfoDot title={t('ebitdaValuationTip', language)} />
             {isOutlier && <ModelLowConfidenceBadge note={ebitdaModel?.outlierNote} language={language} />}
           </div>
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(ebitdaModel?.gapToMarket ?? null)}</div>
@@ -643,6 +745,7 @@ function ValuationSidebarPanel({
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             <span className="truncate">{t('roicWaccLabel', language)}</span>
+            <InfoDot title={t('roicWaccTip', language)} />
             {isOutlier && <ModelLowConfidenceBadge note={evaModel?.outlierNote} language={language} />}
           </div>
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(evaModel?.gapToMarket ?? null)}</div>
@@ -708,6 +811,9 @@ function ValuationSidebarPanel({
   })();
   const primaryPbrCard = pbrCard;
   const secondaryRimCard = rimCard;
+  const cashFlowCard = dive.cashFlow && (
+    <CashFlowInsightCard cashFlow={dive.cashFlow} currency={currency} language={language} />
+  );
   const gapNotice = (
     <ValuationGapNotice
       dive={dive}
@@ -730,9 +836,11 @@ function ValuationSidebarPanel({
         )}
         <ValuationModelsSummary dive={dive} currency={currency} language={language} />
         {evCard}
+        {evEbitCard}
         {ebitdaCard}
         {evaCard}
         {secondaryRimCard}
+        {cashFlowCard}
         {gapNotice}
       </div>
     );
@@ -746,10 +854,12 @@ function ValuationSidebarPanel({
       {dive.regime === 'capex_heavy' ? (
         <>
           {evCard}
+          {evEbitCard}
           {ebitdaCard}
           {evaCard}
           {pbrCard}
           {rimCard}
+          {cashFlowCard}
           {gapNotice}
         </>
       ) : (
@@ -757,8 +867,10 @@ function ValuationSidebarPanel({
           {pbrCard}
           {rimCard}
           {evCard}
+          {evEbitCard}
           {ebitdaCard}
           {evaCard}
+          {cashFlowCard}
           {gapNotice}
         </>
       )}

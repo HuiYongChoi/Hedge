@@ -194,6 +194,7 @@ def test_valuation_agent_emits_ebitda_and_roic_wacc_blocks(monkeypatch):
             market_cap=1_000_000.0,
             enterprise_value=1_200_000.0,
             enterprise_value_to_ebitda_ratio=multiple,
+            operating_income=150_000.0,
             price_to_book_ratio=2.0,
             book_value_per_share=100.0,
             return_on_invested_capital=0.18,
@@ -261,6 +262,12 @@ def test_valuation_agent_emits_ebitda_and_roic_wacc_blocks(monkeypatch):
 
     # The legacy EV/EBITDA block still coexists unchanged.
     assert reasoning["ev_ebitda_analysis"]["ebitda_now"] == pytest.approx(200_000.0)
+
+    # EV/EBIT is emitted as its own independent model block.
+    ev_ebit = reasoning["ev_ebit_analysis"]
+    assert ev_ebit["intrinsic_total"] > 0
+    assert ev_ebit["current_multiple"] > 0
+    assert "ebit_now" in ev_ebit
 
 
 def test_sidebar_renders_ev_ebitda_without_changing_pbr_rim_cards():

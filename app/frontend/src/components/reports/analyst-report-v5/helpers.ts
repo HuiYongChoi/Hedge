@@ -21,6 +21,7 @@ import type {
   SectionId,
   SentenceClassification,
   TargetTile,
+  CashFlowInsight,
   ValuationDeepDive,
   ValuationModel,
 } from './types';
@@ -1873,6 +1874,7 @@ const MODEL_LABEL_MAP: Record<string, string> = {
   dcf: 'DCF',
   owner_earnings: 'Owner Earnings',
   ev_ebitda: 'EV/EBITDA',
+  ev_ebit: 'EV/EBIT',
   ebitda_valuation: 'EBITDA (정규화)',
   roic_wacc_valuation: 'ROIC−WACC EVA',
   residual_income: 'RIM',
@@ -1925,7 +1927,7 @@ export function buildValuationDeepDive(
     : null;
 
   const models: ValuationModel[] = [];
-  (['dcf', 'owner_earnings', 'ev_ebitda', 'ebitda_valuation', 'roic_wacc_valuation', 'residual_income', 'pbr_band'] as const).forEach(key => {
+  (['dcf', 'owner_earnings', 'ev_ebitda', 'ev_ebit', 'ebitda_valuation', 'roic_wacc_valuation', 'residual_income', 'pbr_band'] as const).forEach(key => {
     const raw = reasoning[`${key}_analysis`] as Record<string, unknown> | undefined;
     if (!raw || typeof raw !== 'object') return;
     const intrinsicPerShare = safeNum(raw.intrinsic_per_share);
@@ -1937,6 +1939,13 @@ export function buildValuationDeepDive(
         medianMultiple: safeNum(raw.median_multiple),
         currentMultiple: safeNum(raw.current_multiple),
         ebitdaNow: safeNum(raw.ebitda_now),
+        netDebt: safeNum(raw.net_debt),
+      };
+    } else if (key === 'ev_ebit') {
+      extraFields = {
+        medianMultiple: safeNum(raw.median_multiple),
+        currentMultiple: safeNum(raw.current_multiple),
+        ebitNow: safeNum(raw.ebit_now),
         netDebt: safeNum(raw.net_debt),
       };
     } else if (key === 'ebitda_valuation') {
@@ -1975,13 +1984,34 @@ export function buildValuationDeepDive(
     });
   });
 
-  if (models.length === 0 && !rim && !pbr) return null;
+  const cfRaw = reasoning.cash_flow_insight && typeof reasoning.cash_flow_insight === 'object'
+    ? reasoning.cash_flow_insight as Record<string, unknown>
+    : null;
+  const cashFlow = cfRaw
+    ? {
+        fcff: safeNum(cfRaw.fcff),
+        fcfe: safeNum(cfRaw.fcfe),
+        fcffYield: safeNum(cfRaw.fcff_yield),
+        fcfeYield: safeNum(cfRaw.fcfe_yield),
+        fcfGrowth: safeNum(cfRaw.fcf_growth),
+        fcfeIntrinsicPerShare: safeNum(cfRaw.fcfe_intrinsic_per_share),
+        evEbitdaMultiple: safeNum(cfRaw.ev_ebitda_multiple),
+        costOfEquity: safeNum(cfRaw.cost_of_equity),
+        valueTrapFlag: (['trap_risk', 'genuine_value', 'neutral'].includes(String(cfRaw.value_trap_flag))
+          ? cfRaw.value_trap_flag : null) as CashFlowInsight['valueTrapFlag'],
+        shareholderCapacity: (['strong', 'moderate', 'limited', 'negative'].includes(String(cfRaw.shareholder_capacity))
+          ? cfRaw.shareholder_capacity : null) as CashFlowInsight['shareholderCapacity'],
+      }
+    : null;
+
+  if (models.length === 0 && !rim && !pbr && !cashFlow) return null;
   return {
     regime: reasoning.regime === 'capex_heavy' ? 'capex_heavy' : 'default',
     regimeNote: typeof reasoning.regime_note === 'string' ? reasoning.regime_note : null,
     rim,
     pbr,
     models,
+    cashFlow,
   };
 }
 

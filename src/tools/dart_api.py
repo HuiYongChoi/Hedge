@@ -635,6 +635,7 @@ def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
     # 잦다. yfinance 의 ebitda 를 폴백으로 써서 EV/EBITDA 가 비지 않게 한다.
     ebitda = fin.get("ebitda") or yf_info.get("ebitda")
     ev_ebitda = safe_div(ev, ebitda)
+    ev_ebit = safe_div(ev, operating_income)
     ev_rev = safe_div(ev, revenue)
     fcf_yield = safe_div(free_cash_flow, market_cap)
 
@@ -649,6 +650,7 @@ def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
         "price_to_book_ratio": pb,
         "price_to_sales_ratio": ps,
         "enterprise_value_to_ebitda_ratio": ev_ebitda,
+        "enterprise_value_to_ebit_ratio": ev_ebit,
         "enterprise_value_to_revenue_ratio": ev_rev,
         "free_cash_flow_yield": fcf_yield,
         "peg_ratio": yf_info.get("pegRatio"),

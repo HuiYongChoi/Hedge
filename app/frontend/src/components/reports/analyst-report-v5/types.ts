@@ -162,7 +162,7 @@ export interface PbrBand {
 }
 
 export interface ValuationModel {
-  key: 'dcf' | 'owner_earnings' | 'ev_ebitda' | 'residual_income' | 'pbr_band' | 'ebitda_valuation' | 'roic_wacc_valuation';
+  key: 'dcf' | 'owner_earnings' | 'ev_ebitda' | 'ev_ebit' | 'residual_income' | 'pbr_band' | 'ebitda_valuation' | 'roic_wacc_valuation';
   labelKey: string;
   intrinsicPerShare: number | null;
   intrinsicTotal: number | null;
@@ -176,6 +176,7 @@ export interface ValuationModel {
   medianMultiple?: number | null;
   currentMultiple?: number | null;
   ebitdaNow?: number | null;
+  ebitNow?: number | null;
   netDebt?: number | null;
   // EBITDA (normalized) valuation extras.
   normalizedEbitda?: number | null;
@@ -193,12 +194,26 @@ export interface ValuationModel {
   icBasis?: string | null;
 }
 
+export interface CashFlowInsight {
+  fcff: number | null;
+  fcfe: number | null;
+  fcffYield: number | null;
+  fcfeYield: number | null;
+  fcfGrowth: number | null;
+  fcfeIntrinsicPerShare: number | null;
+  evEbitdaMultiple: number | null;
+  costOfEquity: number | null;
+  valueTrapFlag: 'trap_risk' | 'genuine_value' | 'neutral' | null;
+  shareholderCapacity: 'strong' | 'moderate' | 'limited' | 'negative' | null;
+}
+
 export interface ValuationDeepDive {
   regime: 'capex_heavy' | 'default';
   regimeNote: string | null;
   rim: RimBreakdown | null;
   pbr: PbrBand | null;
   models: ValuationModel[];
+  cashFlow: CashFlowInsight | null;
 }
 
 export interface CompleteResult {
