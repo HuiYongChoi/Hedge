@@ -454,6 +454,9 @@ export function ReportLayout({
         currency={effectiveCurrency}
         analysisGeneratedAt={analysisGeneratedAt}
         marketDataUpdatedAt={marketDataUpdatedAt}
+        extendedPrice={liveTarget?.extended_price ?? null}
+        extendedChangePercent={liveTarget?.extended_change_percent ?? null}
+        extendedSession={liveTarget?.extended_session ?? null}
         language={language}
         onRefreshMarketData={() => refreshMarketData(true)}
         isRefreshingMarketData={isRefreshingMarketData}

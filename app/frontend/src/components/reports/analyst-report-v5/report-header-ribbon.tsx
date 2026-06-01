@@ -21,6 +21,9 @@ interface ReportHeaderRibbonProps {
   currency?: string;
   analysisGeneratedAt?: string | null;
   marketDataUpdatedAt?: string | null;
+  extendedPrice?: number | null;
+  extendedChangePercent?: number | null;
+  extendedSession?: 'pre' | 'post' | null;
   language: ReportLanguage;
   onRefreshMarketData?: () => void;
   isRefreshingMarketData?: boolean;
@@ -66,6 +69,23 @@ function formatCurrentPrice(value: number | null, language: ReportLanguage, curr
 function formatSignedPercent(value: number) {
   const pct = value * 100;
   return `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`;
+}
+
+// extended_change_percent is already in percent units (e.g. 4.07 = +4.07%).
+function formatExtendedPrice(
+  price: number,
+  changePercent: number | null | undefined,
+  session: 'pre' | 'post',
+  language: ReportLanguage,
+  currency = 'USD',
+) {
+  const label = t(session === 'pre' ? 'preMarketLabel' : 'afterMarketLabel', language);
+  const priceText = formatMoney(price, currency);
+  if (changePercent === null || changePercent === undefined || !Number.isFinite(changePercent)) {
+    return `${label} ${priceText}`;
+  }
+  const sign = changePercent > 0 ? '+' : '';
+  return `${label} ${priceText} (${sign}${changePercent.toFixed(1)}%)`;
 }
 
 function formatMargin(
@@ -149,6 +169,9 @@ export function ReportHeaderRibbon({
   currency = 'USD',
   analysisGeneratedAt,
   marketDataUpdatedAt,
+  extendedPrice,
+  extendedChangePercent,
+  extendedSession,
   language,
   onRefreshMarketData,
   isRefreshingMarketData,
@@ -212,6 +235,23 @@ export function ReportHeaderRibbon({
                 <MetricChip help={t('currentPriceHelp', language)} mono>
                   {formatCurrentPrice(currentPrice, language, currency)}
                 </MetricChip>
+                {extendedPrice !== null && extendedPrice !== undefined && extendedPrice > 0 && extendedSession && (
+                  <MetricChip help={t('extendedPriceHelp', language)} mono>
+                    <span
+                      className={cn(
+                        extendedChangePercent !== null && extendedChangePercent !== undefined && Number.isFinite(extendedChangePercent)
+                          ? extendedChangePercent > 0
+                            ? 'text-emerald-600'
+                            : extendedChangePercent < 0
+                              ? 'text-red-600'
+                              : 'text-muted-foreground'
+                          : 'text-muted-foreground',
+                      )}
+                    >
+                      {formatExtendedPrice(extendedPrice, extendedChangePercent, extendedSession, language, currency)}
+                    </span>
+                  </MetricChip>
+                )}
                 <MetricChip help={t('marginOfSafetyHelp', language)} mono>
                   {formatMargin(marginOfSafety, language, currency, marginReferencePrice)}
                 </MetricChip>

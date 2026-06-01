@@ -67,6 +67,10 @@ class AnalystTarget:
     sigma_annual: Optional[float]    # annualised σ (historical or derived)
     current_fy_eps: Optional[float] = None  # Current fiscal-year EPS estimate
     currency: str = "USD"
+    market_session: Optional[str] = None         # yfinance marketState (PRE/REGULAR/POST/CLOSED ...)
+    extended_price: Optional[float] = None        # 프리/애프터장 시세 (표시 전용, 분석 계산엔 미사용)
+    extended_change_percent: Optional[float] = None  # 정규장 종가 대비 % (예: 4.07 = +4.07%)
+    extended_session: Optional[str] = None        # "pre" | "post" (해당 시간외 세션일 때만)
     brokers: list[BrokerTarget] = field(default_factory=list)
     distribution: Optional[TargetDistribution] = None
     source: str = "stub"
@@ -362,6 +366,33 @@ def _fetch_yfinance_data(ticker: str) -> dict:
                 out["trailing_eps"] = fallback
                 if "current_price" in out and "trailing_pe" not in out:
                     out["trailing_pe"] = out["current_price"] / fallback
+
+        # 시간외 시세 (프리장/애프터장). 표시 전용 — 밸류에이션 계산엔 정규장가를 계속 사용.
+        session = info.get("marketState")
+        if isinstance(session, str) and session:
+            out["market_session"] = session
+            reg_price = info.get("regularMarketPrice")
+            reg_price = float(reg_price) if isinstance(reg_price, (int, float)) and float(reg_price) > 0 else None
+            ext_price = None
+            ext_pct = None
+            ext_label = None
+            if session in ("PRE", "PREPRE"):
+                ext_label = "pre"
+                ext_price = info.get("preMarketPrice")
+                ext_pct = info.get("preMarketChangePercent")
+            elif session in ("POST", "POSTPOST"):
+                ext_label = "post"
+                ext_price = info.get("postMarketPrice")
+                ext_pct = info.get("postMarketChangePercent")
+            ext_price = float(ext_price) if isinstance(ext_price, (int, float)) and float(ext_price) > 0 else None
+            if ext_label and ext_price is not None:
+                out["extended_session"] = ext_label
+                out["extended_price"] = ext_price
+                # yfinance % 는 이미 퍼센트 단위(예: 4.07). 없으면 정규장가 대비로 직접 계산.
+                if isinstance(ext_pct, (int, float)):
+                    out["extended_change_percent"] = float(ext_pct)
+                elif reg_price:
+                    out["extended_change_percent"] = (ext_price - reg_price) / reg_price * 100.0
     except Exception as e:
         logger.debug("yfinance data fetch failed for %s: %s", ticker, e)
     return out
@@ -658,6 +689,17 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
     if current_price is None and is_kr:
         naver_current_price = _fetch_naver_current_price(ticker)
         current_price = naver_current_price
+
+    # 시간외 시세는 미국 종목에서만 표시 (KR/JP는 yfinance 시간외 데이터가 신뢰도 낮음)
+    market_session = yf_fund.get("market_session")
+    if is_kr or is_jp:
+        extended_price = None
+        extended_change_percent = None
+        extended_session = None
+    else:
+        extended_price = yf_fund.get("extended_price")
+        extended_change_percent = yf_fund.get("extended_change_percent")
+        extended_session = yf_fund.get("extended_session")
     trailing_pe = fg_an.get("trailing_pe") or yf_fund.get("trailing_pe")
     forward_pe = fg_an.get("forward_pe") or yf_fund.get("forward_pe")
     trailing_eps = yf_fund.get("trailing_eps")
@@ -708,6 +750,10 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
         sigma_annual=sigma_final,
         current_fy_eps=yf_an.get("current_fy_eps"),
         currency=currency,
+        market_session=market_session,
+        extended_price=extended_price,
+        extended_change_percent=extended_change_percent,
+        extended_session=extended_session,
         brokers=brokers,
         distribution=distribution,
         source=source,

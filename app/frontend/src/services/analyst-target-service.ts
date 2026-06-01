@@ -37,6 +37,10 @@ export interface AnalystTarget {
   forward_pe: number | null;
   current_fy_eps: number | null;
   currency: string;
+  market_session: string | null;
+  extended_price: number | null;
+  extended_change_percent: number | null;
+  extended_session: 'pre' | 'post' | null;
   beta: number | null;
   sigma_annual: number | null;
   brokers: BrokerTarget[];
