@@ -26,6 +26,7 @@ class FinancialMetrics(BaseModel):
     price_to_book_ratio: float | None = None
     price_to_sales_ratio: float | None = None
     enterprise_value_to_ebitda_ratio: float | None = None
+    enterprise_value_to_ebit_ratio: float | None = None
     enterprise_value_to_revenue_ratio: float | None = None
     free_cash_flow_yield: float | None = None
     peg_ratio: float | None = None

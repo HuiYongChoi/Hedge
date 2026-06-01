@@ -230,6 +230,13 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         )
         ebitda_val = ebitda_breakdown["equity_value"] if ebitda_breakdown else 0
 
+        # EV/EBIT — depreciation-aware multiple, conservative cross-check vs EV/EBITDA.
+        ev_ebit_breakdown = calculate_ev_ebit_breakdown(
+            financial_metrics,
+            capex_heavy=regime == "capex_heavy",
+        )
+        ev_ebit_val = ev_ebit_breakdown["equity_value"] if ev_ebit_breakdown else 0
+
         shares_outstanding: float | None = (
             most_recent_metrics.outstanding_shares
             or getattr(li_curr, "outstanding_shares", None)
@@ -306,21 +313,23 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
 
         if regime == "capex_heavy":
             base_weights = {
-                "dcf": 0.16,
-                "owner_earnings": 0.20,
-                "ev_ebitda": 0.16,
-                "residual_income": 0.16,
-                "pbr_band": 0.12,
+                "dcf": 0.15,
+                "owner_earnings": 0.18,
+                "ev_ebitda": 0.12,
+                "ev_ebit": 0.10,
+                "residual_income": 0.15,
+                "pbr_band": 0.10,
                 "ebitda_valuation": 0.10,
                 "roic_wacc_valuation": 0.10,
             }
         else:
             base_weights = {
-                "dcf": 0.24,
-                "owner_earnings": 0.24,
-                "ev_ebitda": 0.12,
-                "residual_income": 0.08,
-                "pbr_band": 0.12,
+                "dcf": 0.23,
+                "owner_earnings": 0.22,
+                "ev_ebitda": 0.09,
+                "ev_ebit": 0.08,
+                "residual_income": 0.07,
+                "pbr_band": 0.11,
                 "ebitda_valuation": 0.10,
                 "roic_wacc_valuation": 0.10,
             }
@@ -341,6 +350,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             "dcf": {"value": dcf_val, "weight": base_weights["dcf"]},
             "owner_earnings": {"value": owner_val, "weight": base_weights["owner_earnings"]},
             "ev_ebitda": {"value": ev_ebitda_val, "weight": base_weights["ev_ebitda"]},
+            "ev_ebit": {"value": ev_ebit_val, "weight": base_weights["ev_ebit"]},
             "residual_income": {"value": rim_val, "weight": base_weights["residual_income"]},
             "ebitda_valuation": {"value": ebitda_val, "weight": base_weights["ebitda_valuation"]},
             "roic_wacc_valuation": {"value": roic_wacc_val, "weight": base_weights["roic_wacc_valuation"]},
@@ -425,6 +435,17 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                 "sample_size": ev_breakdown["sample_size"],
                 "clipped_sample_size": ev_breakdown["clipped_sample_size"],
                 "multiple_basis": ev_breakdown["multiple_basis"],
+            })
+
+        if ev_ebit_breakdown and "ev_ebit_analysis" in reasoning:
+            reasoning["ev_ebit_analysis"].update({
+                "median_multiple": ev_ebit_breakdown["median_multiple"],
+                "current_multiple": ev_ebit_breakdown["current_multiple"],
+                "ebit_now": ev_ebit_breakdown["ebit_now"],
+                "net_debt": ev_ebit_breakdown["net_debt"],
+                "sample_size": ev_ebit_breakdown["sample_size"],
+                "clipped_sample_size": ev_ebit_breakdown["clipped_sample_size"],
+                "multiple_basis": ev_ebit_breakdown["multiple_basis"],
             })
 
         if ebitda_breakdown and "ebitda_valuation_analysis" in reasoning:
@@ -744,6 +765,56 @@ def calculate_ev_ebitda_value(financial_metrics: list):
     """Backward-compatible EV/EBITDA equity value helper."""
     breakdown = calculate_ev_ebitda_breakdown(financial_metrics)
     return breakdown["equity_value"] if breakdown else 0
+
+
+def _ev_ebit_ratio(m) -> float | None:
+    """Per-period EV/EBIT: prefer a provided ratio, else EV / operating income (EBIT)."""
+    direct = getattr(m, "enterprise_value_to_ebit_ratio", None)
+    if direct and direct > 0:
+        return direct
+    ev = getattr(m, "enterprise_value", None)
+    ebit = getattr(m, "operating_income", None)
+    if ev and ebit and ebit > 0:
+        return ev / ebit
+    return None
+
+
+def calculate_ev_ebit_breakdown(financial_metrics: list, capex_heavy: bool = False) -> dict | None:
+    """Implied equity value from a cycle-aware EV/EBIT multiple.
+
+    Complements EV/EBITDA by charging depreciation as a real economic cost — more
+    conservative for capital-intensive/cyclical names. EBIT can turn negative at a
+    cycle trough, which makes the multiple meaningless, so non-positive EBIT is
+    guarded out (returns None and the method drops from the weighted blend).
+    """
+    if not financial_metrics:
+        return None
+    m0 = financial_metrics[0]
+    if not getattr(m0, "enterprise_value", None):
+        return None
+
+    current_mult = _ev_ebit_ratio(m0)
+    if not current_mult or current_mult <= 0:
+        return None  # negative/zero EBIT — skip rather than emit a garbage multiple.
+
+    ebit_now = m0.enterprise_value / current_mult
+    multiples = [r for m in financial_metrics if (r := _ev_ebit_ratio(m)) and r > 0]
+    if not multiples:
+        return None
+    med_mult, multiple_basis, clipped_sample_size = _select_ev_ebitda_multiple(multiples, capex_heavy)
+    ev_implied = med_mult * ebit_now
+    net_debt = (m0.enterprise_value or 0) - (getattr(m0, "market_cap", 0) or 0)
+    equity_implied = max(ev_implied - net_debt, 0.0)
+    return {
+        "equity_value": equity_implied,
+        "median_multiple": med_mult,
+        "current_multiple": current_mult,
+        "ebit_now": ebit_now,
+        "net_debt": net_debt,
+        "sample_size": len(multiples),
+        "clipped_sample_size": clipped_sample_size,
+        "multiple_basis": multiple_basis,
+    }
 
 
 def calculate_ebitda_valuation_breakdown(

@@ -575,6 +575,7 @@ function ValuationSidebarPanel({
   const pbrModel = dive.models.find(model => model.key === 'pbr_band');
   const rimModel = dive.models.find(model => model.key === 'residual_income');
   const evModel = dive.models.find(model => model.key === 'ev_ebitda');
+  const evEbitModel = dive.models.find(model => model.key === 'ev_ebit');
   const ebitdaModel = dive.models.find(model => model.key === 'ebitda_valuation');
   const evaModel = dive.models.find(model => model.key === 'roic_wacc_valuation');
   const pbrValue = dive.pbr
@@ -606,8 +607,9 @@ function ValuationSidebarPanel({
   const hasJustifiedPbr = Boolean(dive.justifiedPbr);
   const hasEbitdaModel = (ebitdaModel?.intrinsicPerShare ?? null) !== null;
   const hasEvaModel = (evaModel?.intrinsicPerShare ?? null) !== null;
+  const hasEvEbitModel = (evEbitModel?.intrinsicPerShare ?? null) !== null;
 
-  if (!hasPbr && !hasRim && !hasEv && !hasJustifiedPbr && !hasEbitdaModel && !hasEvaModel) return null;
+  if (!hasPbr && !hasRim && !hasEv && !hasJustifiedPbr && !hasEbitdaModel && !hasEvaModel && !hasEvEbitModel) return null;
 
   const evSubtitle = evModel?.medianMultiple !== null
     && evModel?.medianMultiple !== undefined
@@ -632,6 +634,32 @@ function ValuationSidebarPanel({
           {formatCurrency(evValue, currency)}
         </div>
         <div className="text-[10px] text-muted-foreground">{evSubtitle}</div>
+      </div>
+    );
+  })();
+  const evEbitValue = evEbitModel?.intrinsicPerShare ?? null;
+  const hasEvEbit = evEbitValue !== null;
+  const evEbitCard = hasEvEbit && (() => {
+    const classes = toneToClasses(evEbitModel?.signal ?? 'neutral');
+    const subtitle = evEbitModel?.medianMultiple !== null && evEbitModel?.medianMultiple !== undefined
+      && evEbitModel?.currentMultiple !== null && evEbitModel?.currentMultiple !== undefined
+      ? fillTemplate(t('evEbitSubtitleMedian', language), {
+          median: evEbitModel.medianMultiple.toFixed(1),
+          current: evEbitModel.currentMultiple.toFixed(1),
+        })
+      : t('evEbitSubtitleFallback', language);
+    return (
+      <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {t('evEbitLabel', language)}
+          </div>
+          <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(evEbitModel?.gapToMarket ?? null)}</div>
+        </div>
+        <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+          {formatCurrency(evEbitValue, currency)}
+        </div>
+        <div className="text-[10px] text-muted-foreground">{subtitle}</div>
       </div>
     );
   })();
@@ -766,6 +794,7 @@ function ValuationSidebarPanel({
         )}
         <ValuationModelsSummary dive={dive} currency={currency} language={language} />
         {evCard}
+        {evEbitCard}
         {ebitdaCard}
         {evaCard}
         {justifiedCard}
@@ -783,6 +812,7 @@ function ValuationSidebarPanel({
       {dive.regime === 'capex_heavy' ? (
         <>
           {evCard}
+          {evEbitCard}
           {ebitdaCard}
           {evaCard}
           {pbrCard}
@@ -796,6 +826,7 @@ function ValuationSidebarPanel({
           {justifiedCard}
           {rimCard}
           {evCard}
+          {evEbitCard}
           {ebitdaCard}
           {evaCard}
           {gapNotice}

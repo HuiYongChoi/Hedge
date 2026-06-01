@@ -1826,6 +1826,7 @@ const MODEL_LABEL_MAP: Record<string, string> = {
   dcf: 'DCF',
   owner_earnings: 'Owner Earnings',
   ev_ebitda: 'EV/EBITDA',
+  ev_ebit: 'EV/EBIT',
   ebitda_valuation: 'EBITDA (정규화)',
   roic_wacc_valuation: 'ROIC−WACC EVA',
   residual_income: 'RIM',
@@ -1851,7 +1852,7 @@ export function buildValuationDeepDive(
     : null;
 
   const models: ValuationModel[] = [];
-  (['dcf', 'owner_earnings', 'ev_ebitda', 'ebitda_valuation', 'roic_wacc_valuation', 'residual_income', 'pbr_band'] as const).forEach(key => {
+  (['dcf', 'owner_earnings', 'ev_ebitda', 'ev_ebit', 'ebitda_valuation', 'roic_wacc_valuation', 'residual_income', 'pbr_band'] as const).forEach(key => {
     const raw = reasoning[`${key}_analysis`] as Record<string, unknown> | undefined;
     if (!raw || typeof raw !== 'object') return;
     const intrinsicPerShare = safeNum(raw.intrinsic_per_share);
@@ -1863,6 +1864,13 @@ export function buildValuationDeepDive(
         medianMultiple: safeNum(raw.median_multiple),
         currentMultiple: safeNum(raw.current_multiple),
         ebitdaNow: safeNum(raw.ebitda_now),
+        netDebt: safeNum(raw.net_debt),
+      };
+    } else if (key === 'ev_ebit') {
+      extraFields = {
+        medianMultiple: safeNum(raw.median_multiple),
+        currentMultiple: safeNum(raw.current_multiple),
+        ebitNow: safeNum(raw.ebit_now),
         netDebt: safeNum(raw.net_debt),
       };
     } else if (key === 'ebitda_valuation') {
