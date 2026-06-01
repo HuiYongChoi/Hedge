@@ -590,6 +590,12 @@ def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
     free_cash_flow = fin.get("free_cash_flow")
     outstanding_shares = fin.get("outstanding_shares")
 
+    # DART finstate_all 은 차입금이 유동/비유동 두 줄로 쪼개져 _find_account 가 첫 줄만
+    # 잡아 total_debt 가 비는 경우가 많다. yfinance 의 totalDebt(이자부 부채)를 폴백으로
+    # 써서 ROIC·부채비율 분모가 비지 않게 한다.
+    if total_debt is None:
+        total_debt = yf_info.get("totalDebt")
+
     def safe_div(a, b):
         try:
             return a / b if (a is not None and b and b != 0) else None
@@ -625,12 +631,14 @@ def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
     pb = yf_info.get("priceToBook") or (safe_div(market_cap, shareholders_equity) if (market_cap and shareholders_equity) else None)
     ps = yf_info.get("priceToSalesTrailing12Months") or safe_div(market_cap, revenue)
     ev = yf_info.get("enterpriseValue")
-    ebitda = fin.get("ebitda")
+    # DART CFS 는 감가상각비 조정항목을 별도 줄로 주지 않아 EBITDA 근사가 비는 일이
+    # 잦다. yfinance 의 ebitda 를 폴백으로 써서 EV/EBITDA 가 비지 않게 한다.
+    ebitda = fin.get("ebitda") or yf_info.get("ebitda")
     ev_ebitda = safe_div(ev, ebitda)
     ev_rev = safe_div(ev, revenue)
     fcf_yield = safe_div(free_cash_flow, market_cap)
 
-    return {
+    metrics = {
         "ticker": ticker,
         "report_period": report_date,
         "period": "ttm",
@@ -682,3 +690,11 @@ def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
         "current_liabilities": current_liabilities,
         "research_and_development": fin.get("research_and_development"),
     }
+
+    # DART 재무 원시값 + yfinance 시장지표가 모두 모인 최종 딕셔너리를 파생 로직에
+    # 한 번 더 통과시킨다. market_cap(yfinance)이 이 단계에서야 포함되므로,
+    # enterprise_value(= 시가총액 + 순부채)와 그에 의존하는 EV/EBITDA·EV/매출,
+    # 그리고 ROIC(영업이익/투하자본)·이자보상배율(영업이익/이자비용)을 DART 원시값
+    # 으로부터 채울 수 있다. derive_financial_fields 는 None 인 항목만 채우는
+    # 비파괴 함수라 yfinance 가 직접 준 값(EV 등)은 그대로 유지된다.
+    return derive_financial_fields(metrics)
