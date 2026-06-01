@@ -1,6 +1,6 @@
 #!/bin/bash
 KEY="/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem"
-HOST="bitnami@54.116.99.19"
+HOST="bitnami@43.203.120.8"
 
 echo "Connecting to AWS..."
 ssh -o StrictHostKeyChecking=no -i "$KEY" $HOST << 'EOF'
