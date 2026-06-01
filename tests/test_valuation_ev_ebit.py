@@ -86,6 +86,52 @@ def test_ev_ebit_breakdown_uses_price_backed_line_item_multiples():
     assert result["sample_size"] == 3
 
 
+def test_ev_ebit_breakdown_constant_denominator_prefers_price_backed():
+    # Repeated TTM operating income (150) with only EV moving makes the per-row
+    # EV/EBIT multiples collapse to median(EV)/150 — i.e. median(EV) − net_debt,
+    # identical to EV/EBITDA. With annual line items + prices the card must instead
+    # use a genuinely independent price-backed multiple.
+    metrics = _metrics([
+        (1_200.0, 150.0, 1_000.0),  # 8.00
+        (1_600.0, 150.0, 1_000.0),  # 10.67
+        (2_000.0, 150.0, 1_000.0),  # 13.33
+    ])
+    line_items = [
+        SimpleNamespace(report_period="2025-12-31", operating_income=150.0, total_debt=250.0, cash_and_equivalents=50.0),
+        SimpleNamespace(report_period="2024-12-31", operating_income=100.0, total_debt=250.0, cash_and_equivalents=50.0),
+        SimpleNamespace(report_period="2023-12-31", operating_income=90.0, total_debt=200.0, cash_and_equivalents=50.0),
+    ]
+    prices = [
+        SimpleNamespace(time="2023-12-31T00:00:00", close=75.0),
+        SimpleNamespace(time="2024-12-31T00:00:00", close=100.0),
+        SimpleNamespace(time="2025-12-31T00:00:00", close=100.0),
+    ]
+
+    result = calculate_ev_ebit_breakdown(
+        metrics,
+        line_items=line_items,
+        prices=prices,
+        shares_outstanding=10.0,
+    )
+
+    assert result is not None
+    # Price-backed EV/EBIT: 1200/150=8, 1200/100=12, 900/90=10 -> median 10.
+    assert result["median_multiple"] == pytest.approx(10.0)
+    assert result["multiple_basis"] == "price_backed_line_items_median"
+    assert result["equity_value"] == pytest.approx(1_300.0)
+
+
+def test_ev_ebit_breakdown_constant_denominator_drops_without_fallback():
+    # Same tautological setup, but no price-backed data available → drop the card so
+    # it cannot mirror the EV/EBITDA card.
+    metrics = _metrics([
+        (1_200.0, 150.0, 1_000.0),
+        (1_600.0, 150.0, 1_000.0),
+        (2_000.0, 150.0, 1_000.0),
+    ])
+    assert calculate_ev_ebit_breakdown(metrics) is None
+
+
 def test_ev_ebit_breakdown_uses_p75_for_capex_heavy():
     # Multiples 8,8,10,12,100 → clip extremes → [8,10,12]... p75.
     metrics = _metrics([

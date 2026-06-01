@@ -1245,6 +1245,39 @@ def _basis_for_price_backed_multiple(basis: str) -> str:
     return f"price_backed_line_items_{basis}"
 
 
+def _multiple_denominators_are_constant(
+    financial_metrics: list, ratio_getter, *, rel_tol: float = 0.02
+) -> bool:
+    """True only when ≥2 implied denominators (EV / multiple) barely move across rows.
+
+    Quarterly/TTM ``financial_metrics`` frequently repeat the same trailing EBITDA or
+    operating income, so only enterprise value changes from row to row. When that
+    happens ``median(multiple) × denominator_now`` reduces to ``median(EV)`` and the
+    EV/EBITDA and EV/EBIT cards both collapse to ``median(EV) − net_debt`` — identical,
+    tautological values (e.g. AAPL showed EV/EBITDA == EV/EBIT). Detecting that lets the
+    caller prefer price-backed annual samples that carry a genuinely independent
+    per-period denominator.
+
+    Returns ``False`` when fewer than two denominators can be computed (insufficient
+    evidence — keep the existing behavior rather than assume a tautology).
+    """
+    denominators: list[float] = []
+    for m in financial_metrics or []:
+        ev = _to_finite_float(getattr(m, "enterprise_value", None))
+        ratio = ratio_getter(m)
+        if ev is None or not ratio or ratio <= 0:
+            continue
+        denom = ev / ratio
+        if denom > 0:
+            denominators.append(denom)
+    if len(denominators) < 2:
+        return False
+    lo, hi = min(denominators), max(denominators)
+    if lo <= 0:
+        return False
+    return (hi - lo) / lo <= rel_tol
+
+
 def calculate_ev_ebitda_breakdown(
     financial_metrics: list,
     capex_heavy: bool = False,
@@ -1276,15 +1309,27 @@ def calculate_ev_ebitda_breakdown(
         m.enterprise_value_to_ebitda_ratio for m in financial_metrics if m.enterprise_value_to_ebitda_ratio
     ]
     multiple_basis_prefix = ""
-    if len(multiples) < 2:
-        multiples = _price_backed_multiple_samples(
+    # When the implied EBITDA is constant across rows (repeated TTM denominator), this
+    # card and EV/EBIT both collapse to median(EV) − net_debt. Prefer price-backed annual
+    # samples that carry a genuinely independent per-year EBITDA + enterprise value.
+    denominators_constant = _multiple_denominators_are_constant(
+        financial_metrics, lambda m: getattr(m, "enterprise_value_to_ebitda_ratio", None)
+    )
+    if len(multiples) < 2 or denominators_constant:
+        price_backed = _price_backed_multiple_samples(
             line_items=line_items,
             prices=prices,
             shares_outstanding=shares_outstanding,
             denominator_fields=("ebitda",),
             fallback_net_debt=net_debt,
         )
-        multiple_basis_prefix = "price_backed"
+        if len(price_backed) >= 2:
+            multiples = price_backed
+            multiple_basis_prefix = "price_backed"
+        elif denominators_constant:
+            # Tautological multiples and no independent fallback — drop the card so it
+            # cannot mirror the EV/EBIT card.
+            return None
     if len(multiples) < 2:
         return None
     med_mult, multiple_basis, clipped_sample_size = _select_ev_ebitda_multiple(multiples, capex_heavy)
@@ -1359,15 +1404,23 @@ def calculate_ev_ebit_breakdown(
         return None
     multiples = [r for m in financial_metrics if (r := _ev_ebit_ratio(m)) and r > 0]
     multiple_basis_prefix = ""
-    if len(multiples) < 2:
-        multiples = _price_backed_multiple_samples(
+    # See calculate_ev_ebitda_breakdown: repeated TTM operating income across rows makes
+    # this card collapse to median(EV) − net_debt (identical to EV/EBITDA). Detect the
+    # constant-denominator case and prefer independent price-backed annual samples.
+    denominators_constant = _multiple_denominators_are_constant(financial_metrics, _ev_ebit_ratio)
+    if len(multiples) < 2 or denominators_constant:
+        price_backed = _price_backed_multiple_samples(
             line_items=line_items,
             prices=prices,
             shares_outstanding=shares_outstanding,
             denominator_fields=("operating_income", "ebit"),
             fallback_net_debt=net_debt,
         )
-        multiple_basis_prefix = "price_backed"
+        if len(price_backed) >= 2:
+            multiples = price_backed
+            multiple_basis_prefix = "price_backed"
+        elif denominators_constant:
+            return None
     if len(multiples) < 2:
         return None
     med_mult, multiple_basis, clipped_sample_size = _select_ev_ebitda_multiple(multiples, capex_heavy)

@@ -102,6 +102,54 @@ def test_ev_ebitda_breakdown_uses_price_backed_line_item_multiples():
     assert result["sample_size"] == 3
 
 
+def test_ev_ebitda_breakdown_constant_denominator_prefers_price_backed():
+    from src.agents.valuation import calculate_ev_ebitda_breakdown
+
+    # Repeated TTM EBITDA (implied denominator EV/multiple == 200 every row) makes the
+    # per-row multiples collapse to median(EV) − net_debt, identical to EV/EBIT. With
+    # annual line items + prices the card must instead use a price-backed multiple.
+    metrics = [
+        SimpleNamespace(enterprise_value=1_200.0, enterprise_value_to_ebitda_ratio=6.0, market_cap=1_000.0),
+        SimpleNamespace(enterprise_value=1_600.0, enterprise_value_to_ebitda_ratio=8.0, market_cap=1_300.0),
+        SimpleNamespace(enterprise_value=2_000.0, enterprise_value_to_ebitda_ratio=10.0, market_cap=1_700.0),
+    ]
+    line_items = [
+        SimpleNamespace(report_period="2025-12-31", ebitda=200.0, total_debt=250.0, cash_and_equivalents=50.0),
+        SimpleNamespace(report_period="2024-12-31", ebitda=150.0, total_debt=250.0, cash_and_equivalents=50.0),
+        SimpleNamespace(report_period="2023-12-31", ebitda=100.0, total_debt=200.0, cash_and_equivalents=50.0),
+    ]
+    prices = [
+        SimpleNamespace(time="2023-12-31T00:00:00", close=75.0),
+        SimpleNamespace(time="2024-12-31T00:00:00", close=120.0),
+        SimpleNamespace(time="2025-12-31T00:00:00", close=100.0),
+    ]
+
+    result = calculate_ev_ebitda_breakdown(
+        metrics,
+        line_items=line_items,
+        prices=prices,
+        shares_outstanding=10.0,
+    )
+
+    assert result is not None
+    # Price-backed EV/EBITDA: 1200/200=6, 1400/150=9.33, 900/100=9 -> median 9.
+    # (The tautological collapse would have been median(EV)-net_debt = 1600-200 = 1400.)
+    assert result["median_multiple"] == pytest.approx(9.0)
+    assert result["multiple_basis"] == "price_backed_line_items_median"
+    assert result["equity_value"] == pytest.approx(1_600.0)
+
+
+def test_ev_ebitda_breakdown_constant_denominator_drops_without_fallback():
+    from src.agents.valuation import calculate_ev_ebitda_breakdown
+
+    metrics = [
+        SimpleNamespace(enterprise_value=1_200.0, enterprise_value_to_ebitda_ratio=6.0, market_cap=1_000.0),
+        SimpleNamespace(enterprise_value=1_600.0, enterprise_value_to_ebitda_ratio=8.0, market_cap=1_300.0),
+        SimpleNamespace(enterprise_value=2_000.0, enterprise_value_to_ebitda_ratio=10.0, market_cap=1_700.0),
+    ]
+    assert calculate_ev_ebitda_breakdown(metrics) is None
+
+
 def test_ev_ebitda_breakdown_clips_extreme_multiples_before_median():
     from src.agents.valuation import calculate_ev_ebitda_breakdown
 
@@ -230,7 +278,10 @@ def test_valuation_agent_emits_ebitda_and_roic_wacc_blocks(monkeypatch):
             market_cap=1_000_000.0,
             enterprise_value=1_200_000.0,
             enterprise_value_to_ebitda_ratio=multiple,
-            operating_income=150_000.0,
+            # Operating income must vary across rows; if it were constant the EV/EBIT
+            # implied denominator (EV / multiple) would be identical every row and the
+            # tautology guard would (correctly) drop the card.
+            operating_income=150_000.0 + idx * 10_000.0,
             price_to_book_ratio=2.0,
             book_value_per_share=100.0,
             return_on_invested_capital=0.18,
