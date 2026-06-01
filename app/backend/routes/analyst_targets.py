@@ -51,6 +51,7 @@ async def get_analyst_target(ticker: str, refresh: bool = False):
         "extended_price": result.extended_price,
         "extended_change_percent": result.extended_change_percent,
         "extended_session": result.extended_session,
+        "forward_ev": result.forward_ev,
         "beta": result.beta,
         "sigma_annual": result.sigma_annual,
         "brokers": [_broker_to_dict(b) for b in result.brokers],

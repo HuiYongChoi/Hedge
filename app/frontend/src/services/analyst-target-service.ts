@@ -23,6 +23,20 @@ export interface TargetDistribution {
   stdev: number | null;
 }
 
+export interface ForwardEvMetric {
+  current_margin: number | null;
+  current_multiple: number | null;
+  normalized_margin: number | null;
+  normalized_multiple: number | null;
+}
+
+export interface ForwardEv {
+  enterprise_value: number | null;
+  forward_revenue: number | null;
+  ebitda: ForwardEvMetric;
+  ebit: ForwardEvMetric;
+}
+
 export interface AnalystTarget {
   ticker: string;
   consensus: number | null;
@@ -41,6 +55,7 @@ export interface AnalystTarget {
   extended_price: number | null;
   extended_change_percent: number | null;
   extended_session: 'pre' | 'post' | null;
+  forward_ev: ForwardEv | null;
   beta: number | null;
   sigma_annual: number | null;
   brokers: BrokerTarget[];

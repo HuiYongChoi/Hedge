@@ -9,6 +9,14 @@ from src.tools.analyst_target_api import (
 class AnalystTargetApiTests(unittest.TestCase):
     def setUp(self):
         _CACHE.clear()
+        # forward EV/EBITDA helper makes a real yfinance call (US path); stub it out
+        # for these unit tests so they never touch the network. The real logic is
+        # exercised separately in ForwardEvMultiplesTests.
+        self._fwd_patcher = patch(
+            "src.tools.analyst_target_api._fetch_forward_ev_multiples", return_value=None
+        )
+        self._fwd_patcher.start()
+        self.addCleanup(self._fwd_patcher.stop)
 
     # ── Phase A: helper stubs ──────────────────────────────────────────────────
 
@@ -424,6 +432,84 @@ class AnalystTargetApiTests(unittest.TestCase):
 
         result = _fetch_current_fy_eps(MockTicker())
         self.assertAlmostEqual(result, 58.11, places=2)
+
+
+class ForwardEvMultiplesTests(unittest.TestCase):
+    def test_forward_ev_multiples_use_independent_revenue_and_margins(self):
+        """FY1 revenue estimate + enterprise value + annual margins produce separate forward EV multiples."""
+        import sys
+        from types import SimpleNamespace
+        import pandas as pd
+        from src.tools.analyst_target_api import _fetch_forward_ev_multiples
+
+        class MockTicker:
+            info = {
+                "enterpriseValue": 1_091_200_000_000,
+                "ebitdaMargins": 0.633,
+                # Deliberately impossible-looking value; helper must not use it.
+                "operatingMargins": 0.676,
+            }
+
+            @property
+            def revenue_estimate(self):
+                return pd.DataFrame({"avg": [110_290_000_000]}, index=["0y"])
+
+            @property
+            def income_stmt(self):
+                return pd.DataFrame(
+                    {
+                        "2025": [100_000_000_000, 60_000_000_000, 30_000_000_000],
+                        "2024": [80_000_000_000, 32_000_000_000, 8_000_000_000],
+                        "2023": [60_000_000_000, 12_000_000_000, -6_000_000_000],
+                        "2022": [40_000_000_000, 20_000_000_000, 10_000_000_000],
+                    },
+                    index=["Total Revenue", "EBITDA", "EBIT"],
+                )
+
+        fake_yf = SimpleNamespace(Ticker=lambda ticker: MockTicker())
+        with patch.dict(sys.modules, {"yfinance": fake_yf}):
+            result = _fetch_forward_ev_multiples("MU")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["enterprise_value"], 1_091_200_000_000)
+        self.assertEqual(result["forward_revenue"], 110_290_000_000)
+        self.assertAlmostEqual(result["ebitda"]["current_margin"], 0.633, places=6)
+        self.assertAlmostEqual(result["ebitda"]["normalized_margin"], 0.45, places=6)
+        # Current EBIT margin must be derived from EBITDA margin * latest annual EBIT/EBITDA,
+        # not from yfinance info.operatingMargins.
+        self.assertAlmostEqual(result["ebit"]["current_margin"], 0.633 * 0.5, places=6)
+        self.assertAlmostEqual(result["ebit"]["normalized_margin"], 0.175, places=6)
+        self.assertAlmostEqual(
+            result["ebitda"]["current_multiple"],
+            1_091_200_000_000 / (110_290_000_000 * 0.633),
+            places=6,
+        )
+        self.assertAlmostEqual(
+            result["ebit"]["current_multiple"],
+            1_091_200_000_000 / (110_290_000_000 * 0.633 * 0.5),
+            places=6,
+        )
+
+    def test_forward_ev_multiples_return_none_without_forward_revenue(self):
+        import sys
+        from types import SimpleNamespace
+        import pandas as pd
+        from src.tools.analyst_target_api import _fetch_forward_ev_multiples
+
+        class MockTicker:
+            info = {"enterpriseValue": 1_000_000_000, "ebitdaMargins": 0.2}
+
+            @property
+            def revenue_estimate(self):
+                return pd.DataFrame({"avg": [123_000_000]}, index=["+1y"])
+
+            @property
+            def income_stmt(self):
+                return pd.DataFrame()
+
+        fake_yf = SimpleNamespace(Ticker=lambda ticker: MockTicker())
+        with patch.dict(sys.modules, {"yfinance": fake_yf}):
+            self.assertIsNone(_fetch_forward_ev_multiples("NOFWD"))
 
 
 class YahooJapanBrokerTests(unittest.TestCase):

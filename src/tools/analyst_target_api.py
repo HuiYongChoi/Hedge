@@ -74,6 +74,7 @@ class AnalystTarget:
     extended_price: Optional[float] = None        # 프리/애프터장 시세 (표시 전용, 분석 계산엔 미사용)
     extended_change_percent: Optional[float] = None  # 정규장 종가 대비 % (예: 4.07 = +4.07%)
     extended_session: Optional[str] = None        # "pre" | "post" (해당 시간외 세션일 때만)
+    forward_ev: Optional[dict] = None             # 선행 EV/EBITDA·EV/EBIT 근사 (미국 전용, 표시 전용)
     brokers: list[BrokerTarget] = field(default_factory=list)
     distribution: Optional[TargetDistribution] = None
     source: str = "stub"
@@ -679,6 +680,162 @@ def _fetch_naver_overtime(ticker: str) -> dict:
         return {}
 
 
+def _historical_annual_margins(ticker_obj) -> tuple[list[float], list[float], Optional[float]]:
+    """연간 손익계산서(income_stmt)에서 EBITDA 마진·EBIT 마진 시계열과
+    최근연도 EBIT/EBITDA 변환비를 추출한다.
+
+    반환: (ebitda_margins, ebit_margins, latest_ebit_to_ebitda_ratio)
+    각 마진은 분수(0.438 = 43.8%). 변환비는 0~1로 clamp.
+    """
+    ebitda_margins: list[float] = []
+    ebit_margins: list[float] = []
+    latest_conv: Optional[float] = None
+    try:
+        fin = ticker_obj.income_stmt
+        if fin is None or fin.empty:
+            return ebitda_margins, ebit_margins, latest_conv
+
+        rev_row = None
+        for label in ("Total Revenue", "TotalRevenue", "Operating Revenue"):
+            if label in fin.index:
+                rev_row = fin.loc[label]
+                break
+        if rev_row is None:
+            return ebitda_margins, ebit_margins, latest_conv
+
+        ebitda_row = fin.loc["EBITDA"] if "EBITDA" in fin.index else None
+        ebit_row = fin.loc["EBIT"] if "EBIT" in fin.index else None
+
+        # 컬럼은 회계연도(최근이 앞). 각 연도 마진 수집.
+        for col in fin.columns:
+            try:
+                rev = float(rev_row.get(col))
+            except (TypeError, ValueError):
+                continue
+            if not rev or rev <= 0:
+                continue
+            if ebitda_row is not None:
+                try:
+                    margin = float(ebitda_row.get(col)) / rev
+                    if -1.0 < margin < 1.5:
+                        ebitda_margins.append(margin)
+                except (TypeError, ValueError):
+                    pass
+            if ebit_row is not None:
+                try:
+                    margin = float(ebit_row.get(col)) / rev
+                    if -1.0 < margin < 1.5:
+                        ebit_margins.append(margin)
+                except (TypeError, ValueError):
+                    pass
+
+        # 최근연도 EBIT/EBITDA 변환비 (둘 다 양수인 가장 최근 연도)
+        if ebitda_row is not None and ebit_row is not None:
+            for col in fin.columns:
+                try:
+                    ev_val = float(ebitda_row.get(col))
+                    eb_val = float(ebit_row.get(col))
+                except (TypeError, ValueError):
+                    continue
+                if ev_val > 0 and eb_val > 0:
+                    latest_conv = max(0.0, min(1.0, eb_val / ev_val))
+                    break
+    except Exception:
+        pass
+    return ebitda_margins, ebit_margins, latest_conv
+
+
+def _fetch_forward_ev_multiples(ticker: str) -> Optional[dict]:
+    """선행(forward) EV/EBITDA · EV/EBIT 근사치 (미국 종목 전용, 표시 전용 근사).
+
+    무료 소스엔 컨센서스 forward EBITDA가 없어, 컨센서스 forward 매출(현 회계연도 FY1)에
+    마진을 곱해 forward EBITDA/EBIT를 추정한다. 두 시나리오를 함께 제공:
+      · current    : 현재(TTM) 마진을 그대로 적용
+      · normalized : 과거 연간 마진의 중앙값(median)을 적용 (사이클 정규화, 이상치에 강건)
+    EV는 yfinance enterpriseValue. EBIT 마진은 신뢰도 낮은 operatingMargins 대신
+    'EBITDA 마진 × 최근연도 EBIT/EBITDA 변환비'로 도출(current), normalized는 과거 EBIT 마진 중앙값.
+    """
+    try:
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+        info = t.info or {}
+
+        ev = _coerce_pos_float(info.get("enterpriseValue"))
+        if ev is None:
+            return None
+
+        # forward 매출: revenue_estimate 0y(현 회계연도) avg
+        fwd_rev = None
+        try:
+            re_df = t.revenue_estimate
+            if re_df is not None and not re_df.empty and "0y" in re_df.index:
+                fwd_rev = _coerce_pos_float(re_df.loc["0y", "avg"])
+        except Exception:
+            pass
+        if fwd_rev is None:
+            return None
+
+        cur_ebitda_margin = info.get("ebitdaMargins")
+        cur_ebitda_margin = (
+            float(cur_ebitda_margin)
+            if isinstance(cur_ebitda_margin, (int, float)) and 0 < float(cur_ebitda_margin) < 1.5
+            else None
+        )
+
+        hist_ebitda_margins, hist_ebit_margins, conv = _historical_annual_margins(t)
+
+        # 현재 EBITDA 마진 없으면 과거 중앙값으로 대체
+        if cur_ebitda_margin is None and hist_ebitda_margins:
+            cur_ebitda_margin = float(statistics.median(hist_ebitda_margins))
+        if cur_ebitda_margin is None or cur_ebitda_margin <= 0:
+            return None
+
+        norm_ebitda_margin = (
+            float(statistics.median(hist_ebitda_margins)) if hist_ebitda_margins else cur_ebitda_margin
+        )
+
+        # EBIT 마진:
+        #  · current    = 현재 EBITDA 마진 × 최근연도 EBIT/EBITDA 변환비
+        #  · normalized = 과거 EBIT 마진 중앙값 (사이클 정규화)
+        cur_ebit_margin = cur_ebitda_margin * conv if conv else None
+        norm_ebit_margin = (
+            float(statistics.median(hist_ebit_margins)) if hist_ebit_margins
+            else (norm_ebitda_margin * conv if conv else None)
+        )
+
+        def _mult(margin: Optional[float]) -> Optional[float]:
+            if margin is None or margin <= 0:
+                return None
+            denom = fwd_rev * margin
+            if denom <= 0:
+                return None
+            return ev / denom
+
+        result = {
+            "enterprise_value": ev,
+            "forward_revenue": fwd_rev,
+            "ebitda": {
+                "current_margin": cur_ebitda_margin,
+                "current_multiple": _mult(cur_ebitda_margin),
+                "normalized_margin": norm_ebitda_margin,
+                "normalized_multiple": _mult(norm_ebitda_margin),
+            },
+            "ebit": {
+                "current_margin": cur_ebit_margin,
+                "current_multiple": _mult(cur_ebit_margin),
+                "normalized_margin": norm_ebit_margin,
+                "normalized_multiple": _mult(norm_ebit_margin),
+            },
+        }
+        # 최소한 EBITDA current 배수가 있어야 의미 있음
+        if result["ebitda"]["current_multiple"] is None:
+            return None
+        return result
+    except Exception as e:
+        logger.debug("forward EV multiples fetch failed for %s: %s", ticker, e)
+        return None
+
+
 def _compute_distribution_v5(
     brokers: list[BrokerTarget],
     rec_summary: Optional[dict],
@@ -758,6 +915,8 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
     #  · 한국: yfinance가 시간외를 안 주므로 네이버 실시간 API(시간외 단일가) 사용
     #  · 일본: 신뢰 가능한 시간외 소스가 없어 표시하지 않음
     market_session = yf_fund.get("market_session")
+    # 선행 EV/EBITDA·EV/EBIT 근사는 미국 종목에서만 (yfinance forward 추정 데이터가 신뢰 가능).
+    forward_ev = None
     if is_kr:
         naver_ot = _fetch_naver_overtime(ticker)
         extended_price = naver_ot.get("extended_price")
@@ -773,6 +932,7 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
         extended_price = yf_fund.get("extended_price")
         extended_change_percent = yf_fund.get("extended_change_percent")
         extended_session = yf_fund.get("extended_session")
+        forward_ev = _fetch_forward_ev_multiples(yf_symbol)
     trailing_pe = fg_an.get("trailing_pe") or yf_fund.get("trailing_pe")
     forward_pe = fg_an.get("forward_pe") or yf_fund.get("forward_pe")
     trailing_eps = yf_fund.get("trailing_eps")
@@ -827,6 +987,7 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
         extended_price=extended_price,
         extended_change_percent=extended_change_percent,
         extended_session=extended_session,
+        forward_ev=forward_ev,
         brokers=brokers,
         distribution=distribution,
         source=source,

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { t } from '@/lib/language-preferences';
 import { analystTargetService } from '@/services/analyst-target-service';
-import type { AnalystTarget } from '@/services/analyst-target-service';
+import type { AnalystTarget, ForwardEv } from '@/services/analyst-target-service';
 import type { CanonicalMetrics, ReportLanguage } from '../types';
 import { BrokerTargetBar } from './broker-target-bar';
 import { BrokerCalloutsRow } from './broker-callouts-row';
@@ -31,6 +31,7 @@ interface FundamentalsRowProps {
   currentPrice: number | null;
   consensus: number | null;
   highTarget: number | null;
+  forwardEv: ForwardEv | null;
   currency: string;
   language: ReportLanguage;
 }
@@ -88,6 +89,7 @@ function FundamentalsRow({
   currentPrice,
   consensus,
   highTarget,
+  forwardEv,
   currency,
   language,
 }: FundamentalsRowProps) {
@@ -95,6 +97,26 @@ function FundamentalsRow({
     currentPrice != null && currentFyEps != null && currentFyEps > 0
       ? currentPrice / currentFyEps
       : null;
+  const fmtMultiple = (v: number | null | undefined): string | null =>
+    v != null && Number.isFinite(v) && v > 0 ? `${v.toFixed(1)}x` : null;
+  const fmtMargin = (v: number | null | undefined): string | null =>
+    v != null && Number.isFinite(v) && v > 0 ? `${(v * 100).toFixed(1)}%` : null;
+  const fmtEvMultiple = (multiple: number | null | undefined, margin: number | null | undefined): string | null => {
+    const m = fmtMultiple(multiple);
+    if (!m) return null;
+    const marginText = fmtMargin(margin);
+    return marginText ? `${m} · ${marginText}` : m;
+  };
+  const fwdEvItems = compactMetrics([
+    fmtEvMultiple(forwardEv?.ebitda?.current_multiple, forwardEv?.ebitda?.current_margin) != null
+      ? { label: t('pcpFwdEvEbitdaCur', language), value: fmtEvMultiple(forwardEv?.ebitda?.current_multiple, forwardEv?.ebitda?.current_margin) as string } : null,
+    fmtEvMultiple(forwardEv?.ebitda?.normalized_multiple, forwardEv?.ebitda?.normalized_margin) != null
+      ? { label: t('pcpFwdEvEbitdaNorm', language), value: fmtEvMultiple(forwardEv?.ebitda?.normalized_multiple, forwardEv?.ebitda?.normalized_margin) as string } : null,
+    fmtEvMultiple(forwardEv?.ebit?.current_multiple, forwardEv?.ebit?.current_margin) != null
+      ? { label: t('pcpFwdEvEbitCur', language), value: fmtEvMultiple(forwardEv?.ebit?.current_multiple, forwardEv?.ebit?.current_margin) as string } : null,
+    fmtEvMultiple(forwardEv?.ebit?.normalized_multiple, forwardEv?.ebit?.normalized_margin) != null
+      ? { label: t('pcpFwdEvEbitNorm', language), value: fmtEvMultiple(forwardEv?.ebit?.normalized_multiple, forwardEv?.ebit?.normalized_margin) as string } : null,
+  ]);
   const ttmItems = compactMetrics([
     trailingEps != null ? { label: t('pcpEpsTtm', language), value: formatMoney(trailingEps, currency) } : null,
     trailingPe != null ? { label: t('pcpPerTtm', language), value: `${trailingPe.toFixed(1)}` } : null,
@@ -118,6 +140,7 @@ function FundamentalsRow({
       <FundamentalsGroup title="TTM" items={ttmItems} help={t('pcpTtmHelp', language)} />
       <FundamentalsGroup title={t('pcpGroupCurrentFy', language)} items={currentFyItems} help={t('pcpCurFyHelp', language)} />
       <FundamentalsGroup title="Forward" items={forwardItems} help={t('pcpFwdHelp', language)} />
+      <FundamentalsGroup title={t('pcpGroupFwdEv', language)} items={fwdEvItems} help={t('pcpFwdEvHelp', language)} wide />
       <FundamentalsGroup title={t('pcpGroupTargets', language)} items={priceItems} help={t('pcpTargetsHelp', language)} wide />
     </div>
   );
@@ -271,6 +294,7 @@ export function PriceCompassPanel({
         currentPrice={currentPrice}
         consensus={consensus}
         highTarget={highTarget}
+        forwardEv={target?.forward_ev ?? null}
         currency={currency}
         language={language}
       />
