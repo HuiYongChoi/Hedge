@@ -2136,7 +2136,7 @@ function formatPercentSmart(value: number) {
 }
 
 function formatMultiple(value: number) {
-  return `${value.toFixed(2)}x`;
+  return value.toFixed(1);
 }
 
 function formatPlain(value: number) {

@@ -74,6 +74,8 @@ function normalizeFinancialDisplayText(text: string): string {
     .replace(/(Debt-To-Equity\(부채비율\):?\s*)(\d+(?:\.\d+)?)\s*x\b/gi, '$1$2')
     .replace(/(부채비율[^\d]{0,4})(\d+(?:\.\d+)?)\s*x\b/g, '$1$2')
     .replace(/(Debt-To-Equity\(부채비율\):?\s*\d+(?:\.\d+)?)\s*\(([^)]+)\)/g, '$1 ($2)')
+    .replace(/(Normalized\s+EBITDA|정규화\s+EBITDA)\s*×\s*/giu, '$1 ')
+    .replace(/(\d+(?:[.,]\d+)?)\s*(?:x|×)\b/giu, '$1')
     // Any large number suffixed with 원 -> convert to 조/억 units for readability
     .replace(
       /(?:~|약\s*)?(₩|KRW\s*)?([0-9]{1,3}(?:[,\s][0-9]{3}){2,}(?:\.\d+)?|[0-9]{9,}(?:\.\d+)?)\s*원/gi,

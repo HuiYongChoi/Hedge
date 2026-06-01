@@ -222,12 +222,12 @@ def _build_interpretation_hint(
             else "earnings contraction or valuation pressure"
         )
         parts.append(
-            f"Baseline forward P/E {forward_pe:.1f}x vs TTM P/E {trailing_pe:.1f}x "
+            f"Baseline forward P/E {forward_pe:.1f} vs TTM P/E {trailing_pe:.1f} "
             f"({pe_change_pct:+.1f}%) — consensus implies {direction}."
         )
     elif forward_pe is not None:
         parts.append(
-            f"Baseline forward P/E {forward_pe:.1f}x; no TTM P/E available "
+            f"Baseline forward P/E {forward_pe:.1f}; no TTM P/E available "
             f"for direct comparison."
         )
 
@@ -259,10 +259,10 @@ def _build_interpretation_hint(
         fy0_year = fy0_est.fiscal_year if fy0_est else "FY"
         if forward_pe is not None:
             parts.append(
-                f"Current-year P/E {fy0_pe:.1f}x (FY{fy0_year}) is the annual "
+                f"Current-year P/E {fy0_pe:.1f} (FY{fy0_year}) is the annual "
                 f"anchor and is separate from the baseline forward P/E."
             )
         else:
-            parts.append(f"Current-year P/E (FY{fy0_year}) {fy0_pe:.1f}x.")
+            parts.append(f"Current-year P/E (FY{fy0_year}) {fy0_pe:.1f}.")
 
     return " ".join(parts) if parts else "No interpretive hint available."

@@ -98,7 +98,7 @@ function FundamentalsRow({
       ? currentPrice / currentFyEps
       : null;
   const fmtMultiple = (v: number | null | undefined): string | null =>
-    v != null && Number.isFinite(v) && v > 0 ? `${v.toFixed(1)}x` : null;
+    v != null && Number.isFinite(v) && v > 0 ? v.toFixed(1) : null;
   const fmtMargin = (v: number | null | undefined): string | null =>
     v != null && Number.isFinite(v) && v > 0 ? `${(v * 100).toFixed(1)}%` : null;
   const fmtEvMultiple = (multiple: number | null | undefined, margin: number | null | undefined): string | null => {

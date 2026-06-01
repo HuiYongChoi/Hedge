@@ -140,7 +140,7 @@ def _forward_pe_interpretation(trailing_pe: float | None, forward_pe: float | No
         else "above TTM P/E; consensus implies earnings contraction or valuation pressure"
     )
     confidence_note = " Low confidence: use this as directional, not as a trailing-only override." if confidence == "low" else ""
-    return f"Baseline forward P/E {forward_pe:.2f}x is {direction} vs TTM P/E {trailing_pe:.2f}x.{confidence_note}"
+    return f"Baseline forward P/E {forward_pe:.2f} is {direction} vs TTM P/E {trailing_pe:.2f}.{confidence_note}"
 
 
 def _to_finite_float(value) -> float | None:
@@ -994,7 +994,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                 "eps_growth_1y": justified_pbr_breakdown["eps_growth_1y"],
                 "weight_used": 0,
                 "details": (
-                    f"Justified PBR {justified_pbr_breakdown['justified_pbr']:.2f}x × "
+                    f"Justified PBR {justified_pbr_breakdown['justified_pbr']:.2f} × "
                     f"BVPS forward {justified_pbr_breakdown['bvps_forward']:,.0f} = "
                     f"{jp_target:,.0f}"
                 ),
@@ -2045,7 +2045,7 @@ def calculate_pbr_band(
         "position_label": position_label,
         "rerating_note": rerating_note,
         "signal": signal,
-        "details": f"현재 PBR {current_pbr:.2f}x · P50 {p50:.2f}x · 역사적 {position_label} 구간",
+        "details": f"현재 PBR {current_pbr:.2f} · P50 {p50:.2f} · 역사적 {position_label} 구간",
     }
 
 

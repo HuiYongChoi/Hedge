@@ -374,12 +374,12 @@ def analyze_balance_sheet(financial_line_items: list) -> dict[str, any]:
         liabilities_to_assets = latest.total_liabilities / latest.total_assets
         if liabilities_to_assets < 0.5:
             score += 2
-            reasoning.append(f"Low liabilities-to-assets ratio: {liabilities_to_assets:.2f}x")
+            reasoning.append(f"Low liabilities-to-assets ratio: {liabilities_to_assets:.2f}")
         elif liabilities_to_assets < 0.7:
             score += 1
-            reasoning.append(f"Moderate liabilities-to-assets ratio: {liabilities_to_assets:.2f}x")
+            reasoning.append(f"Moderate liabilities-to-assets ratio: {liabilities_to_assets:.2f}")
         else:
-            reasoning.append(f"High liabilities-to-assets ratio: {liabilities_to_assets:.2f}x")
+            reasoning.append(f"High liabilities-to-assets ratio: {liabilities_to_assets:.2f}")
     else:
         reasoning.append("Insufficient data to calculate liabilities-to-assets ratio")
 
@@ -392,12 +392,12 @@ def analyze_balance_sheet(financial_line_items: list) -> dict[str, any]:
         current_ratio = latest.current_assets / latest.current_liabilities
         if current_ratio > 2.0:
             score += 2
-            reasoning.append(f"Excellent liquidity with current ratio: {current_ratio:.2f}x")
+            reasoning.append(f"Excellent liquidity with current ratio: {current_ratio:.2f}")
         elif current_ratio > 1.5:
             score += 1
-            reasoning.append(f"Good liquidity with current ratio: {current_ratio:.2f}x")
+            reasoning.append(f"Good liquidity with current ratio: {current_ratio:.2f}")
         else:
-            reasoning.append(f"Weak liquidity with current ratio: {current_ratio:.2f}x")
+            reasoning.append(f"Weak liquidity with current ratio: {current_ratio:.2f}")
     else:
         reasoning.append("Insufficient data to calculate current ratio")
 

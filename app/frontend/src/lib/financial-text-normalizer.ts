@@ -89,9 +89,16 @@ export function normalizeFinancialDisplayText(text: string) {
       normalizeBnToKorean(normalizeDebtPercentSequences(text)),
     ),
   )
+    .replace(/(이자보상배율\s*)×\s*(\d)/g, '$1$2')
+    .replace(/(Normalized\s+EBITDA|정규화\s+EBITDA)\s*×\s*/giu, '$1 ')
+    .replace(/(?:배|x|X)\s*\/\s*(?:x|X)/g, '배')
+    .replace(/(?:x|X)\s*\/\s*(?:X|x|배)/g, '배')
+    .replace(/\b(?:x|X)[-\s]*(?:ratio|multiple)\b/gi, 'ratio')
+    .replace(/\(\s*(?:x|X|×)\s*\)/g, '')
+    .replace(/(?:x|X|×)\s*(?=의\s*비율)/g, '')
+    .replace(/(\d+(?:[.,]\d+)?)\s*(?:x|×)\b/giu, '$1')
     .replace(/부채비율\s+10000%0%0%5%/g, '부채비율 5%')
     .replace(/Debt-To-Equity\(부채비율\)\s+10000%0%0%5%/g, 'Debt-To-Equity(부채비율) 5%')
-    .replace(/(이자보상배율\s*)×\s*(\d)/g, '$1$2')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }

@@ -300,11 +300,11 @@ def calculate_volatility_adjusted_limit(annualized_volatility: float) -> float:
 
 def calculate_correlation_multiplier(avg_correlation: float) -> float:
     """Map average correlation to an adjustment multiplier.
-    - Very high correlation (>= 0.8): reduce limit sharply (0.7x)
-    - High correlation (0.6-0.8): reduce (0.85x)
-    - Moderate correlation (0.4-0.6): neutral (1.0x)
-    - Low correlation (0.2-0.4): slight increase (1.05x)
-    - Very low correlation (< 0.2): increase (1.10x)
+    - Very high correlation (>= 0.8): reduce limit sharply (0.7)
+    - High correlation (0.6-0.8): reduce (0.85)
+    - Moderate correlation (0.4-0.6): neutral (1.0)
+    - Low correlation (0.2-0.4): slight increase (1.05)
+    - Very low correlation (< 0.2): increase (1.10)
     """
     if avg_correlation >= 0.80:
         return 0.70

@@ -495,12 +495,12 @@ def analyze_fragility(metrics: list, line_items: list) -> dict[str, any]:
     if interest_coverage is not None:
         if interest_coverage > 10:
             score += 2
-            reasoning.append(f"Interest coverage {interest_coverage:.1f}x — debt is irrelevant")
+            reasoning.append(f"Interest coverage {interest_coverage:.1f} — debt is irrelevant")
         elif interest_coverage > 5:
             score += 1
-            reasoning.append(f"Comfortable interest coverage ({interest_coverage:.1f}x)")
+            reasoning.append(f"Comfortable interest coverage ({interest_coverage:.1f})")
         else:
-            reasoning.append(f"Low interest coverage ({interest_coverage:.1f}x) — fragile to rate changes")
+            reasoning.append(f"Low interest coverage ({interest_coverage:.1f}) — fragile to rate changes")
     else:
         reasoning.append("Interest coverage data not available")
 
@@ -557,7 +557,7 @@ def analyze_skin_in_game(insider_trades: list) -> dict[str, any]:
         buy_sell_ratio = net / max(shares_sold, 1)
         if buy_sell_ratio > 2.0:
             score = 4
-            reasoning.append(f"Strong skin in the game — net insider buying {net:,} shares (ratio {buy_sell_ratio:.1f}x)")
+            reasoning.append(f"Strong skin in the game — net insider buying {net:,} shares (ratio {buy_sell_ratio:.1f})")
         elif buy_sell_ratio > 0.5:
             score = 3
             reasoning.append(f"Moderate insider conviction — net buying {net:,} shares")
@@ -668,10 +668,10 @@ def analyze_black_swan_sentinel(news: list, prices_df: pd.DataFrame) -> dict[str
     # Scoring
     if neg_ratio > 0.7 and volume_spike > 2.0:
         score = 0
-        reasoning.append(f"Black swan warning — {neg_ratio:.0%} negative news, {volume_spike:.1f}x volume spike")
+        reasoning.append(f"Black swan warning — {neg_ratio:.0%} negative news, {volume_spike:.1f} volume spike")
     elif neg_ratio > 0.5 or volume_spike > 2.5:
         score = 1
-        reasoning.append(f"Elevated stress signals (neg news {neg_ratio:.0%}, volume {volume_spike:.1f}x)")
+        reasoning.append(f"Elevated stress signals (neg news {neg_ratio:.0%}, volume {volume_spike:.1f})")
     elif neg_ratio > 0.3 and abs(recent_return) > 0.10:
         score = 1
         reasoning.append(f"Moderate stress with price dislocation ({recent_return:.1%} move, {neg_ratio:.0%} negative news)")
@@ -679,7 +679,7 @@ def analyze_black_swan_sentinel(news: list, prices_df: pd.DataFrame) -> dict[str
         score = 3
         reasoning.append("No black swan signals detected")
     else:
-        reasoning.append(f"Normal conditions (neg news {neg_ratio:.0%}, volume {volume_spike:.1f}x)")
+        reasoning.append(f"Normal conditions (neg news {neg_ratio:.0%}, volume {volume_spike:.1f})")
 
     # Contrarian bonus: high negative news but no volume panic could be opportunity
     if neg_ratio > 0.4 and volume_spike < 1.5 and score < 4:

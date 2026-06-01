@@ -46,10 +46,10 @@ export function signalTone(signal: 'BUY' | 'HOLD' | 'NEUTRAL' | 'SELL'): SignalT
   }
 }
 
-/** Format P/E multiple: 39.1 → "39.1×" */
+/** Format P/E multiple: 39.1 → "39.1" */
 export function formatMultiple(pe: number | null | undefined): string {
   if (pe == null || !Number.isFinite(pe) || pe <= 0) return '—';
-  return `${pe.toFixed(1)}×`;
+  return pe.toFixed(1);
 }
 
 /** Format price/EPS using the market currency carried by the backend. */

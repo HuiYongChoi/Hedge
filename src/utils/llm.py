@@ -18,9 +18,9 @@ DATA_GAP_HANDLING_REQUIREMENT = (
 )
 RATIO_SCALE_REQUIREMENT = (
     "RATIO SCALE REQUIREMENT: Preserve decimal points and units for every financial ratio. "
-    "Current ratio, quick ratio, debt_to_assets, and liabilities_to_assets are x-ratios, not whole-number percentages. "
+    "Current ratio, quick ratio, debt_to_assets, and liabilities_to_assets are decimal ratios, not whole-number percentages. "
     "Do NOT rewrite 0.80 as 080, 0.11 as 11, or 0.98 as 098. "
-    "Use exactly two decimals for x-ratios, for example Current Ratio 1.21x. "
+    "Use exactly two decimals for ratio values, for example Current Ratio 1.21, and do not append an x suffix. "
     "For debt_to_equity, user-facing Korean output must be shown as a rounded percentage such as 부채비율 14%. "
     "Do not add explanations like 0.14x, x-ratio, x-개념의 비율, or provided-value wording after the percentage. "
     "Never confuse debt_to_equity with liabilities_to_assets. "

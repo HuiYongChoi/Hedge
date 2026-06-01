@@ -123,7 +123,7 @@ def ben_graham_agent(state: AgentState, agent_id: str = "ben_graham_agent"):
             "metric_scale_notes": (
                 "Financial ratios use the source decimal exactly as provided. "
                 "Debt-To-Equity is a proportion, so render it without the 'x' suffix (e.g., 0.11). "
-                "Multiplier-style ratios such as Current Ratio keep their 'x' suffix (e.g., 0.98x). "
+                "Multiplier-style ratios such as Current Ratio keep their decimal form without an x suffix (e.g., 0.98). "
                 "Liabilities-to-assets is a separate balance-sheet ratio and must not be described as debt-to-equity."
             ),
         }
@@ -247,12 +247,12 @@ def analyze_financial_strength(financial_line_items: list) -> dict:
         current_ratio = current_assets / current_liabilities
         if current_ratio >= 2.0:
             score += 2
-            details.append(f"Current ratio = {current_ratio:.2f}x (>=2.00x: solid).")
+            details.append(f"Current ratio = {current_ratio:.2f} (>=2.00: solid).")
         elif current_ratio >= 1.5:
             score += 1
-            details.append(f"Current ratio = {current_ratio:.2f}x (moderately strong).")
+            details.append(f"Current ratio = {current_ratio:.2f} (moderately strong).")
         else:
-            details.append(f"Current ratio = {current_ratio:.2f}x (<1.50x: weaker liquidity).")
+            details.append(f"Current ratio = {current_ratio:.2f} (<1.50: weaker liquidity).")
     else:
         details.append("Cannot compute current ratio (missing or zero current_liabilities).")
 
@@ -276,7 +276,7 @@ def analyze_financial_strength(financial_line_items: list) -> dict:
     if total_assets > 0:
         liabilities_to_assets = total_liabilities / total_assets
         details.append(
-            f"Liabilities-to-assets = {liabilities_to_assets:.2f}x "
+            f"Liabilities-to-assets = {liabilities_to_assets:.2f} "
             "(total_liabilities / total_assets; not the same as debt-to-equity)."
         )
     else:
@@ -425,7 +425,7 @@ def generate_graham_output(
             3. Prefer stable earnings over multiple years.
             4. Consider dividend record for extra safety.
             5. Avoid speculative or high-growth assumptions; focus on proven metrics.
-            6. Preserve decimal points in current ratio and similar x-ratios, but render debt_to_equity in user-facing Korean as 부채비율 11% like a clean percentage.
+            6. Preserve decimal points in current ratio and similar ratios, but render debt_to_equity in user-facing Korean as 부채비율 11% like a clean percentage.
             
             When providing your reasoning, be thorough and specific by:
             1. Explaining the key valuation metrics that influenced your decision the most (Graham Number, NCAV, P/E, etc.)
@@ -435,12 +435,12 @@ def generate_graham_output(
             5. Comparing current metrics to Graham's specific thresholds (e.g., "Current ratio of 2.5 exceeds Graham's minimum of 2.0")
             6. Using Benjamin Graham's conservative, analytical voice and style in your explanation
 
-            For example, if bullish: "The stock trades at a 35% discount to net current asset value, providing an ample margin of safety. The current ratio of 2.5x and debt-to-equity of 30% indicate strong financial position..."
-            For example, if bearish: "Despite consistent earnings, the current price of $50 exceeds our calculated Graham Number of $35, offering no margin of safety. Additionally, the current ratio of only 1.2x falls below Graham's preferred 2.0 threshold..."
+            For example, if bullish: "The stock trades at a 35% discount to net current asset value, providing an ample margin of safety. The current ratio of 2.5 and debt-to-equity of 30% indicate strong financial position..."
+            For example, if bearish: "Despite consistent earnings, the current price of $50 exceeds our calculated Graham Number of $35, offering no margin of safety. Additionally, the current ratio of only 1.2 falls below Graham's preferred 2.0 threshold..."
 
             Ratio interpretation guard:
             - debt_to_equity is a user-facing percentage in Korean output: render it as 부채비율 11% style without 'x' or extra explanation.
-            - current_ratio, quick_ratio, and liabilities_to_assets are multiplier-style x-ratios. Keep the decimal point and the 'x' suffix.
+            - current_ratio, quick_ratio, and liabilities_to_assets are multiplier-style ratios. Keep the decimal point and do not append an x suffix.
             - Debt-to-equity uses total_debt / shareholders_equity.
             - Liabilities-to-assets uses total_liabilities / total_assets and is not the same as debt-to-equity.
             - Do not call liabilities-to-assets "D/E" or infer high interest-bearing debt from it alone.

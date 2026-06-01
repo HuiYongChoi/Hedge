@@ -216,9 +216,9 @@ def analyze_fundamentals(metrics: list) -> dict[str, any]:
     # Check Debt to Equity
     if latest_metrics.debt_to_equity is not None and latest_metrics.debt_to_equity < 0.5:
         score += 2
-        reasoning.append(f"Conservative debt levels (D/E {latest_metrics.debt_to_equity:.2f}x)")
+        reasoning.append(f"Conservative debt levels (D/E {latest_metrics.debt_to_equity:.2f})")
     elif latest_metrics.debt_to_equity is not None:
-        reasoning.append(f"High debt to equity ratio of {latest_metrics.debt_to_equity:.2f}x")
+        reasoning.append(f"High debt to equity ratio of {latest_metrics.debt_to_equity:.2f}")
     else:
         reasoning.append("Debt to equity data not available")
 
@@ -234,9 +234,9 @@ def analyze_fundamentals(metrics: list) -> dict[str, any]:
     # Check Current Ratio
     if latest_metrics.current_ratio is not None and latest_metrics.current_ratio > 1.5:
         score += 1
-        reasoning.append(f"Good liquidity position (current ratio {latest_metrics.current_ratio:.2f}x)")
+        reasoning.append(f"Good liquidity position (current ratio {latest_metrics.current_ratio:.2f})")
     elif latest_metrics.current_ratio is not None:
-        reasoning.append(f"Weak liquidity with current ratio of {latest_metrics.current_ratio:.2f}x")
+        reasoning.append(f"Weak liquidity with current ratio of {latest_metrics.current_ratio:.2f}")
     else:
         reasoning.append("Current ratio data not available")
 

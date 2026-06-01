@@ -19,7 +19,7 @@ def test_financial_language_normalizer_repairs_lost_ratio_decimals() -> None:
     normalized = normalize_financial_language(raw)
 
     assert "부채비율 47%" in normalized
-    assert "유동비율 (current ratio) 1.21x" in normalized
+    assert "유동비율 (current ratio) 1.21" in normalized
     assert "부채비율 12%" in normalized
     assert "그레이엄 넘버 (Graham Number) 212.35" in normalized
     assert "21235" not in normalized
@@ -91,7 +91,7 @@ def test_llm_output_postprocessing_applies_financial_language_normalizer() -> No
 
     assert "from src.utils.financial_formatting import normalize_financial_language" in source
     assert "normalize_financial_language" in source[source.index("def ensure_korean_default_texts") :]
-    assert "Use exactly two decimals for x-ratios" in source
+    assert "Use exactly two decimals for ratio values" in source
     assert "부채비율 14%" in source
     assert "Do not add explanations like 0.14x, x-ratio, x-개념의 비율" in source
     assert "label the period and report period" in source
@@ -128,7 +128,7 @@ def test_graham_output_keeps_decimal_graham_number_and_structured_metrics() -> N
     assert '"margin_of_safety": margin_of_safety' in source
     assert '"period_note": _build_graham_period_note' in source
     assert '"source_note": _build_graham_source_note' in source
-    assert "Current ratio = {current_ratio:.2f}x" in source
+    assert "Current ratio = {current_ratio:.2f}" in source
     assert "Copy Graham Number decimals exactly" in source
     assert "그레이엄 넘버 (Graham Number)" in source
 

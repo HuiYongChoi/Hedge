@@ -44,7 +44,7 @@ def format_x_ratio(value: Any, decimals: int = 2) -> str:
     number = _safe_float(value)
     if number is None:
         return "N/A"
-    return f"{number:.{decimals}f}x"
+    return f"{number:.{decimals}f}"
 
 
 def format_leverage_ratio(value: Any, decimals: int = 2) -> str:
@@ -154,23 +154,20 @@ def _restore_lost_ratio_decimal(match: re.Match[str]) -> str:
     label = match.group("label")
     separator = match.group("separator")
     raw_number = match.group("number")
-    unit = match.group("unit") or "x"
-
     if len(raw_number) == 3:
         number = int(raw_number) / 100
     elif len(raw_number) == 4 and raw_number.startswith("0"):
         number = int(raw_number) / 1000
     else:
         number = float(raw_number)
-    return f"{label}{separator}{number:.2f}{unit.lower()}"
+    return f"{label}{separator}{number:.2f}"
 
 
 def _round_verbose_ratio(match: re.Match[str]) -> str:
     label = match.group("label")
     separator = match.group("separator")
     number = float(match.group("number"))
-    unit = match.group("unit") or "x"
-    return f"{label}{separator}{number:.2f}{unit.lower()}"
+    return f"{label}{separator}{number:.2f}"
 
 
 def _normalize_ratio_text(text: str) -> str:
@@ -270,8 +267,8 @@ def _normalize_korean_first_financial_terms(text: str) -> str:
         flags=re.IGNORECASE,
     )
     normalized = re.sub(
-        r"\bCurrent\s+Ratio\b\s*[:=]?\s*(\d+(?:\.\d+)?)x\b",
-        r"유동비율 (current ratio) \1x",
+        r"\bCurrent\s+Ratio\b\s*[:=]?\s*(\d+(?:\.\d+)?)(?:x)?\b",
+        r"유동비율 (current ratio) \1",
         normalized,
         flags=re.IGNORECASE,
     )
@@ -447,4 +444,5 @@ def normalize_financial_language(text: str) -> str:
     normalized = _normalize_debt_ratio_percent_text(normalized)
     normalized = _normalize_per_ratio_text(normalized)
     normalized = _normalize_volatility_unit_text(normalized)
-    return _normalize_korean_market_cap_text(normalized)
+    normalized = _normalize_korean_market_cap_text(normalized)
+    return re.sub(r"(\d+(?:[.,]\d+)?)\s*(?:x|×)\b", r"\1", normalized, flags=re.IGNORECASE)

@@ -20,7 +20,7 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
         '안전마진 (margin of safety) = (Intrinsic Value(내재가치) - Market Cap(시가총액)) / Market Cap(시가총액)',
         '부채비율 (debt-to-equity), 유동비율 (current ratio), ROE(자기자본이익률), 영업이익률 (operating margin)은 TTM 또는 Report Period(보고기간) 라벨과 함께 해석합니다.',
       ],
-      thresholds: ['ROE 15% 이상 가점', '부채비율 0.50 미만 가점', '유동비율 1.50x 초과 가점', '안전마진이 양수일 때 강세 근거 강화'],
+      thresholds: ['ROE 15% 이상 가점', '부채비율 0.50 미만 가점', '유동비율 1.50 초과 가점', '안전마진이 양수일 때 강세 근거 강화'],
     },
     en: {
       title: 'Warren Buffett Quant Formula',
@@ -30,7 +30,7 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
         'Margin Of Safety = (Intrinsic Value - Market Cap) / Market Cap',
         'Debt-To-Equity, Current Ratio, ROE, and Operating Margin are interpreted with TTM or Report Period labels.',
       ],
-      thresholds: ['ROE above 15% adds points', 'Debt-To-Equity below 0.50 adds points', 'Current Ratio above 1.50x adds points', 'Positive Margin Of Safety strengthens bullish evidence'],
+      thresholds: ['ROE above 15% adds points', 'Debt-To-Equity below 0.50 adds points', 'Current Ratio above 1.50 adds points', 'Positive Margin Of Safety strengthens bullish evidence'],
     },
   },
   ben_graham: {
@@ -42,7 +42,7 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
         '안전마진 (margin of safety) = (그레이엄 넘버 (Graham Number) - Current Price(현재가)) / Current Price(현재가)',
         'NCAV(순유동자산가치) = Current Assets(유동자산) - Total Liabilities(총부채)',
       ],
-      thresholds: ['유동비율 2.00x 이상 선호', '부채비율 0.50 이하 가점', '그레이엄 넘버 대비 20~50% 할인 시 가점', 'NCAV가 시가총액보다 높으면 강한 딥밸류 신호'],
+      thresholds: ['유동비율 2.00 이상 선호', '부채비율 0.50 이하 가점', '그레이엄 넘버 대비 20~50% 할인 시 가점', 'NCAV가 시가총액보다 높으면 강한 딥밸류 신호'],
     },
     en: {
       title: 'Ben Graham Quant Formula',
@@ -52,7 +52,7 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
         'Margin Of Safety = (Graham Number - Current Price) / Current Price',
         'NCAV = Current Assets - Total Liabilities',
       ],
-      thresholds: ['Current Ratio of 2.00x or higher is preferred', 'Debt-To-Equity at or below 0.50 adds points', '20-50% discount to Graham Number adds points', 'NCAV above Market Cap is a strong deep-value signal'],
+      thresholds: ['Current Ratio of 2.00 or higher is preferred', 'Debt-To-Equity at or below 0.50 adds points', '20-50% discount to Graham Number adds points', 'NCAV above Market Cap is a strong deep-value signal'],
     },
   },
   charlie_munger: {
@@ -134,8 +134,8 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
     en: { title: 'Technical Analyst Quant Formula', summary: 'Combines Trend, Momentum, Mean Reversion, and Volatility.', formulas: ['Weighted Signal = Trend 25% + Momentum 25% + Mean Reversion + Volatility', 'Uses RSI, MACD, ADX, and moving-average crosses.'], thresholds: ['Weighted signal above +0.2 is bullish', 'Below -0.2 is bearish', 'Trend and Momentum each carry 25% weight'] },
   },
   fundamentals_analyst: {
-    ko: { title: '기본적 분석가 정량 공식', summary: 'Profitability(수익성), Growth(성장성), Financial Health(재무건전성), Valuation(밸류에이션)을 종합합니다.', formulas: ['Financial Health(재무건전성) = Current Ratio(유동비율) + Debt-To-Equity(부채비율)', 'Valuation(밸류에이션) = P/E + P/B + P/S'], thresholds: ['ROE 15% 이상 가점', 'Current Ratio 1.50x 초과 가점', 'P/E 25 초과는 고평가 경고'] },
-    en: { title: 'Fundamentals Analyst Quant Formula', summary: 'Scores Profitability, Growth, Financial Health, and Valuation.', formulas: ['Financial Health = Current Ratio + Debt-To-Equity', 'Valuation = P/E + P/B + P/S'], thresholds: ['ROE above 15% adds points', 'Current Ratio above 1.50x adds points', 'P/E above 25 is an overvaluation warning'] },
+    ko: { title: '기본적 분석가 정량 공식', summary: 'Profitability(수익성), Growth(성장성), Financial Health(재무건전성), Valuation(밸류에이션)을 종합합니다.', formulas: ['Financial Health(재무건전성) = Current Ratio(유동비율) + Debt-To-Equity(부채비율)', 'Valuation(밸류에이션) = P/E + P/B + P/S'], thresholds: ['ROE 15% 이상 가점', 'Current Ratio 1.50 초과 가점', 'P/E 25 초과는 고평가 경고'] },
+    en: { title: 'Fundamentals Analyst Quant Formula', summary: 'Scores Profitability, Growth, Financial Health, and Valuation.', formulas: ['Financial Health = Current Ratio + Debt-To-Equity', 'Valuation = P/E + P/B + P/S'], thresholds: ['ROE above 15% adds points', 'Current Ratio above 1.50 adds points', 'P/E above 25 is an overvaluation warning'] },
   },
   growth_analyst: {
     ko: { title: '성장 분석가 정량 공식', summary: 'Growth(성장) 40%, Quality(품질), Valuation(밸류에이션), Risk(위험)를 가중합니다.', formulas: ['Weighted Growth Score(가중 성장 점수) = Growth 40% + Quality 25% + Valuation 20% + Risk 15%', 'Growth(성장) = Revenue Growth(매출 성장) + EPS Growth(EPS 성장)'], thresholds: ['가중 점수 0.60 이상 강세', '성장 항목 40% 비중', '높은 부채와 낮은 유동성은 위험 감점'] },

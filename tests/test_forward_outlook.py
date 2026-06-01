@@ -87,7 +87,7 @@ def test_build_forward_outlook_serializes_standard_block_and_delta():
         "analyst_count": 7,
         "dispersion": 0.12,
     }
-    assert "4.00" in block["interpretation_hint"]
+    assert "4.0" in block["interpretation_hint"]
     assert "earnings expansion" in block["interpretation_hint"]
 
 
@@ -116,13 +116,15 @@ def test_forward_outlook_locks_standard_forward_per():
 
     block = build_forward_outlook_block(metrics, trailing_pe=30.85)
 
-    assert block["raw_spliced_forward_pe"] == 36.05
-    assert block["forward_eps_ttm"] == 330127.04174228676
-    assert block["canonical_multiples"]["price_compass_fwd_per"] == 5.51
-    assert block["canonical_multiples"]["ttm_per"] == 30.85
-    assert block["canonical_multiples"]["current_fy_per"] == 6.17
-    assert "Baseline forward P/E 5.51x" in block["interpretation_hint"]
-    assert "Current-year P/E 6.17x" in block["interpretation_hint"]
+    assert block["raw_spliced_forward_pe"] == 36.0
+    assert block["forward_eps_ttm"] == 330127.0
+    assert block["canonical_multiples"]["price_compass_fwd_per"] == 5.5
+    assert block["canonical_multiples"]["ttm_per"] == 30.9
+    assert block["canonical_multiples"]["current_fy_per"] == 6.2
+    assert "Baseline forward P/E 5.5" in block["interpretation_hint"]
+    assert "Current-year P/E 6.2" in block["interpretation_hint"]
+    assert "5.5x" not in block["interpretation_hint"]
+    assert "6.2x" not in block["interpretation_hint"]
     assert "36.05" not in block["interpretation_hint"]
     assert "Price Compass" not in block["interpretation_hint"]
     assert "canonical" not in block["interpretation_hint"].lower()

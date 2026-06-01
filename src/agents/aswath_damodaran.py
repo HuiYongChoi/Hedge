@@ -264,7 +264,7 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
     Risk score (0-3):
       +1  Beta < 1.3
       +1  Debt/Equity < 1
-      +1  Interest Coverage > 3×
+      +1  Interest Coverage > 3
     """
     max_score = 3
     if not metrics and not line_items:
@@ -294,9 +294,9 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
     if dte is not None:
         if dte < 1:
             score += 1
-            details.append(f"D/E {dte:.2f}x")
+            details.append(f"D/E {dte:.2f}")
         else:
-            details.append(f"High D/E {dte:.2f}x")
+            details.append(f"High D/E {dte:.2f}")
     else:
         details.append("D/E N/A")
 
@@ -311,9 +311,9 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
         coverage = ebit / abs(interest)
         if coverage > 3:
             score += 1
-            details.append(f"Interest coverage × {coverage:.1f}")
+            details.append(f"Interest coverage {coverage:.1f}")
         else:
-            details.append(f"Weak coverage × {coverage:.1f}")
+            details.append(f"Weak coverage {coverage:.1f}")
     else:
         details.append("Interest coverage N/A")
 

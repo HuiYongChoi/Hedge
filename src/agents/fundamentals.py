@@ -44,7 +44,7 @@ def _forward_pe_interpretation(trailing_pe: float | None, forward_pe: float | No
         else "above TTM P/E; consensus implies earnings contraction or valuation pressure"
     )
     confidence_note = " Low confidence: use this as directional, not as a trailing-only override." if confidence == "low" else ""
-    return f"Price Compass FwdPER {forward_pe:.2f}x is {direction} vs TTM P/E {trailing_pe:.2f}x.{confidence_note}"
+    return f"Price Compass FwdPER {forward_pe:.2f} is {direction} vs TTM P/E {trailing_pe:.2f}.{confidence_note}"
 
 
 ##### Fundamental Agent #####
@@ -139,7 +139,7 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
         signals.append("bullish" if health_score >= 2 else "bearish" if health_score == 0 else "neutral")
         reasoning["financial_health_signal"] = {
             "signal": signals[2],
-            "details": (f"Current Ratio: {current_ratio:.2f}x" if current_ratio is not None else "Current Ratio: N/A") + ", " + (f"D/E: {debt_to_equity:.2f}x" if debt_to_equity is not None else "D/E: N/A"),
+            "details": (f"Current Ratio: {current_ratio:.2f}" if current_ratio is not None else "Current Ratio: N/A") + ", " + (f"D/E: {debt_to_equity:.2f}" if debt_to_equity is not None else "D/E: N/A"),
         }
 
         progress.update_status(agent_id, ticker, "Analyzing valuation ratios")

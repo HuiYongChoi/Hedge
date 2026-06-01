@@ -385,10 +385,10 @@ def test_sidebar_renders_ev_ebitda_without_changing_pbr_rim_cards():
 
     for needle in [
         "evEbitdaLabel: 'EV/EBITDA 평가'",
-        "evEbitdaSubtitleMedian: '중앙값 EV/EBITDA {median}x · 현재 {current}x'",
+        "evEbitdaSubtitleMedian: '중앙값 EV/EBITDA {median} · 현재 {current}'",
         "evEbitdaSubtitleFallback: 'EV ÷ EBITDA 중앙값 기준'",
         "evEbitdaLabel: 'EV/EBITDA'",
-        "evEbitdaSubtitleMedian: 'Median EV/EBITDA {median}x · current {current}x'",
+        "evEbitdaSubtitleMedian: 'Median EV/EBITDA {median} · current {current}'",
         "evEbitdaSubtitleFallback: 'Median EV/EBITDA multiple'",
     ]:
         assert needle in i18n

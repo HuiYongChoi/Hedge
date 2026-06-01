@@ -42,7 +42,7 @@ def test_llm_prompts_preserve_decimal_ratio_scale() -> None:
 
     assert "RATIO_SCALE_REQUIREMENT" in source
     assert "Do NOT rewrite 0.80 as 080" in source
-    assert "Current ratio, quick ratio, debt_to_assets, and liabilities_to_assets are x-ratios" in source
+    assert "Current ratio, quick ratio, debt_to_assets, and liabilities_to_assets are decimal ratios" in source
     assert "부채비율 14%" in source
     assert "RATIO_SCALE_REQUIREMENT" in source[source.index("def _make_system_message") :]
     assert "RATIO_SCALE_REQUIREMENT" in source[source.index("def _append_korean_requirement_to_text") :]
@@ -79,7 +79,7 @@ def test_agent_ratio_labels_keep_debt_to_equity_and_liabilities_separate() -> No
     bill_source = BILL_ACKMAN.read_text(encoding="utf-8")
     rakesh_source = RAKESH_JHUNJHUNWALA.read_text(encoding="utf-8")
 
-    assert "D/E {dte:.2f}x" in aswath_source
+    assert "D/E {dte:.2f}" in aswath_source
     assert "D/E {dte:.1f}" not in aswath_source
 
     assert "Debt-to-equity trends, with liabilities-to-assets as a separate fallback" in bill_source

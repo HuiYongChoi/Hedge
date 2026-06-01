@@ -133,7 +133,7 @@ function fmtRatio(v: any): string {
   if (v === null || v === undefined) return '—';
   const n = Number(v);
   if (!Number.isFinite(n)) return String(v);
-  return `${n.toFixed(2)}x`;
+  return n.toFixed(2);
 }
 
 function fmtDate(v: any): string {
