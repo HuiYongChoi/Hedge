@@ -206,6 +206,19 @@ export interface JustifiedPbrBreakdown {
   details: string;
 }
 
+export interface CashFlowInsight {
+  fcff: number | null;
+  fcfe: number | null;
+  fcffYield: number | null;
+  fcfeYield: number | null;
+  fcfGrowth: number | null;
+  fcfeIntrinsicPerShare: number | null;
+  evEbitdaMultiple: number | null;
+  costOfEquity: number | null;
+  valueTrapFlag: 'trap_risk' | 'genuine_value' | 'neutral' | null;
+  shareholderCapacity: 'strong' | 'moderate' | 'limited' | 'negative' | null;
+}
+
 export interface ValuationDeepDive {
   regime: 'capex_heavy' | 'default';
   regimeNote: string | null;
@@ -213,6 +226,7 @@ export interface ValuationDeepDive {
   pbr: PbrBand | null;
   justifiedPbr: JustifiedPbrBreakdown | null;
   models: ValuationModel[];
+  cashFlow: CashFlowInsight | null;
 }
 
 export interface CompleteResult {

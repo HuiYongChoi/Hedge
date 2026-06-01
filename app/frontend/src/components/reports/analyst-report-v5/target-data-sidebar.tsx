@@ -3,7 +3,7 @@ import { t } from '@/lib/language-preferences';
 import { ChevronRight } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { computePbrTrend, toneToClasses } from './helpers';
-import type { JustifiedPbrBreakdown, OtherAgent, PbrBand, ReportLanguage, ReportTone, TargetTile, ValuationDeepDive } from './types';
+import type { CashFlowInsight, JustifiedPbrBreakdown, OtherAgent, PbrBand, ReportLanguage, ReportTone, TargetTile, ValuationDeepDive } from './types';
 
 interface TargetDataSidebarProps {
   tiles: TargetTile[];
@@ -557,6 +557,72 @@ function ValuationModelsSummary({
   );
 }
 
+function CashFlowInsightCard({
+  cashFlow,
+  currency,
+  language,
+}: {
+  cashFlow: CashFlowInsight;
+  currency: string;
+  language: ReportLanguage;
+}) {
+  const ko = language === 'ko';
+  const trapTone: ReportTone =
+    cashFlow.valueTrapFlag === 'genuine_value' ? 'bullish'
+    : cashFlow.valueTrapFlag === 'trap_risk' ? 'bearish'
+    : 'neutral';
+  const capacityTone: ReportTone =
+    cashFlow.shareholderCapacity === 'strong' ? 'bullish'
+    : cashFlow.shareholderCapacity === 'negative' ? 'bearish'
+    : 'neutral';
+
+  const trapText = cashFlow.valueTrapFlag
+    ? t(`cashFlowTrap_${cashFlow.valueTrapFlag}`, language)
+    : null;
+  const capacityText = cashFlow.shareholderCapacity
+    ? t(`cashFlowCapacity_${cashFlow.shareholderCapacity}`, language)
+    : null;
+
+  return (
+    <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+      <div className="mb-1.5 flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        <span>{t('cashFlowInsightTitle', language)}</span>
+        <InfoDot title={t('cashFlowInsightTip', language)} />
+      </div>
+      <dl className="space-y-1 text-[10px]">
+        <Row label={t('cashFlowFcffYield', language)} tip={t('cashFlowFcffTip', language)}>
+          <span className="font-mono">{formatPercentPlain(cashFlow.fcffYield)}</span>
+        </Row>
+        <Row label={t('cashFlowFcfeYield', language)} tip={t('cashFlowFcfeTip', language)}>
+          <span className="font-mono">{formatPercentPlain(cashFlow.fcfeYield)}</span>
+        </Row>
+        <Row label={t('cashFlowGrowth', language)} tip={t('cashFlowGrowthTip', language)}>
+          <span className="font-mono">{formatPercent(cashFlow.fcfGrowth)}</span>
+        </Row>
+        {cashFlow.fcfeIntrinsicPerShare !== null && (
+          <Row label={t('cashFlowFcfeIntrinsic', language)} tip={t('cashFlowFcfeIntrinsicTip', language)}>
+            <span className="font-mono">{formatCurrency(cashFlow.fcfeIntrinsicPerShare, currency)}</span>
+          </Row>
+        )}
+      </dl>
+      {(trapText || capacityText) && (
+        <div className="mt-2 space-y-1">
+          {trapText && (
+            <p className={`rounded-md border px-2 py-1 text-[10px] leading-4 ${toneToClasses(trapTone).border} ${toneToClasses(trapTone).text}`}>
+              {ko ? '밸류트랩 점검: ' : 'Value-trap check: '}{trapText}
+            </p>
+          )}
+          {capacityText && (
+            <p className={`rounded-md border px-2 py-1 text-[10px] leading-4 ${toneToClasses(capacityTone).border} ${toneToClasses(capacityTone).text}`}>
+              {ko ? '주주 환원 여력: ' : 'Shareholder return: '}{capacityText}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ValuationSidebarPanel({
   dive,
   currency,
@@ -625,8 +691,9 @@ function ValuationSidebarPanel({
     return (
       <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
         <div className="flex items-start justify-between gap-2">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {t('evEbitdaLabel', language)}
+          <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span>{t('evEbitdaLabel', language)}</span>
+            <InfoDot title={t('evEbitdaTip', language)} />
           </div>
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(evGap)}</div>
         </div>
@@ -651,8 +718,9 @@ function ValuationSidebarPanel({
     return (
       <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
         <div className="flex items-start justify-between gap-2">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {t('evEbitLabel', language)}
+          <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span>{t('evEbitLabel', language)}</span>
+            <InfoDot title={t('evEbitTip', language)} />
           </div>
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(evEbitModel?.gapToMarket ?? null)}</div>
         </div>
@@ -675,8 +743,9 @@ function ValuationSidebarPanel({
     return (
       <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
         <div className="flex items-start justify-between gap-2">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {t('ebitdaValuationLabel', language)}
+          <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span>{t('ebitdaValuationLabel', language)}</span>
+            <InfoDot title={t('ebitdaValuationTip', language)} />
           </div>
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(ebitdaModel?.gapToMarket ?? null)}</div>
         </div>
@@ -702,8 +771,9 @@ function ValuationSidebarPanel({
     return (
       <div className={`relative rounded-lg border bg-muted/10 p-3 ${classes.border}`}>
         <div className="flex items-start justify-between gap-2">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {t('roicWaccLabel', language)}
+          <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span>{t('roicWaccLabel', language)}</span>
+            <InfoDot title={t('roicWaccTip', language)} />
           </div>
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(evaModel?.gapToMarket ?? null)}</div>
         </div>
@@ -772,6 +842,9 @@ function ValuationSidebarPanel({
   );
   const primaryPbrCard = pbrCard;
   const secondaryRimCard = rimCard;
+  const cashFlowCard = dive.cashFlow && (
+    <CashFlowInsightCard cashFlow={dive.cashFlow} currency={currency} language={language} />
+  );
   const gapNotice = (
     <ValuationGapNotice
       dive={dive}
@@ -799,6 +872,7 @@ function ValuationSidebarPanel({
         {evaCard}
         {justifiedCard}
         {secondaryRimCard}
+        {cashFlowCard}
         {gapNotice}
       </div>
     );
@@ -818,6 +892,7 @@ function ValuationSidebarPanel({
           {pbrCard}
           {justifiedCard}
           {rimCard}
+          {cashFlowCard}
           {gapNotice}
         </>
       ) : (
@@ -829,6 +904,7 @@ function ValuationSidebarPanel({
           {evEbitCard}
           {ebitdaCard}
           {evaCard}
+          {cashFlowCard}
           {gapNotice}
         </>
       )}

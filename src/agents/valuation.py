@@ -311,6 +311,16 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             progress.update_status(agent_id, ticker, "Failed: Market cap unavailable")
             continue
 
+        # FCFF/FCFE cash-flow insight (independent of the weighted blend).
+        cash_flow_profile = calculate_cash_flow_profile(
+            line_items,
+            market_cap=market_cap,
+            enterprise_value=most_recent_metrics.enterprise_value,
+            ev_ebitda_multiple=most_recent_metrics.enterprise_value_to_ebitda_ratio,
+            cost_of_equity=ke_for_justified,
+            shares_outstanding=shares_outstanding,
+        )
+
         if regime == "capex_heavy":
             base_weights = {
                 "dcf": 0.15,
@@ -628,6 +638,9 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         )
         if sensitivity_matrix:
             reasoning["sensitivity_matrix"] = sensitivity_matrix
+
+        if cash_flow_profile:
+            reasoning["cash_flow_insight"] = cash_flow_profile
 
         valuation_analysis[ticker] = {
             "signal": signal,
@@ -968,6 +981,111 @@ def calculate_roic_wacc_breakdown(
         "fade_growth": g,
         "terminal_growth": term_g,
         "margin_of_safety": margin_of_safety,
+    }
+
+
+def calculate_cash_flow_profile(
+    line_items: list,
+    *,
+    market_cap: float | None,
+    enterprise_value: float | None,
+    ev_ebitda_multiple: float | None = None,
+    cost_of_equity: float = 0.10,
+    shares_outstanding: float | None = None,
+    tax_rate: float = 0.25,
+) -> dict | None:
+    """FCFF / FCFE cash-flow insight block (independent of the weighted blend).
+
+    FCFF (to the firm) drives enterprise value; FCFE (to equity) is what is left
+    for shareholders after debt service + net borrowing. We surface both levels,
+    their yields, a growth proxy, an FCFE-discounted equity value, and two reader
+    insights: a value-trap check (cheap EV/EBITDA must be backed by growing FCFF)
+    and shareholder-return capacity (FCFE yield).
+    """
+    if not line_items:
+        return None
+    li0 = line_items[0]
+    li1 = line_items[1] if len(line_items) > 1 else li0
+
+    da = getattr(li0, "depreciation_and_amortization", None) or 0.0
+    capex_out = abs(getattr(li0, "capital_expenditure", None) or 0.0)
+    ebit = getattr(li0, "ebit", None) or getattr(li0, "operating_income", None)
+    net_income = getattr(li0, "net_income", None)
+    interest_expense = getattr(li0, "interest_expense", None) or 0.0
+
+    wc0 = getattr(li0, "working_capital", None)
+    wc1 = getattr(li1, "working_capital", None)
+    wc_change = (wc0 - wc1) if (wc0 is not None and wc1 is not None) else 0.0
+    net_borrowing = (getattr(li0, "total_debt", None) or 0.0) - (getattr(li1, "total_debt", None) or 0.0)
+
+    fcff = (ebit * (1 - tax_rate) + da - capex_out - wc_change) if ebit is not None else None
+    fcfe = (net_income + da - capex_out - wc_change + net_borrowing) if net_income is not None else None
+
+    fcff_yield = (fcff / enterprise_value) if (fcff is not None and enterprise_value) else None
+    fcfe_yield = (fcfe / market_cap) if (fcfe is not None and market_cap) else None
+
+    # Growth proxy from the reported FCF history (newest-first ordering).
+    fcf_hist = [
+        li.free_cash_flow for li in line_items if getattr(li, "free_cash_flow", None) is not None
+    ]
+    fcf_growth = None
+    if len(fcf_hist) >= 2 and fcf_hist[0] and fcf_hist[0] > 0 and fcf_hist[-1] and fcf_hist[-1] > 0:
+        periods = len(fcf_hist) - 1
+        try:
+            fcf_growth = (fcf_hist[0] / fcf_hist[-1]) ** (1 / periods) - 1
+        except (ZeroDivisionError, ValueError):
+            fcf_growth = None
+
+    # FCFE-discounted equity value (single-stage Gordon on FCFE at cost of equity).
+    fcfe_intrinsic_total = None
+    fcfe_intrinsic_per_share = None
+    if fcfe and fcfe > 0:
+        g = max(min(fcf_growth if fcf_growth is not None else 0.03, cost_of_equity - 0.01), 0.0)
+        if cost_of_equity > g:
+            fcfe_intrinsic_total = fcfe * (1 + g) / (cost_of_equity - g)
+            if shares_outstanding:
+                fcfe_intrinsic_per_share = fcfe_intrinsic_total / shares_outstanding
+
+    # Value-trap check: a low EV/EBITDA is only "cheap" if FCFF is actually growing.
+    value_trap_flag = None
+    if ev_ebitda_multiple is not None and fcf_growth is not None:
+        cheap = ev_ebitda_multiple < 8.0
+        if cheap and fcf_growth <= 0:
+            value_trap_flag = "trap_risk"
+        elif cheap and fcf_growth > 0:
+            value_trap_flag = "genuine_value"
+        else:
+            value_trap_flag = "neutral"
+
+    # Shareholder-return capacity bucket from FCFE yield.
+    shareholder_capacity = None
+    if fcfe_yield is not None:
+        if fcfe_yield >= 0.06:
+            shareholder_capacity = "strong"
+        elif fcfe_yield >= 0.03:
+            shareholder_capacity = "moderate"
+        elif fcfe_yield >= 0:
+            shareholder_capacity = "limited"
+        else:
+            shareholder_capacity = "negative"
+
+    if fcff is None and fcfe is None:
+        return None
+
+    return {
+        "fcff": fcff,
+        "fcfe": fcfe,
+        "fcff_yield": fcff_yield,
+        "fcfe_yield": fcfe_yield,
+        "fcf_growth": fcf_growth,
+        "fcfe_intrinsic_total": fcfe_intrinsic_total,
+        "fcfe_intrinsic_per_share": fcfe_intrinsic_per_share,
+        "ev_ebitda_multiple": ev_ebitda_multiple,
+        "cost_of_equity": cost_of_equity,
+        "value_trap_flag": value_trap_flag,
+        "shareholder_capacity": shareholder_capacity,
+        "net_borrowing": net_borrowing,
+        "tax_rate": tax_rate,
     }
 
 

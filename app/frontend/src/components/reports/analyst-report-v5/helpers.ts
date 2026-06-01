@@ -22,6 +22,7 @@ import type {
   SectionId,
   SentenceClassification,
   TargetTile,
+  CashFlowInsight,
   ValuationDeepDive,
   ValuationModel,
 } from './types';
@@ -1907,7 +1908,27 @@ export function buildValuationDeepDive(
     });
   });
 
-  if (models.length === 0 && !rim && !pbr && !justifiedPbr) return null;
+  const cfRaw = reasoning.cash_flow_insight && typeof reasoning.cash_flow_insight === 'object'
+    ? reasoning.cash_flow_insight as Record<string, unknown>
+    : null;
+  const cashFlow = cfRaw
+    ? {
+        fcff: safeNum(cfRaw.fcff),
+        fcfe: safeNum(cfRaw.fcfe),
+        fcffYield: safeNum(cfRaw.fcff_yield),
+        fcfeYield: safeNum(cfRaw.fcfe_yield),
+        fcfGrowth: safeNum(cfRaw.fcf_growth),
+        fcfeIntrinsicPerShare: safeNum(cfRaw.fcfe_intrinsic_per_share),
+        evEbitdaMultiple: safeNum(cfRaw.ev_ebitda_multiple),
+        costOfEquity: safeNum(cfRaw.cost_of_equity),
+        valueTrapFlag: (['trap_risk', 'genuine_value', 'neutral'].includes(String(cfRaw.value_trap_flag))
+          ? cfRaw.value_trap_flag : null) as CashFlowInsight['valueTrapFlag'],
+        shareholderCapacity: (['strong', 'moderate', 'limited', 'negative'].includes(String(cfRaw.shareholder_capacity))
+          ? cfRaw.shareholder_capacity : null) as CashFlowInsight['shareholderCapacity'],
+      }
+    : null;
+
+  if (models.length === 0 && !rim && !pbr && !justifiedPbr && !cashFlow) return null;
   return {
     regime: reasoning.regime === 'capex_heavy' ? 'capex_heavy' : 'default',
     regimeNote: typeof reasoning.regime_note === 'string' ? reasoning.regime_note : null,
@@ -1915,6 +1936,7 @@ export function buildValuationDeepDive(
     pbr,
     justifiedPbr,
     models,
+    cashFlow,
   };
 }
 
