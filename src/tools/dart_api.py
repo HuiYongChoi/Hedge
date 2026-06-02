@@ -365,6 +365,34 @@ def _extract_financials(df) -> dict:
 
 # ─── 공개 인터페이스 ──────────────────────────────────────────────────────────
 
+def _fetch_yf_total_debt_by_year(ticker: str) -> dict[int, float]:
+    """yfinance 연결 재무상태표에서 연도별 총차입금(Total Debt)을 가져온다.
+
+    DART finstate_all 은 차입금을 단기/장기 여러 줄로 쪼개 두어 _find_account 가
+    이를 못 잡고 total_debt 가 비는 한국 종목이 많다. 이런 경우 yfinance 의 연도별
+    Total Debt(이자부 차입금; 리스부채 포함될 수 있음)로 보강한다.
+    """
+    out: dict[int, float] = {}
+    try:
+        import yfinance as yf
+
+        bs = yf.Ticker(ticker).balance_sheet
+        if bs is None or getattr(bs, "empty", True) or "Total Debt" not in bs.index:
+            return out
+        for col, val in bs.loc["Total Debt"].items():
+            try:
+                year = int(str(col)[:4])
+                fval = float(val)
+            except (TypeError, ValueError):
+                continue
+            if fval != fval:  # NaN
+                continue
+            out[year] = fval
+    except Exception as e:
+        logger.debug("yfinance total_debt fallback failed for %s: %s", ticker, e)
+    return out
+
+
 def fetch_dart_line_items(
     ticker: str,
     line_items: list[str],
@@ -400,6 +428,12 @@ def fetch_dart_line_items(
     end_year = int(end_date[:4])
     results = []
 
+    # DART 가 단기/장기 차입금을 별도 줄로 두어 total_debt 가 자주 빈다.
+    # total_debt 가 요청됐는데 DART 가 못 채우면 yfinance 연도별 Total Debt 로 보강.
+    yf_debt_by_year: dict[int, float] = {}
+    if "total_debt" in line_items:
+        yf_debt_by_year = _fetch_yf_total_debt_by_year(ticker)
+
     for offset in range(limit + 1):  # +1: 최근 연도가 공시 전일 수 있음
         year = end_year - offset
         if year < 2010:
@@ -429,6 +463,13 @@ def fetch_dart_line_items(
         for field in line_items:
             if field in financials:
                 row[field] = financials[field]
+                has_data = True
+
+        # DART 가 total_debt 를 못 채운 연도는 yfinance Total Debt 로 보강
+        if "total_debt" in line_items and "total_debt" not in row:
+            yf_td = yf_debt_by_year.get(year)
+            if yf_td is not None:
+                row["total_debt"] = yf_td
                 has_data = True
 
         if has_data:

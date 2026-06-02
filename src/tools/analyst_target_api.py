@@ -582,15 +582,23 @@ def _fetch_fnguide_consensus(ticker: str) -> dict:
                 ))
             break
 
-        brokers.sort(key=lambda b: (b.days_ago, b.name))
+        brokers.sort(key=lambda b: (b.days_ago, b.name))  # 최신순(작은 days_ago 우선)
+        # 가장 오래된 5곳은 제외한다. 오래된 목표가는 현재가·최신 실적과 동떨어져
+        # 평균을 끌어내려 왜곡하므로, 최신 의견만 남긴다.
+        # (브로커가 충분히 많을 때만 적용 — 커버리지가 얇으면 표본이 과도하게 줄어든다.)
+        if len(brokers) > 10:
+            brokers = brokers[:-5]
+        brokers = brokers[:20]  # 레이아웃상 표시 상한
         prices = [b.target_price for b in brokers]
         if prices:
-            out["brokers"] = brokers[:20]
+            # 표시 broker == 집계 표본: 사이드바 평균(consensus)과 패널 평균(distribution.average)이
+            # 동일한 최신 broker 집합을 쓰도록 통일한다. FnGuide 공식 Consensus(전체 포함)는 쓰지 않는다.
+            out["brokers"] = brokers
             out["high"] = max(prices)
             out["low"] = min(prices)
             out["median"] = float(statistics.median(prices))
             out["analyst_count"] = len(brokers)
-            out["consensus"] = consensus or float(statistics.mean(prices))
+            out["consensus"] = float(statistics.mean(prices))
         elif consensus:
             out["consensus"] = consensus
     except Exception as e:
@@ -949,10 +957,15 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
     high = max(high_candidates) if high_candidates else None
     low  = min(low_candidates)  if low_candidates  else None
     median = fg_an.get("median") or yf_an["median"] or yjp_an.get("median")
-    analyst_count = max(
-        [v for v in [fg_an.get("analyst_count"), yf_an["analyst_count"], yjp_an.get("analyst_count")] if v is not None],
-        default=None,
-    )
+    if fg_an.get("brokers"):
+        # 한국(FnGuide): 평균에 실제 사용한 증권사 수만 표시한다(가장 오래된 5곳 제외 후).
+        # yfinance 투자의견 집계 수(예: 38)와 max로 섞으면 평균 표본을 부풀려 오해를 준다.
+        analyst_count = len(brokers)
+    else:
+        analyst_count = max(
+            [v for v in [fg_an.get("analyst_count"), yf_an["analyst_count"], yjp_an.get("analyst_count")] if v is not None],
+            default=None,
+        )
 
     # Distribution
     distribution = _compute_distribution_v5(

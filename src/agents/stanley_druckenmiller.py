@@ -370,12 +370,20 @@ def analyze_risk_reward(financial_line_items: list, prices: list) -> dict:
     #
     # 1. Debt-to-Equity
     #
-    debt_values = [fi.total_debt for fi in financial_line_items if fi.total_debt is not None]
-    equity_values = [fi.shareholders_equity for fi in financial_line_items if fi.shareholders_equity is not None]
-
-    if debt_values and equity_values and len(debt_values) == len(equity_values) and len(debt_values) > 0:
-        recent_debt = debt_values[0]
-        recent_equity = equity_values[0] if equity_values[0] else 1e-9
+    # 가장 최근 기간 중 total_debt 와 shareholders_equity 가 둘 다 있는 한 쌍을 쓴다.
+    # (예전엔 두 리스트 길이가 같아야만 계산했는데, 한국 종목은 일부 연도만 차입금이
+    #  채워져 길이가 어긋나면 무조건 N/A 로 빠지는 문제가 있었다.)
+    de_pair = next(
+        (
+            (fi.total_debt, fi.shareholders_equity)
+            for fi in financial_line_items
+            if fi.total_debt is not None and fi.shareholders_equity is not None
+        ),
+        None,
+    )
+    if de_pair is not None:
+        recent_debt, recent_equity = de_pair
+        recent_equity = recent_equity if recent_equity else 1e-9
         de_ratio = recent_debt / recent_equity
         de_pct = de_ratio * 100
         if de_ratio < 0.3:
