@@ -12,6 +12,7 @@ import type { AgentMeta, AgentReport, ReportLanguage } from './types';
 interface ReportHeaderRibbonProps {
   ticker: string;
   displayTicker: string;
+  companyName?: string | null;
   activeAgent: AgentMeta;
   activeReport: AgentReport | null;
   compositeScore: number;
@@ -160,6 +161,7 @@ function MetricChip({
 export function ReportHeaderRibbon({
   ticker,
   displayTicker,
+  companyName,
   activeAgent,
   activeReport,
   compositeScore,
@@ -223,7 +225,11 @@ export function ReportHeaderRibbon({
               )}
             </div>
             <h2 className="text-xl font-semibold tracking-tight text-foreground" title={ticker}>
-              {displayTicker} · {activeAgent.name}
+              {displayTicker}
+              {companyName && companyName !== displayTicker && (
+                <span className="ml-2 text-base font-medium text-muted-foreground">{companyName}</span>
+              )}
+              {' · '}{activeAgent.name}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {language === 'ko'

@@ -451,6 +451,7 @@ export function ReportLayout({
       <ReportHeaderRibbon
         ticker={activeTicker}
         displayTicker={displayTickerLabel}
+        companyName={stickyCompanyName}
         activeAgent={displayAgent}
         activeReport={displayReport}
         compositeScore={compositeScore}
