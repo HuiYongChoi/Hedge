@@ -968,9 +968,13 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
         )
 
     # Distribution
+    # 한국(FnGuide)은 평균 표본과 의견 분포(n)를 같은 broker 집합으로 고정한다.
+    # yfinance recommendations_summary(예: 38건)는 간헐적으로만 들어오는데, 이걸 쓰면
+    # 의견 분포 n이 20↔38로 들쭉날쭉해 사이드바 평균 표본수(20)와 어긋난다.
+    rec_summary_for_dist = None if fg_an.get("brokers") else yf_an["rec_summary_row"]
     distribution = _compute_distribution_v5(
         brokers=brokers,
-        rec_summary=yf_an["rec_summary_row"],
+        rec_summary=rec_summary_for_dist,
         consensus=consensus,
     )
 
