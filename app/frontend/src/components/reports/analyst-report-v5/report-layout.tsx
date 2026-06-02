@@ -316,7 +316,9 @@ export function ReportLayout({
   });
   const effectiveMarginOfSafety = marginSnapshot.margin;
   const displayTickerLabel = getDisplayTickerLabel(activeTicker, displayReport);
-  const stickyCompanyName = displayTickerLabel && displayTickerLabel !== activeTicker ? displayTickerLabel : null;
+  const stickyCompanyName =
+    (displayTickerLabel && displayTickerLabel !== activeTicker ? displayTickerLabel : null)
+    ?? (liveTarget?.company_name && liveTarget.company_name !== activeTicker ? liveTarget.company_name : null);
   const stickyVerdict = stickyVerdictFromSignal(displayReport?.signal ?? completeResult.decisions?.[activeTicker]?.action);
   const stickyConfidence = numericConfidence(displayReport?.confidence ?? completeResult.decisions?.[activeTicker]?.confidence);
   const effectiveMetrics = useMemo(() => {
@@ -427,6 +429,9 @@ export function ReportLayout({
       verdictConfidence={stickyConfidence}
       marginOfSafetyPct={effectiveMarginOfSafety}
       wacc={effectiveMetrics.wacc?.value ?? null}
+      trailingPe={liveTarget?.trailing_pe ?? canonicalForwardSnapshot.ttmPer ?? null}
+      trailingEps={liveTarget?.trailing_eps ?? null}
+      forwardPe={canonicalForwardSnapshot.fwdPer ?? liveTarget?.forward_pe ?? null}
       language={language}
       placement={stickyHeaderHost ? 'tabHeader' : 'report'}
     />

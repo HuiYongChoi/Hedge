@@ -39,6 +39,7 @@ export interface ForwardEv {
 
 export interface AnalystTarget {
   ticker: string;
+  company_name: string | null;
   consensus: number | null;
   high: number | null;
   low: number | null;

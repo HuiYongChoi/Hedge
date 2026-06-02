@@ -14,6 +14,9 @@ interface StickyAnalysisHeaderProps {
   verdictConfidence: number | null;
   marginOfSafetyPct: number | null;
   wacc: number | null;
+  trailingPe?: number | null;
+  trailingEps?: number | null;
+  forwardPe?: number | null;
   language: ReportLanguage;
   placement?: 'report' | 'tabHeader';
 }
@@ -37,6 +40,12 @@ function formatPercent(value: number | null, signed = false) {
 function normalizeConfidence(value: number | null) {
   if (value === null || value === undefined || !Number.isFinite(value)) return null;
   return value <= 1 ? value * 100 : value;
+}
+
+// 배수(PER 등)는 소수 첫째자리까지. 'x' 접미사는 붙이지 않는다(프로젝트 표기 규칙).
+function formatRatio(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value) || value <= 0) return null;
+  return value.toFixed(1);
 }
 
 function verdictLabel(verdict: StickyVerdict, language: ReportLanguage) {
@@ -84,10 +93,18 @@ export function StickyAnalysisHeader({
   verdictConfidence,
   marginOfSafetyPct,
   wacc,
+  trailingPe,
+  trailingEps,
+  forwardPe,
   language,
   placement = 'report',
 }: StickyAnalysisHeaderProps) {
   const isTabHeader = placement === 'tabHeader';
+  const perText = formatRatio(trailingPe);
+  const fwdPerText = formatRatio(forwardPe);
+  const epsText = trailingEps !== null && trailingEps !== undefined && Number.isFinite(trailingEps) && trailingEps > 0
+    ? formatCurrency(trailingEps, currency, language)
+    : null;
 
   return (
     <div
@@ -118,7 +135,7 @@ export function StickyAnalysisHeader({
           )}
         </div>
       </div>
-      <div className="mt-1 flex items-center gap-2 overflow-hidden text-[11px] text-muted-foreground sm:gap-3">
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground sm:gap-x-3">
         <VerdictChip verdict={verdict} confidence={verdictConfidence} language={language} />
         <span className="text-border">·</span>
         <span className="whitespace-nowrap">
@@ -128,6 +145,30 @@ export function StickyAnalysisHeader({
         <span className="hidden whitespace-nowrap sm:inline">
           {t('targetWaccLabel', language)} <span className="font-mono text-foreground">{formatPercent(wacc)}</span>
         </span>
+        {perText && (
+          <>
+            <span className="text-border">·</span>
+            <span className="whitespace-nowrap">
+              {t('stickyPerLabel', language)} <span className="font-mono text-foreground">{perText}</span>
+            </span>
+          </>
+        )}
+        {epsText && (
+          <>
+            <span className="text-border">·</span>
+            <span className="whitespace-nowrap">
+              {t('stickyEpsLabel', language)} <span className="font-mono text-foreground">{epsText}</span>
+            </span>
+          </>
+        )}
+        {fwdPerText && (
+          <>
+            <span className="hidden text-border sm:inline">·</span>
+            <span className="hidden whitespace-nowrap sm:inline">
+              {t('stickyFwdPerLabel', language)} <span className="font-mono text-foreground">{fwdPerText}</span>
+            </span>
+          </>
+        )}
       </div>
     </div>
   );

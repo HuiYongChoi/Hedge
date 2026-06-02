@@ -35,6 +35,7 @@ async def get_analyst_target(ticker: str, refresh: bool = False):
     result = fetch_analyst_target(ticker_clean, force_refresh=refresh)
     return {
         "ticker": ticker_clean,
+        "company_name": result.company_name,
         "consensus": result.consensus,
         "high": result.high,
         "low": result.low,

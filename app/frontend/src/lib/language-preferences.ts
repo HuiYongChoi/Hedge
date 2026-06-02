@@ -447,6 +447,9 @@ export const translations = {
     verdictHold: '→보유·중립',
     stickyConfidenceLabel: '신뢰도',
     stickyPriceUnavailable: '현재가 없음',
+    stickyPerLabel: 'PER',
+    stickyEpsLabel: 'EPS',
+    stickyFwdPerLabel: '선행 PER',
     periodLabelHeader: '기간',
     // Report v5 - Target data sidebar
     targetDataTitle: '핵심 타겟 데이터',
@@ -1028,6 +1031,9 @@ export const translations = {
     verdictHold: '→Hold · Neutral',
     stickyConfidenceLabel: 'Confidence',
     stickyPriceUnavailable: 'No price',
+    stickyPerLabel: 'P/E',
+    stickyEpsLabel: 'EPS',
+    stickyFwdPerLabel: 'Fwd P/E',
     periodLabelHeader: 'Period',
     // Report v5 - Target data sidebar
     targetDataTitle: 'Target Data',

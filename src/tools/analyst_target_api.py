@@ -69,6 +69,7 @@ class AnalystTarget:
     beta: Optional[float]            # beta (yfinance info)
     sigma_annual: Optional[float]    # annualised σ (historical or derived)
     current_fy_eps: Optional[float] = None  # Current fiscal-year EPS estimate
+    company_name: Optional[str] = None       # 종목명 (KR: 네이버 한글명, 그 외: yfinance longName)
     currency: str = "USD"
     market_session: Optional[str] = None         # yfinance marketState (PRE/REGULAR/POST/CLOSED ...)
     extended_price: Optional[float] = None        # 프리/애프터장 시세 (표시 전용, 분석 계산엔 미사용)
@@ -352,6 +353,11 @@ def _fetch_yfinance_data(ticker: str) -> dict:
         if cur and isinstance(cur, str):
             out["currency"] = cur.upper()
 
+        # 종목명 (미국/일본: yfinance longName, 한국은 별도 네이버 한글명 우선)
+        name = info.get("longName") or info.get("shortName")
+        if isinstance(name, str) and name.strip():
+            out["company_name"] = name.strip()
+
         mapping = [
             ("trailingPE",  "trailing_pe"),
             ("forwardPE",   "forward_pe"),
@@ -626,6 +632,30 @@ def _fetch_naver_current_price(ticker: str) -> Optional[float]:
     except Exception as e:
         logger.debug("Naver current price fetch failed for %s: %s", ticker, e)
         return None
+
+
+def _fetch_naver_company_name(ticker: str) -> Optional[str]:
+    """네이버 실시간 API에서 한국 종목의 한글 종목명(stockName)을 가져온다.
+    예: 012450 → '한화에어로스페이스'. yfinance longName은 영문이라 한국 종목엔 부적합."""
+    if not _is_korean_ticker(ticker):
+        return None
+    try:
+        response = requests.get(
+            _NAVER_REALTIME_URL.format(code=_krx_code(ticker)),
+            timeout=8,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if not response.ok:
+            return None
+        datas = response.json().get("datas") or []
+        if not datas:
+            return None
+        name = (datas[0] or {}).get("stockName")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    except Exception as e:
+        logger.debug("Naver company name fetch failed for %s: %s", ticker, e)
+    return None
 
 
 def _fetch_naver_overtime(ticker: str) -> dict:
@@ -985,6 +1015,12 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
         source = "yahoo-jp+yfinance"
     else:
         source = "yfinance" if has_data else "stub"
+    # 종목명: 한국은 네이버 한글명 우선(yfinance는 영문), 그 외는 yfinance longName.
+    if is_kr:
+        company_name = _fetch_naver_company_name(ticker) or yf_fund.get("company_name")
+    else:
+        company_name = yf_fund.get("company_name")
+
     result = AnalystTarget(
         consensus=consensus,
         high=high,
@@ -999,6 +1035,7 @@ def fetch_analyst_target(ticker: str, force_refresh: bool = False) -> AnalystTar
         beta=beta_final,
         sigma_annual=sigma_final,
         current_fy_eps=yf_an.get("current_fy_eps"),
+        company_name=company_name,
         currency=currency,
         market_session=market_session,
         extended_price=extended_price,
