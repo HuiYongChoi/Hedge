@@ -54,6 +54,7 @@ export const FINANCIAL_FIELD_LABEL_KEYS: Record<string, string> = {
   earnings_per_share_growth: 'financialFieldEpsGrowth',
   // 재무안정성
   debt_to_equity: 'financialFieldDebtToEquity',
+  liabilities_to_equity: 'financialFieldLiabilitiesToEquity',
   current_ratio: 'financialFieldCurrentRatio',
   quick_ratio: 'financialFieldQuickRatio',
   interest_coverage: 'financialFieldInterestCoverage',
@@ -136,6 +137,7 @@ const STABILITY_FIELDS = [
   { key: 'shareholders_equity', isPercent: false },
   { key: 'cash_and_equivalents', isPercent: false },
   { key: 'total_debt', isPercent: false },
+  { key: 'liabilities_to_equity', isPercent: true },
   { key: 'debt_to_equity', isPercent: false },
   { key: 'current_ratio', isPercent: false },
   { key: 'quick_ratio', isPercent: false },

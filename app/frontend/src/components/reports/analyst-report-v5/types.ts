@@ -125,6 +125,9 @@ export interface CanonicalForwardSnapshot {
   fwdPer: number | null;
   fwdEps: number | null;
   currentFyEps: number | null;
+  // Realized 1y volatility (annualized) from analyst-target API; used to
+  // canonicalize "%/d" daily-volatility figures the LLM narrative emits.
+  sigmaAnnual: number | null;
 }
 
 export interface RimBreakdown {

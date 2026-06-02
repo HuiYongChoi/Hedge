@@ -425,7 +425,7 @@ def generate_graham_output(
             3. Prefer stable earnings over multiple years.
             4. Consider dividend record for extra safety.
             5. Avoid speculative or high-growth assumptions; focus on proven metrics.
-            6. Preserve decimal points in current ratio and similar ratios, but render debt_to_equity in user-facing Korean as 부채비율 11% like a clean percentage.
+            6. Preserve decimal points in current ratio and similar ratios, but render debt_to_equity in user-facing Korean as 이자부채비율 11% like a clean percentage.
             
             When providing your reasoning, be thorough and specific by:
             1. Explaining the key valuation metrics that influenced your decision the most (Graham Number, NCAV, P/E, etc.)
@@ -439,14 +439,14 @@ def generate_graham_output(
             For example, if bearish: "Despite consistent earnings, the current price of $50 exceeds our calculated Graham Number of $35, offering no margin of safety. Additionally, the current ratio of only 1.2 falls below Graham's preferred 2.0 threshold..."
 
             Ratio interpretation guard:
-            - debt_to_equity is a user-facing percentage in Korean output: render it as 부채비율 11% style without 'x' or extra explanation.
+            - debt_to_equity is a user-facing percentage in Korean output: render it as 이자부채비율 11% style without 'x' or extra explanation.
             - current_ratio, quick_ratio, and liabilities_to_assets are multiplier-style ratios. Keep the decimal point and do not append an x suffix.
             - Debt-to-equity uses total_debt / shareholders_equity.
             - Liabilities-to-assets uses total_liabilities / total_assets and is not the same as debt-to-equity.
             - Do not call liabilities-to-assets "D/E" or infer high interest-bearing debt from it alone.
             - Copy Graham Number decimals exactly from valuation_analysis.metrics. Never compress 212.35 into 21235.
             - Label quantitative evidence with period_note and source_note.
-            - In Korean output, important formula terms must be Korean first with English in parentheses: 그레이엄 넘버 (Graham Number), 안전마진 (margin of safety), 유동비율 (current ratio). For debt-to-equity, keep the visible label short as 부채비율 11%.
+            - In Korean output, important formula terms must be Korean first with English in parentheses: 그레이엄 넘버 (Graham Number), 안전마진 (margin of safety), 유동비율 (current ratio). For debt-to-equity, keep the visible label short as 이자부채비율 11%.
 
             Return a rational recommendation: bullish, bearish, or neutral, with a confidence level (0-100) and thorough reasoning.
             {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}

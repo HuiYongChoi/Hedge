@@ -91,7 +91,11 @@ const DATA_TOKEN_PATTERN = /(\$\d[\d,]*(?:\.\d+)?[BMK]?|\d[\d,]*(?:\.\d+)?\s?(?:
 const LABEL_CANDIDATES: Array<{ pattern: RegExp; ko: string; en: string }> = [
   { pattern: /ROIC|투하자본/i, ko: 'ROIC', en: 'ROIC' },
   { pattern: /FCF\s*수익률|free cash flow yield|fcf yield/i, ko: 'FCF 수익률', en: 'FCF yield' },
-  { pattern: /부채비율|debt-to-equity|D\/E/i, ko: '부채비율', en: 'Debt-to-equity' },
+  // Interest-bearing debt/equity (debt_to_equity field). Must precede the plain
+  // 부채비율 candidate so "이자부채비율 14%" is never mislabeled as the Korean-
+  // convention 부채비율 (total liabilities/equity).
+  { pattern: /이자부채비율|debt-to-equity|D\/E/i, ko: '이자부채비율', en: 'Debt/Equity (int-bearing)' },
+  { pattern: /부채비율/i, ko: '부채비율', en: 'Debt ratio' },
   { pattern: /내재가치|intrinsic value|fair value/i, ko: '1주당 내재가치', en: 'Intrinsic value' },
   // P/E ratio labels before the generic '현재가' so "Price-to-Earnings" context matches here first
   { pattern: /forward.*p\/?e|포워드.*p\/?e|forward per/i, ko: '포워드 P/E', en: 'Forward P/E' },
@@ -1316,6 +1320,7 @@ const RATIO_PERCENT_LABEL_KO = new Set([
   'ROIC',
   'FCF 수익률',
   '부채비율',
+  '이자부채비율',
   '안전마진',
   '성장률',
   'WACC',
@@ -1323,7 +1328,8 @@ const RATIO_PERCENT_LABEL_KO = new Set([
 const RATIO_PERCENT_LABEL_EN = new Set([
   'ROIC',
   'FCF yield',
-  'Debt-to-equity',
+  'Debt ratio',
+  'Debt/Equity (int-bearing)',
   'Margin of safety',
   'Growth',
   'WACC',
@@ -1648,18 +1654,80 @@ const FALSE_EXPENSIVE_TONE_KO = /(?:이\s*있어|상태(?:라서|이라서|이�
 // Captures the entire short clause to drop subject+tone+causal-particle together.
 const FALSE_EXPENSIVE_INVERTED_KO = /(?:포워드\s*PER이?\s*|선행\s*PER이?\s*|FwdPER이?\s*)?(?:더\s*)?(?:비싸진?|비싼|고평가(?:된)?)\s*상태(?:라서|이라서|이며)?\s*/gi;
 
+// ── Investor-name normalization ─────────────────────────────────────────────
+// The model spells the same person inconsistently across a report. Canonicalize
+// the variants the analyst flagged so one report never shows two spellings.
+// Stanley Druckenmiller → 드러켄밀러 (variants: 드루켄밀러 / 드러큰밀러 / 드러컨밀러).
+function normalizeInvestorNames(text: string): string {
+  return text.replace(/드\s*[러루]\s*[켄큰컨]\s*밀러/g, '드러켄밀러');
+}
+
+// ── Daily-volatility canonicalization ───────────────────────────────────────
+// "%/d" daily-volatility figures are LLM narrative (no deterministic chip emits
+// them), so the model often prints two different values in one report. The one
+// true daily σ is the annualized realized σ divided by √252. Rewrite every
+// "NN%/d" (or "NN%/일") occurrence to that single canonical value so body text
+// and the extracted key-number chip always agree.
+function normalizeDailyVolatility(
+  text: string,
+  snapshot: CanonicalForwardSnapshot | null | undefined,
+): string {
+  const sigmaAnnual = snapshot?.sigmaAnnual;
+  if (typeof sigmaAnnual !== 'number' || !Number.isFinite(sigmaAnnual) || sigmaAnnual <= 0) {
+    return text;
+  }
+  const dailyPct = (sigmaAnnual / Math.sqrt(252)) * 100;
+  if (!Number.isFinite(dailyPct) || dailyPct <= 0) return text;
+  const daily = dailyPct.toFixed(1);
+  return text.replace(/(-?\d+(?:\.\d+)?)\s*%\s*\/\s*(?:d\b|일)/gi, `${daily}%/d`);
+}
+
+// ── Trailing (TTM) P/E canonicalization ─────────────────────────────────────
+// Normalize every trailing-P/E mention — including the model's Korean metaphor
+// "TTM 체력 NN" and the "PER(TTM) NN" / "P/E(TTM) NN" word order — to the single
+// canonical TTM PER. Runs independently of forward-PE availability so it still
+// fires for tickers that lack a forward P/E.
+function normalizeTtmPerMentions(text: string, ttm: string): string {
+  let next = text;
+  // (a) "trailing/ttm P/E NN" or "TTM PER NN"
+  next = next.replace(
+    /\b(?:trailing|ttm)\s*(?:p\/?e|per)\s*(?:\([^)]+\)\s*)?\(?\s*(?:[:=]|(?:은|는|이|가|을|를))?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?\s*\)?/giu,
+    `TTM PER ${ttm}`,
+  );
+  // (b) Korean metaphor "TTM 체력 NN"
+  next = next.replace(
+    /\bTTM\s*체력\s*(?:[:=]|은|는|이|가)?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?/giu,
+    `TTM PER ${ttm}`,
+  );
+  // (c) "PER(TTM) NN" / "P/E(TTM) NN" / "PER (TTM) NN" (label-before-qualifier)
+  next = next.replace(
+    /\b(?:p\/?e|per)\s*\(\s*ttm\s*\)\s*(?:[:=]|은|는|이|가)?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?/giu,
+    `TTM PER ${ttm}`,
+  );
+  return next;
+}
+
 export function sanitizeForwardPeNarrative(
   text: string,
   snapshot: CanonicalForwardSnapshot | null | undefined,
   language: ReportLanguage,
 ): string {
-  if (!text || !snapshot?.fwdPer || !Number.isFinite(snapshot.fwdPer)) return text;
+  if (!text) return text;
+
+  // ── Always-on passes (independent of forward-PE availability) ──────────────
+  // These must run BEFORE the fwdPer early-return so they still fire for tickers
+  // that have no forward P/E.
+  let next = normalizeInvestorNames(text);
+  next = normalizeDailyVolatility(next, snapshot);
+  const ttm = formatOneDecimalMultiple(snapshot?.ttmPer);
+  if (ttm) {
+    next = normalizeTtmPerMentions(next, ttm);
+  }
+
+  if (!snapshot?.fwdPer || !Number.isFinite(snapshot.fwdPer)) return next;
 
   const fwd = formatOneDecimalMultiple(snapshot.fwdPer);
-  const ttm = formatOneDecimalMultiple(snapshot.ttmPer);
-  if (!fwd) return text;
-
-  let next = text;
+  if (!fwd) return next;
 
   // ── Pass 1: replace any “( A x vs B x )” block with the canonicalFwdPER ─────
   next = next.replace(RAW_PE_VS_BLOCK_PATTERN, (_match, _a, _b) => {
@@ -1672,12 +1740,7 @@ export function sanitizeForwardPeNarrative(
     language === 'ko' ? `선행 PER ${fwd}` : `forward P/E ${fwd}`,
   );
 
-  if (ttm) {
-    next = next.replace(
-      /\b(?:trailing|ttm)\s*(?:p\/?e|per)\s*(?:\([^)]+\)\s*)?\(?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(?:x|배)?\s*\)?/giu,
-      `TTM PER ${ttm}`,
-    );
-  }
+  // (Trailing-P/E normalization already ran in the always-on block above.)
 
   // ── Pass 3: drop false-expensive tone when FwdPER < TTM ──────────────────────
   if (ttm && snapshot.ttmPer !== null && snapshot.fwdPer < snapshot.ttmPer) {

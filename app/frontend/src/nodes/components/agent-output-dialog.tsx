@@ -69,11 +69,11 @@ function normalizeFinancialDisplayText(text: string): string {
     .replace(/영업현금흐름\(FCF\)/g, '잉여현금흐름(FCF)')
     .replace(/\bNet\s+cash\b/gi, '순현금(Net Cash)')
     // Remove trailing 'x' from Debt-To-Equity expressions (e.g. 0.11x -> 0.11)
-    .replace(/\bD\/E\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\s*\(([^)]+)\)/gi, 'Debt-To-Equity(부채비율): $1 ($2)')
-    .replace(/\bD\/E\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\b/gi, 'Debt-To-Equity(부채비율): $1')
-    .replace(/(Debt-To-Equity\(부채비율\):?\s*)(\d+(?:\.\d+)?)\s*x\b/gi, '$1$2')
-    .replace(/(부채비율[^\d]{0,4})(\d+(?:\.\d+)?)\s*x\b/g, '$1$2')
-    .replace(/(Debt-To-Equity\(부채비율\):?\s*\d+(?:\.\d+)?)\s*\(([^)]+)\)/g, '$1 ($2)')
+    .replace(/\bD\/E\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\s*\(([^)]+)\)/gi, 'Debt-To-Equity(이자부채비율): $1 ($2)')
+    .replace(/\bD\/E\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\b/gi, 'Debt-To-Equity(이자부채비율): $1')
+    .replace(/(Debt-To-Equity\((?:이자)?부채비율\):?\s*)(\d+(?:\.\d+)?)\s*x\b/gi, '$1$2')
+    .replace(/(이자부채비율[^\d]{0,4})(\d+(?:\.\d+)?)\s*x\b/g, '$1$2')
+    .replace(/(Debt-To-Equity\((?:이자)?부채비율\):?\s*\d+(?:\.\d+)?)\s*\(([^)]+)\)/g, '$1 ($2)')
     .replace(/(Normalized\s+EBITDA|정규화\s+EBITDA)\s*×\s*/giu, '$1 ')
     .replace(/(\d+(?:[.,]\d+)?)\s*(?:x|×)\b/giu, '$1')
     // Any large number suffixed with 원 -> convert to 조/억 units for readability
@@ -89,7 +89,7 @@ function normalizeFinancialDisplayText(text: string): string {
 }
 
 const FINANCIAL_METRIC_CHIP_PATTERN =
-  /(Debt-To-Equity\(부채비율\)|잉여현금흐름\(FCF\)\s*수익률|FCF\s*수익률|순현금\(Net Cash\)|EV\/EBITDA|EV\/EBIT|Current Ratio|유동비율)/i;
+  /(Debt-To-Equity\((?:이자)?부채비율\)|잉여현금흐름\(FCF\)\s*수익률|FCF\s*수익률|순현금\(Net Cash\)|EV\/EBITDA|EV\/EBIT|Current Ratio|유동비율)/i;
 
 function renderInlineFinancialText(text: string): React.ReactNode[] {
   const normalizedText = normalizeFinancialDisplayText(text);

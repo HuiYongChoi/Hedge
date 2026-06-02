@@ -18,9 +18,9 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
       formulas: [
         '소유자 이익 (owner earnings) = Net Income(순이익) + Depreciation And Amortization(감가상각비) - Maintenance CapEx(유지보수 자본지출) - Working Capital Change(운전자본 변동)',
         '안전마진 (margin of safety) = (Intrinsic Value(내재가치) - Market Cap(시가총액)) / Market Cap(시가총액)',
-        '부채비율 (debt-to-equity), 유동비율 (current ratio), ROE(자기자본이익률), 영업이익률 (operating margin)은 TTM 또는 Report Period(보고기간) 라벨과 함께 해석합니다.',
+        '이자부채비율 (debt-to-equity), 유동비율 (current ratio), ROE(자기자본이익률), 영업이익률 (operating margin)은 TTM 또는 Report Period(보고기간) 라벨과 함께 해석합니다.',
       ],
-      thresholds: ['ROE 15% 이상 가점', '부채비율 0.50 미만 가점', '유동비율 1.50 초과 가점', '안전마진이 양수일 때 강세 근거 강화'],
+      thresholds: ['ROE 15% 이상 가점', '이자부채비율 0.50 미만 가점', '유동비율 1.50 초과 가점', '안전마진이 양수일 때 강세 근거 강화'],
     },
     en: {
       title: 'Warren Buffett Quant Formula',
@@ -36,13 +36,13 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
   ben_graham: {
     ko: {
       title: '벤 그레이엄 정량 공식',
-      summary: '그레이엄 넘버 (Graham Number), NCAV(순유동자산가치), 유동비율 (current ratio), 부채비율 (debt-to-equity)로 보수적 안전마진을 확인합니다.',
+      summary: '그레이엄 넘버 (Graham Number), NCAV(순유동자산가치), 유동비율 (current ratio), 이자부채비율 (debt-to-equity)로 보수적 안전마진을 확인합니다.',
       formulas: [
         '그레이엄 넘버 (Graham Number) = sqrt(22.5 x EPS(주당순이익) x Book Value Per Share(주당순자산))',
         '안전마진 (margin of safety) = (그레이엄 넘버 (Graham Number) - Current Price(현재가)) / Current Price(현재가)',
         'NCAV(순유동자산가치) = Current Assets(유동자산) - Total Liabilities(총부채)',
       ],
-      thresholds: ['유동비율 2.00 이상 선호', '부채비율 0.50 이하 가점', '그레이엄 넘버 대비 20~50% 할인 시 가점', 'NCAV가 시가총액보다 높으면 강한 딥밸류 신호'],
+      thresholds: ['유동비율 2.00 이상 선호', '이자부채비율 0.50 이하 가점', '그레이엄 넘버 대비 20~50% 할인 시 가점', 'NCAV가 시가총액보다 높으면 강한 딥밸류 신호'],
     },
     en: {
       title: 'Ben Graham Quant Formula',
@@ -106,7 +106,7 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
     en: { title: 'Phil Fisher Quant Formula', summary: 'Scores long-term quality with Sales Growth, R&D Intensity, Margin Stability, and ROE.', formulas: ['R&D Intensity = R&D Expense / Revenue', 'Margin Stability = Volatility of Operating Margin across periods'], thresholds: ['Sales/EPS CAGR above 20% is strongly positive', 'Stable operating margin adds quality points', 'ROE above 20% signals high quality'] },
   },
   bill_ackman: {
-    ko: { title: '빌 애크먼 정량 공식', summary: 'Quality(사업 품질), Financial Discipline(재무 규율), Activism Potential(행동주의 가능성), DCF 안전마진을 봅니다.', formulas: ['Margin Of Safety(안전마진) = (Intrinsic Value(내재가치) - Market Cap(시가총액)) / Market Cap(시가총액)', 'Financial Discipline(재무 규율) = Debt-To-Equity(부채비율) + FCF + 배당/자사주'], thresholds: ['안전마진 30% 이상 강세', 'D/E 1.00 미만 기간이 많으면 가점', 'FCF와 마진이 안정적이면 품질 가점'] },
+    ko: { title: '빌 애크먼 정량 공식', summary: 'Quality(사업 품질), Financial Discipline(재무 규율), Activism Potential(행동주의 가능성), DCF 안전마진을 봅니다.', formulas: ['Margin Of Safety(안전마진) = (Intrinsic Value(내재가치) - Market Cap(시가총액)) / Market Cap(시가총액)', 'Financial Discipline(재무 규율) = Debt-To-Equity(이자부채비율) + FCF + 배당/자사주'], thresholds: ['안전마진 30% 이상 강세', 'D/E 1.00 미만 기간이 많으면 가점', 'FCF와 마진이 안정적이면 품질 가점'] },
     en: { title: 'Bill Ackman Quant Formula', summary: 'Combines Business Quality, Financial Discipline, Activism Potential, and DCF Margin Of Safety.', formulas: ['Margin Of Safety = (Intrinsic Value - Market Cap) / Market Cap', 'Financial Discipline = Debt-To-Equity + FCF + Dividends/Buybacks'], thresholds: ['Margin Of Safety above 30% is bullish', 'Most periods below 1.00 D/E add points', 'Stable FCF and margins support quality'] },
   },
   michael_burry: {
@@ -134,7 +134,7 @@ export const AGENT_FORMULA_GUIDES: Record<string, { ko: AgentFormulaGuide; en: A
     en: { title: 'Technical Analyst Quant Formula', summary: 'Combines Trend, Momentum, Mean Reversion, and Volatility.', formulas: ['Weighted Signal = Trend 25% + Momentum 25% + Mean Reversion + Volatility', 'Uses RSI, MACD, ADX, and moving-average crosses.'], thresholds: ['Weighted signal above +0.2 is bullish', 'Below -0.2 is bearish', 'Trend and Momentum each carry 25% weight'] },
   },
   fundamentals_analyst: {
-    ko: { title: '기본적 분석가 정량 공식', summary: 'Profitability(수익성), Growth(성장성), Financial Health(재무건전성), Valuation(밸류에이션)을 종합합니다.', formulas: ['Financial Health(재무건전성) = Current Ratio(유동비율) + Debt-To-Equity(부채비율)', 'Valuation(밸류에이션) = P/E + P/B + P/S'], thresholds: ['ROE 15% 이상 가점', 'Current Ratio 1.50 초과 가점', 'P/E 25 초과는 고평가 경고'] },
+    ko: { title: '기본적 분석가 정량 공식', summary: 'Profitability(수익성), Growth(성장성), Financial Health(재무건전성), Valuation(밸류에이션)을 종합합니다.', formulas: ['Financial Health(재무건전성) = Current Ratio(유동비율) + Debt-To-Equity(이자부채비율)', 'Valuation(밸류에이션) = P/E + P/B + P/S'], thresholds: ['ROE 15% 이상 가점', 'Current Ratio 1.50 초과 가점', 'P/E 25 초과는 고평가 경고'] },
     en: { title: 'Fundamentals Analyst Quant Formula', summary: 'Scores Profitability, Growth, Financial Health, and Valuation.', formulas: ['Financial Health = Current Ratio + Debt-To-Equity', 'Valuation = P/E + P/B + P/S'], thresholds: ['ROE above 15% adds points', 'Current Ratio above 1.50 adds points', 'P/E above 25 is an overvaluation warning'] },
   },
   growth_analyst: {

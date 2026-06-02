@@ -362,6 +362,7 @@ export function ReportLayout({
       fwdPer,
       fwdEps: forwardEps,
       currentFyEps,
+      sigmaAnnual: liveTarget?.sigma_annual ?? null,
     };
   }, [effectiveCurrentPrice, effectiveMetrics, liveTarget]);
   const brokerConsensus = useMemo(() => {

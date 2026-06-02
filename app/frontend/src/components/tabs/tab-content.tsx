@@ -45,7 +45,7 @@ const agentScoringGuides: AgentScoringGuide[] = [
     buyRuleEn: 'Leans Buy when strong business quality and a positive margin of safety are both present.',
     sellRuleKo: '사업 품질이 낮거나 내재가치 대비 명백히 비싸면 Sell 쪽으로 기웁니다.',
     sellRuleEn: 'Leans Sell when business quality is weak or valuation is clearly above intrinsic value.',
-    buySignalsKo: ['ROE 15% 초과, 낮은 부채비율, 영업마진 15% 초과를 우선 가점합니다.', '5개 이상 기간의 높은 ROE/ROIC와 안정적인 마진은 해자 점수로 반영됩니다.', 'FCF 기반 내재가치가 시가총액보다 높으면 안전마진을 계산합니다.'],
+    buySignalsKo: ['ROE 15% 초과, 낮은 이자부채비율, 영업마진 15% 초과를 우선 가점합니다.', '5개 이상 기간의 높은 ROE/ROIC와 안정적인 마진은 해자 점수로 반영됩니다.', 'FCF 기반 내재가치가 시가총액보다 높으면 안전마진을 계산합니다.'],
     buySignalsEn: ['Awards points for ROE above 15%, conservative leverage, and operating margin above 15%.', 'High multi-period ROE/ROIC and stable margins improve moat scoring.', 'Calculates margin of safety when FCF-based intrinsic value exceeds market cap.'],
     sellSignalsKo: ['이익 추세가 들쭉날쭉하거나 FCF가 약하면 일관성 점수가 낮아집니다.', '부채 부담과 약한 유동성은 경영 안정성 평가를 깎습니다.', '안전마진이 없으면 정성 분석이 좋아도 보수적으로 중립 또는 매도 쪽을 봅니다.'],
     sellSignalsEn: ['Inconsistent earnings or weak FCF lowers consistency scoring.', 'Heavy debt and weak liquidity hurt management quality.', 'Without margin of safety, even good qualitative traits are treated cautiously.'],

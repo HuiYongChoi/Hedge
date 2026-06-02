@@ -699,7 +699,7 @@ def build_buffett_evidence_summary(analysis_data: dict[str, any]) -> dict[str, a
         "formatted_evidence": {
             "자기자본이익률 (return on equity)": format_percent(metrics.get("return_on_equity")),
             "영업이익률 (operating margin)": format_percent(metrics.get("operating_margin")),
-            "부채비율": format_debt_ratio_percent(metrics.get("debt_to_equity")),
+            "이자부채비율": format_debt_ratio_percent(metrics.get("debt_to_equity")),
             "유동비율 (current ratio)": format_x_ratio(metrics.get("current_ratio")),
             "FCF 수익률 (free cash flow yield)": format_percent(metrics.get("free_cash_flow_yield")),
         },

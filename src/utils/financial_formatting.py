@@ -21,7 +21,7 @@ KOREAN_FIRST_TERM_REPLACEMENTS = [
     (r"Graham\s+Number\s*\(\s*그레이엄\s*넘버\s*\)", "그레이엄 넘버 (Graham Number)"),
     (r"Current\s+Ratio\s*\(\s*유동비율\s*\)", "유동비율 (current ratio)"),
     (r"Quick\s+Ratio\s*\(\s*당좌비율\s*\)", "당좌비율 (quick ratio)"),
-    (r"Debt[-\s_/]*To[-\s_/]*Equity\s*\(\s*부채비율\s*\)", "부채비율 (debt-to-equity)"),
+    (r"Debt[-\s_/]*To[-\s_/]*Equity\s*\(\s*(?:이자)?부채비율\s*\)", "이자부채비율 (debt-to-equity)"),
     (r"Operating\s+Margin\s*\(\s*영업이익률\s*\)", "영업이익률 (operating margin)"),
     (r"Return\s+On\s+Equity\s*\(\s*자기자본이익률\s*\)", "자기자본이익률 (return on equity)"),
     (r"Market\s+Cap\s*\(\s*시가총액\s*\)", "시가총액 (market cap)"),
@@ -218,31 +218,31 @@ def _normalize_financial_term_text(text: str) -> str:
     # Strip the misleading "x" suffix from Debt-To-Equity values; D/E is a proportion, not a multiplier.
     text = re.sub(
         r"\bD/E\b\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\s*\(([^)]+)\)",
-        r"Debt-To-Equity(부채비율) \1 (\2)",
+        r"Debt-To-Equity(이자부채비율) \1 (\2)",
         text,
         flags=re.IGNORECASE,
     )
     text = re.sub(
         r"\bD/E\b\s*[:=]?\s*(\d+(?:\.\d+)?)\s*x\b",
-        r"Debt-To-Equity(부채비율) \1",
+        r"Debt-To-Equity(이자부채비율) \1",
         text,
         flags=re.IGNORECASE,
     )
     text = re.sub(
         r"\bDebt[-\s_/]*To[-\s_/]*Equity\b(?!\()",
-        "Debt-To-Equity(부채비율)",
+        "Debt-To-Equity(이자부채비율)",
         text,
         flags=re.IGNORECASE,
     )
     # Remove residual 'x' suffix that may have been emitted directly after the localized label.
     text = re.sub(
-        r"(Debt-To-Equity\(부채비율\)\s*[:=]?\s*)(\d+(?:\.\d+)?)\s*x\b",
+        r"(Debt-To-Equity\((?:이자)?부채비율\)\s*[:=]?\s*)(\d+(?:\.\d+)?)\s*x\b",
         r"\1\2",
         text,
         flags=re.IGNORECASE,
     )
     text = re.sub(
-        r"(Debt-To-Equity\(부채비율\)\s+\d+(?:\.\d+)?)\s*\(([^)]+)\)",
+        r"(Debt-To-Equity\((?:이자)?부채비율\)\s+\d+(?:\.\d+)?)\s*\(([^)]+)\)",
         r"\1 (\2)",
         text,
     )
@@ -262,7 +262,7 @@ def _normalize_korean_first_financial_terms(text: str) -> str:
     )
     normalized = re.sub(
         r"\bD/E\b\s*[:=]?\s*(\d+(?:\.\d+)?)\b",
-        r"부채비율 (debt-to-equity) \1",
+        r"이자부채비율 (debt-to-equity) \1",
         normalized,
         flags=re.IGNORECASE,
     )
@@ -278,13 +278,14 @@ def _normalize_korean_first_financial_terms(text: str) -> str:
 def _normalize_debt_ratio_percent_text(text: str) -> str:
     def _replace(match: re.Match[str]) -> str:
         raw_label = match.group("label") or ""
-        label = "부채비율 "
+        label = "이자부채비율 "
         if "최근" in raw_label:
-            label = "최근 부채비율 "
+            label = "최근 이자부채비율 "
         return f"{label}{format_debt_ratio_percent(match.group('number'))}"
 
     return re.sub(
-        r"(?P<label>(?:부채비율\s*\(debt-to-equity\)|Debt-To-Equity\(부채비율\)|부채비율)\s*[:=]?\s*)"
+        r"(?P<label>(?:이자부채비율\s*\(debt-to-equity\)|부채비율\s*\(debt-to-equity\)|"
+        r"Debt-To-Equity\((?:이자)?부채비율\)|이자부채비율|부채비율)\s*[:=]?\s*)"
         r"(?P<number>-?\d+(?:\.\d+)?)(?!\s*%)"
         r"(?P<suffix>\s*\([^)]+\))?",
         _replace,

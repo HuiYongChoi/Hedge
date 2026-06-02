@@ -64,7 +64,8 @@ const FINANCIAL_ROWS: Array<{ key: string; ko: string; en: string; percent?: boo
   { key: 'return_on_invested_capital', ko: 'ROIC', en: 'ROIC', percent: true },
   { key: 'revenue_growth', ko: '매출 성장', en: 'Revenue growth', percent: true },
   { key: 'earnings_growth', ko: '이익 성장', en: 'Earnings growth', percent: true },
-  { key: 'debt_to_equity', ko: '부채비율', en: 'Debt/Equity' },
+  { key: 'liabilities_to_equity', ko: '부채비율', en: 'Debt ratio', percent: true },
+  { key: 'debt_to_equity', ko: '이자부채비율', en: 'Debt/Equity (int)' },
   { key: 'interest_coverage', ko: '이자보상배율', en: 'Interest coverage' },
 ];
 

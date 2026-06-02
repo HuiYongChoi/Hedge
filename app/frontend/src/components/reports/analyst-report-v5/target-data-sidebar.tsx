@@ -436,7 +436,9 @@ function ValuationGapNotice({
           </Row>
         )}
         {safetyPrice !== null && (
-          <Row label={language === 'ko' ? 'DCF 안전가' : 'DCF safety'}>
+          <Row label={language === 'ko'
+            ? `DCF 안전가 (적정가 −${Math.round(SAFETY_MARGIN_DISPLAY_BUFFER * 100)}%)`
+            : `DCF safety (fair −${Math.round(SAFETY_MARGIN_DISPLAY_BUFFER * 100)}%)`}>
             <span className="font-mono">
               {formatCurrency(safetyPrice, currency)} {safetyGap !== null ? `(${formatPercent(safetyGap)})` : ''}
             </span>

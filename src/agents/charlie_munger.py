@@ -911,7 +911,7 @@ def make_munger_facts_bundle(analysis: dict[str, any]) -> dict[str, any]:
         "적정가 추정치": format_korean_won_amount(_r(ivr.get("reasonable"), 0)),
         "안전마진": _friendly_percent(_r(val.get("margin_of_safety_vs_fair_value"), 3)),
         "내부자 매수 비중": _friendly_percent(_r(mgmt.get("insider_buy_ratio"), 2)),
-        "최근 부채비율": format_debt_ratio_percent(_r(mgmt.get("recent_de_ratio"), 4)),
+        "최근 이자부채비율": format_debt_ratio_percent(_r(mgmt.get("recent_de_ratio"), 4)),
         "매출 대비 현금": _friendly_percent(_r(mgmt.get("cash_to_revenue"), 2)),
         "주식 수 추이": mgmt.get("share_count_trend") or "확인 필요",
         "forward_outlook": analysis.get("forward_outlook"),

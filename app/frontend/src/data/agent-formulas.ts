@@ -36,7 +36,7 @@ export const agentFormulas: Record<string, AgentFormula> = {
   'Warren Buffett': {
     agentKey: 'warren_buffett',
     axes: [
-      { nameKo: '기초 체력 (펀더멘털)', nameEn: 'Fundamentals', maxScore: '7점', formulaKo: 'ROE(자기자본이익률) 15% 이상, 부채비율 0.5 미만, 영업이익률 15% 이상 등 견고한 재무 구조를 충족해야 합니다.', formulaEn: 'Requires robust financials like ROE > 15%, Debt/Equity < 0.5, and Operating Margin > 15%.' },
+      { nameKo: '기초 체력 (펀더멘털)', nameEn: 'Fundamentals', maxScore: '7점', formulaKo: 'ROE(자기자본이익률) 15% 이상, 이자부채비율 0.5 미만, 영업이익률 15% 이상 등 견고한 재무 구조를 충족해야 합니다.', formulaEn: 'Requires robust financials like ROE > 15%, Debt/Equity < 0.5, and Operating Margin > 15%.' },
       { nameKo: '이익의 꾸준함', nameEn: 'Consistency', maxScore: '3점', formulaKo: '최근 4개 분기 이상 순이익이 연속으로 성장하며 꾸준한 수익 창출력을 증명해야 합니다.', formulaEn: 'Requires net income to have grown for at least 4 consecutive periods to prove earnings power.' },
       { nameKo: '경쟁력 (해자)', nameEn: 'Moat', maxScore: '5점', formulaKo: '단순한 이익을 넘어, 변동성이 적은 수익성과 자본 효율성으로 확고한 경제적 해자를 보유했는지 평가합니다.', formulaEn: 'Evaluates if the company has a strong economic moat based on stable profitability and capital efficiency.' },
       { nameKo: '경영진의 태도', nameEn: 'Management', maxScore: '2점', formulaKo: '잉여 현금을 활용해 자사주를 매입하거나 배당을 제대로 지급하여 주주 이익을 우선하는지 확인합니다.', formulaEn: 'Checks if management prioritizes shareholders by buying back stock or paying solid dividends.' },

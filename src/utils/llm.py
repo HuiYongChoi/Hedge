@@ -21,9 +21,9 @@ RATIO_SCALE_REQUIREMENT = (
     "Current ratio, quick ratio, debt_to_assets, and liabilities_to_assets are decimal ratios, not whole-number percentages. "
     "Do NOT rewrite 0.80 as 080, 0.11 as 11, or 0.98 as 098. "
     "Use exactly two decimals for ratio values, for example Current Ratio 1.21, and do not append an x suffix. "
-    "For debt_to_equity, user-facing Korean output must be shown as a rounded percentage such as 부채비율 14%. "
+    "For debt_to_equity (interest-bearing debt / equity), user-facing Korean output must be shown as a rounded percentage labeled 이자부채비율, such as 이자부채비율 14%. "
     "Do not add explanations like 0.14x, x-ratio, x-개념의 비율, or provided-value wording after the percentage. "
-    "Never confuse debt_to_equity with liabilities_to_assets. "
+    "Never confuse debt_to_equity with liabilities_to_assets, and do not label debt_to_equity as the plain 부채비율 (which is total liabilities / equity). "
     "Always label the period and report period for quantitative evidence, for example TTM, Report Period 2026-02-28 or Annual, Report Period FY2025. "
     "When writing Korean output, use official financial terms first and add plain-language explanation only after the term. "
     "Korean first with English in parentheses is required. 한국어 먼저 (영문) 형식으로 쓰십시오. "
@@ -70,7 +70,7 @@ SENTIMENT_MARKER_REQUIREMENT = (
 )
 
 DEBT_QUALITY_REQUIREMENT = """[추가 지시사항: 부채의 질적 평가]
-재무 건전성을 평가할 때 Debt-To-Equity(부채비율)의 절대값만으로 결론을 내리지 마십시오. 제공된 지표가 있을 때만 부채를 착한 부채 또는 나쁜 부채로 분류하고, 근거가 부족하면 단정하지 말고 ### 검토 필요 항목에 남기십시오.
+재무 건전성을 평가할 때 Debt-To-Equity(이자부채비율)의 절대값만으로 결론을 내리지 마십시오. 제공된 지표가 있을 때만 부채를 착한 부채 또는 나쁜 부채로 분류하고, 근거가 부족하면 단정하지 말고 ### 검토 필요 항목에 남기십시오.
 
 적용 가능한 정량 근거:
 - 착한 부채: ROIC(투하자본수익률)가 이자비용 또는 차입 비용의 합리적 proxy보다 높고, interest_coverage(이자보상배율)가 안전하며, operating_cash_flow(영업활동현금흐름)와 free_cash_flow(잉여현금흐름)가 부채 부담을 감당할 수 있고, capital_expenditure(설비투자)가 미래 현금흐름 확대와 연결된다고 제공 데이터가 뒷받침하는 경우.

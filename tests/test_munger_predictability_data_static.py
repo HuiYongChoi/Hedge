@@ -40,7 +40,7 @@ def test_munger_facts_bundle_formats_recent_debt_ratio_as_percent() -> None:
     bundle_source = source[source.index("def make_munger_facts_bundle") : source.index("def compute_confidence")]
 
     assert "format_debt_ratio_percent" in source
-    assert '"최근 부채비율": format_debt_ratio_percent' in bundle_source
+    assert '"최근 이자부채비율": format_debt_ratio_percent' in bundle_source
 
 
 def test_munger_predictability_backfills_operating_margin_from_income_and_revenue() -> None:

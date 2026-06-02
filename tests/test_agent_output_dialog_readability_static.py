@@ -31,7 +31,7 @@ def test_agent_output_dialog_formats_financial_plain_text_for_readability() -> N
 
     assert "normalizeFinancialDisplayText" in source
     assert "renderFinancialParagraph" in source
-    assert "Debt-To-Equity(부채비율)" in source
+    assert "Debt-To-Equity(이자부채비율)" in source
     assert "잉여현금흐름(FCF) 창출력" in source
     assert "formatKoreanWonAmount" in source
     assert "financial-metric-chip" in source

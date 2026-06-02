@@ -174,6 +174,7 @@ export function PriceCompassPanel({
   const mos = intrinsic != null ? intrinsic * (1 - mosBuffer) : null;
 
   const beta = metrics.beta?.value ?? target?.beta ?? null;
+  const sigmaIsRealized = target?.sigma_annual != null;
   const sigmaAnnual = target?.sigma_annual ?? (beta != null ? beta * marketSigma : null);
 
   const forwardEps =
@@ -335,6 +336,7 @@ export function PriceCompassPanel({
             <BetaVolatilityFrame
               beta={beta}
               sigmaAnnual={sigmaAnnual}
+              sigmaIsRealized={sigmaIsRealized}
               currentPrice={currentPrice}
               ticker={ticker}
               simBeta={simBeta}

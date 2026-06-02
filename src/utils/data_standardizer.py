@@ -132,6 +132,16 @@ def derive_financial_fields(row: dict[str, Any]) -> dict[str, Any]:
         derived["debt_to_equity"] = recomputed_debt_to_equity
     else:
         derived.setdefault("debt_to_equity", None)
+    # Korean-convention 부채비율 = 총부채(total liabilities) ÷ 자기자본. This is what
+    # DART/Naver report (Samsung ≈ 31%, SK hynix ≈ 46%), and differs from the
+    # interest-bearing debt_to_equity above (Samsung ≈ 6%) that value-investing
+    # agents threshold on. Surface both so the user-facing "부채비율" matches
+    # filings while agents keep the interest-bearing ratio.
+    recomputed_liabilities_to_equity = _safe_div(total_liabilities, shareholders_equity)
+    if recomputed_liabilities_to_equity is not None:
+        derived["liabilities_to_equity"] = recomputed_liabilities_to_equity
+    else:
+        derived.setdefault("liabilities_to_equity", None)
     if derived.get("debt_to_assets") is None:
         derived["debt_to_assets"] = _safe_div(total_liabilities, total_assets)
     if derived.get("current_ratio") is None:

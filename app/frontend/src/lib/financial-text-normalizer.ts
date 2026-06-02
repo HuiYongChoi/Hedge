@@ -36,7 +36,7 @@ function normalizeDebtPercentSequences(text: string) {
   return text.replace(BROKEN_DEBT_PERCENT_SEQUENCE, (full, label: string, sequence: string) => {
     const picked = pickDebtPercent(sequence);
     if (/Debt|D\/E/i.test(label)) {
-      return `Debt-To-Equity(부채비율) ${picked}`;
+      return `Debt-To-Equity(이자부채비율) ${picked}`;
     }
     if (/부채\s*질/.test(label)) {
       return full.replace(sequence, picked);
@@ -97,8 +97,8 @@ export function normalizeFinancialDisplayText(text: string) {
     .replace(/\(\s*(?:x|X|×)\s*\)/g, '')
     .replace(/(?:x|X|×)\s*(?=의\s*비율)/g, '')
     .replace(/(\d+(?:[.,]\d+)?)\s*(?:x|×)\b/giu, '$1')
-    .replace(/부채비율\s+10000%0%0%5%/g, '부채비율 5%')
-    .replace(/Debt-To-Equity\(부채비율\)\s+10000%0%0%5%/g, 'Debt-To-Equity(부채비율) 5%')
+    .replace(/이자부채비율\s+10000%0%0%5%/g, '이자부채비율 5%')
+    .replace(/Debt-To-Equity\((?:이자)?부채비율\)\s+10000%0%0%5%/g, 'Debt-To-Equity(이자부채비율) 5%')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }

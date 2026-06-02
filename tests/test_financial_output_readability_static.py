@@ -18,9 +18,9 @@ def test_financial_language_normalizer_repairs_lost_ratio_decimals() -> None:
 
     normalized = normalize_financial_language(raw)
 
-    assert "부채비율 47%" in normalized
+    assert "이자부채비율 47%" in normalized
     assert "유동비율 (current ratio) 1.21" in normalized
-    assert "부채비율 12%" in normalized
+    assert "이자부채비율 12%" in normalized
     assert "그레이엄 넘버 (Graham Number) 212.35" in normalized
     assert "21235" not in normalized
 
@@ -37,7 +37,7 @@ def test_financial_language_normalizer_uses_formal_terms_and_korean_money_units(
 
     assert "잉여현금흐름(FCF) 창출력" in normalized
     assert "잉여현금흐름(FCF) 수익률" in normalized
-    assert "부채비율 6%" in normalized
+    assert "이자부채비율 6%" in normalized
     assert "1,234억 원" in normalized
     assert "현금으로 돌아오는 힘" not in normalized
     assert "영업현금흐름(FCF)" not in normalized
@@ -50,7 +50,7 @@ def test_financial_language_normalizer_strips_debt_ratio_explanatory_suffix() ->
 
     normalized = normalize_financial_language(raw)
 
-    assert "최근 부채비율 14%로" in normalized
+    assert "최근 이자부채비율 14%로" in normalized
     assert "x-개념의 비율" not in normalized
 
 
@@ -92,7 +92,7 @@ def test_llm_output_postprocessing_applies_financial_language_normalizer() -> No
     assert "from src.utils.financial_formatting import normalize_financial_language" in source
     assert "normalize_financial_language" in source[source.index("def ensure_korean_default_texts") :]
     assert "Use exactly two decimals for ratio values" in source
-    assert "부채비율 14%" in source
+    assert "이자부채비율 14%" in source
     assert "Do not add explanations like 0.14x, x-ratio, x-개념의 비율" in source
     assert "label the period and report period" in source
     assert "official financial terms" in source
@@ -117,7 +117,7 @@ def test_buffett_prompt_includes_formatted_evidence_period_and_valuation_fallbac
     assert "fallback_owner_earnings" in source
     assert "Free Cash Flow fallback" in source
     assert "안전마진 (margin of safety)" in source
-    assert '"부채비율": format_debt_ratio_percent' in source
+    assert '"이자부채비율": format_debt_ratio_percent' in source
 
 
 def test_graham_output_keeps_decimal_graham_number_and_structured_metrics() -> None:

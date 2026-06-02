@@ -5,6 +5,7 @@ import { formatMoney } from './utils';
 interface BetaVolatilityFrameProps {
   beta: number | null;
   sigmaAnnual: number | null;
+  sigmaIsRealized?: boolean;
   currentPrice: number | null;
   ticker: string;
   simBeta: number;
@@ -18,6 +19,7 @@ const MARKET_SIGMA = 0.14;
 export function BetaVolatilityFrame({
   beta,
   sigmaAnnual,
+  sigmaIsRealized = false,
   currentPrice,
   ticker,
   simBeta,
@@ -67,7 +69,9 @@ export function BetaVolatilityFrame({
           ) : (
             <div className="font-mono text-sm text-foreground/45">—</div>
           )}
-          <div className="text-[10px] text-foreground/60">{t('pcpSigmaSub', language)}</div>
+          <div className="text-[10px] text-foreground/60">
+            {t(sigmaIsRealized ? 'pcpSigmaSubRealized' : 'pcpSigmaSub', language)}
+          </div>
         </div>
       </div>
 

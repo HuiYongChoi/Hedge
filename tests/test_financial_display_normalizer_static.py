@@ -18,8 +18,8 @@ def test_frontend_financial_text_normalizer_repairs_broken_debt_ratio_sequences(
     assert "normalizeBrokenKoreanDecimalSeparators" in source
     assert "normalizeNestedDebtRatioLabels" in source
     assert "10000%0%0%5%" in source
-    assert "부채비율 5%" in source
-    assert "Debt-To-Equity(부채비율) 5%" in source
+    assert "이자부채비율 5%" in source
+    assert "Debt-To-Equity(이자부채비율) 5%" in source
 
 
 def test_all_report_render_paths_apply_financial_text_normalizer() -> None:
