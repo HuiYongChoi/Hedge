@@ -19,6 +19,8 @@ interface ReportHeaderRibbonProps {
   currentPrice: number | null;
   marginOfSafety: number | null;
   marginReferencePrice: number | null;
+  consensusUpsidePct?: number | null;
+  targetRangePosPct?: number | null;
   currency?: string;
   analysisGeneratedAt?: string | null;
   marketDataUpdatedAt?: string | null;
@@ -168,6 +170,8 @@ export function ReportHeaderRibbon({
   currentPrice,
   marginOfSafety,
   marginReferencePrice,
+  consensusUpsidePct,
+  targetRangePosPct,
   currency = 'USD',
   analysisGeneratedAt,
   marketDataUpdatedAt,
@@ -189,6 +193,12 @@ export function ReportHeaderRibbon({
   const normalizedConfidence = confidence === null || confidence === undefined
     ? null
     : Math.round(Number(confidence) <= 1 ? Number(confidence) * 100 : Number(confidence));
+
+  // 안전마진은 내재가치가 있어야 계산된다. 내재가치가 없는 분석(모멘텀·매크로 등)에서는
+  // 컨센서스 상승여력과 목표가 레인지 위치를 대체 지표로 보여준다.
+  const hasConsensusUpside = consensusUpsidePct !== null && consensusUpsidePct !== undefined && Number.isFinite(consensusUpsidePct);
+  const hasTargetRangePos = targetRangePosPct !== null && targetRangePosPct !== undefined && Number.isFinite(targetRangePosPct);
+  const showMarginFallback = marginOfSafety === null && marginReferencePrice === null && (hasConsensusUpside || hasTargetRangePos);
 
   return (
     <header className="overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-background via-muted/20 to-background shadow-sm">
@@ -258,9 +268,24 @@ export function ReportHeaderRibbon({
                     </span>
                   </MetricChip>
                 )}
-                <MetricChip help={t('marginOfSafetyHelp', language)} mono>
-                  {formatMargin(marginOfSafety, language, currency, marginReferencePrice)}
-                </MetricChip>
+                {showMarginFallback ? (
+                  <>
+                    {hasConsensusUpside && (
+                      <MetricChip help={t('consensusUpsideHelp', language)} mono>
+                        {`${t('consensusUpsideLabel', language)} ${formatSignedPercent(consensusUpsidePct as number)}`}
+                      </MetricChip>
+                    )}
+                    {hasTargetRangePos && (
+                      <MetricChip help={t('targetRangePosHelp', language)} mono>
+                        {`${t('targetRangePosLabel', language)} ${((targetRangePosPct as number) * 100).toFixed(0)}%`}
+                      </MetricChip>
+                    )}
+                  </>
+                ) : (
+                  <MetricChip help={t('marginOfSafetyHelp', language)} mono>
+                    {formatMargin(marginOfSafety, language, currency, marginReferencePrice)}
+                  </MetricChip>
+                )}
                 <MetricChip help={t('reportGeneratedAtHelp', language)}>
                   {formatTimestamp(analysisGeneratedAt, language, 'reportGeneratedAtLabel', 'N/A', 'N/A')}
                 </MetricChip>

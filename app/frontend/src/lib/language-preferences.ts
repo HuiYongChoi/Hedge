@@ -450,6 +450,10 @@ export const translations = {
     stickyPerLabel: 'PER',
     stickyEpsLabel: 'EPS',
     stickyFwdPerLabel: '선행 PER',
+    consensusUpsideLabel: '컨센서스 상승여력',
+    targetRangePosLabel: '목표가 레인지 위치',
+    consensusUpsideHelp: '증권사 평균 목표주가가 현재가보다 얼마나 높은지(상승여력)입니다. 안전마진을 계산할 내재가치가 없는 모멘텀·매크로 분석에서 대체 지표로 보여줍니다. 목표주가는 12개월 전망이라 상승 편향이 있을 수 있으니 안전마진과는 성격이 다릅니다.',
+    targetRangePosHelp: '현재가가 증권사 목표주가 범위(최저~최고) 안에서 어느 위치에 있는지입니다. 0%는 최저 목표가, 100%는 최고 목표가 수준을 뜻합니다. 낮을수록 목표가 대비 저평가 구간에 가깝습니다.',
     periodLabelHeader: '기간',
     // Report v5 - Target data sidebar
     targetDataTitle: '핵심 타겟 데이터',
@@ -1034,6 +1038,10 @@ export const translations = {
     stickyPerLabel: 'P/E',
     stickyEpsLabel: 'EPS',
     stickyFwdPerLabel: 'Fwd P/E',
+    consensusUpsideLabel: 'Consensus Upside',
+    targetRangePosLabel: 'Target Range Pos.',
+    consensusUpsideHelp: 'How far the brokers’ average target price sits above the current price (upside). Shown as a fallback for momentum/macro analyses that have no intrinsic value to compute a margin of safety. Targets are 12-month forward and may be upward-biased, so this differs in nature from a margin of safety.',
+    targetRangePosHelp: 'Where the current price sits within the broker target range (low to high). 0% means the lowest target, 100% the highest. Lower readings sit closer to the undervalued end of the range.',
     periodLabelHeader: 'Period',
     // Report v5 - Target data sidebar
     targetDataTitle: 'Target Data',

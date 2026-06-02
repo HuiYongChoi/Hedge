@@ -315,6 +315,27 @@ export function ReportLayout({
     calculatedMarginOfSafety,
   });
   const effectiveMarginOfSafety = marginSnapshot.margin;
+  // 안전마진이 없는 분석(내재가치 미산출)을 위한 대체 지표.
+  // 1) 컨센서스 상승여력 = (증권사 평균 목표가 − 현재가) / 현재가
+  // 2) 목표가 레인지 위치 = (현재가 − 최저 목표가) / (최고 − 최저), 0~1로 clamp
+  const consensusUpsidePct = (() => {
+    const consensus = liveTarget?.consensus ?? liveTarget?.median ?? null;
+    if (consensus === null || effectiveCurrentPrice === null || !Number.isFinite(effectiveCurrentPrice) || effectiveCurrentPrice <= 0) {
+      return null;
+    }
+    return (consensus - effectiveCurrentPrice) / effectiveCurrentPrice;
+  })();
+  const targetRangePosPct = (() => {
+    const low = liveTarget?.low ?? null;
+    const high = liveTarget?.high ?? null;
+    if (low === null || high === null || effectiveCurrentPrice === null
+      || !Number.isFinite(low) || !Number.isFinite(high) || !Number.isFinite(effectiveCurrentPrice)
+      || high <= low) {
+      return null;
+    }
+    const raw = (effectiveCurrentPrice - low) / (high - low);
+    return Math.max(0, Math.min(1, raw));
+  })();
   const displayTickerLabel = getDisplayTickerLabel(activeTicker, displayReport);
   const stickyCompanyName =
     (displayTickerLabel && displayTickerLabel !== activeTicker ? displayTickerLabel : null)
@@ -432,6 +453,8 @@ export function ReportLayout({
       trailingPe={liveTarget?.trailing_pe ?? canonicalForwardSnapshot.ttmPer ?? null}
       trailingEps={liveTarget?.trailing_eps ?? null}
       forwardPe={canonicalForwardSnapshot.fwdPer ?? liveTarget?.forward_pe ?? null}
+      consensusUpsidePct={consensusUpsidePct}
+      targetRangePosPct={targetRangePosPct}
       language={language}
       placement={stickyHeaderHost ? 'tabHeader' : 'report'}
     />
@@ -458,6 +481,8 @@ export function ReportLayout({
         currentPrice={effectiveCurrentPrice}
         marginOfSafety={effectiveMarginOfSafety}
         marginReferencePrice={marginSnapshot.referencePrice}
+        consensusUpsidePct={consensusUpsidePct}
+        targetRangePosPct={targetRangePosPct}
         currency={effectiveCurrency}
         analysisGeneratedAt={analysisGeneratedAt}
         marketDataUpdatedAt={marketDataUpdatedAt}

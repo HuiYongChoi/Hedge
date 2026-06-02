@@ -17,6 +17,8 @@ interface StickyAnalysisHeaderProps {
   trailingPe?: number | null;
   trailingEps?: number | null;
   forwardPe?: number | null;
+  consensusUpsidePct?: number | null;
+  targetRangePosPct?: number | null;
   language: ReportLanguage;
   placement?: 'report' | 'tabHeader';
 }
@@ -96,6 +98,8 @@ export function StickyAnalysisHeader({
   trailingPe,
   trailingEps,
   forwardPe,
+  consensusUpsidePct,
+  targetRangePosPct,
   language,
   placement = 'report',
 }: StickyAnalysisHeaderProps) {
@@ -105,6 +109,12 @@ export function StickyAnalysisHeader({
   const epsText = trailingEps !== null && trailingEps !== undefined && Number.isFinite(trailingEps) && trailingEps > 0
     ? formatCurrency(trailingEps, currency, language)
     : null;
+  const hasMargin = marginOfSafetyPct !== null && marginOfSafetyPct !== undefined && Number.isFinite(marginOfSafetyPct);
+  const hasConsensusUpside = consensusUpsidePct !== null && consensusUpsidePct !== undefined && Number.isFinite(consensusUpsidePct);
+  const hasTargetRangePos = targetRangePosPct !== null && targetRangePosPct !== undefined && Number.isFinite(targetRangePosPct);
+  // 안전마진은 내재가치가 있어야 계산된다. 모멘텀·매크로 분석처럼 내재가치가 없으면
+  // 컨센서스 상승여력과 목표가 레인지 위치를 대체 지표로 보여준다.
+  const showFallback = !hasMargin && (hasConsensusUpside || hasTargetRangePos);
 
   return (
     <div
@@ -138,9 +148,27 @@ export function StickyAnalysisHeader({
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground sm:gap-x-3">
         <VerdictChip verdict={verdict} confidence={verdictConfidence} language={language} />
         <span className="text-border">·</span>
-        <span className="whitespace-nowrap">
-          {t('targetMarginLabel', language)} <span className="font-mono text-foreground">{formatPercent(marginOfSafetyPct, true)}</span>
-        </span>
+        {showFallback ? (
+          <>
+            {hasConsensusUpside && (
+              <span className="whitespace-nowrap">
+                {t('consensusUpsideLabel', language)} <span className="font-mono text-foreground">{formatPercent(consensusUpsidePct ?? null, true)}</span>
+              </span>
+            )}
+            {hasTargetRangePos && (
+              <>
+                {hasConsensusUpside && <span className="text-border">·</span>}
+                <span className="whitespace-nowrap">
+                  {t('targetRangePosLabel', language)} <span className="font-mono text-foreground">{formatPercent(targetRangePosPct ?? null)}</span>
+                </span>
+              </>
+            )}
+          </>
+        ) : (
+          <span className="whitespace-nowrap">
+            {t('targetMarginLabel', language)} <span className="font-mono text-foreground">{formatPercent(marginOfSafetyPct, true)}</span>
+          </span>
+        )}
         <span className="hidden text-border sm:inline">·</span>
         <span className="hidden whitespace-nowrap sm:inline">
           {t('targetWaccLabel', language)} <span className="font-mono text-foreground">{formatPercent(wacc)}</span>
