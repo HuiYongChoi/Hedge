@@ -7,6 +7,7 @@ import type { ValuationDeepDive, ValuationModel } from '@/components/reports/ana
 import { getDefaultModel } from '@/data/models';
 import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
+import { analystTargetService } from '@/services/analyst-target-service';
 import { savedAnalysisService } from '@/services/saved-analyses-service';
 import { Archive, Network, Plus, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -55,9 +56,11 @@ interface CompareSlot {
   ticker: string;
   status: 'empty' | 'loading' | 'ready' | 'error';
   metrics?: Record<string, any>;
+  forwardMetrics?: Record<string, any>;
   prices?: PricePoint[];
   lineItems?: Record<string, any>[];
   currentPrice?: number | null;
+  targetConsensus?: number | null;
   valuation?: ValuationDeepDive | null;
   signal?: { signal: string; confidence: number } | null;
   error?: string;
@@ -84,6 +87,7 @@ const COMPARISON_CHART_METRICS: Array<{
 const FINANCIAL_ROWS: Array<{ key: string; ko: string; en: string; percent?: boolean }> = [
   { key: 'currentPrice', ko: '현재가', en: 'Current price' },
   { key: 'price_to_earnings_ratio', ko: 'PER (TTM)', en: 'P/E (TTM)' },
+  { key: 'forward_pe', ko: 'FwdPER', en: 'Fwd P/E' },
   { key: 'price_to_book_ratio', ko: 'PBR', en: 'P/B' },
   { key: 'enterprise_value_to_ebitda_ratio', ko: 'EV/EBITDA', en: 'EV/EBITDA' },
   { key: 'operating_margin', ko: '영업이익률', en: 'Operating margin', percent: true },
@@ -110,6 +114,16 @@ function fmtPercent(value: unknown): string {
 function fmtCurrency(value: number | null | undefined): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+function formatTargetWithGap(target: number | null | undefined, currentPrice: number | null | undefined): string {
+  if (typeof target !== 'number' || !Number.isFinite(target)) return '—';
+  const formattedTarget = fmtCurrency(target);
+  if (typeof currentPrice !== 'number' || !Number.isFinite(currentPrice) || currentPrice === 0) {
+    return formattedTarget;
+  }
+  const gap = (target / currentPrice) - 1;
+  return `${formattedTarget} (${gap >= 0 ? '+' : ''}${(gap * 100).toFixed(1)}%)`;
 }
 
 function toneClass(signal: string | null | undefined): string {
@@ -252,6 +266,11 @@ export function StockCompareTab() {
     };
   }, []);
 
+  const fetchAnalystTargetFor = useCallback(async (ticker: string, signal: AbortSignal) => {
+    if (signal.aborted) return null;
+    return analystTargetService.fetch(ticker);
+  }, []);
+
   const resolveCompareTicker = useCallback(async (input: string, signal: AbortSignal): Promise<string> => {
     const strippedInput = stripKoreanCompanySuffix(input);
     const staticResolved = resolveTickerValue(strippedInput);
@@ -369,6 +388,8 @@ export function StockCompareTab() {
       progressMessage: language === 'ko' ? '대기 중' : 'Queued',
       valuation: null,
       signal: null,
+      forwardMetrics: undefined,
+      targetConsensus: null,
     } : s)));
 
     const runSlot = async (slot: CompareSlot) => {
@@ -378,13 +399,16 @@ export function StockCompareTab() {
         const resolvedTicker = await resolveCompareTicker(displayTicker, controller.signal);
         updateSlot(slot.id, { progressMessage: language === 'ko' ? `${displayTicker} · 재무 데이터 수집 중` : `${displayTicker} · Loading metrics` });
         const data = await fetchMetricsFor(resolvedTicker, controller.signal);
+        const analystTarget = await fetchAnalystTargetFor(resolvedTicker, controller.signal);
         const prices: PricePoint[] = data.prices || [];
-        const currentPrice = prices.length ? prices[prices.length - 1].close : null;
+        const currentPrice = analystTarget?.current_price ?? (prices.length ? prices[prices.length - 1].close : null);
         updateSlot(slot.id, {
           metrics: data.metrics || {},
+          forwardMetrics: data.forward_metrics || {},
           prices,
           lineItems: data.annual_line_items || data.line_items || [],
           currentPrice,
+          targetConsensus: analystTarget?.consensus ?? null,
           status: 'loading',
           progressMessage: language === 'ko' ? `${displayTicker} · 가치평가 실행 중` : `${displayTicker} · Running valuation`,
         });
@@ -427,7 +451,7 @@ export function StockCompareTab() {
     if (!controller.signal.aborted) {
       setIsRunning(false);
     }
-  }, [slots, isRunning, fetchMetricsFor, resolveCompareTicker, runValuationForTicker, updateSlot, language]);
+  }, [slots, isRunning, fetchMetricsFor, fetchAnalystTargetFor, resolveCompareTicker, runValuationForTicker, updateSlot, language]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -617,6 +641,16 @@ export function StockCompareTab() {
                         })}
                       </tr>
                     ))}
+                    <tr className="border-t">
+                      <td className="px-3 py-2 text-xs">{t('compareBrokerConsensusTarget', language)}</td>
+                      {readySlots.map(s => (
+                        <td key={s.id} className="px-3 py-2 text-right font-mono">
+                          <span className="text-amber-500">
+                            {formatTargetWithGap(s.targetConsensus, s.currentPrice)}
+                          </span>
+                        </td>
+                      ))}
+                    </tr>
                     <tr className="border-t bg-muted/20">
                       <td className="px-3 py-2 text-xs font-semibold">{t('compareWeightedSignal', language)}</td>
                       {readySlots.map(s => (
@@ -648,7 +682,11 @@ export function StockCompareTab() {
                       <tr key={row.key} className="border-t">
                         <td className="px-3 py-2 text-xs">{language === 'ko' ? row.ko : row.en}</td>
                         {readySlots.map(s => {
-                          const v = row.key === 'currentPrice' ? s.currentPrice : s.metrics?.[row.key];
+                          const v = row.key === 'currentPrice'
+                            ? s.currentPrice
+                            : row.key === 'forward_pe'
+                              ? s.forwardMetrics?.forward_pe
+                              : s.metrics?.[row.key];
                           return (
                             <td key={s.id} className="px-3 py-2 text-right font-mono">
                               {row.key === 'currentPrice' ? fmtCurrency(v as number | null) : row.percent ? fmtPercent(v) : fmtNum(v)}

@@ -124,3 +124,19 @@ def test_comparison_has_relative_chart_controls_and_metrics():
     assert "RelativeComparisonChart" in src
     assert "annual_line_items" in src
     assert "period: 'annual'" in src
+
+
+def test_comparison_shows_broker_consensus_target_in_valuation_matrix():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "analystTargetService" in src
+    assert "targetConsensus" in src
+    assert "compareBrokerConsensusTarget" in src
+    assert "formatTargetWithGap" in src
+    assert "fetchAnalystTargetFor" in src
+
+
+def test_comparison_shows_forward_per_in_financial_metrics():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "forwardMetrics" in src
+    assert "forward_pe" in src
+    assert "FwdPER" in src
