@@ -747,7 +747,7 @@ export function StockCompareTab() {
                   language={language}
                   height={260}
                 />
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-3">
                   {COMPARISON_CHART_METRICS.map(metric => (
                     <div key={metric.key} className="rounded-md border bg-muted/5">
                       <RelativeComparisonChart
@@ -842,6 +842,11 @@ function filterByWindow<T extends { label: string }>(points: T[], chartWindow: C
   });
 }
 
+function filterByWindowWithFallback<T extends { label: string }>(points: T[], chartWindow: ChartWindow): T[] {
+  const filtered = filterByWindow(points, chartWindow);
+  return filtered.length >= 2 ? filtered : points;
+}
+
 function buildMetricPoints(slot: CompareSlot, metricKey: ChartMetricKey, chartWindow: ChartWindow): Array<{ label: string; y: number }> {
   if (metricKey === 'relative_price') {
     const points = (slot.prices || [])
@@ -875,7 +880,7 @@ function buildMetricPoints(slot: CompareSlot, metricKey: ChartMetricKey, chartWi
   })
     .filter((point): point is { label: string; y: number } => point.y !== null && Number.isFinite(point.y));
 
-  return filterByWindow(points, chartWindow);
+  return filterByWindowWithFallback(points, chartWindow);
 }
 
 function fmtAxis(value: number, metricKey: ChartMetricKey, axisMode: ChartAxisMode): string {
@@ -918,10 +923,26 @@ function RelativeComparisonChart({
     })
     .filter((x): x is { ticker: string; color: string; points: { label: string; x: number; y: number }[] } => x !== null);
 
+  const chartHeader = (
+    <div className="mb-2 flex items-center justify-between gap-2">
+      <div className={cn('font-medium', compact ? 'text-xs' : 'text-sm')}>
+        {getMetricLabel(metricKey, language)}
+      </div>
+      <div className="text-[10px] text-muted-foreground">
+        {chartAxisMode === 'normalized'
+          ? (language === 'ko' ? '시작점 100 기준' : 'Indexed to 100')
+          : (language === 'ko' ? '실값' : 'Actual')}
+      </div>
+    </div>
+  );
+
   if (series.length === 0) {
     return (
-      <div className="flex items-center justify-center p-6 text-center text-xs text-muted-foreground" style={{ minHeight: height }}>
-        {language === 'ko' ? '표시할 시계열 데이터가 없습니다.' : 'No time-series data to display.'}
+      <div className={cn('p-3', compact && 'p-2')}>
+        {chartHeader}
+        <div className="flex items-center justify-center text-center text-xs text-muted-foreground" style={{ minHeight: Math.max(height - 36, 96) }}>
+          {language === 'ko' ? '표시할 시계열 데이터가 없습니다.' : 'No time-series data to display.'}
+        </div>
       </div>
     );
   }
@@ -949,16 +970,7 @@ function RelativeComparisonChart({
 
   return (
     <div className={cn('p-3', compact && 'p-2')}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className={cn('font-medium', compact ? 'text-xs' : 'text-sm')}>
-          {getMetricLabel(metricKey, language)}
-        </div>
-        <div className="text-[10px] text-muted-foreground">
-          {chartAxisMode === 'normalized'
-            ? (language === 'ko' ? '시작점 100 기준' : 'Indexed to 100')
-            : (language === 'ko' ? '실값' : 'Actual')}
-        </div>
-      </div>
+      {chartHeader}
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height }}>
         {yTicks.map(tick => {
           const { sy } = toSvg(0, tick);

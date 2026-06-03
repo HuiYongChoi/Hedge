@@ -126,6 +126,13 @@ def test_comparison_has_relative_chart_controls_and_metrics():
     assert "period: 'annual'" in src
 
 
+def test_comparison_financial_charts_keep_titles_and_fallback_series():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "filterByWindowWithFallback" in src
+    assert "chartHeader" in src
+    assert "COMPARISON_CHART_METRICS.map(metric" in src
+
+
 def test_comparison_shows_broker_consensus_target_in_valuation_matrix():
     src = _read("components/tabs/stock-compare-tab.tsx")
     assert "analystTargetService" in src
