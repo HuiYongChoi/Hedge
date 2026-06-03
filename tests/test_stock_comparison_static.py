@@ -102,3 +102,23 @@ def test_comparison_can_save_results_to_archive():
     assert "'stock_compare'" in src
     assert "Archive" in src
     assert "isSavingComparison" in src
+
+
+def test_comparison_surfaces_current_price():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "compareCurrentPrice" in src
+    assert "currentPrice" in src
+    assert "CurrentPriceSummary" in src
+
+
+def test_comparison_has_relative_chart_controls_and_metrics():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "COMPARISON_CHART_METRICS" in src
+    assert "relative_price" in src
+    assert "eps" in src
+    assert "free_cash_flow" in src
+    assert "earnings_growth" in src
+    assert "liabilities_to_equity" in src
+    assert "chartWindow" in src
+    assert "chartAxisMode" in src
+    assert "RelativeComparisonChart" in src
