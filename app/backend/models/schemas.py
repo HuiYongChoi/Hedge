@@ -365,13 +365,18 @@ class SavedAnalysisCreateRequest(BaseModel):
     source_tab: str
     ticker: str
     language: str = "ko"
+    display_name: Optional[str] = None
     request_data: Optional[Dict[str, Any]] = None
     result_data: Optional[Dict[str, Any]] = None
+
+class SavedAnalysisUpdateRequest(BaseModel):
+    display_name: str = Field(..., min_length=1, max_length=200)
 
 class SavedAnalysisResponse(BaseModel):
     id: int
     source_tab: str
     ticker: str
+    display_name: Optional[str] = None
     language: str
     request_data: Optional[Dict[str, Any]]
     result_data: Optional[Dict[str, Any]]

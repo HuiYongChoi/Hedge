@@ -51,3 +51,34 @@ def test_count_with_filters(db_session):
     assert repo.count() == 3
     assert repo.count(source_tab='stock_analysis') == 2
     assert repo.count(ticker='MU') == 2
+
+
+def test_create_uses_date_prefixed_company_display_name_for_kr_stock(db_session):
+    repo = SavedAnalysisRepository(db_session)
+    item = repo.create(
+        source_tab='stock_analysis',
+        ticker='005930.KS',
+        language='ko',
+        result_data={
+            'complete_result': {
+                'analyst_signals': {
+                    'valuation_analyst': {
+                        '005930.KS': {'company_name': '삼성전자'}
+                    }
+                }
+            }
+        },
+    )
+
+    assert item.result_data['saved_display_name'].endswith(' 삼성전자')
+    assert item.result_data['saved_display_name'][:10] == item.created_at.strftime('%Y-%m-%d')
+
+
+def test_update_display_name_persists_in_result_data(db_session):
+    repo = SavedAnalysisRepository(db_session)
+    item = repo.create(source_tab='stock_analysis', ticker='000660.KS', language='ko')
+
+    updated = repo.update_display_name(item.id, '2026-06-03 SK하이닉스 메모')
+
+    assert updated is not None
+    assert updated.result_data['saved_display_name'] == '2026-06-03 SK하이닉스 메모'

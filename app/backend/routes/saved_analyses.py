@@ -3,10 +3,26 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.backend.database import get_db
-from app.backend.models.schemas import ErrorResponse, SavedAnalysisCreateRequest, SavedAnalysisResponse
-from app.backend.repositories.saved_analysis_repository import SavedAnalysisRepository
+from app.backend.models.schemas import (
+    ErrorResponse,
+    SavedAnalysisCreateRequest,
+    SavedAnalysisResponse,
+    SavedAnalysisUpdateRequest,
+)
+from app.backend.repositories.saved_analysis_repository import SavedAnalysisRepository, build_saved_display_name
 
 router = APIRouter(prefix="/saved-analyses", tags=["saved-analyses"])
+
+
+def _to_response(item) -> SavedAnalysisResponse:
+    response = SavedAnalysisResponse.from_orm(item)
+    response.display_name = build_saved_display_name(
+        ticker=item.ticker,
+        created_at=item.created_at,
+        request_data=item.request_data,
+        result_data=item.result_data,
+    )
+    return response
 
 @router.post(
     "/",
@@ -25,8 +41,9 @@ async def save_analysis(
             language=request.language,
             request_data=request.request_data,
             result_data=request.result_data,
+            display_name=request.display_name,
         )
-        return SavedAnalysisResponse.from_orm(saved)
+        return _to_response(saved)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save analysis: {str(e)}")
 
@@ -62,7 +79,7 @@ async def list_saved_analyses(
             created_to=created_to,
         )
         response.headers["X-Total-Count"] = str(total)
-        return [SavedAnalysisResponse.from_orm(item) for item in items]
+        return [_to_response(item) for item in items]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list saved analyses: {str(e)}")
 
@@ -83,11 +100,35 @@ async def get_saved_analysis(
         item = repo.get_by_id(analysis_id)
         if not item:
             raise HTTPException(status_code=404, detail="Saved analysis not found")
-        return SavedAnalysisResponse.from_orm(item)
+        return _to_response(item)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get saved analysis: {str(e)}")
+
+@router.patch(
+    "/{analysis_id}",
+    response_model=SavedAnalysisResponse,
+    responses={
+        404: {"model": ErrorResponse, "description": "Saved analysis not found"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+)
+async def update_saved_analysis(
+    analysis_id: int,
+    request: SavedAnalysisUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        repo = SavedAnalysisRepository(db)
+        item = repo.update_display_name(analysis_id, request.display_name)
+        if not item:
+            raise HTTPException(status_code=404, detail="Saved analysis not found")
+        return _to_response(item)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update saved analysis: {str(e)}")
 
 @router.delete(
     "/{analysis_id}",

@@ -25,6 +25,11 @@ export function SavedAnalysesTab() {
     setIsListCollapsed(true);
   };
 
+  const handleAfterUpdate = (updated: SavedAnalysis) => {
+    setItems(prev => prev.map(item => (item.id === updated.id ? updated : item)));
+    setSelectedDetail(prev => (prev?.id === updated.id ? updated : prev));
+  };
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setErrorMsg(null);
@@ -76,6 +81,7 @@ export function SavedAnalysesTab() {
         onFilterChange={setFilter}
         onSelect={handleSelect}
         onAfterDelete={refresh}
+        onAfterUpdate={handleAfterUpdate}
         onRetry={refresh}
         language={reportLanguage}
         isCollapsed={isListCollapsed}
@@ -86,6 +92,7 @@ export function SavedAnalysesTab() {
         language={reportLanguage}
         isListCollapsed={isListCollapsed}
         onToggleList={() => setIsListCollapsed(c => !c)}
+        onAfterUpdate={handleAfterUpdate}
       />
     </div>
   );

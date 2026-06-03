@@ -52,6 +52,7 @@ interface CompareSlot {
   valuation?: ValuationDeepDive | null;
   signal?: { signal: string; confidence: number } | null;
   error?: string;
+  progressMessage?: string;
 }
 
 const FINANCIAL_ROWS: Array<{ key: string; ko: string; en: string; percent?: boolean }> = [
@@ -168,7 +169,11 @@ export function StockCompareTab() {
     return response.json();
   }, []);
 
-  const runValuation = useCallback(async (tickers: string[], signal: AbortSignal) => {
+  const runValuationForTicker = useCallback(async (
+    ticker: string,
+    slotId: string,
+    signal: AbortSignal,
+  ) => {
     const model = await getDefaultModel();
     const suffix = Math.random().toString(36).slice(2, 8);
     const pmId = `portfolio_manager_${suffix}`;
@@ -191,7 +196,7 @@ export function StockCompareTab() {
       : [];
 
     const body: Record<string, any> = {
-      tickers,
+      tickers: [ticker],
       graph_nodes: graphNodes,
       graph_edges: graphEdges,
       agent_models: agentModels,
@@ -224,6 +229,16 @@ export function StockCompareTab() {
         const typeMatch = eventText.match(/^event: (.+)$/m);
         const dataMatch = eventText.match(/^data: (.+)$/m);
         if (!typeMatch || !dataMatch) continue;
+        if (typeMatch[1] === 'progress') {
+          try {
+            const parsed = JSON.parse(dataMatch[1]);
+            if (parsed.ticker && String(parsed.ticker).toUpperCase() !== ticker.toUpperCase()) continue;
+            const status = parsed.status || (language === 'ko' ? '분석 중' : 'Running');
+            updateSlot(slotId, { progressMessage: `${ticker} · ${status}` });
+          } catch {
+            /* ignore */
+          }
+        }
         if (typeMatch[1] === 'complete') {
           try {
             const parsed = JSON.parse(dataMatch[1]);
@@ -235,7 +250,7 @@ export function StockCompareTab() {
       }
     }
     return complete;
-  }, [language]);
+  }, [language, updateSlot]);
 
   const runComparison = useCallback(async () => {
     const active = slots.filter(s => s.ticker.trim());
@@ -246,53 +261,69 @@ export function StockCompareTab() {
     abortRef.current = controller;
     setIsRunning(true);
 
-    setSlots(prev => prev.map(s => (s.ticker.trim() ? { ...s, status: 'loading', error: undefined } : s)));
+    setSlots(prev => prev.map(s => (s.ticker.trim() ? {
+      ...s,
+      status: 'loading',
+      error: undefined,
+      progressMessage: language === 'ko' ? '대기 중' : 'Queued',
+      valuation: null,
+      signal: null,
+    } : s)));
 
-    // 1) Financial metrics + charts per ticker (independent, parallel).
-    await Promise.all(active.map(async slot => {
+    const runSlot = async (slot: CompareSlot) => {
+      const ticker = slot.ticker.trim();
       try {
-        const data = await fetchMetricsFor(slot.ticker.trim(), controller.signal);
+        updateSlot(slot.id, { progressMessage: language === 'ko' ? `${ticker} · 재무 데이터 수집 중` : `${ticker} · Loading metrics` });
+        const data = await fetchMetricsFor(ticker, controller.signal);
         const prices: PricePoint[] = data.prices || [];
         const currentPrice = prices.length ? prices[prices.length - 1].close : null;
         updateSlot(slot.id, {
           metrics: data.metrics || {},
           prices,
           currentPrice,
-          status: 'ready',
+          status: 'loading',
+          progressMessage: language === 'ko' ? `${ticker} · 가치평가 실행 중` : `${ticker} · Running valuation`,
         });
+
+        try {
+          const complete = await runValuationForTicker(ticker, slot.id, controller.signal);
+          const analystSignals: Record<string, any> = complete?.analyst_signals || {};
+          const valuationKey = Object.keys(analystSignals).find(k => k.startsWith('valuation_analyst'));
+          const valuationByTicker = valuationKey ? analystSignals[valuationKey] : {};
+          const entry = valuationByTicker?.[ticker];
+          if (!entry) throw new Error('valuation result missing');
+
+          updateSlot(slot.id, {
+            valuation: buildValuationDeepDive({ reasoning: entry.reasoning } as any, currentPrice),
+            signal: { signal: entry.signal, confidence: entry.confidence },
+            status: 'ready',
+            progressMessage: language === 'ko' ? `${ticker} · 완료` : `${ticker} · Complete`,
+          });
+        } catch (err: any) {
+          if (controller.signal.aborted) return;
+          updateSlot(slot.id, {
+            status: 'error',
+            error: err?.message || 'valuation failed',
+            progressMessage: language === 'ko'
+              ? `${ticker} · 재무 데이터 완료, 가치평가 실패`
+              : `${ticker} · metrics loaded; valuation failed`,
+          });
+        }
       } catch (err: any) {
         if (controller.signal.aborted) return;
-        updateSlot(slot.id, { status: 'error', error: err?.message || 'fetch failed' });
+        updateSlot(slot.id, {
+          status: 'error',
+          error: err?.message || 'fetch failed',
+          progressMessage: language === 'ko' ? `${ticker} · 데이터 수집 실패` : `${ticker} · Metrics failed`,
+        });
       }
-    }));
+    };
 
-    // 2) Valuation models for all tickers in one run.
-    try {
-      const complete = await runValuation(active.map(s => s.ticker.trim()), controller.signal);
-      const analystSignals: Record<string, any> = complete?.analyst_signals || {};
-      const valuationKey = Object.keys(analystSignals).find(k => k.startsWith('valuation_analyst'));
-      const valuationByTicker = valuationKey ? analystSignals[valuationKey] : {};
-      setSlots(prev => prev.map(s => {
-        const tk = s.ticker.trim();
-        if (!tk) return s;
-        const entry = valuationByTicker?.[tk];
-        if (!entry) return s;
-        const currentPrice = s.currentPrice ?? null;
-        return {
-          ...s,
-          valuation: buildValuationDeepDive({ reasoning: entry.reasoning } as any, currentPrice),
-          signal: { signal: entry.signal, confidence: entry.confidence },
-        };
-      }));
-    } catch (err) {
-      // Valuation is best-effort; financials/charts still render.
-      if (!controller.signal.aborted) {
-        console.error('valuation run failed', err);
-      }
-    } finally {
-      if (!controller.signal.aborted) setIsRunning(false);
+    await Promise.allSettled(active.map(runSlot));
+    if (!controller.signal.aborted) {
+      setIsRunning(false);
     }
-  }, [slots, isRunning, fetchMetricsFor, runValuation, updateSlot]);
+  }, [slots, isRunning, fetchMetricsFor, runValuationForTicker, updateSlot, language]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -359,6 +390,15 @@ export function StockCompareTab() {
               </div>
               {slot.status === 'error' && (
                 <div className="mt-1 text-[10px] text-red-500">{slot.error}</div>
+              )}
+              {slot.progressMessage && (
+                <div className={cn(
+                  'mt-1 truncate text-[10px]',
+                  slot.status === 'error' ? 'text-red-500' : slot.status === 'ready' ? 'text-emerald-500' : 'text-muted-foreground',
+                )}>
+                  <span className="sr-only">compareStatus</span>
+                  {slot.progressMessage}
+                </div>
               )}
               {slot.signal && (
                 <button

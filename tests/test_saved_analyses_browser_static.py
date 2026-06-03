@@ -58,8 +58,10 @@ class SavedAnalysesBrowserStaticTests(unittest.TestCase):
         src = SERVICE.read_text(encoding='utf-8')
         self.assertIn("listAnalyses", src)
         self.assertIn("deleteAnalysis", src)
+        self.assertIn("updateDisplayName", src)
         self.assertIn("source_tab", src)
         self.assertIn("created_from", src)
+        self.assertIn("display_name", src)
 
     def test_i18n_keys_added(self):
         src = LANG.read_text(encoding='utf-8')
@@ -84,6 +86,12 @@ class SavedAnalysesBrowserStaticTests(unittest.TestCase):
         self.assertIn('@router.delete', src)
         self.assertIn('delete_saved_analysis', src)
 
+    def test_backend_update_display_name_endpoint(self):
+        src = BACKEND_ROUTE.read_text(encoding='utf-8')
+        self.assertIn('@router.patch', src)
+        self.assertIn('update_saved_analysis', src)
+        self.assertIn('display_name', src)
+
     def test_backend_filter_query_params(self):
         src = BACKEND_ROUTE.read_text(encoding='utf-8')
         self.assertIn('source_tab: Optional[str]', src)
@@ -96,6 +104,20 @@ class SavedAnalysesBrowserStaticTests(unittest.TestCase):
         src = BACKEND_REPO.read_text(encoding='utf-8')
         self.assertIn('def delete', src)
         self.assertIn('def count', src)
+        self.assertIn('def update_display_name', src)
+        self.assertIn('saved_display_name', src)
+
+    def test_saved_rows_use_display_name_not_raw_ticker(self):
+        src = (DIR / 'saved-list-row.tsx').read_text(encoding='utf-8')
+        self.assertIn('displayName', src)
+        self.assertIn('item.display_name', src)
+        self.assertIn('Edit3', src)
+
+    def test_saved_detail_allows_display_name_editing(self):
+        src = (DIR / 'saved-detail-panel.tsx').read_text(encoding='utf-8')
+        self.assertIn('isEditingName', src)
+        self.assertIn('updateDisplayName', src)
+        self.assertIn('setDraftName', src)
 
     def test_saved_list_panel_keeps_expand_rail_when_collapsed(self):
         src = (DIR / 'saved-list-panel.tsx').read_text(encoding='utf-8')

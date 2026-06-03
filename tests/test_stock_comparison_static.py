@@ -59,3 +59,18 @@ def test_valuation_matrix_does_not_hardcode_exclude_new_models():
     assert "ebitda_valuation" in src
     assert "roic_wacc_valuation" in src
     assert "PREFERRED_MODEL_ORDER" in src
+
+
+def test_comparison_runs_valuation_per_ticker_with_progress_rows():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "runValuationForTicker" in src
+    assert "progressMessage" in src
+    assert "compareStatus" in src
+    assert "Promise.allSettled" in src
+
+
+def test_comparison_failure_isolated_per_slot():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "valuation failed" in src
+    assert "status: 'error'" in src
+    assert "metrics loaded" in src

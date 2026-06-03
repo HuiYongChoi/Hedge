@@ -16,6 +16,7 @@ interface SavedListPanelProps {
   onFilterChange: (f: SavedAnalysisFilter) => void;
   onSelect: (id: number) => void;
   onAfterDelete: () => void;
+  onAfterUpdate: (item: SavedAnalysis) => void;
   onRetry: () => void;
   language: ReportLanguage;
   isCollapsed?: boolean;
@@ -32,6 +33,7 @@ export function SavedListPanel({
   onFilterChange,
   onSelect,
   onAfterDelete,
+  onAfterUpdate,
   onRetry,
   language,
   isCollapsed = false,
@@ -125,6 +127,7 @@ export function SavedListPanel({
               isSelected={item.id === selectedId}
               onClick={() => onSelect(item.id)}
               onAfterDelete={onAfterDelete}
+              onAfterUpdate={onAfterUpdate}
               language={language}
             />
           ))}

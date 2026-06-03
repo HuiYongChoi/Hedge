@@ -1,28 +1,42 @@
-import { Download, ExternalLink, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
+import { Check, Download, Edit3, ExternalLink, PanelLeftOpen, PanelLeftClose, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useTabsContext } from '@/contexts/tabs-context';
 import { useWorkspace } from '@/contexts/workspace-context';
 import { t } from '@/lib/language-preferences';
 import { TabService } from '@/services/tab-service';
 import type { SavedAnalysis } from '@/services/saved-analyses-service';
+import { savedAnalysisService } from '@/services/saved-analyses-service';
 import type { ReportLanguage } from '@/components/reports/analyst-report-v5/types';
-import { downloadJson, formatDateLong, sourceTabBadgeClass, sourceTabLabel } from './helpers';
+import { downloadJson, formatDateLong, getSavedDisplayName, sourceTabBadgeClass, sourceTabLabel } from './helpers';
 import { SavedEmptyState } from './saved-empty-state';
 import { SavedStockDetail } from './saved-stock-detail';
 import { SavedSandboxDetail } from './saved-sandbox-detail';
 import { cn } from '@/lib/utils';
+import { useEffect, useState } from 'react';
 
 interface SavedDetailPanelProps {
   detail: SavedAnalysis | null;
   language: ReportLanguage;
   isListCollapsed?: boolean;
   onToggleList?: () => void;
+  onAfterUpdate?: (item: SavedAnalysis) => void;
 }
 
-export function SavedDetailPanel({ detail, language, isListCollapsed = false, onToggleList }: SavedDetailPanelProps) {
+export function SavedDetailPanel({ detail, language, isListCollapsed = false, onToggleList, onAfterUpdate }: SavedDetailPanelProps) {
   const { openTab } = useTabsContext();
   const { workspace, patchWorkspace } = useWorkspace();
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
+
+  useEffect(() => {
+    if (detail) {
+      setDraftName(getSavedDisplayName(detail));
+      setIsEditingName(false);
+    }
+  }, [detail]);
 
   if (!detail) {
     return (
@@ -74,6 +88,24 @@ export function SavedDetailPanel({ detail, language, isListCollapsed = false, on
   }
 
   const hasRequestData = Boolean(detail.request_data && Object.keys(detail.request_data).length > 0);
+  const displayName = getSavedDisplayName(detail);
+
+  async function handleSaveDisplayName() {
+    if (!detail || !draftName.trim() || draftName.trim() === displayName || isSavingName) {
+      setIsEditingName(false);
+      return;
+    }
+    setIsSavingName(true);
+    try {
+      const updated = await savedAnalysisService.updateDisplayName(detail.id, draftName.trim());
+      onAfterUpdate?.(updated);
+      setIsEditingName(false);
+    } catch (err: any) {
+      alert(err.message || 'update failed');
+    } finally {
+      setIsSavingName(false);
+    }
+  }
 
   return (
     <main className="flex flex-1 flex-col overflow-hidden">
@@ -98,7 +130,47 @@ export function SavedDetailPanel({ detail, language, isListCollapsed = false, on
         {/* Ticker info - grows to fill space */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-base font-semibold text-primary">{detail.ticker}</span>
+            {isEditingName ? (
+              <div className="flex min-w-0 flex-1 items-center gap-1">
+                <Input
+                  value={draftName}
+                  onChange={e => setDraftName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleSaveDisplayName();
+                    if (e.key === 'Escape') {
+                      setDraftName(displayName);
+                      setIsEditingName(false);
+                    }
+                  }}
+                  className="h-8 max-w-md text-sm font-semibold"
+                  autoFocus
+                />
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleSaveDisplayName} disabled={isSavingName}>
+                  <Check className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => {
+                    setDraftName(displayName);
+                    setIsEditingName(false);
+                  }}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="group/name flex min-w-0 items-center gap-1 text-left"
+                onClick={() => setIsEditingName(true)}
+                title={language === 'ko' ? '이름 수정' : 'Edit name'}
+              >
+                <span className="truncate text-base font-semibold text-primary">{displayName}</span>
+                <Edit3 className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/name:opacity-100" />
+              </button>
+            )}
             <Badge variant="outline" className={cn('text-[10px] px-1 py-0', sourceTabBadgeClass(detail.source_tab))}>
               {sourceTabLabel(detail.source_tab, language)}
             </Badge>
@@ -107,7 +179,7 @@ export function SavedDetailPanel({ detail, language, isListCollapsed = false, on
             </Badge>
           </div>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            {t('savedAt', language)} · {formatDateLong(detail.created_at, language)}
+            <span className="font-mono">{detail.ticker}</span> · {t('savedAt', language)} · {formatDateLong(detail.created_at, language)}
           </p>
         </div>
         {/* Action buttons */}

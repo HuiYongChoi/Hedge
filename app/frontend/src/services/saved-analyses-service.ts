@@ -8,6 +8,7 @@ export interface SavedAnalysis {
   id: number;
   source_tab: string;
   ticker: string;
+  display_name?: string | null;
   language: string;
   request_data: any;
   result_data: any;
@@ -34,7 +35,8 @@ export const savedAnalysisService = {
     ticker: string,
     language: string,
     request_data: any,
-    result_data: any
+    result_data: any,
+    display_name?: string | null,
   ): Promise<SavedAnalysis> => {
     const response = await fetch(`${API_BASE_URL}/saved-analyses/`, {
       method: 'POST',
@@ -42,6 +44,7 @@ export const savedAnalysisService = {
       body: JSON.stringify({
         source_tab,
         ticker,
+        display_name,
         language,
         request_data,
         result_data,
@@ -86,5 +89,17 @@ export const savedAnalysisService = {
     if (!res.ok && res.status !== 204) {
       throw new Error(`Failed to delete: ${res.status}`);
     }
+  },
+
+  updateDisplayName: async (id: number, display_name: string): Promise<SavedAnalysis> => {
+    const res = await fetch(`${API_BASE_URL}/saved-analyses/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_name }),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update display name: HTTP ${res.status}`);
+    }
+    return res.json();
   },
 };

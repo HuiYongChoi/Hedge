@@ -1,4 +1,4 @@
-import { Download, ExternalLink, Trash2 } from 'lucide-react';
+import { Download, Edit3, ExternalLink, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useTabsContext } from '@/contexts/tabs-context';
@@ -12,6 +12,7 @@ import {
   agentCountSummary,
   downloadJson,
   formatDateShort,
+  getSavedDisplayName,
   sourceTabBadgeClass,
   sourceTabLabel,
 } from './helpers';
@@ -22,6 +23,7 @@ interface SavedListRowProps {
   isSelected: boolean;
   onClick: () => void;
   onAfterDelete: () => void;
+  onAfterUpdate: (item: SavedAnalysis) => void;
   language: ReportLanguage;
 }
 
@@ -50,9 +52,10 @@ function IconButton({
   );
 }
 
-export function SavedListRow({ item, isSelected, onClick, onAfterDelete, language }: SavedListRowProps) {
+export function SavedListRow({ item, isSelected, onClick, onAfterDelete, onAfterUpdate, language }: SavedListRowProps) {
   const { openTab } = useTabsContext();
   const { workspace, patchWorkspace } = useWorkspace();
+  const displayName = item.display_name?.trim() || getSavedDisplayName(item);
 
   function handleRestore(e: React.MouseEvent) {
     e.stopPropagation();
@@ -79,7 +82,7 @@ export function SavedListRow({ item, isSelected, onClick, onAfterDelete, languag
 
   async function handleDelete(e: React.MouseEvent) {
     e.stopPropagation();
-    if (!confirm(t('confirmDelete', language).replace('{ticker}', item.ticker))) return;
+    if (!confirm(t('confirmDelete', language).replace('{ticker}', displayName))) return;
     try {
       await savedAnalysisService.deleteAnalysis(item.id);
       onAfterDelete();
@@ -91,6 +94,18 @@ export function SavedListRow({ item, isSelected, onClick, onAfterDelete, languag
   function handleExport(e: React.MouseEvent) {
     e.stopPropagation();
     downloadJson(item);
+  }
+
+  async function handleEditName(e: React.MouseEvent) {
+    e.stopPropagation();
+    const nextName = prompt(language === 'ko' ? '저장 이름 수정' : 'Edit saved name', displayName);
+    if (!nextName || nextName.trim() === displayName) return;
+    try {
+      const updated = await savedAnalysisService.updateDisplayName(item.id, nextName.trim());
+      onAfterUpdate(updated);
+    } catch (err: any) {
+      alert(err.message || 'update failed');
+    }
   }
 
   return (
@@ -112,7 +127,7 @@ export function SavedListRow({ item, isSelected, onClick, onAfterDelete, languag
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="font-mono text-sm font-semibold text-primary truncate">{item.ticker}</span>
+          <span className="text-sm font-semibold text-primary truncate">{displayName}</span>
           <Badge variant="outline" className={cn('text-[10px] px-1 py-0', sourceTabBadgeClass(item.source_tab))}>
             {sourceTabLabel(item.source_tab, language)}
           </Badge>
@@ -124,8 +139,12 @@ export function SavedListRow({ item, isSelected, onClick, onAfterDelete, languag
       <div className="flex items-center justify-between">
         <span className="text-[10px] text-muted-foreground">
           {agentCountSummary(item, language)}
+          {displayName !== item.ticker && <span className="ml-1 font-mono">· {item.ticker}</span>}
         </span>
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+          <IconButton title={language === 'ko' ? '이름 수정' : 'Edit name'} onClick={handleEditName}>
+            <Edit3 size={12} />
+          </IconButton>
           <IconButton title={t('restoreToTab', language)} onClick={handleRestore}>
             <ExternalLink size={12} />
           </IconButton>
@@ -134,7 +153,7 @@ export function SavedListRow({ item, isSelected, onClick, onAfterDelete, languag
           </IconButton>
           <IconButton
             title={`${t('delete', language)} ${item.ticker}`}
-            aria-label={`${t('delete', language)} ${item.ticker}`}
+            aria-label={`${t('delete', language)} ${displayName}`}
             onClick={handleDelete}
             className="text-red-500 hover:text-red-600"
           >

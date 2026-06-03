@@ -18,6 +18,14 @@ export function formatDateLong(iso: string, language: ReportLanguage): string {
     : d.toLocaleString('en-US');
 }
 
+export function getSavedDisplayName(item: SavedAnalysis): string {
+  const explicit = typeof item.display_name === 'string' ? item.display_name.trim() : '';
+  const stored = typeof item.result_data?.saved_display_name === 'string'
+    ? item.result_data.saved_display_name.trim()
+    : '';
+  return explicit || stored || item.ticker;
+}
+
 export function sourceTabLabel(source: string, language: ReportLanguage): string {
   if (source === 'stock_analysis') return language === 'ko' ? '종목 분석' : 'Stock Analysis';
   if (source === 'data_sandbox')   return language === 'ko' ? '데이터 샌드박스' : 'Data Sandbox';
