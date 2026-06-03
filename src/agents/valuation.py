@@ -487,18 +487,12 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         # ------------------------------------------------------------------
         # Valuation models
         # ------------------------------------------------------------------
-        # Handle potential None values for working capital
-        if li_curr.working_capital is not None and li_prev.working_capital is not None:
-            wc_change = li_curr.working_capital - li_prev.working_capital
-        else:
-            wc_change = 0  # Default to 0 if working capital data is unavailable
-
-        # Owner Earnings
-        owner_val = calculate_owner_earnings_value(
-            net_income=li_curr.net_income,
-            depreciation=li_curr.depreciation_and_amortization,
-            capex=li_curr.capital_expenditure,
-            working_capital_change=wc_change,
+        # Owner Earnings. Korean listed-company feeds can omit D&A while still
+        # providing FCF/OCF/capex, so use the FCF fallback before dropping the
+        # method from the comparison.
+        owner_val = calculate_owner_earnings_value_with_fallback(
+            li_curr,
+            li_prev,
             growth_rate=most_recent_metrics.earnings_growth or 0.05,
         )
 
@@ -1140,6 +1134,55 @@ def calculate_owner_earnings_value(
 
     intrinsic = pv + pv_term
     return intrinsic * (1 - margin_of_safety)
+
+
+def calculate_owner_earnings_value_with_fallback(
+    li_curr,
+    li_prev,
+    growth_rate: float = 0.05,
+) -> float:
+    """Owner-earnings valuation with a Korean-market FCF fallback.
+
+    Some Korean filings expose operating cash flow, free cash flow, capex, and
+    working capital, but omit depreciation/amortization. The classic Buffett
+    formula cannot be assembled in that case, so fall back to FCF as the already
+    reported owner-cash-flow proxy rather than dropping the model entirely.
+    """
+    wc_curr = _to_finite_float(getattr(li_curr, "working_capital", None))
+    wc_prev = _to_finite_float(getattr(li_prev, "working_capital", None))
+    working_capital_change = (
+        wc_curr - wc_prev
+        if wc_curr is not None and wc_prev is not None
+        else 0
+    )
+
+    owner_value = calculate_owner_earnings_value(
+        net_income=_to_finite_float(getattr(li_curr, "net_income", None)),
+        depreciation=_to_finite_float(getattr(li_curr, "depreciation_and_amortization", None)),
+        capex=_to_finite_float(getattr(li_curr, "capital_expenditure", None)),
+        working_capital_change=working_capital_change,
+        growth_rate=growth_rate,
+    )
+    if owner_value > 0:
+        return owner_value
+
+    free_cash_flow = _to_finite_float(getattr(li_curr, "free_cash_flow", None))
+    if free_cash_flow is None:
+        operating_cash_flow = _to_finite_float(getattr(li_curr, "operating_cash_flow", None))
+        capex = _to_finite_float(getattr(li_curr, "capital_expenditure", None))
+        if operating_cash_flow is not None and capex is not None:
+            free_cash_flow = operating_cash_flow - abs(capex)
+
+    if free_cash_flow is None or free_cash_flow <= 0:
+        return 0
+
+    return calculate_owner_earnings_value(
+        net_income=free_cash_flow,
+        depreciation=0,
+        capex=0,
+        working_capital_change=0,
+        growth_rate=growth_rate,
+    )
 
 
 def calculate_intrinsic_value(

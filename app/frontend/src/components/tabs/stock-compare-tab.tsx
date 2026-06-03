@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { resolveTickerValue } from '@/components/ui/ticker-input';
 import { useLanguage } from '@/contexts/language-context';
 import { buildValuationDeepDive } from '@/components/reports/analyst-report-v5/helpers';
@@ -179,8 +180,8 @@ function formatTargetWithGap(target: number | null | undefined, currentPrice: nu
 }
 
 function toneClass(signal: string | null | undefined): string {
-  if (signal === 'bullish') return 'text-emerald-500';
-  if (signal === 'bearish') return 'text-red-500';
+  if (signal === 'bullish') return 'text-emerald-400';
+  if (signal === 'bearish') return 'text-rose-400';
   return 'text-muted-foreground';
 }
 
@@ -189,10 +190,30 @@ function slotColor(index: number): string {
 }
 
 function scoreTone(score: number): string {
-  if (score >= 75) return 'text-amber-400';
-  if (score >= 55) return 'text-emerald-400';
+  if (score >= 75) return 'text-amber-300';
+  if (score >= 55) return 'text-emerald-300';
   if (score >= 35) return 'text-muted-foreground';
-  return 'text-red-400';
+  return 'text-rose-300';
+}
+
+function scoreHelpText(kind: 'value' | 'quality' | 'growth', language: 'ko' | 'en'): string {
+  if (language === 'en') {
+    if (kind === 'value') return 'Value score compares cheaper multiples (P/E, Fwd P/E, P/B, EV/EBITDA), broker target upside, and valuation-model upside.';
+    if (kind === 'quality') return 'Quality score compares operating margin, net margin, ROE, ROIC, interest coverage, and lower liabilities-to-equity.';
+    return 'Growth score compares revenue growth and earnings growth from the existing financial metrics feed.';
+  }
+  if (kind === 'value') return '밸류 점수는 낮은 PER/FwdPER/PBR/EV·EBITDA, 증권사 목표 상승여력, 가치평가 모델 상승여력을 함께 봅니다.';
+  if (kind === 'quality') return '퀄리티 점수는 영업이익률, 순이익률, ROE, ROIC, 이자보상배율, 낮은 부채비율을 함께 봅니다.';
+  return '성장 점수는 기존 재무 데이터의 매출 성장과 이익 성장을 상대 비교합니다.';
+}
+
+function axisHelpText(kind: 'valuationUpside' | 'metricValue', language: 'ko' | 'en'): string {
+  if (language === 'en') {
+    if (kind === 'valuationUpside') return 'This section compares upside percentage from current price. For EV/EBITDA here, the bar is not the multiple itself; it is the model-implied price upside, so higher is better.';
+    return 'This section compares the raw metric itself. For EV/EBITDA multiples, lower usually means cheaper valuation, so lower is better.';
+  }
+  if (kind === 'valuationUpside') return '여기는 현재가 대비 상승여력 % 비교입니다. EV/EBITDA 행도 멀티플 자체가 아니라 그 모델이 계산한 목표가 상승여력이므로 높을수록 좋습니다.';
+  return '여기는 지표 원값 비교입니다. EV/EBITDA 멀티플은 기업가치/EBITDA 배수라, 같은 조건이면 낮을수록 더 싸게 거래된다는 뜻입니다.';
 }
 
 function getMetricValue(slot: CompareSlot, key: string): number | null {
@@ -775,6 +796,7 @@ export function StockCompareTab() {
               slots={readySlots}
               rows={VALUATION_BAR_ROWS.filter(row => row.key === 'broker_target' || modelKeys.includes(row.key))}
               language={language}
+              axisHelp={axisHelpText('valuationUpside', language)}
               getValue={(slot, rowKey) => {
                 if (rowKey === 'broker_target') return getTargetUpside(slot);
                 return findModel(slot, rowKey)?.gapToMarket ?? null;
@@ -788,6 +810,7 @@ export function StockCompareTab() {
               slots={readySlots}
               rowGroups={FINANCIAL_BAR_GROUPS}
               language={language}
+              axisHelp={axisHelpText('metricValue', language)}
               getValue={(slot, rowKey) => getMetricValue(slot, rowKey)}
               formatValue={(value, row) => row.percent ? `${(value * 100).toFixed(1)}%` : fmtNum(value)}
             />
@@ -964,7 +987,7 @@ export function StockCompareTab() {
   );
 }
 
-const CHART_COLORS = ['#3b82f6', '#22c55e', '#ef4444', '#a855f7', '#f59e0b', '#06b6d4'];
+const CHART_COLORS = ['#4f83cc', '#2f9b72', '#c95f66', '#8f6bb8', '#b58a3b', '#4f9aa5'];
 
 function CurrentPriceSummary({ slots, language }: { slots: CompareSlot[]; language: 'ko' | 'en' }) {
   return (
@@ -1022,8 +1045,8 @@ function CompareRankingCards({
           <div
             key={card.slot.id}
             className={cn(
-              'rounded-lg border bg-card/40 p-4 shadow-sm',
-              card.rank === 1 ? 'border-amber-400/45 bg-amber-400/5' : 'border-border',
+              'rounded-lg border bg-card/30 p-4 shadow-sm',
+              card.rank === 1 ? 'border-amber-300/35 bg-amber-300/5' : 'border-border/80',
             )}
           >
             <div className="flex items-start justify-between gap-3">
@@ -1050,12 +1073,13 @@ function CompareRankingCards({
             <div className="mt-4 space-y-3">
               <ScoreBar
                 label={language === 'ko' ? '밸류' : 'Value'}
+                help={scoreHelpText('value', language)}
                 score={card.valueScore}
                 rank={valueRankById.get(card.slot.id)}
-                color={card.rank === 1 ? '#f5c451' : card.color}
+                color={card.rank === 1 ? '#c7a24f' : card.color}
               />
-              <ScoreBar label={language === 'ko' ? '퀄리티' : 'Quality'} score={card.qualityScore} color={card.color} />
-              <ScoreBar label={language === 'ko' ? '성장' : 'Growth'} score={card.growthScore} color={card.color} />
+              <ScoreBar label={language === 'ko' ? '퀄리티' : 'Quality'} help={scoreHelpText('quality', language)} score={card.qualityScore} color={card.color} />
+              <ScoreBar label={language === 'ko' ? '성장' : 'Growth'} help={scoreHelpText('growth', language)} score={card.growthScore} color={card.color} />
             </div>
             <div className="mt-4 border-t pt-3 text-xs leading-5 text-muted-foreground">
               {language === 'ko'
@@ -1069,13 +1093,14 @@ function CompareRankingCards({
   );
 }
 
-function ScoreBar({ label, score, rank, color }: { label: string; score: number; rank?: number; color: string }) {
+function ScoreBar({ label, help, score, rank, color }: { label: string; help?: string; score: number; rank?: number; color: string }) {
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-xs">
         <div className="flex items-center gap-1 text-muted-foreground">
           <span>{label}</span>
-          {rank === 1 && <span className="text-amber-400">1위</span>}
+          {help && <ScoreHelpTooltip text={help} />}
+          {rank === 1 && <span className="text-amber-300">1위</span>}
         </div>
         <span className={cn('font-semibold tabular-nums', scoreTone(score))}>{score}</span>
       </div>
@@ -1083,6 +1108,27 @@ function ScoreBar({ label, score, rank, color }: { label: string; score: number;
         <div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(score, 100))}%`, backgroundColor: color }} />
       </div>
     </div>
+  );
+}
+
+function ScoreHelpTooltip({ text }: { text: string }) {
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border bg-muted/40 text-[10px] font-semibold text-muted-foreground hover:border-muted-foreground hover:text-foreground"
+            aria-label={text}
+          >
+            ?
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs whitespace-normal bg-zinc-900 text-left leading-relaxed text-zinc-100 shadow-lg">
+          {text}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -1101,6 +1147,7 @@ function MetricBarComparisonPanel({
   rows,
   rowGroups,
   language,
+  axisHelp,
   getValue,
   formatValue,
 }: {
@@ -1110,6 +1157,7 @@ function MetricBarComparisonPanel({
   rows?: MetricBarRow[];
   rowGroups?: Array<{ key: string; ko: string; en: string; rows: MetricBarRow[] }>;
   language: 'ko' | 'en';
+  axisHelp?: string;
   getValue: (slot: CompareSlot, rowKey: string) => number | null;
   formatValue: (value: number, row: MetricBarRow) => string;
 }) {
@@ -1118,10 +1166,13 @@ function MetricBarComparisonPanel({
   if (!hasAnyRow) return null;
 
   return (
-    <section className="rounded-lg border bg-card/20">
+    <section className="rounded-lg border border-border/80 bg-card/30">
       <div className="border-b px-4 py-3">
         <div className="flex flex-wrap items-baseline gap-2">
-          <h3 className="text-base font-semibold">{title}</h3>
+          <h3 className="flex items-center gap-1.5 text-base font-semibold">
+            {title}
+            {axisHelp && <ScoreHelpTooltip text={axisHelp} />}
+          </h3>
           {subtitle && <span className="text-xs text-muted-foreground">{subtitle}</span>}
         </div>
       </div>
@@ -1171,7 +1222,7 @@ function MetricBarRowView({
   const range = max - min;
 
   return (
-    <div className="rounded-md border bg-background/40 p-3">
+    <div className="rounded-md border border-border/80 bg-background/45 p-3">
       <div className="mb-2 flex items-center gap-2">
         <div className="text-sm font-semibold">{language === 'ko' ? row.ko : row.en}</div>
         <div className="text-[10px] text-muted-foreground">{row.higherIsBetter ? (language === 'ko' ? '높을수록' : 'higher is better') : (language === 'ko' ? '낮을수록' : 'lower is better')}</div>
@@ -1197,7 +1248,7 @@ function MetricBarRowView({
                 )}
               </div>
               <div className="flex items-center justify-end gap-2 font-mono tabular-nums">
-                {isBest && <span className="rounded border border-amber-400/50 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-400">BEST</span>}
+                {isBest && <span className="rounded border border-amber-300/40 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">BEST</span>}
                 <span>{item.value === null ? '—' : formatValue(item.value, row)}</span>
               </div>
             </div>

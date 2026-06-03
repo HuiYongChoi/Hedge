@@ -82,6 +82,14 @@ class DataPipelineStandardizerStaticTests(unittest.TestCase):
         self.assertIn("revs = [li.revenue for li in reversed(line_items)", source)
         self.assertIn("interest = getattr(latest_li, \"interest_expense\", None)", source)
 
+    def test_valuation_owner_earnings_uses_fcf_fallback_for_korean_missing_depreciation(self):
+        source = (ROOT / "src/agents/valuation.py").read_text(encoding="utf-8")
+
+        self.assertIn("calculate_owner_earnings_value_with_fallback", source)
+        self.assertIn("free_cash_flow", source)
+        self.assertIn("operating_cash_flow", source)
+        self.assertIn("Korean", source)
+
     def test_llm_enforces_no_complaint_no_hallucination_data_gap_policy(self):
         source = LLM.read_text(encoding="utf-8")
 

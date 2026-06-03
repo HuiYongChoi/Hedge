@@ -166,3 +166,21 @@ def test_comparison_has_same_axis_metric_bars():
     assert "FINANCIAL_BAR_GROUPS" in src
     assert "BEST" in src
     assert "metricBarTrack" in src
+
+
+def test_comparison_score_tooltips_and_axis_explanations():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "TooltipTrigger" in src
+    assert "ScoreHelpTooltip" in src
+    assert "scoreHelpText" in src
+    assert "axisHelpText" in src
+    assert "상승여력" in src
+    assert "멀티플 자체" in src
+
+
+def test_comparison_uses_muted_professional_palette():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "#4f83cc" in src
+    assert "#2f9b72" in src
+    assert "#c95f66" in src
+    assert "bg-card/30" in src
