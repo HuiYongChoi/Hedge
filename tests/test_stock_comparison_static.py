@@ -122,3 +122,5 @@ def test_comparison_has_relative_chart_controls_and_metrics():
     assert "chartWindow" in src
     assert "chartAxisMode" in src
     assert "RelativeComparisonChart" in src
+    assert "annual_line_items" in src
+    assert "period: 'annual'" in src

@@ -223,14 +223,33 @@ export function StockCompareTab() {
   };
 
   const fetchMetricsFor = useCallback(async (ticker: string, signal: AbortSignal) => {
-    const response = await fetch(`${API_BASE_URL}/hedge-fund/fetch-metrics`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, start_date: fiveYearsAgoIso(), end_date: todayIso(), limit: 10 }),
-      signal,
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
+    const commonBody = { ticker, start_date: fiveYearsAgoIso(), end_date: todayIso(), limit: 10 };
+    const [ttmResponse, annualResponse] = await Promise.all([
+      fetch(`${API_BASE_URL}/hedge-fund/fetch-metrics`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(commonBody),
+        signal,
+      }),
+      fetch(`${API_BASE_URL}/hedge-fund/fetch-metrics`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...commonBody, period: 'annual' }),
+        signal,
+      }),
+    ]);
+    if (!ttmResponse.ok) throw new Error(`HTTP ${ttmResponse.status}`);
+
+    const ttmData = await ttmResponse.json();
+    if (!annualResponse.ok) {
+      return ttmData;
+    }
+
+    const annualData = await annualResponse.json();
+    return {
+      ...ttmData,
+      annual_line_items: annualData.line_items || [],
+    };
   }, []);
 
   const resolveCompareTicker = useCallback(async (input: string, signal: AbortSignal): Promise<string> => {
@@ -364,7 +383,7 @@ export function StockCompareTab() {
         updateSlot(slot.id, {
           metrics: data.metrics || {},
           prices,
-          lineItems: data.line_items || [],
+          lineItems: data.annual_line_items || data.line_items || [],
           currentPrice,
           status: 'loading',
           progressMessage: language === 'ko' ? `${displayTicker} · 가치평가 실행 중` : `${displayTicker} · Running valuation`,
