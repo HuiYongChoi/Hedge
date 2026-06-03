@@ -19,6 +19,15 @@ When the user asks to finish quickly, keep the path narrow:
 
 Do not assume a GitHub push deploys the server. The server deploy script still has to run, or the AWS checkout will remain on its previous commit.
 
+### Financial Data Reuse
+
+When adding comparison, archive, chart, or report UI, reuse the financial data paths that already work in stock analysis before inventing new fetch logic:
+
+- `/hedge-fund/fetch-metrics` already returns `metrics`, `forward_metrics`, `prices`, and `line_items`.
+- `/analyst-targets/{ticker}` already returns broker consensus targets, current price, forward EPS/PER, beta, and broker rows.
+- Existing frontend helpers/services such as `analystTargetService`, `savedAnalysisService`, ticker resolution, and analyst-report-v5 helpers/types should be checked before duplicating parsing or calculations.
+- If a value is visible in stock analysis but missing in stock comparison, first trace whether the existing field is being dropped between API response -> slot state -> archive snapshot -> renderer. Do not label it unavailable until that path is checked.
+
 ### Verification
 
 The local system `python`/`pytest` may not exist. Use the bundled runtime:
@@ -125,9 +134,9 @@ Preferred path after GitHub push: run the repo deploy script from the local mach
 ./deploy_aws.sh
 ```
 
-The script SSHes to `bitnami@54.116.99.19`, pulls `origin/main`, restarts the backend, runs `npm install`, builds with `npm run build -- --base=/hedge/`, and copies `dist/` into `/opt/bitnami/apache/htdocs/hedge/`.
+The script SSHes to `admin@43.203.120.8`, pulls `origin/main`, restarts the backend, runs `npm install`, builds with `npm run build -- --base=/hedge/`, and copies `dist/` into `/var/www/html/hedge/`.
 
-Do not run `./deploy_aws.sh` while already SSHed into `/home/bitnami/ai-hedge-fund`; it references the local key path and will fail from the server.
+Do not run `./deploy_aws.sh` while already SSHed into `/home/admin/ai-hedge-fund`; it references the local key path and will fail from the server.
 
 Expected successful deploy signals:
 
@@ -140,9 +149,9 @@ Frontend built and copied.
 Quick smoke checks:
 
 ```bash
-curl -I --max-time 10 http://54.116.99.19/hedge/
-ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem" bitnami@54.116.99.19 \
-  'cd /home/bitnami/ai-hedge-fund && git rev-parse --short HEAD && pgrep -af "uvicorn app.backend.main:app" | head -3'
+curl -I --max-time 10 http://43.203.120.8/hedge/
+ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/lamp-1_260530.pem" admin@43.203.120.8 \
+  'cd /home/admin/ai-hedge-fund && git rev-parse --short HEAD && pgrep -af "uvicorn app.backend.main:app" | head -3'
 ```
 
 Recent successful server deploy example through this flow:
@@ -158,8 +167,8 @@ The AWS deploy script normally pulls `origin/main`, but when GitHub auth blocks 
 1. Check server HEAD and confirm it is an ancestor of local `HEAD`:
 
 ```bash
-ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem" bitnami@54.116.99.19 \
-  'cd /home/bitnami/ai-hedge-fund && git rev-parse --short HEAD && git status --short'
+ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/lamp-1_260530.pem" admin@43.203.120.8 \
+  'cd /home/admin/ai-hedge-fund && git rev-parse --short HEAD && git status --short'
 
 git merge-base --is-ancestor <server-head> HEAD
 ```
@@ -169,16 +178,16 @@ git merge-base --is-ancestor <server-head> HEAD
 ```bash
 git bundle create /tmp/hedge-deploy.bundle main ^<server-head>
 git bundle verify /tmp/hedge-deploy.bundle
-scp -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem" \
-  /tmp/hedge-deploy.bundle bitnami@54.116.99.19:/tmp/hedge-deploy.bundle
+scp -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/lamp-1_260530.pem" \
+  /tmp/hedge-deploy.bundle admin@43.203.120.8:/tmp/hedge-deploy.bundle
 ```
 
 3. On the server, preserve any dirty working tree, fast-forward, then verify HEAD:
 
 ```bash
-ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem" bitnami@54.116.99.19 << 'EOF'
+ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/lamp-1_260530.pem" admin@43.203.120.8 << 'EOF'
 set -euo pipefail
-cd /home/bitnami/ai-hedge-fund
+cd /home/admin/ai-hedge-fund
 if [ -n "$(git status --porcelain)" ]; then
   git stash push -u -m "pre-deploy-$(date +%Y%m%d%H%M%S)"
 fi
@@ -207,9 +216,9 @@ Frontend built and copied.
 5. Quick smoke checks:
 
 ```bash
-curl -I --max-time 10 http://54.116.99.19/hedge/
-ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem" bitnami@54.116.99.19 \
-  'cd /home/bitnami/ai-hedge-fund && git rev-parse --short HEAD && pgrep -af "uvicorn app.backend.main:app" | head -3'
+curl -I --max-time 10 http://43.203.120.8/hedge/
+ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/lamp-1_260530.pem" admin@43.203.120.8 \
+  'cd /home/admin/ai-hedge-fund && git rev-parse --short HEAD && pgrep -af "uvicorn app.backend.main:app" | head -3'
 ```
 
 Last confirmed fallback bundle deploy via this path:

@@ -35,16 +35,21 @@
 - 모든 시뮬레이션은 SSE 스트리밍을 통해 백엔드의 LangGraph 진행 상태를 실시간으로 받아옵니다.
 - 프론트엔드의 `use-flow-connection.ts` 훅과 백엔드 `hedge_fund_runner.py` / `main.py`가 핵심 창구 역할을 합니다.
 
-### D. UI Component Conventions
+### D. 재무 데이터 재사용 원칙
+- 종목 분석 탭에서 이미 정상 동작하는 재무 데이터 경로를 우선 재사용합니다. 특히 `/hedge-fund/fetch-metrics`의 `metrics`, `forward_metrics`, `prices`, `line_items`와 `/analyst-targets/{ticker}`의 컨센서스 목표가/현재가를 새 화면에서도 그대로 연결합니다.
+- 종목간 비교, 아카이브, 차트 기능을 확장할 때 별도 임시 API나 중복 계산을 만들기 전에 기존 `fetch-metrics`, `analystTargetService`, 리포트 v5 helper/타입에서 같은 값이 이미 공급되는지 먼저 확인합니다.
+- 특정 값이 비교 화면에서 비어 있으면 “데이터 없음”으로 단정하지 말고, 종목 분석 화면에서 쓰는 기존 필드명이 비교 슬롯 상태에 저장/전달/렌더링되는지 추적합니다. 예: `forward_metrics.forward_pe`, `analystTarget.consensus`, annual `line_items`, `prices`.
+
+### E. UI Component Conventions
 - 서버 의존성 충돌 문제로 인해 `shadcn/ui`의 무거운 컴포넌트(Label, RadioGroup 등) 대신 가급적 순수 HTML 태그(`<label>`, `<input type="radio">`, `<div>` dropdown)로 풀어쓰는 방식을 선호합니다 (예: `ticker-input.tsx`).
 - 검색 탭 등 모든 UI는 반응형보다는 넓은 화면의 대시보드 구조에 최적화되어 있습니다.
 
 ## 4. 로컬 커밋 / 깃 푸시 / 서버 배포 절차
 - **로컬 프로젝트 경로**: `/Users/huiyong/Desktop/Hedge Fund/ai-hedge-fund`
-- **SSH 키**: `/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem`
-- **서버**: `bitnami@54.116.99.19`
-- **서버 내 프로젝트 경로**: `/home/bitnami/ai-hedge-fund/`
-- **웹 루트**: `/opt/bitnami/apache/htdocs/hedge/`
+- **SSH 키**: `/Users/huiyong/Desktop/Hedge Fund/lamp-1_260530.pem`
+- **서버**: `admin@43.203.120.8`
+- **서버 내 프로젝트 경로**: `/home/admin/ai-hedge-fund/`
+- **웹 루트**: `/var/www/html/hedge/`
 
 ### A. 커밋 전 원칙
 - 워크트리에 사용자 작업이 섞여 있는 경우가 많으므로 `git add .` 금지. 반드시 명시 경로만 stage.
@@ -111,14 +116,14 @@ GitHub push는 서버 배포가 아니다. 서버 반영은 로컬 머신에서 
 ./deploy_aws.sh
 ```
 
-이 스크립트는 로컬에서 실행해야 한다. 서버에 SSH로 들어간 뒤 `/home/bitnami/ai-hedge-fund` 안에서 실행하면 로컬 SSH 키 경로를 찾지 못해 실패한다.
+이 스크립트는 로컬에서 실행해야 한다. 서버에 SSH로 들어간 뒤 `/home/admin/ai-hedge-fund` 안에서 실행하면 로컬 SSH 키 경로를 찾지 못해 실패한다.
 
 스크립트가 하는 일:
 - 서버에서 `git fetch origin && git pull origin main`
 - `8000/tcp` backend 종료 후 `uvicorn app.backend.main:app` 재시작
 - `app/frontend`에서 `npm install`
 - `NODE_OPTIONS=--max-old-space-size=4096 npm run build -- --base=/hedge/`
-- `dist/*`를 `/opt/bitnami/apache/htdocs/hedge/`로 복사
+- `dist/*`를 `/var/www/html/hedge/`로 복사
 
 성공 신호:
 
@@ -131,29 +136,29 @@ Frontend built and copied.
 배포 후 smoke check:
 
 ```bash
-curl -I --max-time 10 http://54.116.99.19/hedge/
-ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem" bitnami@54.116.99.19 \
-  'cd /home/bitnami/ai-hedge-fund && git rev-parse --short HEAD && pgrep -af "uvicorn app.backend.main:app" | head -3'
+curl -I --max-time 10 http://43.203.120.8/hedge/
+ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/lamp-1_260530.pem" admin@43.203.120.8 \
+  'cd /home/admin/ai-hedge-fund && git rev-parse --short HEAD && pgrep -af "uvicorn app.backend.main:app" | head -3'
 ```
 
 ### D. GitHub 푸시가 막힌 경우의 빠른 서버 반영
 GitHub 인증이 안 되어 `origin/main`에 못 올리는 경우에는 git bundle로 서버 checkout만 fast-forward하고, 다시 로컬에서 `./deploy_aws.sh`를 실행한다.
 
 ```bash
-ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem" bitnami@54.116.99.19 \
-  'cd /home/bitnami/ai-hedge-fund && git rev-parse --short HEAD && git status --short'
+ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/lamp-1_260530.pem" admin@43.203.120.8 \
+  'cd /home/admin/ai-hedge-fund && git rev-parse --short HEAD && git status --short'
 
 git merge-base --is-ancestor <server-head> HEAD
 git bundle create /tmp/hedge-deploy.bundle main ^<server-head>
 git bundle verify /tmp/hedge-deploy.bundle
-scp -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem" \
-  /tmp/hedge-deploy.bundle bitnami@54.116.99.19:/tmp/hedge-deploy.bundle
+scp -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/lamp-1_260530.pem" \
+  /tmp/hedge-deploy.bundle admin@43.203.120.8:/tmp/hedge-deploy.bundle
 ```
 
 ```bash
-ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/LightsailDefaultKey-ap-northeast-2.pem" bitnami@54.116.99.19 << 'EOF'
+ssh -o StrictHostKeyChecking=no -i "/Users/huiyong/Desktop/Hedge Fund/lamp-1_260530.pem" admin@43.203.120.8 << 'EOF'
 set -euo pipefail
-cd /home/bitnami/ai-hedge-fund
+cd /home/admin/ai-hedge-fund
 if [ -n "$(git status --porcelain)" ]; then
   git stash push -u -m "pre-deploy-$(date +%Y%m%d%H%M%S)"
 fi
