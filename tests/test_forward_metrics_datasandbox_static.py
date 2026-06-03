@@ -26,6 +26,15 @@ def test_fetch_metrics_route_fetches_and_serializes_forward_metrics() -> None:
     assert "forward_metrics=forward_metrics_dict" in route_source
 
 
+def test_fetch_metrics_route_reuses_line_item_enrichment_for_complete_metrics() -> None:
+    route_source = HEDGE_FUND_ROUTE.read_text(encoding="utf-8")
+
+    assert "from src.utils.data_standardizer import enrich_metrics_from_line_items" in route_source
+    assert "metrics_dict = enrich_metrics_from_line_items(" in route_source
+    assert "line_items_dicts" in route_source
+    assert "market_cap=market_cap" in route_source
+
+
 def test_run_route_applies_and_clears_forward_metric_overrides() -> None:
     route_source = HEDGE_FUND_ROUTE.read_text(encoding="utf-8")
 

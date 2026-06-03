@@ -24,6 +24,7 @@ from src.tools.forward_metrics import (
     get_forward_metrics,
     set_forward_metrics_override,
 )
+from src.utils.data_standardizer import enrich_metrics_from_line_items
 
 router = APIRouter(prefix="/hedge-fund")
 
@@ -143,6 +144,13 @@ async def fetch_metrics(request_data: FetchMetricsRequest, db: Session = Depends
             search_line_items, ticker, COMMON_LINE_ITEMS_UNION, end_date, period, limit, fin_api_key
         )
         line_items_dicts = [li.model_dump() for li in line_items_list]
+
+        if metrics_dict:
+            metrics_dict = enrich_metrics_from_line_items(
+                metrics_dict,
+                line_items_dicts,
+                market_cap=market_cap,
+            )
 
         # 5. Compute extra growth tables (YoY, TTM YoY, QoQ) from Quarter data explicitly for Data Sandbox grid
         if metrics_dict:
