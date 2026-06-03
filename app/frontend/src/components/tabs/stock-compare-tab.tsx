@@ -101,6 +101,58 @@ const FINANCIAL_ROWS: Array<{ key: string; ko: string; en: string; percent?: boo
   { key: 'interest_coverage', ko: '이자보상배율', en: 'Interest coverage' },
 ];
 
+const VALUATION_BAR_ROWS = [
+  { key: 'dcf', ko: 'DCF', en: 'DCF', higherIsBetter: true },
+  { key: 'owner_earnings', ko: 'Owner Earnings', en: 'Owner Earnings', higherIsBetter: true },
+  { key: 'ev_ebitda', ko: 'EV/EBITDA', en: 'EV/EBITDA', higherIsBetter: true },
+  { key: 'ev_ebit', ko: 'EV/EBIT', en: 'EV/EBIT', higherIsBetter: true },
+  { key: 'ebitda_valuation', ko: 'EBITDA (정규화)', en: 'EBITDA normalized', higherIsBetter: true },
+  { key: 'roic_wacc_valuation', ko: 'ROIC-WACC EVA', en: 'ROIC-WACC EVA', higherIsBetter: true },
+  { key: 'residual_income', ko: 'RIM', en: 'RIM', higherIsBetter: true },
+  { key: 'broker_target', ko: '증권사 평균 목표치', en: 'Broker target', higherIsBetter: true },
+];
+
+const FINANCIAL_BAR_GROUPS: Array<{
+  key: string;
+  ko: string;
+  en: string;
+  rows: Array<{ key: string; ko: string; en: string; higherIsBetter: boolean; percent?: boolean }>;
+}> = [
+  {
+    key: 'valuation',
+    ko: '밸류에이션',
+    en: 'Valuation',
+    rows: [
+      { key: 'price_to_earnings_ratio', ko: 'PER (TTM)', en: 'P/E (TTM)', higherIsBetter: false },
+      { key: 'forward_pe', ko: 'FwdPER', en: 'Fwd P/E', higherIsBetter: false },
+      { key: 'price_to_book_ratio', ko: 'PBR', en: 'P/B', higherIsBetter: false },
+      { key: 'enterprise_value_to_ebitda_ratio', ko: 'EV/EBITDA', en: 'EV/EBITDA', higherIsBetter: false },
+    ],
+  },
+  {
+    key: 'quality',
+    ko: '수익성·퀄리티',
+    en: 'Profitability & quality',
+    rows: [
+      { key: 'operating_margin', ko: '영업이익률', en: 'Operating margin', higherIsBetter: true, percent: true },
+      { key: 'net_margin', ko: '순이익률', en: 'Net margin', higherIsBetter: true, percent: true },
+      { key: 'return_on_equity', ko: 'ROE', en: 'ROE', higherIsBetter: true, percent: true },
+      { key: 'return_on_invested_capital', ko: 'ROIC', en: 'ROIC', higherIsBetter: true, percent: true },
+    ],
+  },
+  {
+    key: 'growth_leverage',
+    ko: '성장·레버리지',
+    en: 'Growth & leverage',
+    rows: [
+      { key: 'revenue_growth', ko: '매출 성장', en: 'Revenue growth', higherIsBetter: true, percent: true },
+      { key: 'earnings_growth', ko: '이익 성장', en: 'Earnings growth', higherIsBetter: true, percent: true },
+      { key: 'liabilities_to_equity', ko: '부채비율', en: 'Debt ratio', higherIsBetter: false, percent: true },
+      { key: 'interest_coverage', ko: '이자보상배율', en: 'Interest coverage', higherIsBetter: true },
+    ],
+  },
+];
+
 function fmtNum(value: unknown, digits = 2): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
   return value.toLocaleString(undefined, { maximumFractionDigits: digits });
@@ -130,6 +182,120 @@ function toneClass(signal: string | null | undefined): string {
   if (signal === 'bullish') return 'text-emerald-500';
   if (signal === 'bearish') return 'text-red-500';
   return 'text-muted-foreground';
+}
+
+function slotColor(index: number): string {
+  return CHART_COLORS[index % CHART_COLORS.length];
+}
+
+function scoreTone(score: number): string {
+  if (score >= 75) return 'text-amber-400';
+  if (score >= 55) return 'text-emerald-400';
+  if (score >= 35) return 'text-muted-foreground';
+  return 'text-red-400';
+}
+
+function getMetricValue(slot: CompareSlot, key: string): number | null {
+  if (key === 'currentPrice') return numericValue(slot.currentPrice);
+  if (key === 'forward_pe') return numericValue(slot.forwardMetrics?.forward_pe);
+  return numericValue(slot.metrics?.[key]);
+}
+
+function getTargetUpside(slot: CompareSlot): number | null {
+  const target = numericValue(slot.targetConsensus);
+  const current = numericValue(slot.currentPrice);
+  if (target === null || current === null || current === 0) return null;
+  return (target / current) - 1;
+}
+
+function getAverageValuationGap(slot: CompareSlot): number | null {
+  const gaps = (slot.valuation?.models || [])
+    .map(model => numericValue(model.gapToMarket))
+    .filter((value): value is number => value !== null);
+  if (gaps.length === 0) return null;
+  return gaps.reduce((sum, value) => sum + value, 0) / gaps.length;
+}
+
+function scoreAcross(slots: CompareSlot[], getter: (slot: CompareSlot) => number | null, higherIsBetter: boolean): Map<string, number> {
+  const values = slots
+    .map(slot => ({ id: slot.id, value: getter(slot) }))
+    .filter((item): item is { id: string; value: number } => item.value !== null && Number.isFinite(item.value));
+  const scoreMap = new Map<string, number>();
+  if (values.length === 0) return scoreMap;
+  if (values.length === 1) {
+    scoreMap.set(values[0].id, 70);
+    return scoreMap;
+  }
+
+  const min = Math.min(...values.map(item => item.value));
+  const max = Math.max(...values.map(item => item.value));
+  const range = max - min;
+  values.forEach(item => {
+    const normalized = range === 0 ? 0.5 : (item.value - min) / range;
+    scoreMap.set(item.id, Math.round((higherIsBetter ? normalized : 1 - normalized) * 100));
+  });
+  return scoreMap;
+}
+
+function averageScores(...scores: Array<number | undefined>): number {
+  const usable = scores.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  if (usable.length === 0) return 50;
+  return Math.round(usable.reduce((sum, value) => sum + value, 0) / usable.length);
+}
+
+function buildRankedScorecards(slots: CompareSlot[]) {
+  const scoreMaps = {
+    per: scoreAcross(slots, slot => getMetricValue(slot, 'price_to_earnings_ratio'), false),
+    fwdPer: scoreAcross(slots, slot => getMetricValue(slot, 'forward_pe'), false),
+    pbr: scoreAcross(slots, slot => getMetricValue(slot, 'price_to_book_ratio'), false),
+    evEbitda: scoreAcross(slots, slot => getMetricValue(slot, 'enterprise_value_to_ebitda_ratio'), false),
+    targetUpside: scoreAcross(slots, getTargetUpside, true),
+    valuationGap: scoreAcross(slots, getAverageValuationGap, true),
+    operatingMargin: scoreAcross(slots, slot => getMetricValue(slot, 'operating_margin'), true),
+    netMargin: scoreAcross(slots, slot => getMetricValue(slot, 'net_margin'), true),
+    roe: scoreAcross(slots, slot => getMetricValue(slot, 'return_on_equity'), true),
+    roic: scoreAcross(slots, slot => getMetricValue(slot, 'return_on_invested_capital'), true),
+    interestCoverage: scoreAcross(slots, slot => getMetricValue(slot, 'interest_coverage'), true),
+    liabilities: scoreAcross(slots, slot => getMetricValue(slot, 'liabilities_to_equity'), false),
+    revenueGrowth: scoreAcross(slots, slot => getMetricValue(slot, 'revenue_growth'), true),
+    earningsGrowth: scoreAcross(slots, slot => getMetricValue(slot, 'earnings_growth'), true),
+  };
+
+  return slots
+    .map((slot, index) => {
+      const valueScore = averageScores(
+        scoreMaps.per.get(slot.id),
+        scoreMaps.fwdPer.get(slot.id),
+        scoreMaps.pbr.get(slot.id),
+        scoreMaps.evEbitda.get(slot.id),
+        scoreMaps.targetUpside.get(slot.id),
+        scoreMaps.valuationGap.get(slot.id),
+      );
+      const qualityScore = averageScores(
+        scoreMaps.operatingMargin.get(slot.id),
+        scoreMaps.netMargin.get(slot.id),
+        scoreMaps.roe.get(slot.id),
+        scoreMaps.roic.get(slot.id),
+        scoreMaps.interestCoverage.get(slot.id),
+        scoreMaps.liabilities.get(slot.id),
+      );
+      const growthScore = averageScores(
+        scoreMaps.revenueGrowth.get(slot.id),
+        scoreMaps.earningsGrowth.get(slot.id),
+      );
+      const totalScore = Math.round((valueScore * 0.45) + (qualityScore * 0.35) + (growthScore * 0.20));
+      return {
+        slot,
+        index,
+        color: slotColor(index),
+        valueScore,
+        qualityScore,
+        growthScore,
+        totalScore,
+      };
+    })
+    .sort((a, b) => b.totalScore - a.totalScore)
+    .map((item, index) => ({ ...item, rank: index + 1 }));
 }
 
 function newSlot(ticker = ''): CompareSlot {
@@ -514,6 +680,8 @@ export function StockCompareTab() {
     }
   }, [baselineId, isSavingComparison, language, modelKeys, slots]);
 
+  const rankedScorecards = useMemo(() => buildRankedScorecards(readySlots), [readySlots]);
+
   return (
     <div className="h-full w-full overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-7xl p-4 space-y-4">
@@ -597,7 +765,32 @@ export function StockCompareTab() {
           </div>
         ) : (
           <>
+            <CompareRankingCards scorecards={rankedScorecards} language={language} />
+
             <CurrentPriceSummary slots={readySlots} language={language} />
+
+            <MetricBarComparisonPanel
+              title={t('compareValuationBarsTitle', language)}
+              subtitle={language === 'ko' ? '현재가 대비 각 모델·증권사 목표치의 상승여력 기준' : 'Upside/downside from current price by model and broker target'}
+              slots={readySlots}
+              rows={VALUATION_BAR_ROWS.filter(row => row.key === 'broker_target' || modelKeys.includes(row.key))}
+              language={language}
+              getValue={(slot, rowKey) => {
+                if (rowKey === 'broker_target') return getTargetUpside(slot);
+                return findModel(slot, rowKey)?.gapToMarket ?? null;
+              }}
+              formatValue={value => `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`}
+            />
+
+            <MetricBarComparisonPanel
+              title={t('compareMetricBarsTitle', language)}
+              subtitle={language === 'ko' ? '같은 행 안에서 막대 길이로 직접 비교하고 BEST 태그로 우위 종목을 표시' : 'Each row shares one scale, with BEST marking the leading stock'}
+              slots={readySlots}
+              rowGroups={FINANCIAL_BAR_GROUPS}
+              language={language}
+              getValue={(slot, rowKey) => getMetricValue(slot, rowKey)}
+              formatValue={(value, row) => row.percent ? `${(value * 100).toFixed(1)}%` : fmtNum(value)}
+            />
 
             {/* Valuation comparison matrix */}
             <section className="rounded-lg border">
@@ -802,6 +995,216 @@ function CurrentPriceSummary({ slots, language }: { slots: CompareSlot[]; langua
         );
       })}
     </section>
+  );
+}
+
+function CompareRankingCards({
+  scorecards,
+  language,
+}: {
+  scorecards: ReturnType<typeof buildRankedScorecards>;
+  language: 'ko' | 'en';
+}) {
+  if (scorecards.length === 0) return null;
+  const sortedByValue = [...scorecards].sort((a, b) => b.valueScore - a.valueScore);
+  const valueRankById = new Map(sortedByValue.map((item, index) => [item.slot.id, index + 1]));
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h3 className="text-xl font-semibold tracking-tight">{t('compareValueRankTitle', language)}</h3>
+          <p className="mt-1 text-xs text-muted-foreground">{t('compareValueRankSubtitle', language)}</p>
+        </div>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-3">
+        {scorecards.map(card => (
+          <div
+            key={card.slot.id}
+            className={cn(
+              'rounded-lg border bg-card/40 p-4 shadow-sm',
+              card.rank === 1 ? 'border-amber-400/45 bg-amber-400/5' : 'border-border',
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className={cn('text-4xl font-black tabular-nums', card.rank === 1 ? 'text-amber-400' : 'text-muted-foreground')}>
+                  {card.rank}
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">{language === 'ko' ? '종합 매력도' : 'Composite rank'}</div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: card.color }} />
+                    <span className="text-lg font-semibold">{card.slot.ticker}</span>
+                  </div>
+                </div>
+              </div>
+              <span className={cn('rounded-md px-2 py-1 text-[11px] font-bold', toneClass(card.slot.signal?.signal), 'bg-muted/40')}>
+                {card.slot.signal ? card.slot.signal.signal.toUpperCase() : card.slot.status.toUpperCase()}
+              </span>
+            </div>
+            <div className="mt-4 flex items-end justify-between">
+              <div className="text-3xl font-bold tabular-nums">{fmtCurrency(card.slot.currentPrice)}</div>
+              <div className={cn('text-sm font-semibold tabular-nums', scoreTone(card.totalScore))}>{card.totalScore}</div>
+            </div>
+            <div className="mt-4 space-y-3">
+              <ScoreBar
+                label={language === 'ko' ? '밸류' : 'Value'}
+                score={card.valueScore}
+                rank={valueRankById.get(card.slot.id)}
+                color={card.rank === 1 ? '#f5c451' : card.color}
+              />
+              <ScoreBar label={language === 'ko' ? '퀄리티' : 'Quality'} score={card.qualityScore} color={card.color} />
+              <ScoreBar label={language === 'ko' ? '성장' : 'Growth'} score={card.growthScore} color={card.color} />
+            </div>
+            <div className="mt-4 border-t pt-3 text-xs leading-5 text-muted-foreground">
+              {language === 'ko'
+                ? `FwdPER ${fmtNum(getMetricValue(card.slot, 'forward_pe'))} · ROIC ${fmtPercent(getMetricValue(card.slot, 'return_on_invested_capital'))} · 목표 ${formatTargetWithGap(card.slot.targetConsensus, card.slot.currentPrice)}`
+                : `Fwd P/E ${fmtNum(getMetricValue(card.slot, 'forward_pe'))} · ROIC ${fmtPercent(getMetricValue(card.slot, 'return_on_invested_capital'))} · Target ${formatTargetWithGap(card.slot.targetConsensus, card.slot.currentPrice)}`}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ScoreBar({ label, score, rank, color }: { label: string; score: number; rank?: number; color: string }) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs">
+        <div className="flex items-center gap-1 text-muted-foreground">
+          <span>{label}</span>
+          {rank === 1 && <span className="text-amber-400">1위</span>}
+        </div>
+        <span className={cn('font-semibold tabular-nums', scoreTone(score))}>{score}</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-muted">
+        <div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(score, 100))}%`, backgroundColor: color }} />
+      </div>
+    </div>
+  );
+}
+
+interface MetricBarRow {
+  key: string;
+  ko: string;
+  en: string;
+  higherIsBetter: boolean;
+  percent?: boolean;
+}
+
+function MetricBarComparisonPanel({
+  title,
+  subtitle,
+  slots,
+  rows,
+  rowGroups,
+  language,
+  getValue,
+  formatValue,
+}: {
+  title: string;
+  subtitle?: string;
+  slots: CompareSlot[];
+  rows?: MetricBarRow[];
+  rowGroups?: Array<{ key: string; ko: string; en: string; rows: MetricBarRow[] }>;
+  language: 'ko' | 'en';
+  getValue: (slot: CompareSlot, rowKey: string) => number | null;
+  formatValue: (value: number, row: MetricBarRow) => string;
+}) {
+  const groups = rowGroups || [{ key: 'single', ko: '', en: '', rows: rows || [] }];
+  const hasAnyRow = groups.some(group => group.rows.length > 0);
+  if (!hasAnyRow) return null;
+
+  return (
+    <section className="rounded-lg border bg-card/20">
+      <div className="border-b px-4 py-3">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <h3 className="text-base font-semibold">{title}</h3>
+          {subtitle && <span className="text-xs text-muted-foreground">{subtitle}</span>}
+        </div>
+      </div>
+      <div className="space-y-5 p-4">
+        {groups.map(group => (
+          <div key={group.key} className="space-y-3">
+            {group.ko && (
+              <div className="text-xs font-semibold text-muted-foreground">{language === 'ko' ? group.ko : group.en}</div>
+            )}
+            {group.rows.map(row => (
+              <MetricBarRowView
+                key={row.key}
+                row={row}
+                slots={slots}
+                language={language}
+                getValue={getValue}
+                formatValue={formatValue}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MetricBarRowView({
+  row,
+  slots,
+  language,
+  getValue,
+  formatValue,
+}: {
+  row: MetricBarRow;
+  slots: CompareSlot[];
+  language: 'ko' | 'en';
+  getValue: (slot: CompareSlot, rowKey: string) => number | null;
+  formatValue: (value: number, row: MetricBarRow) => string;
+}) {
+  const values = slots.map((slot, index) => ({ slot, index, value: getValue(slot, row.key) }));
+  const usable = values.filter((item): item is { slot: CompareSlot; index: number; value: number } => item.value !== null && Number.isFinite(item.value));
+  const bestValue = usable.length
+    ? (row.higherIsBetter ? Math.max(...usable.map(item => item.value)) : Math.min(...usable.map(item => item.value)))
+    : null;
+  const min = usable.length ? Math.min(...usable.map(item => item.value)) : 0;
+  const max = usable.length ? Math.max(...usable.map(item => item.value)) : 1;
+  const range = max - min;
+
+  return (
+    <div className="rounded-md border bg-background/40 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <div className="text-sm font-semibold">{language === 'ko' ? row.ko : row.en}</div>
+        <div className="text-[10px] text-muted-foreground">{row.higherIsBetter ? (language === 'ko' ? '높을수록' : 'higher is better') : (language === 'ko' ? '낮을수록' : 'lower is better')}</div>
+      </div>
+      <div className="space-y-2">
+        {values.map(item => {
+          const color = slotColor(item.index);
+          const isBest = bestValue !== null && item.value !== null && Math.abs(item.value - bestValue) < 1e-9;
+          const width = item.value === null
+            ? 0
+            : range === 0
+              ? 100
+              : Math.max(3, Math.min(100, ((item.value - min) / range) * 100));
+          return (
+            <div key={item.slot.id} className="grid items-center gap-2 text-xs md:grid-cols-[8rem_1fr_7rem]">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                <span className="truncate text-muted-foreground">{item.slot.ticker}</span>
+              </div>
+              <div className="metricBarTrack h-2 rounded-full bg-muted">
+                {item.value !== null && (
+                  <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
+                )}
+              </div>
+              <div className="flex items-center justify-end gap-2 font-mono tabular-nums">
+                {isBest && <span className="rounded border border-amber-400/50 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-400">BEST</span>}
+                <span>{item.value === null ? '—' : formatValue(item.value, row)}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

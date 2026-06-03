@@ -147,3 +147,22 @@ def test_comparison_shows_forward_per_in_financial_metrics():
     assert "forwardMetrics" in src
     assert "forward_pe" in src
     assert "FwdPER" in src
+
+
+def test_comparison_uses_scorecard_ranking_design():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "CompareRankingCards" in src
+    assert "buildRankedScorecards" in src
+    assert "valueScore" in src
+    assert "qualityScore" in src
+    assert "growthScore" in src
+    assert "compareValueRankTitle" in src
+
+
+def test_comparison_has_same_axis_metric_bars():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "MetricBarComparisonPanel" in src
+    assert "VALUATION_BAR_ROWS" in src
+    assert "FINANCIAL_BAR_GROUPS" in src
+    assert "BEST" in src
+    assert "metricBarTrack" in src
