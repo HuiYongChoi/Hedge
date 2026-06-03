@@ -93,3 +93,12 @@ def test_comparison_defaults_to_requested_three_companies_and_allows_add():
     assert "'삼성전자'" in src
     assert "MAX_SLOTS = 6" in src
     assert "addSlot" in src
+
+
+def test_comparison_can_save_results_to_archive():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "savedAnalysisService" in src
+    assert "handleSaveComparison" in src
+    assert "'stock_compare'" in src
+    assert "Archive" in src
+    assert "isSavingComparison" in src

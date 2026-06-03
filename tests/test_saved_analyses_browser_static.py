@@ -25,6 +25,7 @@ class SavedAnalysesBrowserStaticTests(unittest.TestCase):
             'saved-detail-panel.tsx',
             'saved-stock-detail.tsx',
             'saved-sandbox-detail.tsx',
+            'saved-compare-detail.tsx',
             'saved-empty-state.tsx',
             'helpers.ts',
         ]:
@@ -62,6 +63,7 @@ class SavedAnalysesBrowserStaticTests(unittest.TestCase):
         self.assertIn("source_tab", src)
         self.assertIn("created_from", src)
         self.assertIn("display_name", src)
+        self.assertIn("stock_compare", src)
 
     def test_i18n_keys_added(self):
         src = LANG.read_text(encoding='utf-8')
@@ -118,6 +120,16 @@ class SavedAnalysesBrowserStaticTests(unittest.TestCase):
         self.assertIn('isEditingName', src)
         self.assertIn('updateDisplayName', src)
         self.assertIn('setDraftName', src)
+
+    def test_saved_detail_renders_stock_compare_archive(self):
+        src = (DIR / 'saved-detail-panel.tsx').read_text(encoding='utf-8')
+        self.assertIn('SavedCompareDetail', src)
+        self.assertIn("detail.source_tab === 'stock_compare'", src)
+
+    def test_saved_helpers_label_stock_compare(self):
+        src = (DIR / 'helpers.ts').read_text(encoding='utf-8')
+        self.assertIn('stock_compare', src)
+        self.assertIn('종목 비교', src)
 
     def test_saved_list_panel_keeps_expand_rail_when_collapsed(self):
         src = (DIR / 'saved-list-panel.tsx').read_text(encoding='utf-8')

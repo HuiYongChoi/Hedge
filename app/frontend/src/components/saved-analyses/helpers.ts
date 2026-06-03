@@ -29,6 +29,7 @@ export function getSavedDisplayName(item: SavedAnalysis): string {
 export function sourceTabLabel(source: string, language: ReportLanguage): string {
   if (source === 'stock_analysis') return language === 'ko' ? '종목 분석' : 'Stock Analysis';
   if (source === 'data_sandbox')   return language === 'ko' ? '데이터 샌드박스' : 'Data Sandbox';
+  if (source === 'stock_compare')  return language === 'ko' ? '종목 비교' : 'Stock Compare';
   return source;
 }
 
@@ -37,6 +38,8 @@ export function sourceTabBadgeClass(source: string): string {
     return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300';
   if (source === 'data_sandbox')
     return 'border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-300';
+  if (source === 'stock_compare')
+    return 'border-cyan-500/30 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300';
   return 'border-zinc-500/30 bg-zinc-500/10 text-zinc-500';
 }
 
@@ -47,6 +50,10 @@ export function agentCountSummary(item: SavedAnalysis, language: ReportLanguage)
       item.request_data?.selected_agent_keys?.length ??
       0;
     return language === 'ko' ? `에이전트 ${n}명` : `${n} agents`;
+  }
+  if (item.source_tab === 'stock_compare') {
+    const n = item.result_data?.slots?.length ?? item.request_data?.tickers?.length ?? 0;
+    return language === 'ko' ? `비교 종목 ${n}개` : `${n} compared`;
   }
   const fields = Object.keys(item.result_data?.metrics ?? {}).length;
   return language === 'ko' ? `필드 ${fields}개` : `${fields} fields`;

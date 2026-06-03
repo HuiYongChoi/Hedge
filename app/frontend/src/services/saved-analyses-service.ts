@@ -16,7 +16,7 @@ export interface SavedAnalysis {
 }
 
 export interface SavedAnalysisFilter {
-  source_tab?: 'stock_analysis' | 'data_sandbox';
+  source_tab?: 'stock_analysis' | 'data_sandbox' | 'stock_compare';
   ticker?: string;
   created_from?: string;  // YYYY-MM-DD
   created_to?: string;

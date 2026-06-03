@@ -45,6 +45,7 @@ export function SavedFiltersBar({ value, onChange, language }: SavedFiltersBarPr
           <option value="">{t('filterSourceAll', language)}</option>
           <option value="stock_analysis">{t('filterSourceStock', language)}</option>
           <option value="data_sandbox">{t('filterSourceSandbox', language)}</option>
+          <option value="stock_compare">{language === 'ko' ? '종목 비교' : 'Stock Compare'}</option>
         </select>
       </div>
       {/* Ticker */}

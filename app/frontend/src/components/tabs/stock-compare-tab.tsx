@@ -7,7 +7,8 @@ import type { ValuationDeepDive, ValuationModel } from '@/components/reports/ana
 import { getDefaultModel } from '@/data/models';
 import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
-import { Network, Plus, RefreshCw, X } from 'lucide-react';
+import { savedAnalysisService } from '@/services/saved-analyses-service';
+import { Archive, Network, Plus, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ||
@@ -161,6 +162,7 @@ export function StockCompareTab() {
   });
   const [baselineId, setBaselineId] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [isSavingComparison, setIsSavingComparison] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   // Persist ticker list (content excluded), mirroring the tabs-context pattern.
@@ -403,6 +405,43 @@ export function StockCompareTab() {
   const findModel = (slot: CompareSlot, key: string): ValuationModel | undefined =>
     slot.valuation?.models.find(m => m.key === key);
 
+  const handleSaveComparison = useCallback(async () => {
+    if (isSavingComparison) return;
+    const comparedSlots = slots.filter(slot => slot.ticker.trim());
+    if (comparedSlots.length === 0) return;
+
+    const now = new Date().toISOString();
+    const tickers = comparedSlots.map(slot => slot.ticker.trim());
+    const displayName = `${tickers.join(' vs ')} 비교`;
+
+    setIsSavingComparison(true);
+    try {
+      await savedAnalysisService.saveAnalysis(
+        'stock_compare',
+        tickers.join(', '),
+        language,
+        {
+          tickers,
+          baseline_ticker: comparedSlots.find(slot => slot.id === baselineId)?.ticker ?? null,
+          saved_at: now,
+        },
+        {
+          slots: comparedSlots,
+          model_keys: modelKeys,
+          financial_rows: FINANCIAL_ROWS,
+          baseline_id: baselineId,
+          saved_at: now,
+        },
+        displayName,
+      );
+      alert(language === 'ko' ? '비교 데이터가 아카이브에 저장되었습니다.' : 'Comparison saved to archive.');
+    } catch (err: any) {
+      alert(err?.message || (language === 'ko' ? '저장에 실패했습니다.' : 'Save failed.'));
+    } finally {
+      setIsSavingComparison(false);
+    }
+  }, [baselineId, isSavingComparison, language, modelKeys, slots]);
+
   return (
     <div className="h-full w-full overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-7xl p-4 space-y-4">
@@ -411,6 +450,15 @@ export function StockCompareTab() {
           <Network size={18} className="text-primary" />
           <h2 className="text-lg font-semibold">{t('stockCompare', language)}</h2>
           <div className="ml-auto flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleSaveComparison}
+              disabled={isSavingComparison || readySlots.length === 0}
+            >
+              <Archive size={14} className="mr-1" />
+              {language === 'ko' ? '아카이브 추가' : 'Save Archive'}
+            </Button>
             <Button size="sm" variant="outline" onClick={addSlot} disabled={slots.length >= MAX_SLOTS}>
               <Plus size={14} className="mr-1" />{t('compareAddTicker', language)}
             </Button>

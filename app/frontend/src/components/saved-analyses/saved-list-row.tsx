@@ -70,13 +70,20 @@ export function SavedListRow({ item, isSelected, onClick, onAfterDelete, onAfter
         useDataSandboxOverrides: Boolean(req.use_data_sandbox_overrides),
       });
       openTab(TabService.createStockSearchTab());
-    } else {
+    } else if (item.source_tab === 'data_sandbox') {
       patchWorkspace({
         tickers: req.ticker ?? item.ticker,
         startDate: req.start_date ?? workspace.startDate,
         endDate: req.end_date ?? workspace.endDate,
       });
       openTab(TabService.createDataSandboxTab());
+    } else if (item.source_tab === 'stock_compare') {
+      try {
+        localStorage.setItem('stock-compare:slots', JSON.stringify(req.tickers ?? []));
+      } catch {
+        /* ignore */
+      }
+      openTab(TabService.createStockCompareTab());
     }
   }
 

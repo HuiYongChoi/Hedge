@@ -13,6 +13,7 @@ import { downloadJson, formatDateLong, getSavedDisplayName, sourceTabBadgeClass,
 import { SavedEmptyState } from './saved-empty-state';
 import { SavedStockDetail } from './saved-stock-detail';
 import { SavedSandboxDetail } from './saved-sandbox-detail';
+import { SavedCompareDetail } from './saved-compare-detail';
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 
@@ -77,13 +78,20 @@ export function SavedDetailPanel({ detail, language, isListCollapsed = false, on
         useDataSandboxOverrides: Boolean(req.use_data_sandbox_overrides),
       });
       openTab(TabService.createStockSearchTab());
-    } else {
+    } else if (detail.source_tab === 'data_sandbox') {
       patchWorkspace({
         tickers: req.ticker ?? detail.ticker,
         startDate: req.start_date ?? workspace.startDate,
         endDate: req.end_date ?? workspace.endDate,
       });
       openTab(TabService.createDataSandboxTab());
+    } else if (detail.source_tab === 'stock_compare') {
+      try {
+        localStorage.setItem('stock-compare:slots', JSON.stringify(req.tickers ?? []));
+      } catch {
+        /* ignore */
+      }
+      openTab(TabService.createStockCompareTab());
     }
   }
 
@@ -207,7 +215,10 @@ export function SavedDetailPanel({ detail, language, isListCollapsed = false, on
         {detail.source_tab === 'data_sandbox' && (
           <SavedSandboxDetail detail={detail} language={language} />
         )}
-        {detail.source_tab !== 'stock_analysis' && detail.source_tab !== 'data_sandbox' && (
+        {detail.source_tab === 'stock_compare' && (
+          <SavedCompareDetail detail={detail} language={language} />
+        )}
+        {detail.source_tab !== 'stock_analysis' && detail.source_tab !== 'data_sandbox' && detail.source_tab !== 'stock_compare' && (
           <SavedEmptyState language={language} />
         )}
       </div>
