@@ -74,3 +74,22 @@ def test_comparison_failure_isolated_per_slot():
     assert "valuation failed" in src
     assert "status: 'error'" in src
     assert "metrics loaded" in src
+
+
+def test_comparison_resolves_korean_names_before_backend_calls():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "resolveTickerValue" in src
+    assert "resolveCompareTicker" in src
+    assert "resolvedTicker" in src
+    assert "fetchMetricsFor(resolvedTicker" in src
+    assert "runValuationForTicker(resolvedTicker" in src
+
+
+def test_comparison_defaults_to_requested_three_companies_and_allows_add():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    assert "DEFAULT_COMPARE_TICKERS" in src
+    assert "'MU'" in src
+    assert "'SK하이닉스'" in src
+    assert "'삼성전자'" in src
+    assert "MAX_SLOTS = 6" in src
+    assert "addSlot" in src

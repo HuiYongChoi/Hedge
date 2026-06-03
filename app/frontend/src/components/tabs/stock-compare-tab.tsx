@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { resolveTickerValue } from '@/components/ui/ticker-input';
 import { useLanguage } from '@/contexts/language-context';
 import { buildValuationDeepDive } from '@/components/reports/analyst-report-v5/helpers';
 import type { ValuationDeepDive, ValuationModel } from '@/components/reports/analyst-report-v5/types';
@@ -16,7 +17,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL ||
     : '/hedge-api');
 
 const MAX_SLOTS = 6;
-const DEFAULT_SLOTS = 3;
+const DEFAULT_COMPARE_TICKERS = ['MU', 'SK하이닉스', '삼성전자'];
 const STORAGE_KEY = 'stock-compare:slots';
 
 // Preferred valuation-model row order; any extra model keys are appended dynamically
@@ -40,6 +41,12 @@ interface PricePoint {
   low: number;
   close: number;
   volume: number;
+}
+
+interface TickerSuggestion {
+  ticker: string;
+  name: string;
+  market?: string;
 }
 
 interface CompareSlot {
@@ -109,6 +116,33 @@ function oneYearAgoIso(): string {
   return d.toISOString().slice(0, 10);
 }
 
+function normalizeCompareToken(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
+function stripKoreanCompanySuffix(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*\(주\)\s*$/i, '')
+    .replace(/\s*주식회사\s*$/i, '')
+    .trim();
+}
+
+function findExactTickerSuggestion(term: string, suggestions: TickerSuggestion[]): TickerSuggestion | null {
+  const normalizedTerm = normalizeCompareToken(stripKoreanCompanySuffix(term));
+  if (!normalizedTerm) return null;
+
+  return suggestions.find(suggestion => {
+    const candidates = [
+      suggestion.ticker,
+      suggestion.name,
+      stripKoreanCompanySuffix(suggestion.name),
+    ].map(normalizeCompareToken);
+    return candidates.includes(normalizedTerm);
+  }) ?? null;
+}
+
 export function StockCompareTab() {
   const { language } = useLanguage();
   const [slots, setSlots] = useState<CompareSlot[]>(() => {
@@ -123,7 +157,7 @@ export function StockCompareTab() {
     } catch {
       /* ignore */
     }
-    return Array.from({ length: DEFAULT_SLOTS }, () => newSlot());
+    return DEFAULT_COMPARE_TICKERS.map(ticker => newSlot(ticker));
   });
   const [baselineId, setBaselineId] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -169,8 +203,26 @@ export function StockCompareTab() {
     return response.json();
   }, []);
 
+  const resolveCompareTicker = useCallback(async (input: string, signal: AbortSignal): Promise<string> => {
+    const strippedInput = stripKoreanCompanySuffix(input);
+    const staticResolved = resolveTickerValue(strippedInput);
+    if (staticResolved !== strippedInput) {
+      return staticResolved.toUpperCase();
+    }
+
+    const response = await fetch(`${API_BASE_URL}/ticker-search?q=${encodeURIComponent(strippedInput)}`, { signal });
+    if (!response.ok) {
+      return staticResolved.toUpperCase();
+    }
+
+    const suggestions: TickerSuggestion[] = await response.json();
+    const exact = findExactTickerSuggestion(strippedInput, suggestions);
+    return (exact?.ticker || staticResolved).toUpperCase();
+  }, []);
+
   const runValuationForTicker = useCallback(async (
-    ticker: string,
+    resolvedTicker: string,
+    displayTicker: string,
     slotId: string,
     signal: AbortSignal,
   ) => {
@@ -196,7 +248,7 @@ export function StockCompareTab() {
       : [];
 
     const body: Record<string, any> = {
-      tickers: [ticker],
+      tickers: [resolvedTicker],
       graph_nodes: graphNodes,
       graph_edges: graphEdges,
       agent_models: agentModels,
@@ -232,9 +284,9 @@ export function StockCompareTab() {
         if (typeMatch[1] === 'progress') {
           try {
             const parsed = JSON.parse(dataMatch[1]);
-            if (parsed.ticker && String(parsed.ticker).toUpperCase() !== ticker.toUpperCase()) continue;
+            if (parsed.ticker && String(parsed.ticker).toUpperCase() !== resolvedTicker.toUpperCase()) continue;
             const status = parsed.status || (language === 'ko' ? '분석 중' : 'Running');
-            updateSlot(slotId, { progressMessage: `${ticker} · ${status}` });
+            updateSlot(slotId, { progressMessage: `${displayTicker} · ${status}` });
           } catch {
             /* ignore */
           }
@@ -271,10 +323,12 @@ export function StockCompareTab() {
     } : s)));
 
     const runSlot = async (slot: CompareSlot) => {
-      const ticker = slot.ticker.trim();
+      const displayTicker = slot.ticker.trim();
       try {
-        updateSlot(slot.id, { progressMessage: language === 'ko' ? `${ticker} · 재무 데이터 수집 중` : `${ticker} · Loading metrics` });
-        const data = await fetchMetricsFor(ticker, controller.signal);
+        updateSlot(slot.id, { progressMessage: language === 'ko' ? `${displayTicker} · 티커 확인 중` : `${displayTicker} · Resolving ticker` });
+        const resolvedTicker = await resolveCompareTicker(displayTicker, controller.signal);
+        updateSlot(slot.id, { progressMessage: language === 'ko' ? `${displayTicker} · 재무 데이터 수집 중` : `${displayTicker} · Loading metrics` });
+        const data = await fetchMetricsFor(resolvedTicker, controller.signal);
         const prices: PricePoint[] = data.prices || [];
         const currentPrice = prices.length ? prices[prices.length - 1].close : null;
         updateSlot(slot.id, {
@@ -282,22 +336,22 @@ export function StockCompareTab() {
           prices,
           currentPrice,
           status: 'loading',
-          progressMessage: language === 'ko' ? `${ticker} · 가치평가 실행 중` : `${ticker} · Running valuation`,
+          progressMessage: language === 'ko' ? `${displayTicker} · 가치평가 실행 중` : `${displayTicker} · Running valuation`,
         });
 
         try {
-          const complete = await runValuationForTicker(ticker, slot.id, controller.signal);
+          const complete = await runValuationForTicker(resolvedTicker, displayTicker, slot.id, controller.signal);
           const analystSignals: Record<string, any> = complete?.analyst_signals || {};
           const valuationKey = Object.keys(analystSignals).find(k => k.startsWith('valuation_analyst'));
           const valuationByTicker = valuationKey ? analystSignals[valuationKey] : {};
-          const entry = valuationByTicker?.[ticker];
+          const entry = valuationByTicker?.[resolvedTicker] ?? valuationByTicker?.[displayTicker];
           if (!entry) throw new Error('valuation result missing');
 
           updateSlot(slot.id, {
             valuation: buildValuationDeepDive({ reasoning: entry.reasoning } as any, currentPrice),
             signal: { signal: entry.signal, confidence: entry.confidence },
             status: 'ready',
-            progressMessage: language === 'ko' ? `${ticker} · 완료` : `${ticker} · Complete`,
+            progressMessage: language === 'ko' ? `${displayTicker} · 완료` : `${displayTicker} · Complete`,
           });
         } catch (err: any) {
           if (controller.signal.aborted) return;
@@ -305,8 +359,8 @@ export function StockCompareTab() {
             status: 'error',
             error: err?.message || 'valuation failed',
             progressMessage: language === 'ko'
-              ? `${ticker} · 재무 데이터 완료, 가치평가 실패`
-              : `${ticker} · metrics loaded; valuation failed`,
+              ? `${displayTicker} · 재무 데이터 완료, 가치평가 실패`
+              : `${displayTicker} · metrics loaded; valuation failed`,
           });
         }
       } catch (err: any) {
@@ -314,7 +368,7 @@ export function StockCompareTab() {
         updateSlot(slot.id, {
           status: 'error',
           error: err?.message || 'fetch failed',
-          progressMessage: language === 'ko' ? `${ticker} · 데이터 수집 실패` : `${ticker} · Metrics failed`,
+          progressMessage: language === 'ko' ? `${displayTicker} · 데이터 수집 실패` : `${displayTicker} · Metrics failed`,
         });
       }
     };
@@ -323,7 +377,7 @@ export function StockCompareTab() {
     if (!controller.signal.aborted) {
       setIsRunning(false);
     }
-  }, [slots, isRunning, fetchMetricsFor, runValuationForTicker, updateSlot, language]);
+  }, [slots, isRunning, fetchMetricsFor, resolveCompareTicker, runValuationForTicker, updateSlot, language]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
