@@ -24,6 +24,10 @@ function LayoutContent() {
   const { openTab, activeTabType, flowTabs, focusFirstFlowTab } = useTabsContext();
   const { isBottomCollapsed, expandBottomPanel, collapseBottomPanel, toggleBottomPanel } = useLayoutContext();
   const isFlowTab = activeTabType === 'flow';
+  // The workspace pill (active ticker / period / sandbox) only drives the stock
+  // analysis, flow, and data-sandbox flows. The stock-compare tab is fully
+  // independent (its own ticker slots + dates), so the pill is meaningless there.
+  const showWorkspacePill = activeTabType !== 'stock-compare';
   const hasFlowTab = flowTabs.length > 0;
   
   // Initialize sidebar states from storage service
@@ -183,9 +187,11 @@ function LayoutContent() {
         style={getSidebarBasedStyle()}
       >
         <TabBar className="min-w-0 flex-1 border-b-0" />
-        <div className="flex shrink-0 items-center py-1">
-          <WorkspacePill />
-        </div>
+        {showWorkspacePill && (
+          <div className="flex shrink-0 items-center py-1">
+            <WorkspacePill />
+          </div>
+        )}
         <div className="flex shrink-0 items-center py-1">
           <TopBar
             isFlowTab={isFlowTab}

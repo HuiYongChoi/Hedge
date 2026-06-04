@@ -1,7 +1,6 @@
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { resolveTickerValue } from '@/components/ui/ticker-input';
+import { resolveTickerValue, TickerInput } from '@/components/ui/ticker-input';
 import { useLanguage } from '@/contexts/language-context';
 import { buildValuationDeepDive } from '@/components/reports/analyst-report-v5/helpers';
 import type { ValuationDeepDive, ValuationModel } from '@/components/reports/analyst-report-v5/types';
@@ -779,10 +778,10 @@ export function StockCompareTab() {
           {slots.map(slot => (
             <div key={slot.id} className="relative rounded-lg border bg-muted/10 p-2">
               <div className="flex items-center gap-1">
-                <Input
+                <TickerInput
                   value={slot.ticker}
                   placeholder={t('compareEmptySlot', language)}
-                  onChange={e => handleTickerChange(slot.id, e.target.value)}
+                  onChange={value => handleTickerChange(slot.id, value)}
                   onKeyDown={e => { if (e.key === 'Enter') runComparison(); }}
                   className="h-8 text-sm"
                 />
