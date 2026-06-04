@@ -209,6 +209,40 @@ async def fetch_metrics(request_data: FetchMetricsRequest, db: Session = Depends
                 metrics_dict[f"{g_key}_yoy"] = yoy
                 metrics_dict[f"{g_key}_ttm"] = ttm_yoy
 
+            # 6. Quarterly profitability snapshot + short trend.
+            #    Annual margins miss the most recent quarter-to-quarter business
+            #    flow, so we surface the latest quarter's operating/net margins,
+            #    the YoY margin-point delta (Q0 vs Q4), and a short trend list.
+            def _q_margin(idx, income_key):
+                if idx >= len(li_q):
+                    return None
+                rev = _get_float(li_q[idx], "revenue")
+                inc = _get_float(li_q[idx], income_key)
+                if rev is None or inc is None or rev == 0:
+                    return None
+                return inc / rev
+
+            op_m0 = _q_margin(0, "operating_income")
+            net_m0 = _q_margin(0, "net_income")
+            op_m4 = _q_margin(4, "operating_income")
+            net_m4 = _q_margin(4, "net_income")
+            metrics_dict["operating_margin_q"] = op_m0
+            metrics_dict["net_margin_q"] = net_m0
+            metrics_dict["operating_margin_q_yoy_delta"] = (
+                op_m0 - op_m4 if op_m0 is not None and op_m4 is not None else None
+            )
+            metrics_dict["net_margin_q_yoy_delta"] = (
+                net_m0 - net_m4 if net_m0 is not None and net_m4 is not None else None
+            )
+            _q_margin_trend = []
+            for i in range(min(len(li_q), 6)):
+                _q_margin_trend.append({
+                    "period": li_q[i].get("report_period") or li_q[i].get("period"),
+                    "operating_margin": _q_margin(i, "operating_income"),
+                    "net_margin": _q_margin(i, "net_income"),
+                })
+            metrics_dict["quarterly_margin_trend"] = _q_margin_trend
+
         return FetchMetricsResponse(
             ticker=ticker,
             metrics=metrics_dict,

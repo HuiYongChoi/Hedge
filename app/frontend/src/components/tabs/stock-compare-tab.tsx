@@ -88,15 +88,23 @@ const COMPARISON_CHART_METRICS: Array<{
 const FINANCIAL_ROWS: Array<{ key: string; ko: string; en: string; percent?: boolean }> = [
   { key: 'currentPrice', ko: '현재가', en: 'Current price' },
   { key: 'price_to_earnings_ratio', ko: 'PER (TTM)', en: 'P/E (TTM)' },
-  { key: 'forward_pe', ko: 'FwdPER', en: 'Fwd P/E' },
+  { key: 'forward_pe', ko: 'FwdPER (NTM·분기합산)', en: 'Fwd P/E (NTM)' },
+  { key: 'forward_pe_fy0', ko: 'FwdPER (올해)', en: 'Fwd P/E (FY0)' },
+  { key: 'forward_pe_fy1', ko: 'FwdPER (내년)', en: 'Fwd P/E (FY1)' },
   { key: 'price_to_book_ratio', ko: 'PBR', en: 'P/B' },
   { key: 'enterprise_value_to_ebitda_ratio', ko: 'EV/EBITDA', en: 'EV/EBITDA' },
   { key: 'operating_margin', ko: '영업이익률', en: 'Operating margin', percent: true },
   { key: 'net_margin', ko: '순이익률', en: 'Net margin', percent: true },
+  { key: 'operating_margin_q', ko: '영업이익률 (분기)', en: 'Op margin (Q)', percent: true },
+  { key: 'net_margin_q', ko: '순이익률 (분기)', en: 'Net margin (Q)', percent: true },
   { key: 'return_on_equity', ko: 'ROE', en: 'ROE', percent: true },
   { key: 'return_on_invested_capital', ko: 'ROIC', en: 'ROIC', percent: true },
-  { key: 'revenue_growth', ko: '매출 성장', en: 'Revenue growth', percent: true },
-  { key: 'earnings_growth', ko: '이익 성장', en: 'Earnings growth', percent: true },
+  { key: 'revenue_growth', ko: '매출 성장 (연간)', en: 'Revenue growth (FY)', percent: true },
+  { key: 'earnings_growth', ko: '이익 성장 (연간)', en: 'Earnings growth (FY)', percent: true },
+  { key: 'revenue_growth_yoy', ko: '매출 성장 (분기 YoY)', en: 'Revenue growth (Q YoY)', percent: true },
+  { key: 'earnings_growth_yoy', ko: '이익 성장 (분기 YoY)', en: 'Earnings growth (Q YoY)', percent: true },
+  { key: 'revenue_growth_qoq', ko: '매출 성장 (QoQ)', en: 'Revenue growth (QoQ)', percent: true },
+  { key: 'earnings_growth_qoq', ko: '이익 성장 (QoQ)', en: 'Earnings growth (QoQ)', percent: true },
   { key: 'liabilities_to_equity', ko: '부채비율', en: 'Debt ratio', percent: true },
   { key: 'debt_to_equity', ko: '이자부채비율', en: 'Debt/Equity (int)' },
   { key: 'interest_coverage', ko: '이자보상배율', en: 'Interest coverage' },
@@ -125,7 +133,9 @@ const FINANCIAL_BAR_GROUPS: Array<{
     en: 'Valuation',
     rows: [
       { key: 'price_to_earnings_ratio', ko: 'PER (TTM)', en: 'P/E (TTM)', higherIsBetter: false },
-      { key: 'forward_pe', ko: 'FwdPER', en: 'Fwd P/E', higherIsBetter: false },
+      { key: 'forward_pe', ko: 'FwdPER (NTM)', en: 'Fwd P/E (NTM)', higherIsBetter: false },
+      { key: 'forward_pe_fy0', ko: 'FwdPER (올해)', en: 'Fwd P/E (FY0)', higherIsBetter: false },
+      { key: 'forward_pe_fy1', ko: 'FwdPER (내년)', en: 'Fwd P/E (FY1)', higherIsBetter: false },
       { key: 'price_to_book_ratio', ko: 'PBR', en: 'P/B', higherIsBetter: false },
       { key: 'enterprise_value_to_ebitda_ratio', ko: 'EV/EBITDA', en: 'EV/EBITDA', higherIsBetter: false },
     ],
@@ -137,6 +147,8 @@ const FINANCIAL_BAR_GROUPS: Array<{
     rows: [
       { key: 'operating_margin', ko: '영업이익률', en: 'Operating margin', higherIsBetter: true, percent: true },
       { key: 'net_margin', ko: '순이익률', en: 'Net margin', higherIsBetter: true, percent: true },
+      { key: 'operating_margin_q', ko: '영업이익률 (분기)', en: 'Op margin (Q)', higherIsBetter: true, percent: true },
+      { key: 'net_margin_q', ko: '순이익률 (분기)', en: 'Net margin (Q)', higherIsBetter: true, percent: true },
       { key: 'return_on_equity', ko: 'ROE', en: 'ROE', higherIsBetter: true, percent: true },
       { key: 'return_on_invested_capital', ko: 'ROIC', en: 'ROIC', higherIsBetter: true, percent: true },
     ],
@@ -146,8 +158,10 @@ const FINANCIAL_BAR_GROUPS: Array<{
     ko: '성장·레버리지',
     en: 'Growth & leverage',
     rows: [
-      { key: 'revenue_growth', ko: '매출 성장', en: 'Revenue growth', higherIsBetter: true, percent: true },
-      { key: 'earnings_growth', ko: '이익 성장', en: 'Earnings growth', higherIsBetter: true, percent: true },
+      { key: 'revenue_growth', ko: '매출 성장 (연간)', en: 'Revenue growth (FY)', higherIsBetter: true, percent: true },
+      { key: 'earnings_growth', ko: '이익 성장 (연간)', en: 'Earnings growth (FY)', higherIsBetter: true, percent: true },
+      { key: 'revenue_growth_yoy', ko: '매출 성장 (분기 YoY)', en: 'Revenue growth (Q YoY)', higherIsBetter: true, percent: true },
+      { key: 'earnings_growth_yoy', ko: '이익 성장 (분기 YoY)', en: 'Earnings growth (Q YoY)', higherIsBetter: true, percent: true },
       { key: 'liabilities_to_equity', ko: '부채비율', en: 'Debt ratio', higherIsBetter: false, percent: true },
       { key: 'interest_coverage', ko: '이자보상배율', en: 'Interest coverage', higherIsBetter: true },
     ],
@@ -179,6 +193,20 @@ function formatTargetWithGap(target: number | null | undefined, currentPrice: nu
   return `${formattedTarget} (${gap >= 0 ? '+' : ''}${(gap * 100).toFixed(1)}%)`;
 }
 
+function formatQuarterlyMarginTrend(slot: CompareSlot, kind: 'operating_margin' | 'net_margin'): string | null {
+  const trend = slot.metrics?.quarterly_margin_trend;
+  if (!Array.isArray(trend) || trend.length === 0) return null;
+  // Backend ships newest-first; take up to 4 quarters and reverse to oldest → newest.
+  const points = trend
+    .slice(0, 4)
+    .map((p: any) => (typeof p?.[kind] === 'number' && Number.isFinite(p[kind])
+      ? `${(p[kind] * 100).toFixed(1)}%`
+      : '—'))
+    .reverse();
+  if (points.every(p => p === '—')) return null;
+  return points.join(' → ');
+}
+
 function toneClass(signal: string | null | undefined): string {
   if (signal === 'bullish') return 'text-emerald-400';
   if (signal === 'bearish') return 'text-rose-400';
@@ -198,13 +226,13 @@ function scoreTone(score: number): string {
 
 function scoreHelpText(kind: 'value' | 'quality' | 'growth', language: 'ko' | 'en'): string {
   if (language === 'en') {
-    if (kind === 'value') return 'Value score compares cheaper multiples (P/E, Fwd P/E, P/B, EV/EBITDA), broker target upside, and valuation-model upside.';
-    if (kind === 'quality') return 'Quality score compares operating margin, net margin, ROE, ROIC, interest coverage, and lower liabilities-to-equity.';
-    return 'Growth score compares revenue growth and earnings growth from the existing financial metrics feed.';
+    if (kind === 'value') return 'Value score compares cheaper multiples (P/E, Fwd P/E NTM, Fwd P/E this FY & next FY, P/B, EV/EBITDA), broker target upside, and valuation-model upside.';
+    if (kind === 'quality') return 'Quality score compares annual and latest-quarter operating margin & net margin, plus ROE, ROIC, interest coverage, and lower liabilities-to-equity.';
+    return 'Growth score compares annual revenue & earnings growth and the latest-quarter YoY revenue & earnings growth from the financial metrics feed.';
   }
-  if (kind === 'value') return '밸류 점수는 낮은 PER/FwdPER/PBR/EV·EBITDA, 증권사 목표 상승여력, 가치평가 모델 상승여력을 함께 봅니다.';
-  if (kind === 'quality') return '퀄리티 점수는 영업이익률, 순이익률, ROE, ROIC, 이자보상배율, 낮은 부채비율을 함께 봅니다.';
-  return '성장 점수는 기존 재무 데이터의 매출 성장과 이익 성장을 상대 비교합니다.';
+  if (kind === 'value') return '밸류 점수는 낮은 PER/FwdPER(NTM)/FwdPER(올해·내년)/PBR/EV·EBITDA, 증권사 목표 상승여력, 가치평가 모델 상승여력을 함께 봅니다.';
+  if (kind === 'quality') return '퀄리티 점수는 연간·최근분기 영업이익률·순이익률, ROE, ROIC, 이자보상배율, 낮은 부채비율을 함께 봅니다.';
+  return '성장 점수는 연간 매출·이익 성장과 최근분기 매출·이익 YoY 성장을 함께 상대 비교합니다.';
 }
 
 function axisHelpText(kind: 'valuationUpside' | 'metricValue', language: 'ko' | 'en'): string {
@@ -219,6 +247,8 @@ function axisHelpText(kind: 'valuationUpside' | 'metricValue', language: 'ko' | 
 function getMetricValue(slot: CompareSlot, key: string): number | null {
   if (key === 'currentPrice') return numericValue(slot.currentPrice);
   if (key === 'forward_pe') return numericValue(slot.forwardMetrics?.forward_pe);
+  if (key === 'forward_pe_fy0') return numericValue(slot.forwardMetrics?.forward_pe_fy0);
+  if (key === 'forward_pe_fy1') return numericValue(slot.forwardMetrics?.forward_pe_fy1);
   return numericValue(slot.metrics?.[key]);
 }
 
@@ -268,18 +298,24 @@ function buildRankedScorecards(slots: CompareSlot[]) {
   const scoreMaps = {
     per: scoreAcross(slots, slot => getMetricValue(slot, 'price_to_earnings_ratio'), false),
     fwdPer: scoreAcross(slots, slot => getMetricValue(slot, 'forward_pe'), false),
+    fwdPerFy0: scoreAcross(slots, slot => getMetricValue(slot, 'forward_pe_fy0'), false),
+    fwdPerFy1: scoreAcross(slots, slot => getMetricValue(slot, 'forward_pe_fy1'), false),
     pbr: scoreAcross(slots, slot => getMetricValue(slot, 'price_to_book_ratio'), false),
     evEbitda: scoreAcross(slots, slot => getMetricValue(slot, 'enterprise_value_to_ebitda_ratio'), false),
     targetUpside: scoreAcross(slots, getTargetUpside, true),
     valuationGap: scoreAcross(slots, getAverageValuationGap, true),
     operatingMargin: scoreAcross(slots, slot => getMetricValue(slot, 'operating_margin'), true),
     netMargin: scoreAcross(slots, slot => getMetricValue(slot, 'net_margin'), true),
+    operatingMarginQ: scoreAcross(slots, slot => getMetricValue(slot, 'operating_margin_q'), true),
+    netMarginQ: scoreAcross(slots, slot => getMetricValue(slot, 'net_margin_q'), true),
     roe: scoreAcross(slots, slot => getMetricValue(slot, 'return_on_equity'), true),
     roic: scoreAcross(slots, slot => getMetricValue(slot, 'return_on_invested_capital'), true),
     interestCoverage: scoreAcross(slots, slot => getMetricValue(slot, 'interest_coverage'), true),
     liabilities: scoreAcross(slots, slot => getMetricValue(slot, 'liabilities_to_equity'), false),
     revenueGrowth: scoreAcross(slots, slot => getMetricValue(slot, 'revenue_growth'), true),
     earningsGrowth: scoreAcross(slots, slot => getMetricValue(slot, 'earnings_growth'), true),
+    revenueGrowthQ: scoreAcross(slots, slot => getMetricValue(slot, 'revenue_growth_yoy'), true),
+    earningsGrowthQ: scoreAcross(slots, slot => getMetricValue(slot, 'earnings_growth_yoy'), true),
   };
 
   return slots
@@ -287,6 +323,8 @@ function buildRankedScorecards(slots: CompareSlot[]) {
       const valueScore = averageScores(
         scoreMaps.per.get(slot.id),
         scoreMaps.fwdPer.get(slot.id),
+        scoreMaps.fwdPerFy0.get(slot.id),
+        scoreMaps.fwdPerFy1.get(slot.id),
         scoreMaps.pbr.get(slot.id),
         scoreMaps.evEbitda.get(slot.id),
         scoreMaps.targetUpside.get(slot.id),
@@ -295,6 +333,8 @@ function buildRankedScorecards(slots: CompareSlot[]) {
       const qualityScore = averageScores(
         scoreMaps.operatingMargin.get(slot.id),
         scoreMaps.netMargin.get(slot.id),
+        scoreMaps.operatingMarginQ.get(slot.id),
+        scoreMaps.netMarginQ.get(slot.id),
         scoreMaps.roe.get(slot.id),
         scoreMaps.roic.get(slot.id),
         scoreMaps.interestCoverage.get(slot.id),
@@ -303,6 +343,8 @@ function buildRankedScorecards(slots: CompareSlot[]) {
       const growthScore = averageScores(
         scoreMaps.revenueGrowth.get(slot.id),
         scoreMaps.earningsGrowth.get(slot.id),
+        scoreMaps.revenueGrowthQ.get(slot.id),
+        scoreMaps.earningsGrowthQ.get(slot.id),
       );
       const totalScore = Math.round((valueScore * 0.45) + (qualityScore * 0.35) + (growthScore * 0.20));
       return {
@@ -900,8 +942,8 @@ export function StockCompareTab() {
                         {readySlots.map(s => {
                           const v = row.key === 'currentPrice'
                             ? s.currentPrice
-                            : row.key === 'forward_pe'
-                              ? s.forwardMetrics?.forward_pe
+                            : row.key.startsWith('forward_pe')
+                              ? s.forwardMetrics?.[row.key]
                               : s.metrics?.[row.key];
                           return (
                             <td key={s.id} className="px-3 py-2 text-right font-mono">
@@ -964,7 +1006,7 @@ export function StockCompareTab() {
                   height={260}
                 />
                 <div className="grid gap-3">
-                  {COMPARISON_CHART_METRICS.map(metric => (
+                  {COMPARISON_CHART_METRICS.filter(metric => metric.key !== chartMetricKey).map(metric => (
                     <div key={metric.key} className="rounded-md border bg-muted/5">
                       <RelativeComparisonChart
                         slots={readySlots}
@@ -1083,8 +1125,19 @@ function CompareRankingCards({
             </div>
             <div className="mt-4 border-t pt-3 text-xs leading-5 text-muted-foreground">
               {language === 'ko'
-                ? `FwdPER ${fmtNum(getMetricValue(card.slot, 'forward_pe'))} · ROIC ${fmtPercent(getMetricValue(card.slot, 'return_on_invested_capital'))} · 목표 ${formatTargetWithGap(card.slot.targetConsensus, card.slot.currentPrice)}`
-                : `Fwd P/E ${fmtNum(getMetricValue(card.slot, 'forward_pe'))} · ROIC ${fmtPercent(getMetricValue(card.slot, 'return_on_invested_capital'))} · Target ${formatTargetWithGap(card.slot.targetConsensus, card.slot.currentPrice)}`}
+                ? `FwdPER(NTM) ${fmtNum(getMetricValue(card.slot, 'forward_pe'))} · 올해 ${fmtNum(getMetricValue(card.slot, 'forward_pe_fy0'))} · 내년 ${fmtNum(getMetricValue(card.slot, 'forward_pe_fy1'))} · ROIC ${fmtPercent(getMetricValue(card.slot, 'return_on_invested_capital'))} · 목표 ${formatTargetWithGap(card.slot.targetConsensus, card.slot.currentPrice)}`
+                : `Fwd P/E(NTM) ${fmtNum(getMetricValue(card.slot, 'forward_pe'))} · FY0 ${fmtNum(getMetricValue(card.slot, 'forward_pe_fy0'))} · FY1 ${fmtNum(getMetricValue(card.slot, 'forward_pe_fy1'))} · ROIC ${fmtPercent(getMetricValue(card.slot, 'return_on_invested_capital'))} · Target ${formatTargetWithGap(card.slot.targetConsensus, card.slot.currentPrice)}`}
+              <div className="mt-1">
+                {language === 'ko'
+                  ? `분기 영업이익률 ${fmtPercent(getMetricValue(card.slot, 'operating_margin_q'))} · 분기 매출 YoY ${fmtPercent(getMetricValue(card.slot, 'revenue_growth_yoy'))} · 분기 이익 YoY ${fmtPercent(getMetricValue(card.slot, 'earnings_growth_yoy'))}`
+                  : `Op margin (Q) ${fmtPercent(getMetricValue(card.slot, 'operating_margin_q'))} · Rev YoY (Q) ${fmtPercent(getMetricValue(card.slot, 'revenue_growth_yoy'))} · EPS YoY (Q) ${fmtPercent(getMetricValue(card.slot, 'earnings_growth_yoy'))}`}
+              </div>
+              {formatQuarterlyMarginTrend(card.slot, 'operating_margin') && (
+                <div className="mt-1 text-[11px] text-muted-foreground/80">
+                  {language === 'ko' ? '영업이익률 추세 ' : 'Op margin trend '}
+                  {formatQuarterlyMarginTrend(card.slot, 'operating_margin')}
+                </div>
+              )}
             </div>
           </div>
         ))}
