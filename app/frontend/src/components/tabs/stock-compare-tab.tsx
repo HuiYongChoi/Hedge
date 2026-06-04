@@ -743,7 +743,10 @@ export function StockCompareTab() {
     }
   }, [baselineId, isSavingComparison, language, modelKeys, slots]);
 
-  const rankedScorecards = useMemo(() => buildRankedScorecards(readySlots), [readySlots]);
+  // Only rank/score slots whose data is actually loaded; a ticker typed but not yet
+  // run must not surface placeholder 50/50/50 scores.
+  const scoredSlots = useMemo(() => readySlots.filter(s => s.status === 'ready'), [readySlots]);
+  const rankedScorecards = useMemo(() => buildRankedScorecards(scoredSlots), [scoredSlots]);
 
   return (
     <div className="h-full w-full overflow-y-auto bg-background text-foreground">
