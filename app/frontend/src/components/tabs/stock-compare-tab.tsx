@@ -807,19 +807,6 @@ export function StockCompareTab() {
                   {slot.progressMessage}
                 </div>
               )}
-              {slot.signal && (
-                <button
-                  onClick={() => setBaselineId(slot.id)}
-                  className={cn(
-                    'mt-1 w-full rounded px-1 py-0.5 text-[10px] font-semibold',
-                    baselineId === slot.id ? 'ring-1 ring-primary' : '',
-                    toneClass(slot.signal.signal),
-                  )}
-                  title={t('compareBaseline', language)}
-                >
-                  {slot.signal.signal?.toUpperCase()} · {slot.signal.confidence}
-                </button>
-              )}
             </div>
           ))}
         </div>
@@ -908,14 +895,6 @@ export function StockCompareTab() {
                           <span className="text-amber-500">
                             {formatTargetWithGap(s.targetConsensus, s.currentPrice)}
                           </span>
-                        </td>
-                      ))}
-                    </tr>
-                    <tr className="border-t bg-muted/20">
-                      <td className="px-3 py-2 text-xs font-semibold">{t('compareWeightedSignal', language)}</td>
-                      {readySlots.map(s => (
-                        <td key={s.id} className={cn('px-3 py-2 text-right font-mono font-semibold', toneClass(s.signal?.signal))}>
-                          {s.signal ? `${s.signal.signal?.toUpperCase()} ${s.signal.confidence}` : '—'}
                         </td>
                       ))}
                     </tr>
@@ -1047,9 +1026,6 @@ function CurrentPriceSummary({ slots, language }: { slots: CompareSlot[]; langua
           <div key={slot.id} className="rounded-lg border bg-muted/10 p-3">
             <div className="flex items-center justify-between gap-2">
               <div className="truncate text-xs text-muted-foreground">{slot.ticker}</div>
-              <div className={cn('text-[10px] font-semibold', toneClass(slot.signal?.signal))}>
-                {slot.signal ? slot.signal.signal.toUpperCase() : slot.status}
-              </div>
             </div>
             <div className="mt-2 text-xl font-semibold tabular-nums">{fmtCurrency(last)}</div>
             <div className="mt-1 flex items-center justify-between text-[11px]">
@@ -1106,9 +1082,6 @@ function CompareRankingCards({
                   </div>
                 </div>
               </div>
-              <span className={cn('rounded-md px-2 py-1 text-[11px] font-bold', toneClass(card.slot.signal?.signal), 'bg-muted/40')}>
-                {card.slot.signal ? card.slot.signal.signal.toUpperCase() : card.slot.status.toUpperCase()}
-              </span>
             </div>
             <div className="mt-4 flex items-end justify-between">
               <div className="text-3xl font-bold tabular-nums">{fmtCurrency(card.slot.currentPrice)}</div>
