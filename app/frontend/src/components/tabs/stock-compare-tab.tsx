@@ -99,11 +99,14 @@ const FINANCIAL_ROWS: Array<{ key: string; ko: string; en: string; percent?: boo
   { key: 'return_on_equity', ko: 'ROE', en: 'ROE', percent: true },
   { key: 'return_on_invested_capital', ko: 'ROIC', en: 'ROIC', percent: true },
   { key: 'revenue_growth', ko: '매출 성장 (연간)', en: 'Revenue growth (FY)', percent: true },
-  { key: 'earnings_growth', ko: '이익 성장 (연간)', en: 'Earnings growth (FY)', percent: true },
+  { key: 'operating_income_growth', ko: '영업이익 성장 (연간)', en: 'Operating income growth (FY)', percent: true },
+  { key: 'earnings_growth', ko: '순이익 성장 (연간)', en: 'Net income growth (FY)', percent: true },
   { key: 'revenue_growth_yoy', ko: '매출 성장 (분기 YoY)', en: 'Revenue growth (Q YoY)', percent: true },
-  { key: 'earnings_growth_yoy', ko: '이익 성장 (분기 YoY)', en: 'Earnings growth (Q YoY)', percent: true },
+  { key: 'operating_income_growth_yoy', ko: '영업이익 성장 (분기 YoY)', en: 'Operating income growth (Q YoY)', percent: true },
+  { key: 'earnings_growth_yoy', ko: '순이익 성장 (분기 YoY)', en: 'Net income growth (Q YoY)', percent: true },
   { key: 'revenue_growth_qoq', ko: '매출 성장 (QoQ)', en: 'Revenue growth (QoQ)', percent: true },
-  { key: 'earnings_growth_qoq', ko: '이익 성장 (QoQ)', en: 'Earnings growth (QoQ)', percent: true },
+  { key: 'operating_income_growth_qoq', ko: '영업이익 성장 (QoQ)', en: 'Operating income growth (QoQ)', percent: true },
+  { key: 'earnings_growth_qoq', ko: '순이익 성장 (QoQ)', en: 'Net income growth (QoQ)', percent: true },
   { key: 'liabilities_to_equity', ko: '부채비율', en: 'Debt ratio', percent: true },
   { key: 'debt_to_equity', ko: '이자부채비율', en: 'Debt/Equity (int)' },
   { key: 'interest_coverage', ko: '이자보상배율', en: 'Interest coverage' },
@@ -148,6 +151,10 @@ const FINANCIAL_BAR_GROUPS: Array<{
       { key: 'net_margin', ko: '순이익률', en: 'Net margin', higherIsBetter: true, percent: true },
       { key: 'operating_margin_q', ko: '영업이익률 (분기)', en: 'Op margin (Q)', higherIsBetter: true, percent: true },
       { key: 'net_margin_q', ko: '순이익률 (분기)', en: 'Net margin (Q)', higherIsBetter: true, percent: true },
+      { key: 'operating_income_growth', ko: '영업이익 성장 (연간)', en: 'Operating income growth (FY)', higherIsBetter: true, percent: true },
+      { key: 'operating_income_growth_yoy', ko: '영업이익 성장 (분기 YoY)', en: 'Operating income growth (Q YoY)', higherIsBetter: true, percent: true },
+      { key: 'earnings_growth', ko: '순이익 성장 (연간)', en: 'Net income growth (FY)', higherIsBetter: true, percent: true },
+      { key: 'earnings_growth_yoy', ko: '순이익 성장 (분기 YoY)', en: 'Net income growth (Q YoY)', higherIsBetter: true, percent: true },
       { key: 'return_on_equity', ko: 'ROE', en: 'ROE', higherIsBetter: true, percent: true },
       { key: 'return_on_invested_capital', ko: 'ROIC', en: 'ROIC', higherIsBetter: true, percent: true },
     ],
@@ -158,9 +165,11 @@ const FINANCIAL_BAR_GROUPS: Array<{
     en: 'Growth & leverage',
     rows: [
       { key: 'revenue_growth', ko: '매출 성장 (연간)', en: 'Revenue growth (FY)', higherIsBetter: true, percent: true },
-      { key: 'earnings_growth', ko: '이익 성장 (연간)', en: 'Earnings growth (FY)', higherIsBetter: true, percent: true },
+      { key: 'operating_income_growth', ko: '영업이익 성장 (연간)', en: 'Operating income growth (FY)', higherIsBetter: true, percent: true },
+      { key: 'earnings_growth', ko: '순이익 성장 (연간)', en: 'Net income growth (FY)', higherIsBetter: true, percent: true },
       { key: 'revenue_growth_yoy', ko: '매출 성장 (분기 YoY)', en: 'Revenue growth (Q YoY)', higherIsBetter: true, percent: true },
-      { key: 'earnings_growth_yoy', ko: '이익 성장 (분기 YoY)', en: 'Earnings growth (Q YoY)', higherIsBetter: true, percent: true },
+      { key: 'operating_income_growth_yoy', ko: '영업이익 성장 (분기 YoY)', en: 'Operating income growth (Q YoY)', higherIsBetter: true, percent: true },
+      { key: 'earnings_growth_yoy', ko: '순이익 성장 (분기 YoY)', en: 'Net income growth (Q YoY)', higherIsBetter: true, percent: true },
       { key: 'liabilities_to_equity', ko: '부채비율', en: 'Debt ratio', higherIsBetter: false, percent: true },
       { key: 'interest_coverage', ko: '이자보상배율', en: 'Interest coverage', higherIsBetter: true },
     ],
@@ -227,11 +236,11 @@ function scoreHelpText(kind: 'value' | 'quality' | 'growth', language: 'ko' | 'e
   if (language === 'en') {
     if (kind === 'value') return 'Value score compares cheaper multiples (P/E, Fwd P/E NTM, Fwd P/E this FY & next FY, P/B, EV/EBITDA), broker target upside, and valuation-model upside.';
     if (kind === 'quality') return 'Quality score compares annual and latest-quarter operating margin & net margin, plus ROE, ROIC, interest coverage, and lower liabilities-to-equity.';
-    return 'Growth score compares annual revenue & earnings growth and the latest-quarter YoY revenue & earnings growth from the financial metrics feed.';
+    return 'Growth score compares annual revenue, operating-income and net-income growth plus latest-quarter YoY revenue, operating-income and net-income growth from the financial metrics feed.';
   }
   if (kind === 'value') return '밸류 점수는 낮은 PER/FwdPER(NTM)/FwdPER(올해·내년)/PBR/EV·EBITDA, 증권사 목표 상승여력, 가치평가 모델 상승여력을 함께 봅니다.';
   if (kind === 'quality') return '퀄리티 점수는 연간·최근분기 영업이익률·순이익률, ROE, ROIC, 이자보상배율, 낮은 부채비율을 함께 봅니다.';
-  return '성장 점수는 연간 매출·이익 성장과 최근분기 매출·이익 YoY 성장을 함께 상대 비교합니다.';
+  return '성장 점수는 연간 매출·영업이익·순이익 성장과 최근분기 매출·영업이익·순이익 YoY 성장을 함께 상대 비교합니다.';
 }
 
 function axisHelpText(kind: 'valuationUpside' | 'metricValue', language: 'ko' | 'en'): string {
@@ -312,8 +321,10 @@ function buildRankedScorecards(slots: CompareSlot[]) {
     interestCoverage: scoreAcross(slots, slot => getMetricValue(slot, 'interest_coverage'), true),
     liabilities: scoreAcross(slots, slot => getMetricValue(slot, 'liabilities_to_equity'), false),
     revenueGrowth: scoreAcross(slots, slot => getMetricValue(slot, 'revenue_growth'), true),
+    operatingIncomeGrowth: scoreAcross(slots, slot => getMetricValue(slot, 'operating_income_growth'), true),
     earningsGrowth: scoreAcross(slots, slot => getMetricValue(slot, 'earnings_growth'), true),
     revenueGrowthQ: scoreAcross(slots, slot => getMetricValue(slot, 'revenue_growth_yoy'), true),
+    operatingIncomeGrowthQ: scoreAcross(slots, slot => getMetricValue(slot, 'operating_income_growth_yoy'), true),
     earningsGrowthQ: scoreAcross(slots, slot => getMetricValue(slot, 'earnings_growth_yoy'), true),
   };
 
@@ -341,8 +352,10 @@ function buildRankedScorecards(slots: CompareSlot[]) {
       );
       const growthScore = averageScores(
         scoreMaps.revenueGrowth.get(slot.id),
+        scoreMaps.operatingIncomeGrowth.get(slot.id),
         scoreMaps.earningsGrowth.get(slot.id),
         scoreMaps.revenueGrowthQ.get(slot.id),
+        scoreMaps.operatingIncomeGrowthQ.get(slot.id),
         scoreMaps.earningsGrowthQ.get(slot.id),
       );
       const totalScore = Math.round((valueScore * 0.45) + (qualityScore * 0.35) + (growthScore * 0.20));
@@ -1104,8 +1117,8 @@ function CompareRankingCards({
                 : `Fwd P/E(NTM) ${fmtNum(getMetricValue(card.slot, 'forward_pe'))} · FY0 ${fmtNum(getMetricValue(card.slot, 'forward_pe_fy0'))} · FY1 ${fmtNum(getMetricValue(card.slot, 'forward_pe_fy1'))} · ROIC ${fmtPercent(getMetricValue(card.slot, 'return_on_invested_capital'))} · Target ${formatTargetWithGap(card.slot.targetConsensus, card.slot.currentPrice)}`}
               <div className="mt-1">
                 {language === 'ko'
-                  ? `분기 영업이익률 ${fmtPercent(getMetricValue(card.slot, 'operating_margin_q'))} · 분기 매출 YoY ${fmtPercent(getMetricValue(card.slot, 'revenue_growth_yoy'))} · 분기 이익 YoY ${fmtPercent(getMetricValue(card.slot, 'earnings_growth_yoy'))}`
-                  : `Op margin (Q) ${fmtPercent(getMetricValue(card.slot, 'operating_margin_q'))} · Rev YoY (Q) ${fmtPercent(getMetricValue(card.slot, 'revenue_growth_yoy'))} · EPS YoY (Q) ${fmtPercent(getMetricValue(card.slot, 'earnings_growth_yoy'))}`}
+                  ? `분기 영업이익률 ${fmtPercent(getMetricValue(card.slot, 'operating_margin_q'))} · 분기 영업이익 YoY ${fmtPercent(getMetricValue(card.slot, 'operating_income_growth_yoy'))} · 분기 순이익 YoY ${fmtPercent(getMetricValue(card.slot, 'earnings_growth_yoy'))}`
+                  : `Op margin (Q) ${fmtPercent(getMetricValue(card.slot, 'operating_margin_q'))} · Op income YoY (Q) ${fmtPercent(getMetricValue(card.slot, 'operating_income_growth_yoy'))} · Net income YoY (Q) ${fmtPercent(getMetricValue(card.slot, 'earnings_growth_yoy'))}`}
               </div>
               {formatQuarterlyMarginTrend(card.slot, 'operating_margin') && (
                 <div className="mt-1 text-[11px] text-muted-foreground/80">

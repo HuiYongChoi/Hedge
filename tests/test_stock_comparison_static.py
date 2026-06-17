@@ -159,6 +159,32 @@ def test_comparison_uses_scorecard_ranking_design():
     assert "compareValueRankTitle" in src
 
 
+def test_comparison_quality_group_includes_profit_growth_rows():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+
+    quality_block = src[src.index("key: 'quality'"):src.index("key: 'growth_leverage'")]
+    assert "operating_income_growth" in quality_block
+    assert "영업이익 성장 (연간)" in quality_block
+    assert "operating_income_growth_yoy" in quality_block
+    assert "영업이익 성장 (분기 YoY)" in quality_block
+    assert "earnings_growth" in quality_block
+    assert "순이익 성장 (연간)" in quality_block
+    assert "earnings_growth_yoy" in quality_block
+    assert "순이익 성장 (분기 YoY)" in quality_block
+
+
+def test_comparison_growth_score_uses_operating_and_net_income_growth():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+
+    score_block = src[src.index("function buildRankedScorecards"):src.index("function newSlot")]
+    assert "operatingIncomeGrowth" in score_block
+    assert "operatingIncomeGrowthQ" in score_block
+    assert "earningsGrowth" in score_block
+    assert "earningsGrowthQ" in score_block
+    assert "scoreMaps.operatingIncomeGrowth.get(slot.id)" in score_block
+    assert "scoreMaps.operatingIncomeGrowthQ.get(slot.id)" in score_block
+
+
 def test_comparison_has_same_axis_metric_bars():
     src = _read("components/tabs/stock-compare-tab.tsx")
     assert "MetricBarComparisonPanel" in src

@@ -654,6 +654,15 @@ function selectMeaningfulSentence(
   return preferred || candidates[0] || '';
 }
 
+function inferDirectionalToneFromText(text: string): ReportTone {
+  const source = text.toLowerCase();
+  const bearish = (source.match(/약세|매도|비중\s*축소|부정|위험|리스크|고평가|취약|bearish|sell|reduce|downside|negative|risk|overvalued/giu) || []).length;
+  const bullish = (source.match(/강세|매수|긍정|상승|저평가|양호|bullish|buy|upside|positive|undervalued|strong/giu) || []).length;
+  if (bearish > bullish) return 'bearish';
+  if (bullish > bearish) return 'bullish';
+  return 'neutral';
+}
+
 function buildConciseConclusion(
   report: AgentReport,
   sections: NormalizedReport,
@@ -662,12 +671,6 @@ function buildConciseConclusion(
 ) {
   const parts: string[] = [];
   const conf = normalizeConfidence(report.confidence);
-  if (report.signal) {
-    parts.push(
-      `${signalToVerdict(String(report.signal), language)}${conf !== null ? ` (${language === 'ko' ? '신뢰도' : 'confidence'} ${conf}%)` : ''}`,
-    );
-  }
-
   const existingConclusion = selectMeaningfulSentence([sections.conclusion]);
   const valuation = selectMeaningfulSentence(
     [sections.valuationDcf, reasoning],
@@ -681,6 +684,18 @@ function buildConciseConclusion(
     [sections.risks, reasoning],
     /risk|리스크|약세|bear|downside|고평가|위험|취약/i,
   );
+  const conclusionContext = [existingConclusion, valuation, multiples, risks].filter(Boolean).join(' ');
+  const signalTone = getSignalTone(report.signal);
+  const conclusionTone = inferDirectionalToneFromText(conclusionContext);
+  const hasDirectionalConflict = signalTone !== 'neutral'
+    && conclusionTone !== 'neutral'
+    && signalTone !== conclusionTone;
+
+  if (report.signal && !hasDirectionalConflict) {
+    parts.push(
+      `${signalToVerdict(String(report.signal), language)}${conf !== null ? ` (${language === 'ko' ? '신뢰도' : 'confidence'} ${conf}%)` : ''}`,
+    );
+  }
 
   [existingConclusion, valuation, multiples, risks].forEach(sentence => {
     if (sentence && !parts.some(part => part.includes(sentence) || sentence.includes(part))) {
@@ -2184,9 +2199,8 @@ function formatSafetyMarginTarget(
   currency: string,
 ) {
   const current = finiteNumber(currentPrice);
-  const relativeToCurrent = current !== null && current > 0
-    ? (safetyMarginPrice - current) / current
-    : finiteNumber(rawMarginOfSafety);
+  const relativeToCurrent = finiteNumber(rawMarginOfSafety)
+    ?? (current !== null && current > 0 ? (safetyMarginPrice - current) / current : null);
   const pct = relativeToCurrent !== null
     ? ` (${relativeToCurrent > 0 ? '+' : ''}${(relativeToCurrent * 100).toFixed(1)}%)`
     : '';

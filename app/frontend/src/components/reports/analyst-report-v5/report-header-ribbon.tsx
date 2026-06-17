@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { t } from '@/lib/language-preferences';
 import { Database, FileText, Loader2, RefreshCw, SearchCode } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { dataCoverageLabel, getScoreBand, getSignalTone, signalToVerdict, toneToClasses } from './helpers';
+import { dataCoverageLabel, getScoreBand, toneToClasses } from './helpers';
 import { formatMoney } from './price-compass-panel/utils';
 import type { AgentMeta, AgentReport, ReportLanguage } from './types';
 
@@ -187,8 +187,6 @@ export function ReportHeaderRibbon({
 }: ReportHeaderRibbonProps) {
   const scoreBand = getScoreBand(compositeScore, language);
   const scoreClasses = toneToClasses(scoreBand.tone);
-  const signal = activeReport?.signal ? String(activeReport.signal) : '';
-  const signalClasses = toneToClasses(signal ? getSignalTone(signal) : 'neutral');
   const confidence = activeReport?.confidence ?? null;
   const normalizedConfidence = confidence === null || confidence === undefined
     ? null
@@ -213,11 +211,6 @@ export function ReportHeaderRibbon({
               <Badge variant="outline" className={scoreClasses.badge}>
                 {scoreBand.label}
               </Badge>
-              {signal && (
-                <Badge variant="outline" className={signalClasses.badge}>
-                  {signalToVerdict(signal, language)}
-                </Badge>
-              )}
               {normalizedConfidence !== null && Number.isFinite(normalizedConfidence) && (
                 <Badge variant="outline" className="border-blue-500/25 bg-blue-500/10 text-blue-500">
                   {normalizedConfidence}%

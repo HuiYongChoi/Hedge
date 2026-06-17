@@ -88,7 +88,7 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("displayTickerLabel", layout)
         self.assertIn("displayTicker={displayTickerLabel}", layout)
         self.assertIn("displayTicker: string", header)
-        self.assertIn("{displayTicker} · {activeAgent.name}", header)
+        self.assertIn("{' · '}{activeAgent.name}", header)
 
     def test_margin_of_safety_recomputes_from_reference_price(self):
         layout = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
@@ -109,6 +109,7 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         layout = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         sidebar = (V5_DIR / "target-data-sidebar.tsx").read_text(encoding="utf-8")
+        prefs = LANG_PREFS.read_text(encoding="utf-8")
 
         self.assertIn("extractTargetTiles(effectiveMetrics, displayAgentKey, language, effectiveCurrency)", layout)
         self.assertIn("formatMarginTarget", helpers)
@@ -130,6 +131,23 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         )
         self.assertNotIn("formatMarginTarget(value, metrics.intrinsicValue?.value", helpers)
         self.assertNotIn("formatCurrency(referencePrice, currency)", helpers)
+        self.assertIn("finiteNumber(rawMarginOfSafety)", helpers)
+        self.assertLess(helpers.index("finiteNumber(rawMarginOfSafety)"), helpers.index("safetyMarginPrice - current"))
+        self.assertIn("targetMarginLabel: '안전가'", prefs)
+
+    def test_header_does_not_mix_composite_and_agent_direction_badges(self):
+        header = (V5_DIR / "report-header-ribbon.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("getScoreBand(compositeScore", header)
+        self.assertNotIn("signalToVerdict(signal", header)
+        self.assertNotIn("getSignalTone(signal", header)
+
+    def test_conclusion_omits_signal_prefix_when_direction_conflicts(self):
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+
+        self.assertIn("inferDirectionalToneFromText", helpers)
+        self.assertIn("hasDirectionalConflict", helpers)
+        self.assertIn("report.signal && !hasDirectionalConflict", helpers)
 
     def test_header_metric_chips_have_tooltips(self):
         header = (V5_DIR / "report-header-ribbon.tsx").read_text(encoding="utf-8")

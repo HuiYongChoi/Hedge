@@ -63,6 +63,16 @@ def test_financial_language_normalizer_handles_decimal_korean_won_amounts() -> N
     assert ".34원" not in normalized
 
 
+def test_frontend_financial_display_normalizer_hides_duplicate_machine_numbers() -> None:
+    source = (ROOT / "app/frontend/src/lib/financial-text-normalizer.ts").read_text(encoding="utf-8")
+
+    assert "normalizeDuplicateFinancialNumbers" in source
+    assert "억\\s*달러)\\s*\\(=\\s*[-+]?\\d" in source
+    assert "잉여현금흐름|FCFF?|FCF|수익률|yield" in source
+    assert "안전마진 지표가" in source
+    assert "달러\\s*\\(\\s*약\\s*([\\d,]+(?:\\.\\d+)?\\s*억\\s*달러)" in source
+
+
 def test_financial_language_normalizer_rewrites_machine_style_report_terms() -> None:
     from src.utils.financial_formatting import normalize_financial_language
 

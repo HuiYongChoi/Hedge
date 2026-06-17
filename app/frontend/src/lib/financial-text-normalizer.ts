@@ -81,12 +81,42 @@ function normalizeBnToKorean(text: string): string {
   );
 }
 
+function trimPercentText(value: string) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return value;
+  return n.toFixed(2).replace(/\.?0+$/u, '');
+}
+
+function normalizeDuplicateFinancialNumbers(text: string): string {
+  return text
+    .replace(
+      /(\d[\d,]*(?:\.\d+)?\s*억\s*달러)\s*\(=\s*[-+]?\d+(?:\.\d+)?e[+-]?\d+\s*\)/giu,
+      '$1',
+    )
+    .replace(
+      /[-+]?\d[\d,]*(?:\.\d+)?\s*달러\s*\(\s*약\s*([\d,]+(?:\.\d+)?\s*억\s*달러)\s*\)/giu,
+      '$1',
+    )
+    .replace(
+      /((?:잉여현금흐름|FCFF?|FCF|수익률|yield)[^.\n]{0,80}?)\b[-+]?0?\.\d+\s*\(\s*(-?\d+(?:\.\d+)?)%\s*\)/giu,
+      (_full, prefix: string, pct: string) => `${prefix}${trimPercentText(pct)}%`,
+    )
+    .replace(
+      /safety\s*\(\s*안전마진\s*\)\s*지표가\s*[-+]?0?\.\d+\s*\(\s*약\s*(-?\d+(?:\.\d+)?)%\s*\)/giu,
+      (_full, pct: string) => `안전마진 지표가 ${trimPercentText(pct)}%`,
+    )
+    .replace(
+      /((?:안전마진|margin\s*of\s*safety)[^.\n]{0,80}?)\b[-+]?0?\.\d+\s*\(\s*약\s*(-?\d+(?:\.\d+)?)%\s*\)/giu,
+      (_full, prefix: string, pct: string) => `${prefix}${trimPercentText(pct)}%`,
+    );
+}
+
 export function normalizeFinancialDisplayText(text: string) {
   if (typeof text !== 'string' || text.length === 0) return text;
 
   return normalizeNestedDebtRatioLabels(
     normalizeBrokenKoreanDecimalSeparators(
-      normalizeBnToKorean(normalizeDebtPercentSequences(text)),
+      normalizeDuplicateFinancialNumbers(normalizeBnToKorean(normalizeDebtPercentSequences(text))),
     ),
   )
     .replace(/(이자보상배율\s*)×\s*(\d)/g, '$1$2')
