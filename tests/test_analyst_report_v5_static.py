@@ -149,6 +149,17 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("hasDirectionalConflict", helpers)
         self.assertIn("report.signal && !hasDirectionalConflict", helpers)
 
+    def test_sticky_header_labels_margin_percent_as_margin_not_price(self):
+        # 안전가(=가격) 라벨을 퍼센트 값에 붙이면 안 된다. 스티키 헤더의 안전마진 %는
+        # 가격 타일(targetMarginLabel='안전가')과 구분되는 안전마진 라벨을 써야 한다.
+        sticky = (V5_DIR / "sticky-analysis-header.tsx").read_text(encoding="utf-8")
+        prefs = LANG_PREFS.read_text(encoding="utf-8")
+
+        self.assertIn("t('targetMarginPctLabel', language)", sticky)
+        self.assertNotIn("t('targetMarginLabel', language)", sticky)
+        self.assertIn("targetMarginPctLabel: '안전마진'", prefs)
+        self.assertIn("targetMarginPctLabel: 'Margin of safety'", prefs)
+
     def test_header_metric_chips_have_tooltips(self):
         header = (V5_DIR / "report-header-ribbon.tsx").read_text(encoding="utf-8")
         prefs = LANG_PREFS.read_text(encoding="utf-8")

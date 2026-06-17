@@ -166,7 +166,7 @@ export function StickyAnalysisHeader({
           </>
         ) : (
           <span className="whitespace-nowrap">
-            {t('targetMarginLabel', language)} <span className="font-mono text-foreground">{formatPercent(marginOfSafetyPct, true)}</span>
+            {t('targetMarginPctLabel', language)} <span className="font-mono text-foreground">{formatPercent(marginOfSafetyPct, true)}</span>
           </span>
         )}
         <span className="hidden text-border sm:inline">·</span>
