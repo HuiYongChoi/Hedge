@@ -650,34 +650,35 @@ export function StockCompareTab() {
           lineItems: data.annual_line_items || data.line_items || [],
           currentPrice,
           targetConsensus: analystTarget?.consensus ?? null,
-          status: 'loading',
-          progressMessage: language === 'ko' ? `${displayTicker} · 가치평가 실행 중` : `${displayTicker} · Running valuation`,
+          status: 'ready',
+          progressMessage: language === 'ko' ? `${displayTicker} · 재무 데이터 완료 · 가치평가 중` : `${displayTicker} · Metrics ready · valuing`,
         });
 
-        try {
-          const complete = await runValuationForTicker(resolvedTicker, displayTicker, slot.id, controller.signal);
-          const analystSignals: Record<string, any> = complete?.analyst_signals || {};
-          const valuationKey = Object.keys(analystSignals).find(k => k.startsWith('valuation_analyst'));
-          const valuationByTicker = valuationKey ? analystSignals[valuationKey] : {};
-          const entry = valuationByTicker?.[resolvedTicker] ?? valuationByTicker?.[displayTicker];
-          if (!entry) throw new Error('valuation result missing');
+        void runValuationForTicker(resolvedTicker, displayTicker, slot.id, controller.signal)
+          .then(complete => {
+            if (controller.signal.aborted) return;
+            const analystSignals: Record<string, any> = complete?.analyst_signals || {};
+            const valuationKey = Object.keys(analystSignals).find(k => k.startsWith('valuation_analyst'));
+            const valuationByTicker = valuationKey ? analystSignals[valuationKey] : {};
+            const entry = valuationByTicker?.[resolvedTicker] ?? valuationByTicker?.[displayTicker];
+            if (!entry) throw new Error('valuation result missing');
 
-          updateSlot(slot.id, {
-            valuation: buildValuationDeepDive({ reasoning: entry.reasoning } as any, currentPrice),
-            signal: { signal: entry.signal, confidence: entry.confidence },
-            status: 'ready',
-            progressMessage: language === 'ko' ? `${displayTicker} · 완료` : `${displayTicker} · Complete`,
+            updateSlot(slot.id, {
+              valuation: buildValuationDeepDive({ reasoning: entry.reasoning } as any, currentPrice),
+              signal: { signal: entry.signal, confidence: entry.confidence },
+              status: 'ready',
+              progressMessage: language === 'ko' ? `${displayTicker} · 완료` : `${displayTicker} · Complete`,
+            });
+          })
+          .catch(() => {
+            if (controller.signal.aborted) return;
+            updateSlot(slot.id, {
+              status: 'ready',
+              progressMessage: language === 'ko'
+                ? `${displayTicker} · 재무 데이터 완료 · 가치평가 실패`
+                : `${displayTicker} · metrics loaded; valuation failed`,
+            });
           });
-        } catch (err: any) {
-          if (controller.signal.aborted) return;
-          updateSlot(slot.id, {
-            status: 'error',
-            error: err?.message || 'valuation failed',
-            progressMessage: language === 'ko'
-              ? `${displayTicker} · 재무 데이터 완료, 가치평가 실패`
-              : `${displayTicker} · metrics loaded; valuation failed`,
-          });
-        }
       } catch (err: any) {
         if (controller.signal.aborted) return;
         updateSlot(slot.id, {
@@ -1387,6 +1388,19 @@ function fmtAxis(value: number, metricKey: ChartMetricKey, axisMode: ChartAxisMo
   return value.toFixed(Math.abs(value) >= 100 ? 0 : 2);
 }
 
+function formatDateTick(label: string): string {
+  const date = new Date(label);
+  if (!Number.isFinite(date.getTime())) return label;
+  return `${String(date.getFullYear()).slice(2)}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function buildXAxisTicks(points: Array<{ label: string; x: number }>, compact: boolean): Array<{ label: string; x: number }> {
+  if (points.length === 0) return [];
+  const desired = Math.min(points.length, compact ? 3 : 5);
+  const indexes = Array.from({ length: desired }, (_, idx) => Math.round((idx * (points.length - 1)) / Math.max(desired - 1, 1)));
+  return Array.from(new Set(indexes)).map(idx => points[idx]);
+}
+
 function RelativeComparisonChart({
   slots,
   metricKey,
@@ -1452,16 +1466,14 @@ function RelativeComparisonChart({
   const padL = compact ? 34 : 48;
   const padR = 10;
   const padT = 16;
-  const padB = compact ? 22 : 34;
+  const padB = compact ? 34 : 42;
 
   const toSvg = (x: number, y: number) => ({
     sx: padL + x * (W - padL - padR),
     sy: H - padB - ((y - minY) / range) * (H - padT - padB),
   });
   const yTicks = [minY, minY + range / 2, maxY];
-  const firstLabel = series[0]?.points[0]?.label;
-  const lastPoints = series[0]?.points;
-  const lastLabel = lastPoints?.[lastPoints.length - 1]?.label;
+  const xTicks = buildXAxisTicks(series[0]?.points || [], compact);
 
   return (
     <div className={cn('p-3', compact && 'p-2')}>
@@ -1480,6 +1492,18 @@ function RelativeComparisonChart({
         })}
         <line x1={padL} x2={W - padR} y1={H - padB} y2={H - padB} stroke="currentColor" strokeOpacity={0.18} />
         <line x1={padL} x2={padL} y1={padT} y2={H - padB} stroke="currentColor" strokeOpacity={0.18} />
+        {xTicks.map(tick => {
+          const { sx } = toSvg(tick.x, minY);
+          return (
+            <g key={`${tick.label}-${tick.x}`}>
+              <line x1={sx} x2={sx} y1={padT} y2={H - padB} stroke="currentColor" strokeOpacity={0.08} />
+              <line x1={sx} x2={sx} y1={H - padB} y2={H - padB + 4} stroke="currentColor" strokeOpacity={0.35} />
+              <text x={sx} y={H - 8} textAnchor="middle" fontSize="9" fill="currentColor" opacity="0.6">
+                {formatDateTick(tick.label)}
+              </text>
+            </g>
+          );
+        })}
         {series.map(s => {
           const d = s.points
             .map((p, i) => {
@@ -1489,12 +1513,6 @@ function RelativeComparisonChart({
             .join(' ');
           return <path key={s.ticker} d={d} fill="none" stroke={s.color} strokeWidth={1.5} />;
         })}
-        {!compact && firstLabel && (
-          <text x={padL} y={H - 8} fontSize="9" fill="currentColor" opacity="0.55">{firstLabel}</text>
-        )}
-        {!compact && lastLabel && (
-          <text x={W - padR} y={H - 8} textAnchor="end" fontSize="9" fill="currentColor" opacity="0.55">{lastLabel}</text>
-        )}
       </svg>
       <div className={cn('mt-2 flex flex-wrap gap-3', compact && 'gap-2')}>
         {series.map(s => (

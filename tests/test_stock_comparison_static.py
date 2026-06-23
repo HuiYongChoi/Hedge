@@ -76,6 +76,20 @@ def test_comparison_failure_isolated_per_slot():
     assert "metrics loaded" in src
 
 
+def test_comparison_shows_metrics_before_slow_valuation_finishes():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    run_block = src[src.index("const runSlot = async"):src.index("await Promise.allSettled")]
+
+    assert "재무 데이터 완료 · 가치평가 중" in run_block
+    assert "status: 'ready'" in run_block
+    assert "void runValuationForTicker" in run_block
+    valuation_block = run_block[
+        run_block.index("void runValuationForTicker"):
+        run_block.index("} catch (err: any)")
+    ]
+    assert "status: 'error'" not in valuation_block
+
+
 def test_comparison_resolves_korean_names_before_backend_calls():
     src = _read("components/tabs/stock-compare-tab.tsx")
     assert "resolveTickerValue" in src
@@ -131,6 +145,16 @@ def test_comparison_financial_charts_keep_titles_and_fallback_series():
     assert "filterByWindowWithFallback" in src
     assert "chartHeader" in src
     assert "COMPARISON_CHART_METRICS.map(metric" in src
+
+
+def test_comparison_charts_render_readable_x_axis_ticks():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+
+    assert "buildXAxisTicks" in src
+    assert "xTicks.map" in src
+    assert "formatDateTick" in src
+    assert "y2={H - padB + 4}" in src
+    assert "textAnchor=\"middle\"" in src
 
 
 def test_comparison_shows_broker_consensus_target_in_valuation_matrix():
