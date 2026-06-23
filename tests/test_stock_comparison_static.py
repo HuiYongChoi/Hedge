@@ -157,6 +157,27 @@ def test_comparison_charts_render_readable_x_axis_ticks():
     assert "textAnchor=\"middle\"" in src
 
 
+def test_comparison_charts_use_real_dates_not_point_indexes():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    chart_block = src[src.index("function RelativeComparisonChart"):src.index("const chartHeader")]
+
+    assert "buildDateDomain" in src
+    assert "dateToChartX" in src
+    assert "dateDomain" in chart_block
+    assert "dateToChartX(point.label, dateDomain)" in chart_block
+    assert "pointIdx / Math.max(rawPoints.length - 1, 1)" not in chart_block
+    assert "buildXAxisTicks(dateDomain" in src
+
+
+def test_comparison_charts_do_not_index_signed_metrics_when_values_cross_zero():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+
+    assert "shouldUseIndexedAxis" in src
+    assert "hasMixedSigns" in src
+    assert "effectiveAxisMode" in src
+    assert "실값 전환" in src
+
+
 def test_comparison_shows_broker_consensus_target_in_valuation_matrix():
     src = _read("components/tabs/stock-compare-tab.tsx")
     assert "analystTargetService" in src

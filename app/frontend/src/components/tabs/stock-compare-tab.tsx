@@ -71,6 +71,7 @@ interface CompareSlot {
 type ChartMetricKey = 'relative_price' | 'eps' | 'free_cash_flow' | 'operating_income_growth' | 'liabilities_to_equity';
 type ChartWindow = '3m' | '1y' | '3y' | '5y' | 'all';
 type ChartAxisMode = 'normalized' | 'actual';
+type ChartDateDomain = { min: number; max: number; labels: string[] };
 
 const COMPARISON_CHART_METRICS: Array<{
   key: ChartMetricKey;
@@ -1424,11 +1425,48 @@ function formatDateTick(label: string): string {
   return `${String(date.getFullYear()).slice(2)}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
 }
 
-function buildXAxisTicks(points: Array<{ label: string; x: number }>, compact: boolean): Array<{ label: string; x: number }> {
-  if (points.length === 0) return [];
-  const desired = Math.min(points.length, compact ? 3 : 5);
-  const indexes = Array.from({ length: desired }, (_, idx) => Math.round((idx * (points.length - 1)) / Math.max(desired - 1, 1)));
-  return Array.from(new Set(indexes)).map(idx => points[idx]);
+function buildDateDomain(points: Array<{ label: string }>): ChartDateDomain | null {
+  const labels = Array.from(new Set(points
+    .map(point => point.label)
+    .filter(label => Number.isFinite(new Date(label).getTime()))))
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+  if (labels.length === 0) return null;
+  const min = new Date(labels[0]).getTime();
+  const max = new Date(labels[labels.length - 1]).getTime();
+  return { min, max: max === min ? min + 1 : max, labels };
+}
+
+function dateToChartX(label: string, dateDomain: ChartDateDomain): number {
+  const ts = new Date(label).getTime();
+  if (!Number.isFinite(ts)) return 0;
+  return Math.max(0, Math.min(1, (ts - dateDomain.min) / (dateDomain.max - dateDomain.min)));
+}
+
+function buildXAxisTicks(dateDomain: ChartDateDomain | null, compact: boolean): Array<{ label: string; x: number }> {
+  if (!dateDomain || dateDomain.labels.length === 0) return [];
+  const desired = Math.min(dateDomain.labels.length, compact ? 3 : 5);
+  const indexes = Array.from({ length: desired }, (_, idx) => Math.round((idx * (dateDomain.labels.length - 1)) / Math.max(desired - 1, 1)));
+  return Array.from(new Set(indexes)).map(idx => {
+    const label = dateDomain.labels[idx];
+    return { label, x: dateToChartX(label, dateDomain) };
+  });
+}
+
+function hasMixedSigns(points: Array<{ y: number }>): boolean {
+  return points.some(point => point.y > 0) && points.some(point => point.y < 0);
+}
+
+function shouldUseIndexedAxis(
+  metricKey: ChartMetricKey,
+  chartAxisMode: ChartAxisMode,
+  series: Array<{ points: Array<{ y: number }> }>,
+): boolean {
+  if (chartAxisMode !== 'normalized') return false;
+  if (metricKey === 'relative_price') return true;
+  return series.every(item => {
+    const base = item.points.find(point => point.y !== 0)?.y;
+    return typeof base === 'number' && base > 0 && !hasMixedSigns(item.points);
+  });
 }
 
 function RelativeComparisonChart({
@@ -1448,19 +1486,28 @@ function RelativeComparisonChart({
   compact?: boolean;
   height?: number;
 }) {
-  const series = slots
+  const rawSeries = slots
     .map((slot, idx) => {
       const rawPoints = buildMetricPoints(slot, metricKey, chartWindow);
       if (rawPoints.length < 2) return null;
-      const base = rawPoints.find(point => point.y !== 0)?.y;
-      const points = rawPoints.map((point, pointIdx) => ({
-        label: point.label,
-        x: pointIdx / Math.max(rawPoints.length - 1, 1),
-        y: chartAxisMode === 'normalized' && base ? (point.y / base) * 100 : point.y,
-      }));
-      return { ticker: slot.ticker, color: CHART_COLORS[idx % CHART_COLORS.length], points };
+      return { ticker: slot.ticker, color: CHART_COLORS[idx % CHART_COLORS.length], points: rawPoints };
     })
-    .filter((x): x is { ticker: string; color: string; points: { label: string; x: number; y: number }[] } => x !== null);
+    .filter((x): x is { ticker: string; color: string; points: { label: string; y: number }[] } => x !== null);
+  const dateDomain = buildDateDomain(rawSeries.flatMap(s => s.points));
+  const useIndexedAxis = shouldUseIndexedAxis(metricKey, chartAxisMode, rawSeries);
+  const effectiveAxisMode: ChartAxisMode = useIndexedAxis ? 'normalized' : 'actual';
+  const forcedActualAxis = chartAxisMode === 'normalized' && effectiveAxisMode === 'actual';
+  const series = dateDomain
+    ? rawSeries.map(item => {
+        const base = item.points.find(point => point.y !== 0)?.y;
+        const points = item.points.map(point => ({
+          label: point.label,
+          x: dateToChartX(point.label, dateDomain),
+          y: useIndexedAxis && base ? (point.y / base) * 100 : point.y,
+        }));
+        return { ...item, points };
+      })
+    : [];
 
   const chartHeader = (
     <div className="mb-2 flex items-center justify-between gap-2">
@@ -1468,8 +1515,10 @@ function RelativeComparisonChart({
         {getMetricLabel(metricKey, language)}
       </div>
       <div className="text-[10px] text-muted-foreground">
-        {chartAxisMode === 'normalized'
+        {effectiveAxisMode === 'normalized'
           ? (language === 'ko' ? '시작점 100 기준' : 'Indexed to 100')
+          : forcedActualAxis
+            ? (language === 'ko' ? '실값 전환' : 'Actual axis')
           : (language === 'ko' ? '실값' : 'Actual')}
       </div>
     </div>
@@ -1487,7 +1536,7 @@ function RelativeComparisonChart({
   }
 
   const allY = series.flatMap(s => s.points.map(p => p.y));
-  const baselineValues = chartAxisMode === 'normalized' ? [100] : [];
+  const baselineValues = effectiveAxisMode === 'normalized' ? [100] : [];
   const minY = Math.min(...allY, ...baselineValues);
   const maxY = Math.max(...allY, ...baselineValues);
   const range = maxY - minY || 1;
@@ -1503,7 +1552,7 @@ function RelativeComparisonChart({
     sy: H - padB - ((y - minY) / range) * (H - padT - padB),
   });
   const yTicks = [minY, minY + range / 2, maxY];
-  const xTicks = buildXAxisTicks(series[0]?.points || [], compact);
+  const xTicks = buildXAxisTicks(dateDomain, compact);
 
   return (
     <div className={cn('p-3', compact && 'p-2')}>
@@ -1515,7 +1564,7 @@ function RelativeComparisonChart({
             <g key={tick}>
               <line x1={padL} x2={W - padR} y1={sy} y2={sy} stroke="currentColor" strokeOpacity={0.12} />
               <text x={padL - 6} y={sy + 3} textAnchor="end" fontSize="9" fill="currentColor" opacity="0.55">
-                {fmtAxis(tick, metricKey, chartAxisMode)}
+                {fmtAxis(tick, metricKey, effectiveAxisMode)}
               </text>
             </g>
           );
@@ -1554,9 +1603,13 @@ function RelativeComparisonChart({
       </div>
       {!compact && (
         <div className="mt-1 text-[10px] text-muted-foreground">
-          {language === 'ko'
-            ? '가로축은 선택 기간의 시계열, 세로축은 선택한 상대/실값 모드입니다.'
-            : 'X-axis follows the selected time window; Y-axis follows the selected indexed/actual mode.'}
+          {forcedActualAxis
+            ? (language === 'ko'
+              ? '가로축은 실제 보고일 기준입니다. 음수와 양수가 섞인 지표는 상대축 왜곡을 막기 위해 실값축으로 표시합니다.'
+              : 'X-axis uses actual report dates. Mixed-sign metrics use an actual axis to avoid distorted indexing.')
+            : (language === 'ko'
+              ? '가로축은 실제 보고일 기준이며, 세로축은 선택한 상대/실값 모드입니다.'
+              : 'X-axis uses actual report dates; Y-axis follows the selected indexed/actual mode.')}
         </div>
       )}
     </div>
