@@ -56,6 +56,7 @@ interface CompareSlot {
   ticker: string;
   status: 'empty' | 'loading' | 'ready' | 'error';
   metrics?: Record<string, any>;
+  annualMetrics?: Record<string, any>;
   forwardMetrics?: Record<string, any>;
   prices?: PricePoint[];
   lineItems?: Record<string, any>[];
@@ -111,6 +112,8 @@ const FINANCIAL_ROWS: Array<{ key: string; ko: string; en: string; percent?: boo
   { key: 'debt_to_equity', ko: '이자부채비율', en: 'Debt/Equity (int)' },
   { key: 'interest_coverage', ko: '이자보상배율', en: 'Interest coverage' },
 ];
+
+const ANNUAL_GROWTH_KEYS = new Set(['revenue_growth', 'operating_income_growth', 'earnings_growth']);
 
 const VALUATION_BAR_ROWS = [
   { key: 'dcf', ko: 'DCF', en: 'DCF', higherIsBetter: true },
@@ -257,6 +260,11 @@ function getMetricValue(slot: CompareSlot, key: string): number | null {
   if (key === 'forward_pe') return numericValue(slot.forwardMetrics?.forward_pe);
   if (key === 'forward_pe_fy0') return numericValue(slot.forwardMetrics?.forward_pe_fy0);
   if (key === 'forward_pe_fy1') return numericValue(slot.forwardMetrics?.forward_pe_fy1);
+  if (ANNUAL_GROWTH_KEYS.has(key)) {
+    return numericValue(slot.annualMetrics?.[key])
+      ?? numericValue(slot.metrics?.[key])
+      ?? getAnnualLineItemGrowth(slot, key);
+  }
   return numericValue(slot.metrics?.[key]);
 }
 
@@ -503,6 +511,7 @@ export function StockCompareTab() {
     const annualData = await annualResponse.json();
     return {
       ...ttmData,
+      annual_metrics: annualData.metrics || {},
       annual_line_items: annualData.line_items || [],
     };
   }, []);
@@ -629,6 +638,7 @@ export function StockCompareTab() {
       progressMessage: language === 'ko' ? '대기 중' : 'Queued',
       valuation: null,
       signal: null,
+      annualMetrics: undefined,
       forwardMetrics: undefined,
       targetConsensus: null,
     } : s)));
@@ -645,6 +655,7 @@ export function StockCompareTab() {
         const currentPrice = analystTarget?.current_price ?? (prices.length ? prices[prices.length - 1].close : null);
         updateSlot(slot.id, {
           metrics: data.metrics || {},
+          annualMetrics: data.annual_metrics || {},
           forwardMetrics: data.forward_metrics || {},
           prices,
           lineItems: data.annual_line_items || data.line_items || [],
@@ -937,9 +948,7 @@ export function StockCompareTab() {
                         {readySlots.map(s => {
                           const v = row.key === 'currentPrice'
                             ? s.currentPrice
-                            : row.key.startsWith('forward_pe')
-                              ? s.forwardMetrics?.[row.key]
-                              : s.metrics?.[row.key];
+                            : getMetricValue(s, row.key);
                           return (
                             <td key={s.id} className="px-3 py-2 text-right font-mono">
                               {row.key === 'currentPrice' ? fmtCurrency(v as number | null) : row.percent ? fmtPercent(v) : fmtNum(v)}
@@ -1313,6 +1322,27 @@ function numericValue(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function getAnnualLineItemGrowth(slot: CompareSlot, key: string): number | null {
+  const fieldByKey: Record<string, string> = {
+    revenue_growth: 'revenue',
+    operating_income_growth: 'operating_income',
+    earnings_growth: 'net_income',
+  };
+  const field = fieldByKey[key];
+  if (!field) return null;
+
+  const points = (slot.lineItems || [])
+    .map(item => ({ date: reportDate(item), value: numericValue(item[field]) }))
+    .filter((point): point is { date: string; value: number } => Boolean(point.date) && point.value !== null)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (points.length < 2) return null;
+
+  const current = points[points.length - 1].value;
+  const previous = points[points.length - 2].value;
+  if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) return null;
+  return (current - previous) / Math.abs(previous);
 }
 
 function reportDate(item: Record<string, any>): string {

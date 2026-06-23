@@ -197,6 +197,18 @@ def test_comparison_quality_group_includes_profit_growth_rows():
     assert "순이익 성장 (분기 YoY)" in quality_block
 
 
+def test_comparison_annual_growth_uses_annual_metrics_and_line_item_fallback():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+
+    assert "annual_metrics: annualData.metrics" in src
+    assert "annualMetrics: data.annual_metrics" in src
+    assert "ANNUAL_GROWTH_KEYS" in src
+    assert "getAnnualLineItemGrowth(slot, key)" in src
+    assert "operating_income_growth: 'operating_income'" in src
+    assert "earnings_growth: 'net_income'" in src
+    assert "getMetricValue(s, row.key)" in src
+
+
 def test_comparison_growth_score_uses_operating_and_net_income_growth():
     src = _read("components/tabs/stock-compare-tab.tsx")
 
