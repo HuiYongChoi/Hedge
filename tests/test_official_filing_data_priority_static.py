@@ -42,4 +42,6 @@ def test_dart_report_codes_and_quarterly_line_items_are_available():
     assert "def _fetch_dart_quarter_line_items" in src
     assert "def _build_dart_ttm_from_quarters" in src
     assert "report_year = end_year - 1" in src
+    assert '"분기순이익"' in src
+    assert '"기본주당분기순이익"' in src
     assert '"source": "DART"' in src
