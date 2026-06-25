@@ -25,6 +25,7 @@ def test_sec_cumulative_cash_flow_keeps_q1_framed_fact_as_seed():
     helper = src[src.index("def _sec_cumulative_quarter_values"):src.index("def _extract_sec_quarter_rows")]
     assert "not _SEC_QUARTER_FRAME_RE.match" not in helper
     assert "current_is_framed" in helper
+    assert "fiscal_sequence_key" in helper
 
 
 def test_official_line_items_can_override_stale_provider_metrics():

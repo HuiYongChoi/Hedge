@@ -393,15 +393,16 @@ def _sec_cumulative_quarter_values(companyfacts: dict, field: str, end_date: str
     if not facts:
         return {}
 
-    latest_by_period: dict[tuple[int, str, str], dict] = {}
+    latest_by_period: dict[tuple[int, str, str, str], dict] = {}
     for fact in facts:
         try:
             fy = int(fact.get("fy"))
         except (TypeError, ValueError):
             continue
         fp = str(fact.get("fp") or "").upper()
+        period_start = str(fact.get("start") or "")[:10]
         period_end = str(fact.get("end"))[:10]
-        key = (fy, fp, period_end)
+        key = (fy, period_start, fp, period_end)
         current = latest_by_period.get(key)
         fact_is_framed = bool(_SEC_QUARTER_FRAME_RE.match(str(fact.get("frame") or "")))
         current_is_framed = bool(
@@ -417,13 +418,22 @@ def _sec_cumulative_quarter_values(companyfacts: dict, field: str, end_date: str
         ):
             latest_by_period[key] = fact
 
-    by_fy: dict[int, list[dict]] = {}
-    for (fy, _fp, _period_end), fact in latest_by_period.items():
-        by_fy.setdefault(fy, []).append(fact)
+    by_fiscal_sequence: dict[tuple[int, str], list[dict]] = {}
+    for (fy, period_start, _fp, _period_end), fact in latest_by_period.items():
+        # SEC restatement filings can tag prior-year comparatives with the new fy.
+        # Keep each cumulative sequence isolated by its fiscal-year start date.
+        fiscal_sequence_key = (fy, period_start)
+        by_fiscal_sequence.setdefault(fiscal_sequence_key, []).append(fact)
 
     quarter_values: dict[str, dict] = {}
-    for fy, fiscal_facts in by_fy.items():
-        fiscal_facts.sort(key=lambda fact: _SEC_FISCAL_PERIOD_ORDER.get(str(fact.get("fp") or "").upper(), 0))
+    for (fy, _period_start), fiscal_facts in by_fiscal_sequence.items():
+        fiscal_facts.sort(
+            key=lambda fact: (
+                _SEC_FISCAL_PERIOD_ORDER.get(str(fact.get("fp") or "").upper(), 0),
+                str(fact.get("end") or ""),
+                str(fact.get("filed") or ""),
+            )
+        )
         previous_value: float | None = None
         previous_order = 0
         for fact in fiscal_facts:
