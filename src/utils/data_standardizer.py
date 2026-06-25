@@ -232,6 +232,7 @@ def enrich_metrics_from_line_items(
     metrics: dict[str, Any],
     line_items: list[dict[str, Any]] | None,
     market_cap: float | None = None,
+    prefer_line_items: bool = False,
 ) -> dict[str, Any]:
     """Fill null income-statement fields in metrics from line_items[0],
     inject market_cap, reset valuation ratios, then re-derive via
@@ -241,7 +242,11 @@ def enrich_metrics_from_line_items(
     if line_items:
         li0 = line_items[0]
         for k, v in li0.items():
-            if k not in _ENRICHMENT_SKIP_KEYS and v is not None and enriched.get(k) is None:
+            if k in _ENRICHMENT_SKIP_KEYS:
+                if prefer_line_items and k in ("report_period", "currency") and v is not None:
+                    enriched[k] = v
+                continue
+            if v is not None and (prefer_line_items or enriched.get(k) is None):
                 enriched[k] = v
 
         # ── 성장률 파생: line_items[0] vs [1] ──────────────────────────

@@ -2,6 +2,7 @@ import datetime
 import logging
 import os
 import pandas as pd
+import re
 import requests
 import time
 from dataclasses import asdict, dataclass
@@ -209,6 +210,389 @@ def parse_float_safe(val):
 
 def _is_korean_ticker(ticker: str) -> bool:
     return ticker.endswith(".KS") or ticker.endswith(".KQ")
+
+
+SEC_USER_AGENT = os.environ.get("SEC_USER_AGENT", "AI Hedge Fund data checker contact@example.com")
+SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+SEC_COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+_SEC_TICKER_CIK_CACHE: dict[str, str] | None = None
+_SEC_COMPANYFACTS_CACHE: dict[str, dict] = {}
+_SEC_QUARTER_FRAME_RE = re.compile(r"^CY\d{4}Q[1-4]$")
+
+_SEC_FACT_CONCEPTS: dict[str, tuple[str, ...]] = {
+    "revenue": (
+        "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "Revenues",
+        "SalesRevenueNet",
+    ),
+    "gross_profit": ("GrossProfit",),
+    "operating_income": ("OperatingIncomeLoss",),
+    "net_income": (
+        "NetIncomeLoss",
+        "ProfitLoss",
+    ),
+    "earnings_per_share": ("EarningsPerShareDiluted", "EarningsPerShareBasic"),
+    "operating_cash_flow": ("NetCashProvidedByUsedInOperatingActivities",),
+    "capital_expenditure": ("PaymentsToAcquirePropertyPlantAndEquipment",),
+    "depreciation_and_amortization": (
+        "DepreciationDepletionAndAmortization",
+        "DepreciationDepletionAndAmortizationExpense",
+        "DepreciationAndAmortization",
+    ),
+    "interest_expense": ("InterestExpenseNonOperating", "InterestExpense"),
+    "total_assets": ("Assets",),
+    "total_liabilities": ("Liabilities",),
+    "shareholders_equity": (
+        "StockholdersEquity",
+        "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+    ),
+    "cash_and_equivalents": (
+        "CashAndCashEquivalentsAtCarryingValue",
+        "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+    ),
+    "current_assets": ("AssetsCurrent",),
+    "current_liabilities": ("LiabilitiesCurrent",),
+    "short_term_debt": (
+        "ShortTermBorrowings",
+        "ShortTermDebt",
+        "LongTermDebtAndFinanceLeaseObligationsCurrent",
+        "LongTermDebtCurrent",
+    ),
+    "long_term_debt": (
+        "LongTermDebtAndFinanceLeaseObligationsNoncurrent",
+        "LongTermDebtNoncurrent",
+        "LongTermDebt",
+    ),
+    "outstanding_shares": (
+        "WeightedAverageNumberOfDilutedSharesOutstanding",
+        "WeightedAverageNumberOfSharesOutstandingDiluted",
+        "EntityCommonStockSharesOutstanding",
+    ),
+    "goodwill": ("Goodwill",),
+    "intangible_assets": ("FiniteLivedIntangibleAssetsNet", "IntangibleAssetsNetExcludingGoodwill"),
+}
+_SEC_FLOW_FIELDS = {
+    "revenue",
+    "gross_profit",
+    "operating_income",
+    "net_income",
+    "earnings_per_share",
+    "operating_cash_flow",
+    "capital_expenditure",
+    "depreciation_and_amortization",
+    "interest_expense",
+}
+_SEC_FISCAL_PERIOD_ORDER = {"Q1": 1, "Q2": 2, "Q3": 3, "FY": 4}
+_SEC_UNIT_PREFERENCE: dict[str, tuple[str, ...]] = {
+    "earnings_per_share": ("USD/shares", "USD / shares", "USD/share"),
+    "outstanding_shares": ("shares",),
+}
+
+
+def _sec_headers() -> dict[str, str]:
+    return {"User-Agent": SEC_USER_AGENT, "Accept": "application/json"}
+
+
+def _resolve_sec_cik(ticker: str) -> str | None:
+    global _SEC_TICKER_CIK_CACHE
+    symbol = ticker.upper().strip()
+    if not symbol or _is_korean_ticker(symbol) or "." in symbol:
+        return None
+    if symbol.isdigit():
+        return symbol.zfill(10)
+
+    if _SEC_TICKER_CIK_CACHE is None:
+        try:
+            response = requests.get(SEC_TICKERS_URL, headers=_sec_headers(), timeout=10)
+            if response.status_code != 200:
+                return None
+            raw = response.json()
+            _SEC_TICKER_CIK_CACHE = {
+                str(item.get("ticker", "")).upper(): str(item.get("cik_str", "")).zfill(10)
+                for item in (raw.values() if isinstance(raw, dict) else raw)
+                if item.get("ticker") and item.get("cik_str")
+            }
+        except Exception as exc:
+            logger.debug("SEC ticker map fetch failed: %s", exc)
+            _SEC_TICKER_CIK_CACHE = {}
+    return _SEC_TICKER_CIK_CACHE.get(symbol)
+
+
+def _fetch_sec_companyfacts(ticker: str) -> dict | None:
+    cik = _resolve_sec_cik(ticker)
+    if not cik:
+        return None
+    if cik in _SEC_COMPANYFACTS_CACHE:
+        return _SEC_COMPANYFACTS_CACHE[cik]
+    try:
+        response = requests.get(SEC_COMPANYFACTS_URL.format(cik=cik), headers=_sec_headers(), timeout=15)
+        if response.status_code != 200:
+            return None
+        data = response.json()
+        _SEC_COMPANYFACTS_CACHE[cik] = data
+        return data
+    except Exception as exc:
+        logger.debug("SEC companyfacts fetch failed for %s: %s", ticker, exc)
+        return None
+
+
+def _sec_fact_candidates(companyfacts: dict, field: str) -> list[dict]:
+    us_gaap = (companyfacts.get("facts") or {}).get("us-gaap") or {}
+    for concept in _SEC_FACT_CONCEPTS.get(field, ()):
+        concept_data = us_gaap.get(concept) or {}
+        units = concept_data.get("units") or {}
+        unit_names = _SEC_UNIT_PREFERENCE.get(field, ("USD",))
+        for unit_name in unit_names:
+            if unit_name in units:
+                return [dict(fact, _concept=concept) for fact in units.get(unit_name, [])]
+        if units:
+            first_unit = next(iter(units))
+            return [dict(fact, _concept=concept) for fact in units.get(first_unit, [])]
+    return []
+
+
+def _sec_fact_is_eligible(fact: dict, end_date: str) -> bool:
+    value = parse_float_safe(fact.get("val"))
+    return (
+        value is not None
+        and fact.get("end")
+        and str(fact.get("end"))[:10] <= end_date
+        and fact.get("form") in ("10-Q", "10-K", "8-K", "20-F", "40-F")
+    )
+
+
+def _latest_fact_for_end(facts: list[dict], period_end: str, require_quarter_frame: bool) -> dict | None:
+    eligible = [
+        fact for fact in facts
+        if fact.get("end") == period_end
+        and (not require_quarter_frame or _SEC_QUARTER_FRAME_RE.match(str(fact.get("frame") or "")))
+    ]
+    if not eligible:
+        return None
+    eligible.sort(key=lambda fact: (str(fact.get("filed") or ""), str(fact.get("frame") or "")), reverse=True)
+    return eligible[0]
+
+
+def _sec_latest_instant_value(companyfacts: dict, field: str, end_date: str) -> float | None:
+    facts = [
+        fact for fact in _sec_fact_candidates(companyfacts, field)
+        if _sec_fact_is_eligible(fact, end_date)
+    ]
+    if not facts:
+        return None
+    facts.sort(key=lambda fact: (str(fact.get("end") or ""), str(fact.get("filed") or "")), reverse=True)
+    return parse_float_safe(facts[0].get("val"))
+
+
+def _sec_cumulative_quarter_values(companyfacts: dict, field: str, end_date: str) -> dict[str, dict]:
+    facts = [
+        fact for fact in _sec_fact_candidates(companyfacts, field)
+        if _sec_fact_is_eligible(fact, end_date)
+        and not _SEC_QUARTER_FRAME_RE.match(str(fact.get("frame") or ""))
+        and str(fact.get("fp") or "").upper() in _SEC_FISCAL_PERIOD_ORDER
+    ]
+    if not facts:
+        return {}
+
+    latest_by_period: dict[tuple[int, str, str], dict] = {}
+    for fact in facts:
+        try:
+            fy = int(fact.get("fy"))
+        except (TypeError, ValueError):
+            continue
+        fp = str(fact.get("fp") or "").upper()
+        period_end = str(fact.get("end"))[:10]
+        key = (fy, fp, period_end)
+        current = latest_by_period.get(key)
+        if current is None or str(fact.get("filed") or "") >= str(current.get("filed") or ""):
+            latest_by_period[key] = fact
+
+    by_fy: dict[int, list[dict]] = {}
+    for (fy, _fp, _period_end), fact in latest_by_period.items():
+        by_fy.setdefault(fy, []).append(fact)
+
+    quarter_values: dict[str, dict] = {}
+    for fy, fiscal_facts in by_fy.items():
+        fiscal_facts.sort(key=lambda fact: _SEC_FISCAL_PERIOD_ORDER.get(str(fact.get("fp") or "").upper(), 0))
+        previous_value: float | None = None
+        previous_order = 0
+        for fact in fiscal_facts:
+            fp = str(fact.get("fp") or "").upper()
+            order = _SEC_FISCAL_PERIOD_ORDER.get(fp)
+            cumulative_value = parse_float_safe(fact.get("val"))
+            if order is None or cumulative_value is None:
+                continue
+            if order == 1:
+                quarter_value = cumulative_value
+            elif previous_value is not None and previous_order == order - 1:
+                quarter_value = cumulative_value - previous_value
+            else:
+                previous_value = cumulative_value
+                previous_order = order
+                continue
+
+            period_end = str(fact.get("end"))[:10]
+            quarter_values[period_end] = dict(fact, val=quarter_value, fy=fy, fp=fp)
+            previous_value = cumulative_value
+            previous_order = order
+    return quarter_values
+
+
+def _extract_sec_quarter_rows(
+    ticker: str,
+    companyfacts: dict,
+    line_items: list[str],
+    end_date: str,
+    limit: int,
+) -> list[dict]:
+    fact_map: dict[str, dict[str, dict]] = {}
+    for field in _SEC_FLOW_FIELDS:
+        if field not in line_items:
+            continue
+        field_facts = [
+            fact for fact in _sec_fact_candidates(companyfacts, field)
+            if _sec_fact_is_eligible(fact, end_date)
+            and _SEC_QUARTER_FRAME_RE.match(str(fact.get("frame") or ""))
+        ]
+        by_end: dict[str, dict] = {}
+        for fact in sorted(field_facts, key=lambda item: (str(item.get("end") or ""), str(item.get("filed") or ""))):
+            by_end[str(fact.get("end"))[:10]] = fact
+        for period_end, fact in _sec_cumulative_quarter_values(companyfacts, field, end_date).items():
+            by_end.setdefault(period_end, fact)
+        fact_map[field] = by_end
+
+    period_ends = sorted(
+        {period_end for by_end in fact_map.values() for period_end in by_end.keys()},
+        reverse=True,
+    )[:limit]
+
+    rows: list[dict] = []
+    for period_end in period_ends:
+        row = {
+            "ticker": ticker,
+            "report_period": period_end,
+            "period": "quarter",
+            "currency": "USD",
+            "source": "SEC Companyfacts",
+        }
+        for field, by_end in fact_map.items():
+            fact = by_end.get(period_end)
+            if fact is not None:
+                row[field] = parse_float_safe(fact.get("val"))
+
+        for field in line_items:
+            if field in _SEC_FLOW_FIELDS or field not in _SEC_FACT_CONCEPTS:
+                continue
+            value = _sec_latest_instant_value(companyfacts, field, period_end)
+            if value is not None:
+                row[field] = value
+
+        if row.get("short_term_debt") is not None or row.get("long_term_debt") is not None:
+            row["total_debt"] = (row.get("short_term_debt") or 0) + (row.get("long_term_debt") or 0)
+        rows.append(row)
+    return rows
+
+
+def _extract_sec_line_items_from_companyfacts(
+    ticker: str,
+    companyfacts: dict,
+    line_items: list[str],
+    end_date: str,
+    period: str,
+    limit: int,
+) -> list[LineItem]:
+    if period == "quarter":
+        return standardize_line_items(
+            _extract_sec_quarter_rows(ticker, companyfacts, line_items, end_date, limit),
+            line_items,
+        )
+
+    if period == "ttm":
+        quarter_rows = _extract_sec_quarter_rows(ticker, companyfacts, line_items, end_date, max(4, limit * 4))
+        if not quarter_rows:
+            return []
+        latest = quarter_rows[0]
+        ttm_row = {
+            "ticker": ticker,
+            "report_period": latest["report_period"],
+            "period": "ttm",
+            "currency": "USD",
+            "source": "SEC Companyfacts",
+        }
+        for field in line_items:
+            if field in _SEC_FLOW_FIELDS:
+                values = [parse_float_safe(row.get(field)) for row in quarter_rows[:4]]
+                if values and all(value is not None for value in values):
+                    ttm_row[field] = sum(value for value in values if value is not None)
+            elif field in _SEC_FACT_CONCEPTS:
+                value = _sec_latest_instant_value(companyfacts, field, latest["report_period"])
+                if value is not None:
+                    ttm_row[field] = value
+        if ttm_row.get("short_term_debt") is not None or ttm_row.get("long_term_debt") is not None:
+            ttm_row["total_debt"] = (ttm_row.get("short_term_debt") or 0) + (ttm_row.get("long_term_debt") or 0)
+        return standardize_line_items([ttm_row], line_items)
+
+    annual_facts: dict[str, dict[str, dict]] = {}
+    for field in _SEC_FLOW_FIELDS:
+        if field not in line_items:
+            continue
+        facts = [
+            fact for fact in _sec_fact_candidates(companyfacts, field)
+            if _sec_fact_is_eligible(fact, end_date)
+            and re.match(r"^CY\d{4}$", str(fact.get("frame") or ""))
+        ]
+        by_end: dict[str, dict] = {}
+        for fact in sorted(facts, key=lambda item: (str(item.get("end") or ""), str(item.get("filed") or ""))):
+            by_end[str(fact.get("end"))[:10]] = fact
+        annual_facts[field] = by_end
+    period_ends = sorted({end for by_end in annual_facts.values() for end in by_end}, reverse=True)[:limit]
+    rows = []
+    for period_end in period_ends:
+        row = {
+            "ticker": ticker,
+            "report_period": period_end,
+            "period": "annual",
+            "currency": "USD",
+            "source": "SEC Companyfacts",
+        }
+        for field, by_end in annual_facts.items():
+            fact = by_end.get(period_end)
+            if fact is not None:
+                row[field] = parse_float_safe(fact.get("val"))
+        for field in line_items:
+            if field in _SEC_FLOW_FIELDS or field not in _SEC_FACT_CONCEPTS:
+                continue
+            value = _sec_latest_instant_value(companyfacts, field, period_end)
+            if value is not None:
+                row[field] = value
+        rows.append(row)
+    return standardize_line_items(rows, line_items)
+
+
+def _fetch_sec_line_items(ticker: str, line_items: list[str], end_date: str, period: str, limit: int) -> list[LineItem]:
+    if _is_korean_ticker(ticker):
+        return []
+    companyfacts = _fetch_sec_companyfacts(ticker)
+    if not companyfacts:
+        return []
+    try:
+        return _extract_sec_line_items_from_companyfacts(ticker, companyfacts, line_items, end_date, period, limit)
+    except Exception as exc:
+        logger.debug("SEC line items extraction failed for %s: %s", ticker, exc)
+        return []
+
+
+def _line_items_newer_than_metrics(metrics: dict | None, line_items: list[dict] | None) -> bool:
+    if not metrics or not line_items:
+        return False
+    line_item_source = str(line_items[0].get("source") or "")
+    metric_source = str(metrics.get("source") or "")
+    official_sources = {"SEC Companyfacts", "DART"}
+    if line_item_source in official_sources and metric_source not in official_sources:
+        return True
+    metric_date = str(metrics.get("report_period") or "")[:10]
+    line_item_date = str(line_items[0].get("report_period") or "")[:10]
+    return bool(metric_date and line_item_date and line_item_date > metric_date)
 
 
 def _fmp_get(endpoint: str, params: dict) -> list | dict | None:
@@ -1197,39 +1581,10 @@ def get_financial_metrics(
     if cached_data := _cache.get_financial_metrics(cache_key):
         return [FinancialMetrics(**_build_financial_metric(metric)) for metric in cached_data]
 
-    # If not in cache, fetch from API
-    headers = {}
-    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
-    if financial_api_key:
-        headers["X-API-KEY"] = financial_api_key
-
-    url = f"https://api.financialdatasets.ai/financial-metrics/?ticker={ticker}&report_period_lte={end_date}&limit={limit}&period={period}"
-    response = _make_api_request(url, headers)
-
     financial_metrics = []
-    # Parse response with Pydantic model
-    try:
-        if response.status_code == 200:
-            raw_response = response.json()
-            raw_metrics = raw_response.get("financial_metrics", []) if isinstance(raw_response, dict) else []
-            # financialdatasets' /financial-metrics/ ships a precomputed debt_to_equity that
-            # uses a liabilities-inclusive definition (e.g. AAPL ≈ 3.77) and carries NO
-            # balance-sheet primitives, so that inflated ratio used to pass straight through
-            # to every agent (MU read ~200% instead of the interest-bearing ~28%). Drop it so
-            # it is recomputed from total_debt/shareholders_equity once enrichment supplies the
-            # primitives; if those never arrive, we surface null rather than a wrong number.
-            financial_metrics = [
-                FinancialMetrics(**_build_financial_metric(
-                    {k: v for k, v in metric.items() if k != "debt_to_equity"}
-                ))
-                for metric in raw_metrics
-                if isinstance(metric, dict)
-            ]
-    except Exception as e:
-        logger.warning("Failed to parse financial metrics response for %s: %s", ticker, e)
 
-    if not financial_metrics and _is_korean_ticker(ticker):
-        # Korean stocks: try DART first (official 재무제표)
+    if _is_korean_ticker(ticker):
+        # Korean stocks: prefer DART official filings over third-party feeds.
         try:
             from src.tools.dart_api import fetch_dart_metrics
             dart_data = fetch_dart_metrics(ticker, end_date)
@@ -1237,6 +1592,37 @@ def get_financial_metrics(
                 financial_metrics = [FinancialMetrics(**_build_financial_metric(dart_data))]
         except Exception as e:
             logger.debug("DART metrics fetch failed for %s: %s", ticker, e)
+
+    # If not in cache or official filing data, fetch from API
+    headers = {}
+    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
+    if financial_api_key:
+        headers["X-API-KEY"] = financial_api_key
+
+    url = f"https://api.financialdatasets.ai/financial-metrics/?ticker={ticker}&report_period_lte={end_date}&limit={limit}&period={period}"
+    if not financial_metrics:
+        response = _make_api_request(url, headers)
+
+        # Parse response with Pydantic model
+        try:
+            if response.status_code == 200:
+                raw_response = response.json()
+                raw_metrics = raw_response.get("financial_metrics", []) if isinstance(raw_response, dict) else []
+                # financialdatasets' /financial-metrics/ ships a precomputed debt_to_equity that
+                # uses a liabilities-inclusive definition (e.g. AAPL ≈ 3.77) and carries NO
+                # balance-sheet primitives, so that inflated ratio used to pass straight through
+                # to every agent (MU read ~200% instead of the interest-bearing ~28%). Drop it so
+                # it is recomputed from total_debt/shareholders_equity once enrichment supplies the
+                # primitives; if those never arrive, we surface null rather than a wrong number.
+                financial_metrics = [
+                    FinancialMetrics(**_build_financial_metric(
+                        {k: v for k, v in metric.items() if k != "debt_to_equity"}
+                    ))
+                    for metric in raw_metrics
+                    if isinstance(metric, dict)
+                ]
+        except Exception as e:
+            logger.warning("Failed to parse financial metrics response for %s: %s", ticker, e)
 
     if not financial_metrics:
         fmp_data = _fetch_fmp_metrics(ticker)
@@ -1286,7 +1672,12 @@ def get_financial_metrics(
                 _ENRICHMENT_LINE_ITEMS_CACHE[_enrich_key] = _li_dicts
             financial_metrics = [
                 FinancialMetrics(**_build_financial_metric(
-                    enrich_metrics_from_line_items(m.model_dump(), _li_dicts, _mc)
+                    enrich_metrics_from_line_items(
+                        m.model_dump(),
+                        _li_dicts,
+                        _mc,
+                        prefer_line_items=_line_items_newer_than_metrics(m.model_dump(), _li_dicts),
+                    )
                 ))
                 for m in financial_metrics
             ]
@@ -1314,7 +1705,25 @@ def search_line_items(
         return _filter_usable_line_items(standardize_line_items(cached_data[:limit], line_items), line_items)[:limit]
 
     fetch_line_items = _expand_line_items(line_items)
-    # If not in cache or insufficient data, fetch from API
+    search_results = []
+
+    if _is_korean_ticker(ticker):
+        # Korean stocks: DART official filings should beat third-party feeds.
+        try:
+            from src.tools.dart_api import fetch_dart_line_items
+            search_results = fetch_dart_line_items(ticker, fetch_line_items, end_date, period, limit)
+        except Exception as e:
+            logger.debug("DART line items fetch failed for %s: %s", ticker, e)
+        if search_results and not _has_usable_line_item_fields(_filter_usable_line_items(standardize_line_items(search_results, line_items), line_items), line_items):
+            search_results = []
+
+    if not search_results and not _is_korean_ticker(ticker):
+        # US stocks: SEC companyfacts is the freshest official filing source.
+        search_results = _fetch_sec_line_items(ticker, fetch_line_items, end_date, period, limit)
+        if search_results and not _has_usable_line_item_fields(_filter_usable_line_items(standardize_line_items(search_results, line_items), line_items), line_items):
+            search_results = []
+
+    # If not in cache or official filings, fetch from API
     headers = {}
     financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
     if financial_api_key:
@@ -1329,21 +1738,21 @@ def search_line_items(
         "period": period,
         "limit": limit,
     }
-    response = _make_api_request(url, headers, method="POST", json_data=body)
-    search_results = []
-    if response.status_code == 200:
-        try:
-            data = response.json()
-            response_model = LineItemResponse(**data)
-            search_results = response_model.search_results
-        except Exception as e:
-            logger.warning("Failed to parse line items response for %s: %s", ticker, e)
+    if not search_results:
+        response = _make_api_request(url, headers, method="POST", json_data=body)
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                response_model = LineItemResponse(**data)
+                search_results = response_model.search_results
+            except Exception as e:
+                logger.warning("Failed to parse line items response for %s: %s", ticker, e)
 
-    if search_results and not _has_usable_line_item_fields(_filter_usable_line_items(standardize_line_items(search_results, line_items), line_items), line_items):
-        search_results = []
+        if search_results and not _has_usable_line_item_fields(_filter_usable_line_items(standardize_line_items(search_results, line_items), line_items), line_items):
+            search_results = []
 
     if not search_results and _is_korean_ticker(ticker):
-        # Fallback 1 for Korean: DART (official 재무제표 - most accurate for KR)
+        # Last official retry for Korean if DART was temporarily unavailable above.
         try:
             from src.tools.dart_api import fetch_dart_line_items
             search_results = fetch_dart_line_items(ticker, fetch_line_items, end_date, period, limit)

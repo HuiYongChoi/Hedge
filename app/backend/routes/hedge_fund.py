@@ -17,7 +17,13 @@ from app.backend.services.backtest_service import BacktestService
 from app.backend.services.api_key_service import ApiKeyService
 from src.utils.progress import progress
 from src.utils.analysts import get_agents_list
-from src.tools.api import get_financial_metrics, get_market_cap, get_prices, search_line_items
+from src.tools.api import (
+    _line_items_newer_than_metrics,
+    get_financial_metrics,
+    get_market_cap,
+    get_prices,
+    search_line_items,
+)
 from src.tools.forward_metrics import (
     build_forward_metrics_override,
     clear_forward_metrics_override,
@@ -150,6 +156,7 @@ async def fetch_metrics(request_data: FetchMetricsRequest, db: Session = Depends
                 metrics_dict,
                 line_items_dicts,
                 market_cap=market_cap,
+                prefer_line_items=_line_items_newer_than_metrics(metrics_dict, line_items_dicts),
             )
 
         # 5. Compute extra growth tables (YoY, TTM YoY, QoQ) from Quarter data explicitly for Data Sandbox grid

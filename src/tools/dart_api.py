@@ -109,11 +109,16 @@ CF_ACCOUNT_MAP: dict[str, list[str]] = {
     ],
 }
 
+DART_FLOW_FIELDS = set(IS_ACCOUNT_MAP.keys()) | set(CF_ACCOUNT_MAP.keys()) | {
+    "free_cash_flow",
+    "ebitda",
+}
+
 # reprt_code 매핑 (보고서 종류)
 REPRT_ANNUAL = "11011"  # 사업보고서
-REPRT_H1 = "11014"      # 반기보고서
-REPRT_Q3 = "11013"      # 3분기보고서
-REPRT_Q1 = "11012"      # 1분기보고서
+REPRT_H1 = "11012"      # 반기보고서
+REPRT_Q3 = "11014"      # 3분기보고서
+REPRT_Q1 = "11013"      # 1분기보고서
 
 
 # ─── 내부 유틸리티 ────────────────────────────────────────────────────────────
@@ -393,6 +398,171 @@ def _fetch_yf_total_debt_by_year(ticker: str) -> dict[int, float]:
     return out
 
 
+def _quarter_end_date(year: int, quarter: int) -> datetime.date:
+    month = quarter * 3
+    day = 31 if month in (3, 12) else 30
+    return datetime.date(year, month, day)
+
+
+def _row_from_financials(
+    ticker: str,
+    report_period: str,
+    period: str,
+    financials: dict,
+    line_items: list[str],
+    yf_debt_by_year: dict[int, float] | None = None,
+) -> Optional[object]:
+    from src.data.models import LineItem
+
+    row = {
+        "ticker": ticker,
+        "report_period": report_period,
+        "period": period,
+        "currency": financials.get("currency", "KRW"),
+        "source": "DART",
+    }
+    has_data = False
+    for field in line_items:
+        if field in financials:
+            row[field] = financials[field]
+            has_data = True
+
+    if "total_debt" in line_items and row.get("total_debt") is None and yf_debt_by_year:
+        year = int(report_period[:4])
+        yf_td = yf_debt_by_year.get(year)
+        if yf_td is not None:
+            row["total_debt"] = yf_td
+            has_data = True
+
+    if not has_data:
+        return None
+    return LineItem(**derive_financial_fields(row))
+
+
+def _quarterize_annual_financials(
+    annual_financials: dict,
+    prior_quarter_financials: list[dict],
+) -> dict:
+    """Convert a full-year DART statement to Q4 by subtracting Q1-Q3 flows.
+
+    DART annual reports provide full-year income/cash-flow values, while Q1/H1/Q3
+    reports expose the current quarter line in thstrm_amount. For a comparable
+    quarterly series, Q4 must therefore be annual minus the first three quarters
+    for flow accounts; balance-sheet accounts stay point-in-time.
+    """
+    q4 = dict(annual_financials)
+    for field in DART_FLOW_FIELDS:
+        annual_value = annual_financials.get(field)
+        prior_values = [q.get(field) for q in prior_quarter_financials]
+        if annual_value is None or any(value is None for value in prior_values):
+            continue
+        q4[field] = annual_value - sum(prior_values)
+    return derive_financial_fields(q4)
+
+
+def _fetch_dart_quarter_line_items(
+    ticker: str,
+    corp_code: str,
+    line_items: list[str],
+    end_date: str,
+    limit: int,
+    yf_debt_by_year: dict[int, float],
+) -> list:
+    end_date_obj = datetime.date.fromisoformat(end_date[:10])
+    end_year = end_date_obj.year
+    years_to_scan = max(3, (limit // 4) + 3)
+    report_specs = [
+        (1, REPRT_Q1),
+        (2, REPRT_H1),
+        (3, REPRT_Q3),
+        (4, REPRT_ANNUAL),
+    ]
+    results = []
+
+    for year in range(end_year, max(2009, end_year - years_to_scan), -1):
+        quarter_financials: dict[int, dict] = {}
+        for quarter, reprt_code in report_specs:
+            quarter_end = _quarter_end_date(year, quarter)
+            if quarter_end > end_date_obj:
+                continue
+
+            df = _fetch_dart_fs(corp_code, year, reprt_code)
+            if df is None:
+                continue
+
+            financials = _extract_financials(df)
+            if not financials:
+                continue
+
+            if quarter == 4:
+                prior = [quarter_financials[q] for q in (1, 2, 3) if q in quarter_financials]
+                if len(prior) == 3:
+                    financials = _quarterize_annual_financials(financials, prior)
+                else:
+                    financials = dict(financials)
+                    for field in DART_FLOW_FIELDS:
+                        financials.pop(field, None)
+
+            quarter_financials[quarter] = financials
+            row = _row_from_financials(
+                ticker,
+                quarter_end.isoformat(),
+                "quarter",
+                financials,
+                line_items,
+                yf_debt_by_year,
+            )
+            if row is not None:
+                results.append(row)
+
+        if len(results) >= limit and year < end_year:
+            break
+
+    results.sort(key=lambda row: row.report_period, reverse=True)
+    return results[:limit]
+
+
+def _build_dart_ttm_from_quarters(
+    ticker: str,
+    quarter_rows: list,
+    line_items: list[str],
+) -> list:
+    from src.data.models import LineItem
+
+    if len(quarter_rows) < 4:
+        return []
+
+    quarter_dicts = [row.model_dump() if hasattr(row, "model_dump") else dict(row) for row in quarter_rows[:4]]
+    latest = quarter_dicts[0]
+    ttm_row = {
+        "ticker": ticker,
+        "report_period": latest.get("report_period"),
+        "period": "ttm",
+        "currency": latest.get("currency", "KRW"),
+        "source": "DART",
+    }
+    has_data = False
+    point_in_time_fields = set(BS_ACCOUNT_MAP.keys()) | {
+        "working_capital",
+        "outstanding_shares",
+        "book_value_per_share",
+    }
+
+    for field in line_items:
+        if field in DART_FLOW_FIELDS:
+            values = [row.get(field) for row in quarter_dicts]
+            if all(value is not None for value in values):
+                ttm_row[field] = sum(values)
+                has_data = True
+        elif field in point_in_time_fields and latest.get(field) is not None:
+            ttm_row[field] = latest.get(field)
+            has_data = True
+
+    if not has_data:
+        return []
+    return [LineItem(**derive_financial_fields(ttm_row))]
+
+
 def fetch_dart_line_items(
     ticker: str,
     line_items: list[str],
@@ -410,7 +580,7 @@ def fetch_dart_line_items(
         ticker: 티커 (예: '005930.KS', '086520.KQ')
         line_items: 요청 필드 리스트
         end_date: 기준일 (YYYY-MM-DD)
-        period: 'ttm' 또는 'annual' (DART는 실질적으로 연간 단위)
+        period: 'ttm', 'quarter', 또는 'annual'
         limit: 반환할 최대 연도 수
     """
     from src.data.models import LineItem
@@ -433,6 +603,31 @@ def fetch_dart_line_items(
     yf_debt_by_year: dict[int, float] = {}
     if "total_debt" in line_items:
         yf_debt_by_year = _fetch_yf_total_debt_by_year(ticker)
+
+    if period == "quarter":
+        quarterly = _fetch_dart_quarter_line_items(
+            ticker,
+            corp_code,
+            line_items,
+            end_date,
+            limit,
+            yf_debt_by_year,
+        )
+        if quarterly:
+            return quarterly
+
+    if period == "ttm":
+        quarterly = _fetch_dart_quarter_line_items(
+            ticker,
+            corp_code,
+            line_items,
+            end_date,
+            max(8, limit * 4),
+            yf_debt_by_year,
+        )
+        ttm = _build_dart_ttm_from_quarters(ticker, quarterly, line_items)
+        if ttm:
+            return ttm
 
     for offset in range(limit + 1):  # +1: 최근 연도가 공시 전일 수 있음
         year = end_year - offset
@@ -458,6 +653,7 @@ def fetch_dart_line_items(
             "report_period": report_date,
             "period": "annual",
             "currency": currency,
+            "source": "DART",
         }
         has_data = False
         for field in line_items:
@@ -682,6 +878,7 @@ def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
 
     metrics = {
         "ticker": ticker,
+        "source": "DART",
         "report_period": report_date,
         "period": "ttm",
         "currency": currency,
