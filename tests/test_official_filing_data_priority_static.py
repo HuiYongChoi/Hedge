@@ -20,6 +20,13 @@ def test_us_line_items_use_sec_companyfacts_before_third_party_feeds():
     assert search_block.index("_fetch_sec_line_items") < search_block.index("_make_api_request")
 
 
+def test_sec_cumulative_cash_flow_keeps_q1_framed_fact_as_seed():
+    src = _read("src/tools/api.py")
+    helper = src[src.index("def _sec_cumulative_quarter_values"):src.index("def _extract_sec_quarter_rows")]
+    assert "not _SEC_QUARTER_FRAME_RE.match" not in helper
+    assert "current_is_framed" in helper
+
+
 def test_official_line_items_can_override_stale_provider_metrics():
     src = _read("src/tools/api.py")
     standardizer = _read("src/utils/data_standardizer.py")

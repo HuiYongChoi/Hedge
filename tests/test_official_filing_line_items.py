@@ -88,3 +88,48 @@ def test_enrichment_can_prefer_newer_official_line_items_over_stale_metrics():
     assert enriched["report_period"] == "2026-05-28"
     assert enriched["revenue"] == 75_316_000_000
     assert math.isclose(enriched["operating_margin"], 55_589_000_000 / 75_316_000_000)
+
+
+def test_sec_companyfacts_builds_ttm_fcf_from_cumulative_cash_flow_and_q1_frame():
+    facts = {
+        "facts": {
+            "us-gaap": {
+                "NetCashProvidedByUsedInOperatingActivities": {
+                    "units": {
+                        "USD": [
+                            {"end": "2025-05-29", "fy": 2025, "fp": "Q3", "form": "10-Q", "filed": "2025-06-26", "frame": None, "val": 11_795_000_000},
+                            {"end": "2025-08-28", "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2025-10-03", "frame": "CY2025", "val": 17_525_000_000},
+                            {"end": "2025-11-27", "fy": 2026, "fp": "Q1", "form": "10-Q", "filed": "2025-12-18", "frame": "CY2025Q4", "val": 8_411_000_000},
+                            {"end": "2026-02-26", "fy": 2026, "fp": "Q2", "form": "10-Q", "filed": "2026-03-19", "frame": None, "val": 20_314_000_000},
+                            {"end": "2026-05-28", "fy": 2026, "fp": "Q3", "form": "10-Q", "filed": "2026-06-25", "frame": None, "val": 45_702_000_000},
+                        ]
+                    }
+                },
+                "PaymentsToAcquirePropertyPlantAndEquipment": {
+                    "units": {
+                        "USD": [
+                            {"end": "2025-05-29", "fy": 2025, "fp": "Q3", "form": "10-Q", "filed": "2025-06-26", "frame": None, "val": 10_199_000_000},
+                            {"end": "2025-08-28", "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2025-10-03", "frame": "CY2025", "val": 15_857_000_000},
+                            {"end": "2025-11-27", "fy": 2026, "fp": "Q1", "form": "10-Q", "filed": "2025-12-18", "frame": "CY2025Q4", "val": 5_389_000_000},
+                            {"end": "2026-02-26", "fy": 2026, "fp": "Q2", "form": "10-Q", "filed": "2026-03-19", "frame": None, "val": 11_776_000_000},
+                            {"end": "2026-05-28", "fy": 2026, "fp": "Q3", "form": "10-Q", "filed": "2026-06-25", "frame": None, "val": 19_602_000_000},
+                        ]
+                    }
+                },
+            }
+        }
+    }
+
+    rows = _extract_sec_line_items_from_companyfacts(
+        "MU",
+        facts,
+        ["operating_cash_flow", "capital_expenditure", "free_cash_flow"],
+        "2026-06-25",
+        "ttm",
+        1,
+    )
+
+    assert rows[0].report_period == "2026-05-28"
+    assert rows[0].operating_cash_flow == 51_432_000_000
+    assert rows[0].capital_expenditure == 25_260_000_000
+    assert rows[0].free_cash_flow == 26_172_000_000

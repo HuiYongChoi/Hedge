@@ -388,7 +388,6 @@ def _sec_cumulative_quarter_values(companyfacts: dict, field: str, end_date: str
     facts = [
         fact for fact in _sec_fact_candidates(companyfacts, field)
         if _sec_fact_is_eligible(fact, end_date)
-        and not _SEC_QUARTER_FRAME_RE.match(str(fact.get("frame") or ""))
         and str(fact.get("fp") or "").upper() in _SEC_FISCAL_PERIOD_ORDER
     ]
     if not facts:
@@ -404,7 +403,18 @@ def _sec_cumulative_quarter_values(companyfacts: dict, field: str, end_date: str
         period_end = str(fact.get("end"))[:10]
         key = (fy, fp, period_end)
         current = latest_by_period.get(key)
-        if current is None or str(fact.get("filed") or "") >= str(current.get("filed") or ""):
+        fact_is_framed = bool(_SEC_QUARTER_FRAME_RE.match(str(fact.get("frame") or "")))
+        current_is_framed = bool(
+            _SEC_QUARTER_FRAME_RE.match(str(current.get("frame") or ""))
+        ) if current is not None else False
+        if (
+            current is None
+            or (current_is_framed and not fact_is_framed)
+            or (
+                current_is_framed == fact_is_framed
+                and str(fact.get("filed") or "") >= str(current.get("filed") or "")
+            )
+        ):
             latest_by_period[key] = fact
 
     by_fy: dict[int, list[dict]] = {}
