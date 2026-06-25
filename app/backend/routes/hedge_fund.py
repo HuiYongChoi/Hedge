@@ -156,7 +156,7 @@ async def fetch_metrics(request_data: FetchMetricsRequest, db: Session = Depends
                 metrics_dict,
                 line_items_dicts,
                 market_cap=market_cap,
-                prefer_line_items=_line_items_newer_than_metrics(metrics_dict, line_items_dicts),
+                prefer_line_items=_line_items_newer_than_metrics(metrics_dict, line_items_dicts, end_date),
             )
 
         # 5. Compute extra growth tables (YoY, TTM YoY, QoQ) from Quarter data explicitly for Data Sandbox grid

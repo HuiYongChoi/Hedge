@@ -582,7 +582,11 @@ def _fetch_sec_line_items(ticker: str, line_items: list[str], end_date: str, per
         return []
 
 
-def _line_items_newer_than_metrics(metrics: dict | None, line_items: list[dict] | None) -> bool:
+def _line_items_newer_than_metrics(
+    metrics: dict | None,
+    line_items: list[dict] | None,
+    end_date: str | None = None,
+) -> bool:
     if not metrics or not line_items:
         return False
     line_item_source = str(line_items[0].get("source") or "")
@@ -592,6 +596,8 @@ def _line_items_newer_than_metrics(metrics: dict | None, line_items: list[dict] 
         return True
     metric_date = str(metrics.get("report_period") or "")[:10]
     line_item_date = str(line_items[0].get("report_period") or "")[:10]
+    if end_date and metric_date and metric_date > str(end_date)[:10] and line_item_source in official_sources:
+        return True
     return bool(metric_date and line_item_date and line_item_date > metric_date)
 
 
@@ -1676,7 +1682,7 @@ def get_financial_metrics(
                         m.model_dump(),
                         _li_dicts,
                         _mc,
-                        prefer_line_items=_line_items_newer_than_metrics(m.model_dump(), _li_dicts),
+                        prefer_line_items=_line_items_newer_than_metrics(m.model_dump(), _li_dicts, end_date),
                     )
                 ))
                 for m in financial_metrics

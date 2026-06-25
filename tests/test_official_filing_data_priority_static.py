@@ -27,8 +27,10 @@ def test_official_line_items_can_override_stale_provider_metrics():
 
     assert "official_sources = {\"SEC Companyfacts\", \"DART\"}" in src
     assert "line_item_source in official_sources" in src
+    assert "metric_date > str(end_date)[:10]" in src
     assert "prefer_line_items" in standardizer
     assert "prefer_line_items=_line_items_newer_than_metrics" in route
+    assert "_line_items_newer_than_metrics(metrics_dict, line_items_dicts, end_date)" in route
 
 
 def test_dart_report_codes_and_quarterly_line_items_are_available():
@@ -39,4 +41,5 @@ def test_dart_report_codes_and_quarterly_line_items_are_available():
     assert 'REPRT_ANNUAL = "11011"' in src
     assert "def _fetch_dart_quarter_line_items" in src
     assert "def _build_dart_ttm_from_quarters" in src
+    assert "report_year = end_year - 1" in src
     assert '"source": "DART"' in src

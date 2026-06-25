@@ -789,8 +789,10 @@ def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
     end_year = int(end_date[:4])
 
     # 최근 연도 재무제표 조회
+    report_year = end_year
     df = _fetch_dart_fs(corp_code, end_year, REPRT_ANNUAL)
     if df is None:
+        report_year = end_year - 1
         df = _fetch_dart_fs(corp_code, end_year - 1, REPRT_ANNUAL)
     if df is None:
         return None
@@ -809,7 +811,6 @@ def fetch_dart_metrics(ticker: str, end_date: str) -> Optional[dict]:
     except Exception:
         pass
 
-    report_year = end_year if df is not None else end_year - 1
     report_date = f"{report_year}-12-31"
     currency = fin.get("currency", "KRW")
 
