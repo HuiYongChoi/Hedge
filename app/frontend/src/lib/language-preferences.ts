@@ -42,6 +42,7 @@ export const translations = {
     theme: '테마',
     language: '언어',
     settings: '설정',
+    mainHome: '메인홈',
     settingsDescription: '설정 및 환경설정',
 
     // API Keys
@@ -639,6 +640,7 @@ export const translations = {
     theme: 'Theme',
     language: 'Language',
     settings: 'Settings',
+    mainHome: 'Main Home',
     settingsDescription: 'Settings and preferences',
 
     // API Keys

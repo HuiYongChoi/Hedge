@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/contexts/language-context';
 import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
-import { Archive, Database, Network, PanelBottom, PanelLeft, PanelRight, Search, Settings, Workflow } from 'lucide-react';
+import { Archive, Database, House, Network, PanelBottom, PanelLeft, PanelRight, Search, Settings, Workflow } from 'lucide-react';
 
 interface TopBarProps {
   isFlowTab: boolean;
@@ -13,6 +13,8 @@ interface TopBarProps {
   onToggleRight: () => void;
   onToggleBottom: () => void;
   onSettingsClick: () => void;
+  isHomeActive: boolean;
+  onHomeClick: () => void;
   onSearchClick: () => void;
   onDataSandboxClick: () => void;
   hasFlowTab: boolean;
@@ -32,6 +34,8 @@ export function TopBar({
   onToggleRight,
   onToggleBottom,
   onSettingsClick,
+  isHomeActive,
+  onHomeClick,
   onSearchClick,
   onDataSandboxClick,
   hasFlowTab,
@@ -97,6 +101,22 @@ export function TopBar({
           <div className="w-px h-5 bg-ramp-grey-700 mx-1" />
         </>
       )}
+
+      {/* Main Home */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onHomeClick}
+        className={cn(
+          navButtonClass,
+          isHomeActive && "text-foreground"
+        )}
+        aria-label="Open Main Home"
+        title="Main Home (메인홈)"
+      >
+        <House size={16} />
+        <span className="hidden 2xl:inline">{t('mainHome', language)}</span>
+      </Button>
 
       {/* Flow Tab */}
       <Button

@@ -62,6 +62,7 @@ def test_layout_shortcuts_are_guarded_to_flow_tabs() -> None:
 def test_top_bar_navigation_is_labeled_and_not_disabled_without_flow_tab() -> None:
     source = _read(TOP_BAR)
 
+    assert "t('mainHome', language)" in source
     assert "t('flows', language)" in source
     assert "t('dataSandbox', language)" in source
     assert "t('stockAnalysis', language)" in source
@@ -69,6 +70,29 @@ def test_top_bar_navigation_is_labeled_and_not_disabled_without_flow_tab() -> No
     assert "disabled={isOpeningFlow}" in source
     assert "disabled={!hasFlowTab || isFlowTabActive}" not in source
     assert "absolute top-0 right-0" not in source
+
+
+def test_top_bar_main_home_menu_focuses_guide_without_closing_tabs() -> None:
+    top_bar_source = _read(TOP_BAR)
+    layout_source = _read(LAYOUT)
+    tabs_source = _read(TABS_CONTEXT)
+    language_source = _read(LANGUAGE_PREFERENCES)
+
+    assert "House" in top_bar_source
+    assert "onHomeClick: () => void" in top_bar_source
+    assert "isHomeActive: boolean" in top_bar_source
+    assert "aria-label=\"Open Main Home\"" in top_bar_source
+
+    assert "focusHome" in layout_source
+    assert "const isHomeActive = activeTabType === null" in layout_source
+    assert "onHomeClick={focusHome}" in layout_source
+
+    assert "focusHome: () => void" in tabs_source
+    assert "const focusHome = useCallback(() => {" in tabs_source
+    assert "setActiveTabId(null);" in tabs_source
+    assert "setTabs([])" not in tabs_source[tabs_source.index("const focusHome = useCallback"):tabs_source.index("const value = {")]
+
+    assert language_source.count("mainHome:") >= 2
 
 
 def test_layout_keeps_tabs_workspace_and_navigation_in_one_header_rail() -> None:

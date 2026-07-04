@@ -21,9 +21,10 @@ import { TopBar } from './layout/top-bar';
 // Create a LayoutContent component to access the FlowContext, TabsContext, and LayoutContext
 function LayoutContent() {
   const { reactFlowInstance } = useFlowContext();
-  const { openTab, activeTabType, flowTabs, focusFirstFlowTab } = useTabsContext();
+  const { openTab, activeTabType, flowTabs, focusFirstFlowTab, focusHome } = useTabsContext();
   const { isBottomCollapsed, expandBottomPanel, collapseBottomPanel, toggleBottomPanel } = useLayoutContext();
   const isFlowTab = activeTabType === 'flow';
+  const isHomeActive = activeTabType === null;
   // The workspace pill (active ticker / period / sandbox) only drives the stock
   // analysis, flow, and data-sandbox flows. The stock-compare tab is fully
   // independent (its own ticker slots + dates), so the pill is meaningless there.
@@ -202,6 +203,8 @@ function LayoutContent() {
             onToggleRight={() => setIsRightCollapsed(!isRightCollapsed)}
             onToggleBottom={toggleBottomPanel}
             onSettingsClick={handleSettingsClick}
+            isHomeActive={isHomeActive}
+            onHomeClick={focusHome}
             onSearchClick={handleSearchClick}
             onDataSandboxClick={handleDataSandboxClick}
             hasFlowTab={hasFlowTab}

@@ -40,6 +40,7 @@ interface TabsContextType {
   updateTabTitle: (tabId: string, newTitle: string) => void;
   updateFlowTabTitle: (flowId: number, newTitle: string) => void;
   focusFirstFlowTab: () => void;
+  focusHome: () => void;
 }
 
 const TabsContext = createContext<TabsContextType | null>(null);
@@ -255,6 +256,10 @@ export function TabsProvider({ children }: TabsProviderProps) {
     setActiveTabId(target.id);
   }, [tabs, activeTabId]);
 
+  const focusHome = useCallback(() => {
+    setActiveTabId(null);
+  }, []);
+
   // Update flow tab title
   const updateFlowTabTitle = useCallback((flowId: number, newTitle: string) => {
     setTabs(prevTabs => {
@@ -289,6 +294,7 @@ export function TabsProvider({ children }: TabsProviderProps) {
     updateTabTitle,
     updateFlowTabTitle,
     focusFirstFlowTab,
+    focusHome,
   };
 
   return (
