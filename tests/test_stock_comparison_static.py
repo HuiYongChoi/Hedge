@@ -267,6 +267,17 @@ def test_comparison_has_same_axis_metric_bars():
     assert "metricBarTrack" in src
 
 
+def test_comparison_valuation_bars_explain_price_gap_basis():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+
+    assert "formatValuationBarPrimary" in src
+    assert "formatValuationBarSecondary" in src
+    assert "getValuationBarTooltip" in src
+    assert "현재가 대비" in src
+    assert "산식" in src
+    assert "현재가" in src
+
+
 def test_comparison_score_tooltips_and_axis_explanations():
     src = _read("components/tabs/stock-compare-tab.tsx")
     assert "TooltipTrigger" in src

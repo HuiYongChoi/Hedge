@@ -193,6 +193,11 @@ function fmtPercent(value: unknown): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function fmtSignedPercent(value: unknown): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
+}
+
 function fmtCurrency(value: number | null | undefined): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -206,6 +211,46 @@ function formatTargetWithGap(target: number | null | undefined, currentPrice: nu
   }
   const gap = (target / currentPrice) - 1;
   return `${formattedTarget} (${gap >= 0 ? '+' : ''}${(gap * 100).toFixed(1)}%)`;
+}
+
+function getValuationReferenceValue(slot: CompareSlot, rowKey: string): number | null {
+  if (rowKey === 'broker_target') return numericValue(slot.targetConsensus);
+  const model = slot.valuation?.models.find(item => item.key === rowKey);
+  return numericValue(model?.intrinsicPerShare);
+}
+
+function formatValuationBarPrimary(slot: CompareSlot, row: MetricBarRow, language: 'ko' | 'en'): string | null {
+  const target = getValuationReferenceValue(slot, row.key);
+  if (target === null) return null;
+  const label = row.key === 'broker_target'
+    ? (language === 'ko' ? '목표가' : 'Target')
+    : (language === 'ko' ? '가치' : 'Value');
+  return `${label} ${fmtCurrency(target)}`;
+}
+
+function formatValuationBarSecondary(value: number, language: 'ko' | 'en'): string {
+  return language === 'ko'
+    ? `현재가 대비 ${fmtSignedPercent(value)}`
+    : `vs current ${fmtSignedPercent(value)}`;
+}
+
+function getValuationBarTooltip(slot: CompareSlot, row: MetricBarRow, value: number, language: 'ko' | 'en'): string {
+  const target = getValuationReferenceValue(slot, row.key);
+  const current = numericValue(slot.currentPrice);
+  const label = language === 'ko' ? row.ko : row.en;
+  if (target === null) {
+    return language === 'ko'
+      ? `${label}: 산출 가치가 없습니다.`
+      : `${label}: valuation value is unavailable.`;
+  }
+  if (current === null || current === 0) {
+    return language === 'ko'
+      ? `${label} 산출 가치 ${fmtCurrency(target)}. 현재가가 없어 상승여력을 계산하지 못했습니다.`
+      : `${label} value ${fmtCurrency(target)}. Current price is unavailable, so upside cannot be calculated.`;
+  }
+  return language === 'ko'
+    ? `${label} 산출 가치 ${fmtCurrency(target)}는 현재가 ${fmtCurrency(current)} 대비 ${fmtSignedPercent(value)}입니다. 산식: 산출 가치 ÷ 현재가 - 1.`
+    : `${label} value ${fmtCurrency(target)} is ${fmtSignedPercent(value)} vs current price ${fmtCurrency(current)}. Formula: value / current price - 1.`;
 }
 
 function formatQuarterlyMarginTrend(slot: CompareSlot, kind: 'operating_margin' | 'net_margin'): string | null {
@@ -971,7 +1016,10 @@ export function StockCompareTab() {
                 if (rowKey === 'broker_target') return getTargetUpside(slot);
                 return findModel(slot, rowKey)?.gapToMarket ?? null;
               }}
-              formatValue={value => `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`}
+              formatValue={value => fmtSignedPercent(value)}
+              formatPrimaryValue={(slot, row) => formatValuationBarPrimary(slot, row, language)}
+              formatSecondaryValue={value => formatValuationBarSecondary(value, language)}
+              getValueTooltip={(slot, row, value) => getValuationBarTooltip(slot, row, value, language)}
             />
 
             <MetricBarComparisonPanel
@@ -1336,6 +1384,9 @@ function MetricBarComparisonPanel({
   axisHelp,
   getValue,
   formatValue,
+  formatPrimaryValue,
+  formatSecondaryValue,
+  getValueTooltip,
 }: {
   title: string;
   subtitle?: string;
@@ -1346,6 +1397,9 @@ function MetricBarComparisonPanel({
   axisHelp?: string;
   getValue: (slot: CompareSlot, rowKey: string) => number | null;
   formatValue: (value: number, row: MetricBarRow) => string;
+  formatPrimaryValue?: (slot: CompareSlot, row: MetricBarRow, value: number) => string | null;
+  formatSecondaryValue?: (value: number, row: MetricBarRow) => string;
+  getValueTooltip?: (slot: CompareSlot, row: MetricBarRow, value: number) => string | null;
 }) {
   const groups = rowGroups || [{ key: 'single', ko: '', en: '', rows: rows || [] }];
   const hasAnyRow = groups.some(group => group.rows.length > 0);
@@ -1376,6 +1430,9 @@ function MetricBarComparisonPanel({
                 language={language}
                 getValue={getValue}
                 formatValue={formatValue}
+                formatPrimaryValue={formatPrimaryValue}
+                formatSecondaryValue={formatSecondaryValue}
+                getValueTooltip={getValueTooltip}
               />
             ))}
           </div>
@@ -1391,12 +1448,18 @@ function MetricBarRowView({
   language,
   getValue,
   formatValue,
+  formatPrimaryValue,
+  formatSecondaryValue,
+  getValueTooltip,
 }: {
   row: MetricBarRow;
   slots: CompareSlot[];
   language: 'ko' | 'en';
   getValue: (slot: CompareSlot, rowKey: string) => number | null;
   formatValue: (value: number, row: MetricBarRow) => string;
+  formatPrimaryValue?: (slot: CompareSlot, row: MetricBarRow, value: number) => string | null;
+  formatSecondaryValue?: (value: number, row: MetricBarRow) => string;
+  getValueTooltip?: (slot: CompareSlot, row: MetricBarRow, value: number) => string | null;
 }) {
   const values = slots.map((slot, index) => ({ slot, index, value: getValue(slot, row.key) }));
   const usable = values.filter((item): item is { slot: CompareSlot; index: number; value: number } => item.value !== null && Number.isFinite(item.value));
@@ -1423,7 +1486,7 @@ function MetricBarRowView({
               ? 100
               : Math.max(3, Math.min(100, ((item.value - min) / range) * 100));
           return (
-            <div key={item.slot.id} className="grid items-center gap-2 text-xs md:grid-cols-[8rem_1fr_7rem]">
+            <div key={item.slot.id} className="grid items-center gap-2 text-xs md:grid-cols-[8rem_1fr_10.5rem]">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
                 <span className="truncate text-muted-foreground">{item.slot.ticker}</span>
@@ -1433,15 +1496,66 @@ function MetricBarRowView({
                   <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
                 )}
               </div>
-              <div className="flex items-center justify-end gap-2 font-mono tabular-nums">
+              <div className="flex min-w-0 items-center justify-end gap-2 font-mono tabular-nums">
                 {isBest && <span className="rounded border border-amber-300/40 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">BEST</span>}
-                <span>{item.value === null ? '—' : formatValue(item.value, row)}</span>
+                {item.value === null ? (
+                  <span>—</span>
+                ) : (
+                  <MetricBarValue
+                    primary={formatPrimaryValue?.(item.slot, row, item.value) ?? null}
+                    secondary={(formatSecondaryValue ?? formatValue)(item.value, row)}
+                    fallback={formatValue(item.value, row)}
+                    tooltip={getValueTooltip?.(item.slot, row, item.value) ?? null}
+                  />
+                )}
               </div>
             </div>
           );
         })}
       </div>
     </div>
+  );
+}
+
+function MetricBarValue({
+  primary,
+  secondary,
+  fallback,
+  tooltip,
+}: {
+  primary: string | null;
+  secondary: string;
+  fallback: string;
+  tooltip: string | null;
+}) {
+  const content = primary ? (
+    <span className="flex min-w-0 flex-col items-end leading-tight">
+      <span className="max-w-full truncate font-semibold text-foreground">{primary}</span>
+      <span className="mt-0.5 max-w-full truncate text-[10px] text-muted-foreground">{secondary}</span>
+    </span>
+  ) : (
+    <span>{fallback}</span>
+  );
+
+  if (!tooltip) return content;
+
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="min-w-0 text-right transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            aria-label={tooltip}
+          >
+            {content}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="left" className="max-w-xs whitespace-normal bg-zinc-900 text-left leading-relaxed text-zinc-100 shadow-lg">
+          {tooltip}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
