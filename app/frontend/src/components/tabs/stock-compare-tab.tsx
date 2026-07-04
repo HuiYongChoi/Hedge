@@ -222,6 +222,102 @@ function formatQuarterlyMarginTrend(slot: CompareSlot, kind: 'operating_margin' 
   return points.join(' → ');
 }
 
+type ScoreEvidenceGroupData = {
+  key: 'value' | 'quality' | 'growth';
+  label: string;
+  caption: string;
+  items: Array<{ label: string; value: string }>;
+};
+
+function buildScoreEvidenceGroups(slot: CompareSlot, language: 'ko' | 'en'): ScoreEvidenceGroupData[] {
+  const refLabel = language === 'ko' ? '참고 수치' : 'Referenced metrics';
+  const marginTrend = formatQuarterlyMarginTrend(slot, 'operating_margin');
+
+  return [
+    {
+      key: 'value',
+      label: language === 'ko' ? '밸류' : 'Value',
+      caption: refLabel,
+      items: [
+        {
+          label: language === 'ko' ? 'FwdPER(NTM)' : 'Fwd P/E (NTM)',
+          value: language === 'ko'
+            ? `${fmtNum(getMetricValue(slot, 'forward_pe'))} · 올해 ${fmtNum(getMetricValue(slot, 'forward_pe_fy0'))} · 내년 ${fmtNum(getMetricValue(slot, 'forward_pe_fy1'))}`
+            : `${fmtNum(getMetricValue(slot, 'forward_pe'))} · FY0 ${fmtNum(getMetricValue(slot, 'forward_pe_fy0'))} · FY1 ${fmtNum(getMetricValue(slot, 'forward_pe_fy1'))}`,
+        },
+        {
+          label: language === 'ko' ? 'PBR / EV·EBITDA' : 'P/B / EV·EBITDA',
+          value: `${fmtNum(getMetricValue(slot, 'price_to_book_ratio'))} / ${fmtNum(getMetricValue(slot, 'enterprise_value_to_ebitda_ratio'))}`,
+        },
+        {
+          label: language === 'ko' ? '목표 상승여력' : 'Target upside',
+          value: formatTargetWithGap(slot.targetConsensus, slot.currentPrice),
+        },
+        {
+          label: language === 'ko' ? '모델 상승여력' : 'Model upside',
+          value: fmtPercent(getAverageValuationGap(slot)),
+        },
+      ],
+    },
+    {
+      key: 'quality',
+      label: language === 'ko' ? '퀄리티' : 'Quality',
+      caption: refLabel,
+      items: [
+        {
+          label: language === 'ko' ? '분기 영업이익률' : 'Op margin',
+          value: language === 'ko'
+            ? `분기 ${fmtPercent(getMetricValue(slot, 'operating_margin_q'))} · 연간 ${fmtPercent(getMetricValue(slot, 'operating_margin'))}`
+            : `Q ${fmtPercent(getMetricValue(slot, 'operating_margin_q'))} · FY ${fmtPercent(getMetricValue(slot, 'operating_margin'))}`,
+        },
+        {
+          label: language === 'ko' ? '순이익률' : 'Net margin',
+          value: language === 'ko'
+            ? `분기 ${fmtPercent(getMetricValue(slot, 'net_margin_q'))} · 연간 ${fmtPercent(getMetricValue(slot, 'net_margin'))}`
+            : `Q ${fmtPercent(getMetricValue(slot, 'net_margin_q'))} · FY ${fmtPercent(getMetricValue(slot, 'net_margin'))}`,
+        },
+        {
+          label: 'ROE / ROIC',
+          value: `${fmtPercent(getMetricValue(slot, 'return_on_equity'))} / ${fmtPercent(getMetricValue(slot, 'return_on_invested_capital'))}`,
+        },
+        {
+          label: language === 'ko' ? '재무 안정성' : 'Balance sheet',
+          value: language === 'ko'
+            ? `이자 ${fmtNum(getMetricValue(slot, 'interest_coverage'))} · 부채 ${fmtPercent(getMetricValue(slot, 'liabilities_to_equity'))}`
+            : `Interest ${fmtNum(getMetricValue(slot, 'interest_coverage'))} · Debt ${fmtPercent(getMetricValue(slot, 'liabilities_to_equity'))}`,
+        },
+      ],
+    },
+    {
+      key: 'growth',
+      label: language === 'ko' ? '성장' : 'Growth',
+      caption: refLabel,
+      items: [
+        {
+          label: language === 'ko' ? '연간 성장' : 'Annual growth',
+          value: language === 'ko'
+            ? `매출 ${fmtPercent(getMetricValue(slot, 'revenue_growth'))} · 영업 ${fmtPercent(getMetricValue(slot, 'operating_income_growth'))} · 순익 ${fmtPercent(getMetricValue(slot, 'earnings_growth'))}`
+            : `Rev ${fmtPercent(getMetricValue(slot, 'revenue_growth'))} · Op ${fmtPercent(getMetricValue(slot, 'operating_income_growth'))} · Net ${fmtPercent(getMetricValue(slot, 'earnings_growth'))}`,
+        },
+        {
+          label: language === 'ko' ? '분기 영업이익 YoY' : 'Q op income YoY',
+          value: fmtPercent(getMetricValue(slot, 'operating_income_growth_yoy')),
+        },
+        {
+          label: language === 'ko' ? '분기 순이익 YoY' : 'Q net income YoY',
+          value: fmtPercent(getMetricValue(slot, 'earnings_growth_yoy')),
+        },
+        ...(marginTrend
+          ? [{
+              label: language === 'ko' ? '영업이익률 추세' : 'Op margin trend',
+              value: marginTrend,
+            }]
+          : []),
+      ],
+    },
+  ];
+}
+
 function toneClass(signal: string | null | undefined): string {
   if (signal === 'bullish') return 'text-emerald-400';
   if (signal === 'bearish') return 'text-rose-400';
@@ -1148,25 +1244,33 @@ function CompareRankingCards({
               <ScoreBar label={language === 'ko' ? '퀄리티' : 'Quality'} help={scoreHelpText('quality', language)} score={card.qualityScore} color={card.color} />
               <ScoreBar label={language === 'ko' ? '성장' : 'Growth'} help={scoreHelpText('growth', language)} score={card.growthScore} color={card.color} />
             </div>
-            <div className="mt-4 border-t pt-3 text-xs leading-5 text-muted-foreground">
-              {language === 'ko'
-                ? `FwdPER(NTM) ${fmtNum(getMetricValue(card.slot, 'forward_pe'))} · 올해 ${fmtNum(getMetricValue(card.slot, 'forward_pe_fy0'))} · 내년 ${fmtNum(getMetricValue(card.slot, 'forward_pe_fy1'))} · ROIC ${fmtPercent(getMetricValue(card.slot, 'return_on_invested_capital'))} · 목표 ${formatTargetWithGap(card.slot.targetConsensus, card.slot.currentPrice)}`
-                : `Fwd P/E(NTM) ${fmtNum(getMetricValue(card.slot, 'forward_pe'))} · FY0 ${fmtNum(getMetricValue(card.slot, 'forward_pe_fy0'))} · FY1 ${fmtNum(getMetricValue(card.slot, 'forward_pe_fy1'))} · ROIC ${fmtPercent(getMetricValue(card.slot, 'return_on_invested_capital'))} · Target ${formatTargetWithGap(card.slot.targetConsensus, card.slot.currentPrice)}`}
-              <div className="mt-1">
-                {language === 'ko'
-                  ? `분기 영업이익률 ${fmtPercent(getMetricValue(card.slot, 'operating_margin_q'))} · 분기 영업이익 YoY ${fmtPercent(getMetricValue(card.slot, 'operating_income_growth_yoy'))} · 분기 순이익 YoY ${fmtPercent(getMetricValue(card.slot, 'earnings_growth_yoy'))}`
-                  : `Op margin (Q) ${fmtPercent(getMetricValue(card.slot, 'operating_margin_q'))} · Op income YoY (Q) ${fmtPercent(getMetricValue(card.slot, 'operating_income_growth_yoy'))} · Net income YoY (Q) ${fmtPercent(getMetricValue(card.slot, 'earnings_growth_yoy'))}`}
-              </div>
-              {formatQuarterlyMarginTrend(card.slot, 'operating_margin') && (
-                <div className="mt-1 text-[11px] text-muted-foreground/80">
-                  {language === 'ko' ? '영업이익률 추세 ' : 'Op margin trend '}
-                  {formatQuarterlyMarginTrend(card.slot, 'operating_margin')}
-                </div>
-              )}
+            <div className="mt-4 space-y-3 border-t border-border/70 pt-3">
+              {buildScoreEvidenceGroups(card.slot, language).map(group => (
+                <ScoreEvidenceGroup key={group.key} group={group} />
+              ))}
             </div>
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+function ScoreEvidenceGroup({ group }: { group: ScoreEvidenceGroupData }) {
+  return (
+    <section className="border-l border-border/70 pl-2">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-[11px] font-semibold text-foreground">{group.label}</h4>
+        <span className="text-[10px] text-muted-foreground">{group.caption}</span>
+      </div>
+      <dl className="mt-1.5 space-y-1">
+        {group.items.map(item => (
+          <div key={item.label} className="grid grid-cols-[6.2rem_minmax(0,1fr)] gap-2 text-[11px] leading-4">
+            <dt className="text-muted-foreground">{item.label}</dt>
+            <dd className="break-words font-medium text-foreground">{item.value}</dd>
+          </div>
+        ))}
+      </dl>
     </section>
   );
 }

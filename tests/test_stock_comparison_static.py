@@ -277,6 +277,30 @@ def test_comparison_score_tooltips_and_axis_explanations():
     assert "멀티플 자체" in src
 
 
+def test_comparison_rank_cards_group_reference_metrics_by_score_axis():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+
+    assert "buildScoreEvidenceGroups" in src
+    assert "ScoreEvidenceGroup" in src
+    assert "참고 수치" in src
+    assert "Referenced metrics" in src
+
+    evidence_block = src[src.index("function buildScoreEvidenceGroups"):src.index("function ScoreEvidenceGroup")]
+    assert "key: 'value'" in evidence_block
+    assert "FwdPER(NTM)" in evidence_block
+    assert "목표 상승여력" in evidence_block
+    assert "key: 'quality'" in evidence_block
+    assert "ROIC" in evidence_block
+    assert "분기 영업이익률" in evidence_block
+    assert "key: 'growth'" in evidence_block
+    assert "분기 영업이익 YoY" in evidence_block
+    assert "영업이익률 추세" in evidence_block
+
+    ranking_block = src[src.index("function CompareRankingCards"):src.index("function ScoreBar")]
+    assert "buildScoreEvidenceGroups(card.slot, language).map" in ranking_block
+    assert "<ScoreEvidenceGroup" in ranking_block
+
+
 def test_comparison_uses_muted_professional_palette():
     src = _read("components/tabs/stock-compare-tab.tsx")
     assert "#4f83cc" in src
