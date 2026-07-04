@@ -12,7 +12,7 @@ import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
 import { analystTargetService } from '@/services/analyst-target-service';
 import { savedAnalysisService } from '@/services/saved-analyses-service';
-import { Archive, ArrowUpRight, Network, Plus, RefreshCw, X } from 'lucide-react';
+import { Archive, ArrowUpRight, FileText, Network, Plus, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ||
@@ -926,19 +926,36 @@ export function StockCompareTab() {
     }
   }, [baselineId, isSavingComparison, language, modelKeys, slots]);
 
+  const handlePrintComparison = useCallback(() => {
+    const previousTitle = document.title;
+    const tickers = slots.map(slot => slot.ticker.trim()).filter(Boolean).join(' vs ');
+    document.title = language === 'ko'
+      ? `종목간 비교 - ${tickers || '비교'}`
+      : `Stock comparison - ${tickers || 'comparison'}`;
+
+    const restoreTitle = () => {
+      document.title = previousTitle;
+      window.removeEventListener('afterprint', restoreTitle);
+    };
+
+    window.addEventListener('afterprint', restoreTitle);
+    window.print();
+    window.setTimeout(restoreTitle, 1000);
+  }, [language, slots]);
+
   // Only rank/score slots whose data is actually loaded; a ticker typed but not yet
   // run must not surface placeholder 50/50/50 scores.
   const scoredSlots = useMemo(() => readySlots.filter(s => s.status === 'ready'), [readySlots]);
   const rankedScorecards = useMemo(() => buildRankedScorecards(scoredSlots), [scoredSlots]);
 
   return (
-    <div className="h-full w-full overflow-y-auto bg-background text-foreground">
+    <div id="stock-compare-print-root" className="h-full w-full overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-7xl p-4 space-y-4">
         {/* Header */}
         <div className="flex flex-wrap items-center gap-2">
           <Network size={18} className="text-primary" />
           <h2 className="text-lg font-semibold">{t('stockCompare', language)}</h2>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="no-print flex items-center gap-2 ml-auto">
             <Button
               size="sm"
               variant="outline"
@@ -954,11 +971,15 @@ export function StockCompareTab() {
             <Button size="sm" onClick={runComparison} disabled={isRunning || readySlots.length === 0}>
               <RefreshCw size={14} className={cn('mr-1', isRunning && 'animate-spin')} />{t('compareRun', language)}
             </Button>
+            <Button size="sm" variant="outline" onClick={handlePrintComparison} disabled={readySlots.length === 0}>
+              <FileText size={14} className="mr-1" />
+              {language === 'ko' ? 'PDF 저장' : 'Save PDF'}
+            </Button>
           </div>
         </div>
 
         {/* Ticker slot inputs */}
-        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${slots.length}, minmax(0, 1fr))` }}>
+        <div className="no-print grid gap-2" style={{ gridTemplateColumns: `repeat(${slots.length}, minmax(0, 1fr))` }}>
           {slots.map(slot => (
             <div key={slot.id} className="relative rounded-lg border bg-muted/10 p-2">
               <div className="flex items-center gap-1">

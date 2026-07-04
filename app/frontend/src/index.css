@@ -438,7 +438,9 @@
   }
 
   #analyst-report-root,
-  #analyst-report-root * {
+  #analyst-report-root *,
+  #stock-compare-print-root,
+  #stock-compare-print-root * {
     visibility: visible !important;
   }
 
@@ -491,7 +493,9 @@
   }
 
   #analyst-report-root section,
-  #analyst-report-root > header {
+  #analyst-report-root > header,
+  #stock-compare-print-root section,
+  #stock-compare-print-root .rounded-lg {
     break-inside: avoid;
   }
 
@@ -508,6 +512,26 @@
     padding: 16px !important;
     background: hsl(0 0% 3.9%) !important;
     color: hsl(0 0% 98%) !important;
+  }
+
+  #stock-compare-print-root {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 16px !important;
+    background: hsl(0 0% 3.9%) !important;
+    color: hsl(0 0% 98%) !important;
+  }
+
+  #stock-compare-print-root > div {
+    max-width: none !important;
+    padding: 0 !important;
   }
 
   /* display:none (not visibility) so action chrome is fully removed: the

@@ -118,6 +118,21 @@ def test_comparison_can_save_results_to_archive():
     assert "isSavingComparison" in src
 
 
+def test_comparison_can_export_current_screen_to_pdf():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    css = _read("index.css")
+
+    assert "handlePrintComparison" in src
+    assert "window.print()" in src
+    assert "FileText" in src
+    assert "PDF 저장" in src
+    assert "Save PDF" in src
+    assert "stock-compare-print-root" in src
+    assert "no-print flex items-center gap-2" in src
+    assert "#stock-compare-print-root" in css
+    assert "#stock-compare-print-root *" in css
+
+
 def test_comparison_surfaces_current_price():
     src = _read("components/tabs/stock-compare-tab.tsx")
     assert "compareCurrentPrice" in src
