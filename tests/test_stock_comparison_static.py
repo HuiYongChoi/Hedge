@@ -288,6 +288,7 @@ def test_comparison_rank_cards_group_reference_metrics_by_score_axis():
     evidence_block = src[src.index("function buildScoreEvidenceGroups"):src.index("function ScoreEvidenceGroup")]
     assert "key: 'value'" in evidence_block
     assert "FwdPER(NTM)" in evidence_block
+    assert "증권사 평균목표가" in evidence_block
     assert "목표 상승여력" in evidence_block
     assert "key: 'quality'" in evidence_block
     assert "ROIC" in evidence_block

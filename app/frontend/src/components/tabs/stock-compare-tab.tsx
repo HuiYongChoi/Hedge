@@ -250,8 +250,12 @@ function buildScoreEvidenceGroups(slot: CompareSlot, language: 'ko' | 'en'): Sco
           value: `${fmtNum(getMetricValue(slot, 'price_to_book_ratio'))} / ${fmtNum(getMetricValue(slot, 'enterprise_value_to_ebitda_ratio'))}`,
         },
         {
+          label: language === 'ko' ? '증권사 평균목표가' : 'Broker avg target',
+          value: fmtCurrency(slot.targetConsensus),
+        },
+        {
           label: language === 'ko' ? '목표 상승여력' : 'Target upside',
-          value: formatTargetWithGap(slot.targetConsensus, slot.currentPrice),
+          value: fmtPercent(getTargetUpside(slot)),
         },
         {
           label: language === 'ko' ? '모델 상승여력' : 'Model upside',
