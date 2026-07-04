@@ -149,6 +149,21 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("hasDirectionalConflict", helpers)
         self.assertIn("report.signal && !hasDirectionalConflict", helpers)
 
+    def test_sticky_verdict_uses_single_source_resolver(self):
+        # 스티키 헤더 결론은 resolveHeadlineVerdict 단일 진실원천을 거쳐야 하며,
+        # 표시 에이전트 신호가 종합점수 밴드와 충돌하면 밴드 라벨('비중 축소' 등)로 대체한다.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        layout = (V5_DIR / "report-layout.tsx").read_text(encoding="utf-8")
+        sticky = (V5_DIR / "sticky-analysis-header.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("export function resolveHeadlineVerdict", helpers)
+        self.assertIn("band.tone !== 'neutral' && tone !== 'neutral' && band.tone !== tone", helpers)
+        self.assertIn("resolveHeadlineVerdict(", layout)
+        self.assertNotIn("function stickyVerdictFromSignal", layout)
+        self.assertIn("verdictLabelOverride={headlineVerdict.label}", layout)
+        self.assertIn("verdictLabelOverride?: string | null", sticky)
+        self.assertIn("labelOverride || verdictLabel(verdict, language)", sticky)
+
     def test_sticky_header_labels_margin_percent_as_margin_not_price(self):
         # 안전가(=가격) 라벨을 퍼센트 값에 붙이면 안 된다. 스티키 헤더의 안전마진 %는
         # 가격 타일(targetMarginLabel='안전가')과 구분되는 안전마진 라벨을 써야 한다.

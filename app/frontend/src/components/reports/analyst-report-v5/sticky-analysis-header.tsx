@@ -11,6 +11,8 @@ interface StickyAnalysisHeaderProps {
   currency: string;
   priceChangePct: number | null;
   verdict: StickyVerdict;
+  /** 신호가 종합점수와 충돌할 때 밴드 라벨('비중 축소' 등)로 대체 표기 — helpers.resolveHeadlineVerdict 참조 */
+  verdictLabelOverride?: string | null;
   verdictConfidence: number | null;
   marginOfSafetyPct: number | null;
   wacc: number | null;
@@ -64,17 +66,19 @@ function verdictClasses(verdict: StickyVerdict) {
 
 function VerdictChip({
   verdict,
+  labelOverride,
   confidence,
   language,
 }: {
   verdict: StickyVerdict;
+  labelOverride?: string | null;
   confidence: number | null;
   language: ReportLanguage;
 }) {
   const normalizedConfidence = normalizeConfidence(confidence);
   return (
     <span className={`inline-flex min-h-6 items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${verdictClasses(verdict)}`}>
-      <span>{verdictLabel(verdict, language)}</span>
+      <span>{labelOverride || verdictLabel(verdict, language)}</span>
       {normalizedConfidence !== null && (
         <span className="ml-1.5 font-mono text-[10px] opacity-90">
           {t('stickyConfidenceLabel', language)} {Math.round(normalizedConfidence)}
@@ -92,6 +96,7 @@ export function StickyAnalysisHeader({
   currency,
   priceChangePct,
   verdict,
+  verdictLabelOverride,
   verdictConfidence,
   marginOfSafetyPct,
   wacc,
@@ -146,7 +151,7 @@ export function StickyAnalysisHeader({
         </div>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground sm:gap-x-3">
-        <VerdictChip verdict={verdict} confidence={verdictConfidence} language={language} />
+        <VerdictChip verdict={verdict} labelOverride={verdictLabelOverride} confidence={verdictConfidence} language={language} />
         <span className="text-border">·</span>
         {showFallback ? (
           <>

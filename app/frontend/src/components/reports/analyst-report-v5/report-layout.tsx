@@ -31,6 +31,7 @@ import {
   isKoreanTicker,
   listOtherAgents,
   pickDefaultAgent,
+  resolveHeadlineVerdict,
   resolveMarginOfSafetySnapshot,
 } from './helpers';
 import { PriceCompassPanel } from './price-compass-panel';
@@ -137,14 +138,6 @@ function countryFromTicker(ticker: string) {
   if (isKoreanTicker(ticker)) return 'KR';
   if (isJapaneseTicker(ticker)) return 'JP';
   return 'US';
-}
-
-function stickyVerdictFromSignal(signal: unknown): 'buy' | 'sell' | 'hold' | 'on_hold' {
-  const normalized = String(signal ?? '').toLowerCase();
-  if (['bullish', 'buy', 'long'].includes(normalized)) return 'buy';
-  if (['bearish', 'sell', 'short'].includes(normalized)) return 'sell';
-  if (['neutral', 'hold'].includes(normalized)) return 'hold';
-  return 'on_hold';
 }
 
 function numericConfidence(value: unknown): number | null {
@@ -340,7 +333,12 @@ export function ReportLayout({
   const stickyCompanyName =
     (displayTickerLabel && displayTickerLabel !== activeTicker ? displayTickerLabel : null)
     ?? (liveTarget?.company_name && liveTarget.company_name !== activeTicker ? liveTarget.company_name : null);
-  const stickyVerdict = stickyVerdictFromSignal(displayReport?.signal ?? completeResult.decisions?.[activeTicker]?.action);
+  // 단일 진실원천: 표시 에이전트 신호가 종합점수 밴드와 반대면 밴드 결론으로 대체 (모순 0)
+  const headlineVerdict = resolveHeadlineVerdict(
+    displayReport?.signal ?? completeResult.decisions?.[activeTicker]?.action,
+    compositeScore,
+    language,
+  );
   const stickyConfidence = numericConfidence(displayReport?.confidence ?? completeResult.decisions?.[activeTicker]?.confidence);
   const effectiveMetrics = useMemo(() => {
     const nextMetrics = { ...canonicalMetrics };
@@ -446,7 +444,8 @@ export function ReportLayout({
       currentPrice={effectiveCurrentPrice}
       currency={effectiveCurrency}
       priceChangePct={null}
-      verdict={stickyVerdict}
+      verdict={headlineVerdict.kind}
+      verdictLabelOverride={headlineVerdict.label}
       verdictConfidence={stickyConfidence}
       marginOfSafetyPct={effectiveMarginOfSafety}
       wacc={effectiveMetrics.wacc?.value ?? null}

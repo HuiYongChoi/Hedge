@@ -299,6 +299,29 @@ export function getScoreBand(score: number, language: ReportLanguage) {
   return { label: language === 'ko' ? '강력 매도' : 'Strong Sell', tone: 'bearish' as ReportTone };
 }
 
+// 헤드라인 결론의 단일 진실원천. 표시 중인 에이전트의 신호가 종합점수 밴드와 반대 방향이면
+// 종합점수 밴드 결론(라벨 포함)을 그대로 사용해 한 화면 안의 신호↔점수 모순을 없앤다.
+export function resolveHeadlineVerdict(
+  signal: unknown,
+  compositeScore: number | null | undefined,
+  language: ReportLanguage,
+): { kind: 'buy' | 'sell' | 'hold' | 'on_hold'; label: string | null } {
+  const tone = getSignalTone(signal);
+  const normalized = String(signal ?? '').toLowerCase().trim();
+  const kind: 'buy' | 'sell' | 'hold' | 'on_hold' =
+    tone === 'bullish' ? 'buy'
+      : tone === 'bearish' ? 'sell'
+        : ['neutral', 'hold'].includes(normalized) ? 'hold' : 'on_hold';
+
+  const score = typeof compositeScore === 'number' && Number.isFinite(compositeScore) ? compositeScore : null;
+  if (score === null) return { kind, label: null };
+  const band = getScoreBand(score, language);
+  if (band.tone !== 'neutral' && tone !== 'neutral' && band.tone !== tone) {
+    return { kind: band.tone === 'bullish' ? 'buy' : 'sell', label: band.label };
+  }
+  return { kind, label: null };
+}
+
 export function toneToClasses(tone: ReportTone): { border: string; bg: string; text: string; badge: string } {
   if (tone === 'bullish') {
     return {
