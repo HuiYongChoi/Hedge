@@ -242,6 +242,22 @@ def test_comparison_growth_score_uses_operating_and_net_income_growth():
     assert "scoreMaps.operatingIncomeGrowthQ.get(slot.id)" in score_block
 
 
+def test_comparison_deep_links_to_stock_analysis():
+    # 비교 → 종목 분석 딥링크: 저장 분석 재열람과 같은 패턴(patchWorkspace + TabService)
+    src = _read("components/tabs/stock-compare-tab.tsx")
+
+    assert "useTabsContext" in src
+    assert "useWorkspace" in src
+    assert "TabService.createStockSearchTab()" in src
+    assert "patchWorkspace({ tickers: trimmed })" in src
+    assert "onOpenAnalysis" in src
+    assert "compareOpenAnalysis" in src
+
+    prefs = _read("lib/language-preferences.ts")
+    assert "compareOpenAnalysis: '분석 열기'" in prefs
+    assert "compareOpenAnalysis: 'Open analysis'" in prefs
+
+
 def test_comparison_has_same_axis_metric_bars():
     src = _read("components/tabs/stock-compare-tab.tsx")
     assert "MetricBarComparisonPanel" in src

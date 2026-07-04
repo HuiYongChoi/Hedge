@@ -404,19 +404,19 @@ export function AgentOutputDialog({
             ) : nodeStatus === 'IN_PROGRESS' ? (
               <div className="flex items-center justify-center h-full text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                Analysis in progress...
+                {t('analysisInProgress')}
               </div>
             ) : nodeStatus === 'COMPLETE' ? (
               <div className="flex items-center justify-center h-full text-muted-foreground">
-                Analysis completed with no results
+                {t('analysisComplete')}
               </div>
             ) : nodeStatus === 'ERROR' ? (
               <div className="flex items-center justify-center h-full text-muted-foreground">
-                Analysis failed
+                {t('analysisFailed')}
               </div>
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground">
-                No analysis available
+                {t('noAnalysisAvailable')}
               </div>
             )}
           </div>

@@ -2,6 +2,9 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { resolveTickerValue, TickerInput } from '@/components/ui/ticker-input';
 import { useLanguage } from '@/contexts/language-context';
+import { useTabsContext } from '@/contexts/tabs-context';
+import { useWorkspace } from '@/contexts/workspace-context';
+import { TabService } from '@/services/tab-service';
 import { buildValuationDeepDive } from '@/components/reports/analyst-report-v5/helpers';
 import type { ValuationDeepDive, ValuationModel } from '@/components/reports/analyst-report-v5/types';
 import { getDefaultModel } from '@/data/models';
@@ -9,7 +12,7 @@ import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
 import { analystTargetService } from '@/services/analyst-target-service';
 import { savedAnalysisService } from '@/services/saved-analyses-service';
-import { Archive, Network, Plus, RefreshCw, X } from 'lucide-react';
+import { Archive, ArrowUpRight, Network, Plus, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ||
@@ -435,6 +438,16 @@ function findExactTickerSuggestion(term: string, suggestions: TickerSuggestion[]
 
 export function StockCompareTab() {
   const { language } = useLanguage();
+  const { openTab } = useTabsContext();
+  const { patchWorkspace } = useWorkspace();
+  // 비교 → 종목 분석 딥링크: 활성 종목을 워크스페이스에 반영하고 분석 탭으로 이동
+  // (저장 분석 재열람과 동일한 패턴 — saved-list-row.tsx handleRestore 참조)
+  const openAnalysisFor = useCallback((ticker: string) => {
+    const trimmed = ticker.trim();
+    if (!trimmed) return;
+    patchWorkspace({ tickers: trimmed });
+    openTab(TabService.createStockSearchTab());
+  }, [openTab, patchWorkspace]);
   const [slots, setSlots] = useState<CompareSlot[]>(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -843,7 +856,7 @@ export function StockCompareTab() {
           </div>
         ) : (
           <>
-            <CompareRankingCards scorecards={rankedScorecards} language={language} />
+            <CompareRankingCards scorecards={rankedScorecards} language={language} onOpenAnalysis={openAnalysisFor} />
 
             <CurrentPriceSummary slots={readySlots} language={language} />
 
@@ -1068,9 +1081,11 @@ function CurrentPriceSummary({ slots, language }: { slots: CompareSlot[]; langua
 function CompareRankingCards({
   scorecards,
   language,
+  onOpenAnalysis,
 }: {
   scorecards: ReturnType<typeof buildRankedScorecards>;
   language: 'ko' | 'en';
+  onOpenAnalysis?: (ticker: string) => void;
 }) {
   if (scorecards.length === 0) return null;
   const sortedByValue = [...scorecards].sort((a, b) => b.valueScore - a.valueScore);
@@ -1106,6 +1121,17 @@ function CompareRankingCards({
                   </div>
                 </div>
               </div>
+              {onOpenAnalysis && (
+                <button
+                  type="button"
+                  onClick={() => onOpenAnalysis(card.slot.ticker)}
+                  className="inline-flex flex-shrink-0 items-center gap-1 rounded border border-border/60 px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  aria-label={`${card.slot.ticker} ${t('compareOpenAnalysis', language)}`}
+                >
+                  <ArrowUpRight className="h-3 w-3" />
+                  {t('compareOpenAnalysis', language)}
+                </button>
+              )}
             </div>
             <div className="mt-4 flex items-end justify-between">
               <div className="text-3xl font-bold tabular-nums">{fmtCurrency(card.slot.currentPrice)}</div>

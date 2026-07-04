@@ -145,6 +145,7 @@ export const translations = {
     stockInputDescription: '종목을 입력하고 이 노드를 분석가에 연결하여 인사이트를 생성하세요.',
     portfolioManagerDescription: '분석가의 입력을 바탕으로 투자 결정을 생성합니다.',
     portfolioInputDescription: '보유 종목, 수량, 가격을 입력하고 분석가 노드에 연결하세요.',
+    viewInvestmentReport: '투자 리포트 보기',
 
     // Node UI
     tickers: '종목 코드',
@@ -250,6 +251,7 @@ export const translations = {
     compareBrokerConsensusTarget: '증권사 평균 목표치',
     compareValueRankTitle: '밸류 매력도 순위',
     compareValueRankSubtitle: '멀티플·증권사 목표 상승여력·밸류/퀄리티/성장 점수를 종합 비교',
+    compareOpenAnalysis: '분석 열기',
     compareMetricBarsTitle: '같은 축 지표 비교',
     compareValuationBarsTitle: '가치평가 상승여력',
     compareEmptySlot: '종목을 입력하세요',
@@ -740,6 +742,7 @@ export const translations = {
     stockInputDescription: 'Enter individual stocks and connect this node to Analysts to generate insights.',
     portfolioManagerDescription: 'Generates investment decisions based on input from Analysts.',
     portfolioInputDescription: 'Enter your portfolio including tickers, shares, and prices. Connect this node to Analysts to generate insights.',
+    viewInvestmentReport: 'View Investment Report',
 
     // Node UI
     tickers: 'Tickers',
@@ -845,6 +848,7 @@ export const translations = {
     compareBrokerConsensusTarget: 'Broker consensus target',
     compareValueRankTitle: 'Value attractiveness ranking',
     compareValueRankSubtitle: 'Ranked by multiples, broker upside, and value/quality/growth scores',
+    compareOpenAnalysis: 'Open analysis',
     compareMetricBarsTitle: 'Same-axis metric comparison',
     compareValuationBarsTitle: 'Valuation upside',
     compareEmptySlot: 'Enter a ticker',
@@ -958,7 +962,7 @@ export const translations = {
     volumeTrend: 'Volume',
     // Growth rate fields
     financialFieldRevenueGrowth: 'Revenue Growth',
-    financialFieldEarningsGrowth: 'Earnings Growth',
+    financialFieldEarningsGrowth: 'Net Income Growth',
     financialFieldOperatingIncomeGrowth: 'Operating Income Growth',
     financialFieldEbitdaGrowth: 'EBITDA Growth',
     financialFieldFreeCashFlowGrowth: 'FCF Growth',

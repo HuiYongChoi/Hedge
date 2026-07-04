@@ -135,7 +135,7 @@ export function PortfolioManagerNode({
                     size="sm"
                     onClick={() => setIsDialogOpen(true)}
                   >
-                    View Investment Report
+                    {t('viewInvestmentReport', language)}
                   </Button>
                 )}
               </div>
