@@ -1469,6 +1469,7 @@ function MetricBarRowView({
   const min = usable.length ? Math.min(...usable.map(item => item.value)) : 0;
   const max = usable.length ? Math.max(...usable.map(item => item.value)) : 1;
   const range = max - min;
+  const hasSplitValueColumns = Boolean(formatPrimaryValue || formatSecondaryValue);
 
   return (
     <div className="rounded-md border border-border/80 bg-background/45 p-3">
@@ -1485,8 +1486,23 @@ function MetricBarRowView({
             : range === 0
               ? 100
               : Math.max(3, Math.min(100, ((item.value - min) / range) * 100));
+          const primaryValue = item.value === null ? null : formatPrimaryValue?.(item.slot, row, item.value) ?? null;
+          const secondaryValue = item.value === null ? null : (formatSecondaryValue ?? formatValue)(item.value, row);
+          const fallbackValue = item.value === null ? '—' : formatValue(item.value, row);
+          const tooltip = item.value === null ? null : getValueTooltip?.(item.slot, row, item.value) ?? null;
+          const bestBadge = isBest ? (
+            <span className="rounded border border-amber-300/40 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">BEST</span>
+          ) : null;
           return (
-            <div key={item.slot.id} className="grid items-center gap-2 text-xs md:grid-cols-[8rem_1fr_10.5rem]">
+            <div
+              key={item.slot.id}
+              className={cn(
+                'grid items-center gap-2 text-xs',
+                hasSplitValueColumns
+                  ? 'md:grid-cols-[8rem_minmax(0,1fr)_2.75rem_8.5rem_7.5rem]'
+                  : 'md:grid-cols-[8rem_minmax(0,1fr)_7rem]',
+              )}
+            >
               <div className="flex min-w-0 items-center gap-2">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
                 <span className="truncate text-muted-foreground">{item.slot.ticker}</span>
@@ -1496,19 +1512,26 @@ function MetricBarRowView({
                   <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
                 )}
               </div>
-              <div className="flex min-w-0 items-center justify-end gap-2 font-mono tabular-nums">
-                {isBest && <span className="rounded border border-amber-300/40 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">BEST</span>}
-                {item.value === null ? (
-                  <span>—</span>
-                ) : (
+              {hasSplitValueColumns ? (
+                <>
+                  <div className="metricBarBestCell flex min-w-0 justify-end">{bestBadge}</div>
                   <MetricBarValue
-                    primary={formatPrimaryValue?.(item.slot, row, item.value) ?? null}
-                    secondary={(formatSecondaryValue ?? formatValue)(item.value, row)}
-                    fallback={formatValue(item.value, row)}
-                    tooltip={getValueTooltip?.(item.slot, row, item.value) ?? null}
+                    className="metricBarValueCell justify-end font-mono font-semibold text-foreground tabular-nums"
+                    value={primaryValue ?? '—'}
+                    tooltip={tooltip}
                   />
-                )}
-              </div>
+                  <MetricBarValue
+                    className="metricBarGapCell justify-end font-mono text-[11px] text-muted-foreground tabular-nums"
+                    value={secondaryValue ?? fallbackValue}
+                    tooltip={tooltip}
+                  />
+                </>
+              ) : (
+                <div className="flex min-w-0 items-center justify-end gap-2 font-mono tabular-nums">
+                  {bestBadge}
+                  <MetricBarValue value={fallbackValue} tooltip={tooltip} />
+                </div>
+              )}
             </div>
           );
         })}
@@ -1518,26 +1541,19 @@ function MetricBarRowView({
 }
 
 function MetricBarValue({
-  primary,
-  secondary,
-  fallback,
+  value,
   tooltip,
+  className,
 }: {
-  primary: string | null;
-  secondary: string;
-  fallback: string;
+  value: string;
   tooltip: string | null;
+  className?: string;
 }) {
-  const content = primary ? (
-    <span className="flex min-w-0 flex-col items-end leading-tight">
-      <span className="max-w-full truncate font-semibold text-foreground">{primary}</span>
-      <span className="mt-0.5 max-w-full truncate text-[10px] text-muted-foreground">{secondary}</span>
-    </span>
-  ) : (
-    <span>{fallback}</span>
-  );
+  const content = <span className="max-w-full truncate">{value}</span>;
 
-  if (!tooltip) return content;
+  if (!tooltip) {
+    return <span className={cn('inline-flex min-w-0 text-right', className)}>{content}</span>;
+  }
 
   return (
     <TooltipProvider delayDuration={120}>
@@ -1545,7 +1561,10 @@ function MetricBarValue({
         <TooltipTrigger asChild>
           <button
             type="button"
-            className="min-w-0 text-right transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className={cn(
+              'inline-flex min-w-0 text-right transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+              className,
+            )}
             aria-label={tooltip}
           >
             {content}

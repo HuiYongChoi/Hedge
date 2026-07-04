@@ -278,6 +278,16 @@ def test_comparison_valuation_bars_explain_price_gap_basis():
     assert "현재가" in src
 
 
+def test_comparison_valuation_bars_split_value_and_gap_columns():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+
+    assert "hasSplitValueColumns" in src
+    assert "metricBarBestCell" in src
+    assert "metricBarValueCell" in src
+    assert "metricBarGapCell" in src
+    assert "md:grid-cols-[8rem_minmax(0,1fr)_2.75rem_8.5rem_7.5rem]" in src
+
+
 def test_comparison_score_tooltips_and_axis_explanations():
     src = _read("components/tabs/stock-compare-tab.tsx")
     assert "TooltipTrigger" in src
