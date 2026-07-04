@@ -107,6 +107,14 @@ def test_layout_keeps_tabs_workspace_and_navigation_in_one_header_rail() -> None
     assert "pr-2 transition-all duration-200" in source
 
 
+def test_workspace_pill_only_appears_on_context_driven_tabs() -> None:
+    source = _read(LAYOUT)
+
+    assert "const contextDrivenTabTypes = new Set(['flow', 'stock-search', 'data-sandbox']);" in source
+    assert "const showWorkspacePill = activeTabType ? contextDrivenTabTypes.has(activeTabType) : false;" in source
+    assert "activeTabType !== 'stock-compare'" not in source
+
+
 def test_workspace_pill_has_three_truthful_chips_with_scope_titles() -> None:
     source = _read(WORKSPACE_PILL)
 

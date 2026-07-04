@@ -26,9 +26,10 @@ function LayoutContent() {
   const isFlowTab = activeTabType === 'flow';
   const isHomeActive = activeTabType === null;
   // The workspace pill (active ticker / period / sandbox) only drives the stock
-  // analysis, flow, and data-sandbox flows. The stock-compare tab is fully
-  // independent (its own ticker slots + dates), so the pill is meaningless there.
-  const showWorkspacePill = activeTabType !== 'stock-compare';
+  // analysis, flow, and data-sandbox flows. Other screens should not imply that
+  // their content is filtered by this global context.
+  const contextDrivenTabTypes = new Set(['flow', 'stock-search', 'data-sandbox']);
+  const showWorkspacePill = activeTabType ? contextDrivenTabTypes.has(activeTabType) : false;
   const hasFlowTab = flowTabs.length > 0;
   
   // Initialize sidebar states from storage service
