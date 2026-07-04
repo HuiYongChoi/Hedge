@@ -24,6 +24,8 @@ const API_BASE_URL = import.meta.env.VITE_API_URL ||
 const MAX_SLOTS = 6;
 const DEFAULT_COMPARE_TICKERS = ['MU', 'SK하이닉스', '삼성전자'];
 const STORAGE_KEY = 'stock-compare:slots';
+const RESULT_STORAGE_KEY = 'stock-compare:last-result';
+const COMPARE_SNAPSHOT_VERSION = 1;
 
 // Preferred valuation-model row order; any extra model keys are appended dynamically
 // so newly added backend methods (e.g. EBITDA-normalized, ROIC-WACC EVA) show up
@@ -538,6 +540,124 @@ function newSlot(ticker = ''): CompareSlot {
   };
 }
 
+type CompareSnapshot = {
+  version: number;
+  savedAt: string;
+  slots: CompareSlot[];
+  baselineId: string | null;
+  chartMetricKey: ChartMetricKey;
+  chartWindow: ChartWindow;
+  chartAxisMode: ChartAxisMode;
+};
+
+type InitialCompareState = {
+  slots: CompareSlot[];
+  baselineId: string | null;
+  chartMetricKey: ChartMetricKey;
+  chartWindow: ChartWindow;
+  chartAxisMode: ChartAxisMode;
+};
+
+const DEFAULT_COMPARE_STATE: InitialCompareState = {
+  slots: DEFAULT_COMPARE_TICKERS.map(ticker => newSlot(ticker)),
+  baselineId: null,
+  chartMetricKey: 'relative_price',
+  chartWindow: '1y',
+  chartAxisMode: 'normalized',
+};
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function sanitizeRestoredSlot(value: unknown): CompareSlot | null {
+  if (!isRecord(value) || typeof value.ticker !== 'string') return null;
+  const ticker = value.ticker.trim();
+  if (!ticker) return null;
+  const rawStatus = value.status;
+  const status: CompareSlot['status'] = rawStatus === 'ready' || rawStatus === 'error'
+    ? rawStatus
+    : 'empty';
+
+  return {
+    id: typeof value.id === 'string' && value.id ? value.id : Math.random().toString(36).slice(2, 9),
+    ticker,
+    status,
+    metrics: isRecord(value.metrics) ? value.metrics : undefined,
+    annualMetrics: isRecord(value.annualMetrics) ? value.annualMetrics : undefined,
+    forwardMetrics: isRecord(value.forwardMetrics) ? value.forwardMetrics : undefined,
+    prices: Array.isArray(value.prices) ? value.prices : undefined,
+    lineItems: Array.isArray(value.lineItems) ? value.lineItems : undefined,
+    currentPrice: typeof value.currentPrice === 'number' || value.currentPrice === null ? value.currentPrice : undefined,
+    targetConsensus: typeof value.targetConsensus === 'number' || value.targetConsensus === null ? value.targetConsensus : undefined,
+    valuation: isRecord(value.valuation) || value.valuation === null ? value.valuation as ValuationDeepDive | null : undefined,
+    signal: isRecord(value.signal) || value.signal === null ? value.signal as { signal: string; confidence: number } | null : undefined,
+    error: typeof value.error === 'string' ? value.error : undefined,
+    progressMessage: typeof value.progressMessage === 'string' ? value.progressMessage : undefined,
+  };
+}
+
+function loadTickerOnlyState(): InitialCompareState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const tickers: string[] = JSON.parse(raw);
+      if (Array.isArray(tickers) && tickers.length > 0) {
+        return {
+          ...DEFAULT_COMPARE_STATE,
+          slots: tickers.slice(0, MAX_SLOTS).map(tk => newSlot(tk)),
+        };
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_COMPARE_STATE;
+}
+
+function loadInitialCompareState(): InitialCompareState {
+  if (typeof localStorage === 'undefined') return DEFAULT_COMPARE_STATE;
+  try {
+    const raw = localStorage.getItem(RESULT_STORAGE_KEY);
+    const snapshot = raw ? JSON.parse(raw) as Partial<CompareSnapshot> : null;
+    if (snapshot?.version === COMPARE_SNAPSHOT_VERSION && Array.isArray(snapshot.slots)) {
+      const slots = snapshot.slots
+        .map(sanitizeRestoredSlot)
+        .filter((slot): slot is CompareSlot => Boolean(slot))
+        .slice(0, MAX_SLOTS);
+      if (slots.length > 0 && slots.some(slot => slot.status === 'ready')) {
+        return {
+          slots,
+          baselineId: typeof snapshot.baselineId === 'string' && slots.some(slot => slot.id === snapshot.baselineId) ? snapshot.baselineId : null,
+          chartMetricKey: COMPARISON_CHART_METRICS.some(metric => metric.key === snapshot.chartMetricKey) ? snapshot.chartMetricKey as ChartMetricKey : 'relative_price',
+          chartWindow: snapshot.chartWindow === '3m' || snapshot.chartWindow === '1y' || snapshot.chartWindow === '3y' || snapshot.chartWindow === '5y' || snapshot.chartWindow === 'all' ? snapshot.chartWindow : '1y',
+          chartAxisMode: snapshot.chartAxisMode === 'actual' ? 'actual' : 'normalized',
+        };
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return loadTickerOnlyState();
+}
+
+function persistCompareSnapshot(state: InitialCompareState): void {
+  if (typeof localStorage === 'undefined') return;
+  const slots = state.slots.filter(slot => slot.ticker.trim()).slice(0, MAX_SLOTS);
+  if (!slots.some(slot => slot.status === 'ready')) return;
+
+  const snapshot: CompareSnapshot = {
+    version: COMPARE_SNAPSHOT_VERSION,
+    savedAt: new Date().toISOString(),
+    slots,
+    baselineId: state.baselineId,
+    chartMetricKey: state.chartMetricKey,
+    chartWindow: state.chartWindow,
+    chartAxisMode: state.chartAxisMode,
+  };
+  localStorage.setItem(RESULT_STORAGE_KEY, JSON.stringify(snapshot));
+}
+
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -593,46 +713,60 @@ export function StockCompareTab() {
     patchWorkspace({ tickers: trimmed });
     openTab(TabService.createStockSearchTab());
   }, [openTab, patchWorkspace]);
-  const [slots, setSlots] = useState<CompareSlot[]>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const tickers: string[] = JSON.parse(raw);
-        if (Array.isArray(tickers) && tickers.length > 0) {
-          return tickers.slice(0, MAX_SLOTS).map(tk => newSlot(tk));
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-    return DEFAULT_COMPARE_TICKERS.map(ticker => newSlot(ticker));
-  });
-  const [baselineId, setBaselineId] = useState<string | null>(null);
+  const initialCompareStateRef = useRef<InitialCompareState | null>(null);
+  if (initialCompareStateRef.current === null) {
+    initialCompareStateRef.current = loadInitialCompareState();
+  }
+  const initialCompareState = initialCompareStateRef.current;
+  const [slots, setSlots] = useState<CompareSlot[]>(() => initialCompareState.slots);
+  const [baselineId, setBaselineId] = useState<string | null>(() => initialCompareState.baselineId);
   const [isRunning, setIsRunning] = useState(false);
   const [isSavingComparison, setIsSavingComparison] = useState(false);
-  const [chartMetricKey, setChartMetricKey] = useState<ChartMetricKey>('relative_price');
-  const [chartWindow, setChartWindow] = useState<ChartWindow>('1y');
-  const [chartAxisMode, setChartAxisMode] = useState<ChartAxisMode>('normalized');
+  const [chartMetricKey, setChartMetricKey] = useState<ChartMetricKey>(() => initialCompareState.chartMetricKey);
+  const [chartWindow, setChartWindow] = useState<ChartWindow>(() => initialCompareState.chartWindow);
+  const [chartAxisMode, setChartAxisMode] = useState<ChartAxisMode>(() => initialCompareState.chartAxisMode);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Persist ticker list (content excluded), mirroring the tabs-context pattern.
+  // Persist ticker list for backward compatibility, plus the latest completed
+  // comparison snapshot so refresh restores the last visible result.
   useEffect(() => {
     try {
       localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify(slots.map(s => s.ticker).filter(Boolean)),
       );
+      persistCompareSnapshot({
+        slots,
+        baselineId,
+        chartMetricKey,
+        chartWindow,
+        chartAxisMode,
+      });
     } catch {
       /* ignore */
     }
-  }, [slots]);
+  }, [baselineId, chartAxisMode, chartMetricKey, chartWindow, slots]);
 
   const updateSlot = useCallback((id: string, patch: Partial<CompareSlot>) => {
     setSlots(prev => prev.map(s => (s.id === id ? { ...s, ...patch } : s)));
   }, []);
 
   const handleTickerChange = (id: string, value: string) => {
-    updateSlot(id, { ticker: value.toUpperCase() });
+    updateSlot(id, {
+      ticker: value.toUpperCase(),
+      status: 'empty',
+      metrics: undefined,
+      annualMetrics: undefined,
+      forwardMetrics: undefined,
+      prices: undefined,
+      lineItems: undefined,
+      currentPrice: undefined,
+      targetConsensus: null,
+      valuation: null,
+      signal: null,
+      error: undefined,
+      progressMessage: undefined,
+    });
   };
 
   const addSlot = () => {

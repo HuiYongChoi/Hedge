@@ -118,6 +118,21 @@ def test_comparison_can_save_results_to_archive():
     assert "isSavingComparison" in src
 
 
+def test_comparison_restores_latest_result_after_refresh():
+    src = _read("components/tabs/stock-compare-tab.tsx")
+
+    assert "RESULT_STORAGE_KEY = 'stock-compare:last-result'" in src
+    assert "loadInitialCompareState" in src
+    assert "persistCompareSnapshot" in src
+    assert "sanitizeRestoredSlot" in src
+    assert "baselineId" in src
+    assert "chartMetricKey" in src
+    assert "chartWindow" in src
+    assert "chartAxisMode" in src
+    assert "slots.some(slot => slot.status === 'ready')" in src
+    assert "snapshot.slots" in src
+
+
 def test_comparison_can_export_current_screen_to_pdf():
     src = _read("components/tabs/stock-compare-tab.tsx")
     css = _read("index.css")
