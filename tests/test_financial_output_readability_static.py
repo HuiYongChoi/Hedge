@@ -73,6 +73,18 @@ def test_frontend_financial_display_normalizer_hides_duplicate_machine_numbers()
     assert "달러\\s*\\(\\s*약\\s*([\\d,]+(?:\\.\\d+)?\\s*억\\s*달러)" in source
 
 
+def test_frontend_normalizer_cleans_korean_english_redundancy() -> None:
+    # '관망(Neutral)' 중복 병기, 'low로' 혼용, '6.2vs' 붙음을 정리하는 규칙 고정
+    source = (ROOT / "app/frontend/src/lib/financial-text-normalizer.ts").read_text(encoding="utf-8")
+
+    assert "normalizeKoreanEnglishRedundancy" in source
+    assert "관망|중립|보유|매수|매도|강세|약세" in source
+    assert "fresh\\s+high" in source
+    assert "신고점" in source
+    assert "신뢰도\\s*\\(\\s*confidence\\s*\\)" in source
+    assert "vs\\s*(?=[A-Za-z가-힣\\d])" in source
+
+
 def test_financial_language_normalizer_rewrites_machine_style_report_terms() -> None:
     from src.utils.financial_formatting import normalize_financial_language
 

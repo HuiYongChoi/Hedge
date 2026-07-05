@@ -86,7 +86,9 @@ const KOREAN_TICKER_DISPLAY_NAMES: Record<string, string> = {
   '247540.KQ': '에코프로비엠',
 };
 
-const DATA_TOKEN_PATTERN = /(\$\d[\d,]*(?:\.\d+)?[BMK]?|\d[\d,]*(?:\.\d+)?\s?(?:%|배|x|X|B|M|K)|-\d[\d,]*(?:\.\d+)?%)/g;
+// %·배·통화 토큰에 더해, PER 6.2 / ROIC 21.4 처럼 지표 라벨 뒤 배수도 칩으로 강조한다
+// (하이라이트 유무 비일관 해소 — 뒤에 %·배 등 단위가 붙으면 기존 분기가 우선 매칭).
+const DATA_TOKEN_PATTERN = /(\$\d[\d,]*(?:\.\d+)?[BMK]?|\d[\d,]*(?:\.\d+)?\s?(?:%|배|x|X|B|M|K)|-\d[\d,]*(?:\.\d+)?%|(?<=\b(?:PER|PBR|PSR|ROE|ROIC|WACC|EPS|EV\/EBITDA)\s{0,2})-?\d{1,4}(?:\.\d+)?(?![%배xXBMK\d]))/g;
 
 const LABEL_CANDIDATES: Array<{ pattern: RegExp; ko: string; en: string }> = [
   { pattern: /ROIC|투하자본/i, ko: 'ROIC', en: 'ROIC' },
@@ -1090,12 +1092,18 @@ export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
 
 export function classifyItemTone(itemText: string): ReportTone {
   const text = itemText.toLowerCase();
-  if (/^\s*\[-\]|bearish|sell|downside|negative|risk|overvalued|약세|매도|부정|위험|리스크|고평가|취약/.test(text)) {
-    return 'bearish';
-  }
-  if (/^\s*\[\+\]|bullish|buy|upside|positive|undervalued|strong|강세|매수|긍정|상승|저평가|양호/.test(text)) {
-    return 'bullish';
-  }
+  // 1) 명시적 마커가 최우선
+  if (/^\s*\[-\]/.test(text)) return 'bearish';
+  if (/^\s*\[\+\]/.test(text)) return 'bullish';
+  if (/^\s*\[~\]/.test(text)) return 'neutral';
+  // 2) 명시적 결론 단어(관망/중립/보류)는 방향 키워드보다 우선.
+  //    "'확신 매수'로 가기엔 불리 → 관망" 같은 부정 문맥이 강세로 새는 것을 막는다.
+  if (/관망|중립|보류|neutral|\bhold\b/.test(text)) return 'neutral';
+  // 3) 방향 키워드 가중 집계 — 한쪽이 우세할 때만 방향 판정, 동률이면 중립
+  const bear = (text.match(/bearish|sell|downside|negative|risk|overvalued|약세|매도|부정|위험|리스크|고평가|취약|부담|하락/g) || []).length;
+  const bull = (text.match(/bullish|buy|upside|positive|undervalued|strong|강세|매수|긍정|상승|저평가|양호|우위|호조/g) || []).length;
+  if (bear > bull) return 'bearish';
+  if (bull > bear) return 'bullish';
   return 'neutral';
 }
 

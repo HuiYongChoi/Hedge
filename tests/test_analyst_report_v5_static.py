@@ -166,6 +166,30 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("verdictLabelOverride?: string | null", sticky)
         self.assertIn("labelOverride || verdictLabel(verdict, language)", sticky)
 
+    def test_evidence_tone_prefers_explicit_neutral_and_weighted_keywords(self):
+        # '확신 매수로 가기엔 불리 → 관망' 문장이 '매수' 키워드만으로 강세로 새면 안 된다.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+
+        self.assertIn("관망|중립|보류|neutral", helpers)
+        self.assertLess(
+            helpers.index("관망|중립|보류|neutral"),
+            helpers.index("if (bear > bull) return 'bearish';"),
+            "명시적 중립 판정이 방향 키워드 집계보다 먼저 와야 한다",
+        )
+        self.assertIn("if (bull > bear) return 'bullish';", helpers)
+
+    def test_evidence_body_renders_markdown_bold_not_literal_asterisks(self):
+        chip = (V5_DIR / "inline-data-chip.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("sentence.split(/\\*\\*([^*]+)\\*\\*/g)", chip)
+        self.assertIn("<strong", chip)
+        self.assertIn("segment.replace(/\\*\\*/g, '')", chip)
+
+    def test_data_token_pattern_highlights_ratio_labels(self):
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+
+        self.assertIn("PER|PBR|PSR|ROE|ROIC|WACC|EPS|EV\\/EBITDA", helpers)
+
     def test_sticky_header_labels_margin_percent_as_margin_not_price(self):
         # 안전가(=가격) 라벨을 퍼센트 값에 붙이면 안 된다. 스티키 헤더의 안전마진 %는
         # 가격 타일(targetMarginLabel='안전가')과 구분되는 안전마진 라벨을 써야 한다.

@@ -111,12 +111,26 @@ function normalizeDuplicateFinancialNumbers(text: string): string {
     );
 }
 
+// 한국어 판정 뒤 중복 영어 병기('관망(Neutral)')와 영어+조사 혼용('low로'),
+// 숫자와 vs가 붙는 간격 문제('6.2vs')를 사람이 읽는 형태로 정리한다.
+function normalizeKoreanEnglishRedundancy(text: string): string {
+  return text
+    .replace(/(관망|중립|보유|매수|매도|강세|약세)\s*\(\s*(?:neutral|hold|buy|sell|watch|bullish|bearish)\s*\)/giu, '$1')
+    .replace(/신뢰도\s*\(\s*confidence\s*\)/giu, '신뢰도')
+    .replace(/["'“”]?\bfresh\s+high\b["'“”]?/giu, '신고점')
+    .replace(/\blow(?=로\b|로\s|입니다|이라)/giu, '낮음')
+    .replace(/\bhigh(?=로\b|로\s|입니다|이라)/giu, '높음')
+    .replace(/(\d)\s*vs\s*(?=[A-Za-z가-힣\d])/gu, '$1 vs ');
+}
+
 export function normalizeFinancialDisplayText(text: string) {
   if (typeof text !== 'string' || text.length === 0) return text;
 
   return normalizeNestedDebtRatioLabels(
     normalizeBrokenKoreanDecimalSeparators(
-      normalizeDuplicateFinancialNumbers(normalizeBnToKorean(normalizeDebtPercentSequences(text))),
+      normalizeKoreanEnglishRedundancy(
+        normalizeDuplicateFinancialNumbers(normalizeBnToKorean(normalizeDebtPercentSequences(text))),
+      ),
     ),
   )
     .replace(/(이자보상배율\s*)×\s*(\d)/g, '$1$2')
