@@ -2,7 +2,22 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 
 interface ActiveTickerContextValue {
   activeTicker: string | null;
-  setActiveTicker: (ticker: string | null) => void;
+  activeTickerDisplayName: string | null;
+  activeTickerInputValue: string | null;
+  setActiveTicker: (ticker: string | null, identity?: Partial<ActiveTickerIdentity>) => void;
+}
+
+interface ActiveTickerIdentity {
+  displayName?: string | null;
+  inputValue?: string | null;
+  market?: string | null;
+}
+
+interface ActiveTickerState {
+  ticker: string | null;
+  displayName: string | null;
+  inputValue: string | null;
+  market: string | null;
 }
 
 const ActiveTickerContext = createContext<ActiveTickerContextValue | undefined>(undefined);
@@ -12,17 +27,37 @@ function normalizeActiveTicker(ticker: string | null) {
   return normalized || null;
 }
 
-export function ActiveTickerProvider({ children }: { children: ReactNode }) {
-  const [activeTicker, setActiveTickerState] = useState<string | null>(null);
+function normalizeMetaValue(value: string | null | undefined) {
+  const normalized = value?.trim();
+  return normalized || null;
+}
 
-  const setActiveTicker = useCallback((ticker: string | null) => {
-    setActiveTickerState(normalizeActiveTicker(ticker));
+export function ActiveTickerProvider({ children }: { children: ReactNode }) {
+  const [activeTickerState, setActiveTickerState] = useState<ActiveTickerState>({
+    ticker: null,
+    displayName: null,
+    inputValue: null,
+    market: null,
+  });
+
+  const setActiveTicker = useCallback((ticker: string | null, identity?: Partial<ActiveTickerIdentity>) => {
+    const normalizedTicker = normalizeActiveTicker(ticker);
+    const displayName = normalizeMetaValue(identity?.displayName);
+    const inputValue = normalizeMetaValue(identity?.inputValue) || displayName || normalizedTicker;
+    setActiveTickerState({
+      ticker: normalizedTicker,
+      displayName,
+      inputValue,
+      market: normalizeMetaValue(identity?.market),
+    });
   }, []);
 
   const value = useMemo<ActiveTickerContextValue>(() => ({
-    activeTicker,
+    activeTicker: activeTickerState.ticker,
+    activeTickerDisplayName: activeTickerState.displayName,
+    activeTickerInputValue: activeTickerState.inputValue,
     setActiveTicker,
-  }), [activeTicker, setActiveTicker]);
+  }), [activeTickerState, setActiveTicker]);
 
   return (
     <ActiveTickerContext.Provider value={value}>

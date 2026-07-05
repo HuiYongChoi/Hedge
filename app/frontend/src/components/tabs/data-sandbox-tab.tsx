@@ -2,7 +2,13 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { ModelSelector } from '@/components/ui/llm-selector';
-import { resolveTickerValue, TickerInput, type TickerInputValidationStatus } from '@/components/ui/ticker-input';
+import {
+  getTickerDisplayName,
+  resolveTickerValue,
+  TickerInput,
+  type TickerIdentity,
+  type TickerInputValidationStatus,
+} from '@/components/ui/ticker-input';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import {
   normalizeReportOrderedMarkers,
@@ -12,6 +18,7 @@ import {
 } from '@/components/reports/report-sentiment-dashboard';
 import { useActiveTicker } from '@/contexts/active-ticker-context';
 import { useLanguage } from '@/contexts/language-context';
+import { useWorkspace } from '@/contexts/workspace-context';
 import { Agent, getAgents } from '@/data/agents';
 import { getDefaultModel, getModels, LanguageModel } from '@/data/models';
 import { extractBaseAgentKey } from '@/components/ui/agent-formula-tooltip';
@@ -523,13 +530,15 @@ const LINE_ITEM_FIELDS = [
 
 export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
   const { language } = useLanguage();
-  const { activeTicker, setActiveTicker } = useActiveTicker();
+  const { activeTicker, activeTickerDisplayName, activeTickerInputValue, setActiveTicker } = useActiveTicker();
+  const { workspace } = useWorkspace();
   const { success, error } = useToastManager();
 
   // Config state
   const [tickers, setTickers] = useState('');
   const [tickerValidationStatus, setTickerValidationStatus] = useState<TickerInputValidationStatus>('empty');
   const [validatedTicker, setValidatedTicker] = useState('');
+  const [validatedTickerIdentity, setValidatedTickerIdentity] = useState<TickerIdentity | null>(null);
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 3);
@@ -570,25 +579,44 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
   // View tab
   const [viewTab, setViewTab] = useState<ViewTab>('metrics');
 
-  const handleTickerValidationChange = useCallback((status: TickerInputValidationStatus, resolvedTicker?: string) => {
+  const handleTickerValidationChange = useCallback((status: TickerInputValidationStatus, resolvedTicker?: string, identity?: TickerIdentity) => {
     setTickerValidationStatus(status);
     setValidatedTicker(status === 'valid' && resolvedTicker ? resolvedTicker : '');
+    setValidatedTickerIdentity(status === 'valid' ? identity ?? null : null);
   }, []);
 
   useEffect(() => {
-    if (hasHydratedActiveTickerRef.current || tickers.trim() || !activeTicker) return;
-    setTickers(activeTicker);
-    setValidatedTicker(activeTicker);
+    const workspaceTickerInput = workspace.tickers.split(',')[0]?.trim() || '';
+    const hydratedInput = activeTickerInputValue || activeTickerDisplayName
+      || (activeTicker ? getTickerDisplayName(activeTicker) : '')
+      || (workspaceTickerInput ? getTickerDisplayName(workspaceTickerInput) : '');
+    const hydratedTicker = activeTicker
+      || (workspaceTickerInput ? resolveTickerValue(workspaceTickerInput).toUpperCase() : '');
+
+    if (hasHydratedActiveTickerRef.current || tickers.trim() || !hydratedTicker) return;
+    setTickers(hydratedInput || hydratedTicker);
+    setValidatedTicker(hydratedTicker);
+    setValidatedTickerIdentity({
+      ticker: hydratedTicker,
+      displayName: activeTickerDisplayName || getTickerDisplayName(hydratedInput || hydratedTicker),
+      inputValue: hydratedInput || hydratedTicker,
+    });
     setTickerValidationStatus('valid');
     hasHydratedActiveTickerRef.current = true;
-  }, [activeTicker, tickers]);
+  }, [activeTicker, activeTickerDisplayName, activeTickerInputValue, tickers, workspace.tickers]);
 
   useEffect(() => {
     if (tickerValidationStatus !== 'valid') return;
     const raw = tickers.split(',')[0]?.trim();
     const ticker = (validatedTicker || (raw ? resolveTickerValue(raw) : '')).toUpperCase();
-    if (ticker) setActiveTicker(ticker);
-  }, [setActiveTicker, tickerValidationStatus, tickers, validatedTicker]);
+    if (ticker) {
+      setActiveTicker(ticker, {
+        displayName: validatedTickerIdentity?.displayName || getTickerDisplayName(raw || ticker),
+        inputValue: validatedTickerIdentity?.inputValue || raw || getTickerDisplayName(ticker),
+        market: validatedTickerIdentity?.market,
+      });
+    }
+  }, [setActiveTicker, tickerValidationStatus, tickers, validatedTicker, validatedTickerIdentity]);
 
   // Load agents & models on mount
   useEffect(() => {
@@ -1157,9 +1185,16 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
         <div className="w-72 flex-shrink-0 border-r overflow-y-auto p-4 space-y-4">
           {/* Ticker */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">
-              {t('tickerCodeLabel', language)}
-            </label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-sm font-medium">
+                {language === 'ko' ? '종목' : 'Stock'}
+              </label>
+              {validatedTicker && (
+                <span className="rounded border border-border/70 bg-muted/30 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                  {validatedTicker}
+                </span>
+              )}
+            </div>
             <TickerInput
               placeholder={t('exampleTicker', language)}
               value={tickers}
@@ -1216,7 +1251,12 @@ export function DataSandboxTab({ isTabActive = true }: DataSandboxTabProps) {
 
           {fetchedData && (
             <div className="text-xs text-muted-foreground bg-muted/30 rounded p-2 space-y-0.5">
-              <p><span className="font-medium">{fetchedData.ticker}</span></p>
+              <p>
+                <span className="font-medium">{getTickerDisplayName(fetchedData.ticker)}</span>
+                {getTickerDisplayName(fetchedData.ticker) !== fetchedData.ticker && (
+                  <span className="ml-1 font-mono text-[11px] text-muted-foreground">· {fetchedData.ticker}</span>
+                )}
+              </p>
               {fetchedData.market_cap && (
                 <p>{t('marketCapLabel', language)}: {fmtNumber(fetchedData.market_cap)}</p>
               )}

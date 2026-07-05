@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { resolveTickerValue, TickerInput } from '@/components/ui/ticker-input';
+import { getTickerDisplayName, resolveTickerValue, TickerInput } from '@/components/ui/ticker-input';
 import { useLanguage } from '@/contexts/language-context';
 import { useWorkspace } from '@/contexts/workspace-context';
 import {
@@ -85,7 +85,13 @@ export function WorkspacePill() {
     }
     return workspace.tickers
       .split(',')
-      .map(value => resolveTickerValue(value.trim()))
+      .map(value => {
+        const trimmed = value.trim();
+        const resolvedTicker = resolveTickerValue(trimmed).toUpperCase();
+        const displayName = getTickerDisplayName(trimmed || resolvedTicker);
+        if (!resolvedTicker) return '';
+        return displayName === resolvedTicker ? resolvedTicker : `${displayName} · ${resolvedTicker}`;
+      })
       .filter(Boolean)
       .join(', ');
   }, [language, workspace.tickers]);

@@ -59,6 +59,17 @@ class TickerInputAutocompleteStaticTests(unittest.TestCase):
         self.assertIn("onValidationChange('valid'", source)
         self.assertIn("onValidationChange('invalid')", source)
 
+    def test_ticker_input_returns_display_identity_for_korean_tickers(self):
+        source = TICKER_INPUT.read_text(encoding="utf-8")
+
+        self.assertIn("export interface TickerSuggestion", source)
+        self.assertIn("export interface TickerIdentity", source)
+        self.assertIn("TICKER_TO_DISPLAY_NAME", source)
+        self.assertIn("export function getTickerDisplayName", source)
+        self.assertIn("function buildTickerIdentity", source)
+        self.assertIn("displayName: getTickerDisplayName", source)
+        self.assertIn("onValidationChange?.('valid', suggestion.ticker.toUpperCase(), buildTickerIdentity", source)
+
 
 if __name__ == "__main__":
     unittest.main()

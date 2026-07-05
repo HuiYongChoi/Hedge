@@ -8,10 +8,17 @@ const API_BASE_URL = import.meta.env.VITE_API_URL ||
     ? 'http://localhost:8000'
     : '/hedge-api');
 
-interface TickerSuggestion {
+export interface TickerSuggestion {
   ticker: string;
   name: string;
   market?: string; // 'US' | 'KR' | 'GLOBAL'
+}
+
+export interface TickerIdentity {
+  ticker: string;
+  displayName: string;
+  inputValue: string;
+  market?: string;
 }
 
 export type TickerInputValidationStatus = 'empty' | 'checking' | 'valid' | 'invalid';
@@ -60,10 +67,12 @@ export const POPULAR_TICKERS: TickerSuggestion[] = [
 
 // 한국 기업명 → 티커 코드 변환 테이블 (API 제출 전 변환에 사용)
 export const KOREAN_NAME_TO_TICKER: Record<string, string> = {};
+export const TICKER_TO_DISPLAY_NAME: Record<string, string> = {};
 POPULAR_TICKERS.forEach(t => {
   if (t.market === 'KR') {
     KOREAN_NAME_TO_TICKER[t.name] = t.ticker;
     KOREAN_NAME_TO_TICKER[t.ticker] = t.ticker;
+    TICKER_TO_DISPLAY_NAME[t.ticker.toUpperCase()] = t.name;
   }
 });
 
@@ -74,6 +83,13 @@ POPULAR_TICKERS.forEach(t => {
 export function resolveTickerValue(input: string): string {
   const trimmed = input.trim();
   return KOREAN_NAME_TO_TICKER[trimmed] || trimmed;
+}
+
+export function getTickerDisplayName(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  const resolvedTicker = resolveTickerValue(trimmed).toUpperCase();
+  return TICKER_TO_DISPLAY_NAME[resolvedTicker] || trimmed;
 }
 
 function getTermFromValue(inputValue: string): string {
@@ -89,6 +105,19 @@ function rememberKoreanTickerSuggestion(suggestion: TickerSuggestion) {
   if (suggestion.market !== 'KR') return;
   KOREAN_NAME_TO_TICKER[suggestion.name] = suggestion.ticker;
   KOREAN_NAME_TO_TICKER[suggestion.ticker] = suggestion.ticker;
+  TICKER_TO_DISPLAY_NAME[suggestion.ticker.toUpperCase()] = suggestion.name;
+}
+
+function buildTickerIdentity(input: string, resolvedTicker?: string, suggestion?: TickerSuggestion): TickerIdentity | undefined {
+  const ticker = (resolvedTicker || suggestion?.ticker || resolveTickerValue(input)).trim().toUpperCase();
+  if (!ticker) return undefined;
+  const displayName = getTickerDisplayName(input);
+  return {
+    ticker,
+    displayName: getTickerDisplayName(input),
+    inputValue: displayName || input.trim(),
+    market: suggestion?.market,
+  };
 }
 
 function normalizeAutocompleteToken(value: string): string {
@@ -144,7 +173,7 @@ interface TickerInputProps {
   className?: string;
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   isActive?: boolean;
-  onValidationChange?: (status: TickerInputValidationStatus, resolvedTicker?: string) => void;
+  onValidationChange?: (status: TickerInputValidationStatus, resolvedTicker?: string, identity?: TickerIdentity) => void;
 }
 
 export function TickerInput({
@@ -289,7 +318,7 @@ export function TickerInput({
     const staticMatch = findExactSuggestionMatch(term, getStaticSuggestions(term));
     if (staticMatch) {
       rememberKoreanTickerSuggestion(staticMatch);
-      onValidationChange('valid', staticMatch.ticker.toUpperCase());
+      onValidationChange('valid', staticMatch.ticker.toUpperCase(), buildTickerIdentity(term, staticMatch.ticker, staticMatch));
       return;
     }
 
@@ -315,7 +344,7 @@ export function TickerInput({
 
         const match = findExactSuggestionMatch(term, data);
         if (match) {
-          onValidationChange('valid', match.ticker.toUpperCase());
+          onValidationChange('valid', match.ticker.toUpperCase(), buildTickerIdentity(term, match.ticker, match));
         } else {
           onValidationChange('invalid');
         }
@@ -398,7 +427,7 @@ export function TickerInput({
 
     setDraftValue(nextValue);
     onChange(nextValue);
-    onValidationChange?.('valid', suggestion.ticker.toUpperCase());
+    onValidationChange?.('valid', suggestion.ticker.toUpperCase(), buildTickerIdentity(insertValue, suggestion.ticker, suggestion));
     setSuggestions([]);
     setDismissedTerm(null);
     setActiveIdx(-1);

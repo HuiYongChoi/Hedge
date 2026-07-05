@@ -5,6 +5,7 @@ import { useTabsContext } from '@/contexts/tabs-context';
 import { useWorkspace } from '@/contexts/workspace-context';
 import { t } from '@/lib/language-preferences';
 import { TabService } from '@/services/tab-service';
+import { getTickerDisplayName } from '@/components/ui/ticker-input';
 import type { SavedAnalysis } from '@/services/saved-analyses-service';
 import { savedAnalysisService } from '@/services/saved-analyses-service';
 import type { ReportLanguage } from '@/components/reports/analyst-report-v5/types';
@@ -25,6 +26,12 @@ interface SavedListRowProps {
   onAfterDelete: () => void;
   onAfterUpdate: (item: SavedAnalysis) => void;
   language: ReportLanguage;
+}
+
+function restoreTickerDisplayInput(value: unknown, fallback: string) {
+  const firstValue = Array.isArray(value) ? value[0] : value;
+  const rawValue = typeof firstValue === 'string' ? firstValue : fallback;
+  return getTickerDisplayName(rawValue);
 }
 
 function IconButton({
@@ -61,8 +68,9 @@ export function SavedListRow({ item, isSelected, onClick, onAfterDelete, onAfter
     e.stopPropagation();
     const req = item.request_data || {};
     if (item.source_tab === 'stock_analysis') {
+      const restoredTickerInput = restoreTickerDisplayInput(req.input_ticker ?? req.ticker, item.ticker);
       patchWorkspace({
-        tickers: req.ticker ?? req.input_ticker ?? item.ticker,
+        tickers: restoredTickerInput,
         startDate: req.start_date ?? workspace.startDate,
         endDate: req.end_date ?? workspace.endDate,
         selectedAgents: new Set(req.selected_agent_keys ?? []),
@@ -71,8 +79,9 @@ export function SavedListRow({ item, isSelected, onClick, onAfterDelete, onAfter
       });
       openTab(TabService.createStockSearchTab());
     } else if (item.source_tab === 'data_sandbox') {
+      const restoredTickerInput = restoreTickerDisplayInput(req.input_tickers ?? req.ticker, item.ticker);
       patchWorkspace({
-        tickers: req.ticker ?? item.ticker,
+        tickers: restoredTickerInput,
         startDate: req.start_date ?? workspace.startDate,
         endDate: req.end_date ?? workspace.endDate,
       });

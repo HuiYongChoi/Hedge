@@ -6,6 +6,7 @@ import { useTabsContext } from '@/contexts/tabs-context';
 import { useWorkspace } from '@/contexts/workspace-context';
 import { t } from '@/lib/language-preferences';
 import { TabService } from '@/services/tab-service';
+import { getTickerDisplayName } from '@/components/ui/ticker-input';
 import type { SavedAnalysis } from '@/services/saved-analyses-service';
 import { savedAnalysisService } from '@/services/saved-analyses-service';
 import type { ReportLanguage } from '@/components/reports/analyst-report-v5/types';
@@ -23,6 +24,12 @@ interface SavedDetailPanelProps {
   isListCollapsed?: boolean;
   onToggleList?: () => void;
   onAfterUpdate?: (item: SavedAnalysis) => void;
+}
+
+function restoreTickerDisplayInput(value: unknown, fallback: string) {
+  const firstValue = Array.isArray(value) ? value[0] : value;
+  const rawValue = typeof firstValue === 'string' ? firstValue : fallback;
+  return getTickerDisplayName(rawValue);
 }
 
 export function SavedDetailPanel({ detail, language, isListCollapsed = false, onToggleList, onAfterUpdate }: SavedDetailPanelProps) {
@@ -69,8 +76,9 @@ export function SavedDetailPanel({ detail, language, isListCollapsed = false, on
     if (!detail) return;
     const req = detail.request_data || {};
     if (detail.source_tab === 'stock_analysis') {
+      const restoredTickerInput = restoreTickerDisplayInput(req.input_ticker ?? req.ticker, detail.ticker);
       patchWorkspace({
-        tickers: req.ticker ?? req.input_ticker ?? detail.ticker,
+        tickers: restoredTickerInput,
         startDate: req.start_date ?? workspace.startDate,
         endDate: req.end_date ?? workspace.endDate,
         selectedAgents: new Set(req.selected_agent_keys ?? []),
@@ -79,8 +87,9 @@ export function SavedDetailPanel({ detail, language, isListCollapsed = false, on
       });
       openTab(TabService.createStockSearchTab());
     } else if (detail.source_tab === 'data_sandbox') {
+      const restoredTickerInput = restoreTickerDisplayInput(req.input_tickers ?? req.ticker, detail.ticker);
       patchWorkspace({
-        tickers: req.ticker ?? detail.ticker,
+        tickers: restoredTickerInput,
         startDate: req.start_date ?? workspace.startDate,
         endDate: req.end_date ?? workspace.endDate,
       });

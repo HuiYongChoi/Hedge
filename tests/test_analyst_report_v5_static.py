@@ -88,6 +88,8 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("displayTickerLabel", layout)
         self.assertIn("displayTicker={displayTickerLabel}", layout)
         self.assertIn("displayTicker: string", header)
+        self.assertIn("const primaryTickerLabel = companyName || displayTicker", header)
+        self.assertIn("const secondaryTickerLabel = companyName ? ticker : null", header)
         self.assertIn("{' · '}{activeAgent.name}", header)
 
     def test_margin_of_safety_recomputes_from_reference_price(self):

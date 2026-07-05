@@ -120,6 +120,9 @@ export function StickyAnalysisHeader({
   // 안전마진은 내재가치가 있어야 계산된다. 모멘텀·매크로 분석처럼 내재가치가 없으면
   // 컨센서스 상승여력과 목표가 레인지 위치를 대체 지표로 보여준다.
   const showFallback = !hasMargin && (hasConsensusUpside || hasTargetRangePos);
+  const primaryTickerLabel = companyName || ticker;
+  const secondaryTickerLabel = companyName ? ticker : null;
+  const targetMarginLabel = t('targetMarginPctLabel', language);
 
   return (
     <div
@@ -129,9 +132,9 @@ export function StickyAnalysisHeader({
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="font-mono text-sm font-semibold text-foreground">{ticker}</span>
-          {companyName && (
-            <span className="truncate text-xs font-medium text-muted-foreground">{companyName}</span>
+          <span className="truncate text-sm font-semibold text-foreground">{primaryTickerLabel}</span>
+          {secondaryTickerLabel && (
+            <span className="font-mono text-xs font-medium text-muted-foreground">{secondaryTickerLabel}</span>
           )}
           {country && (
             <span className="rounded border border-border/60 px-1 py-0.5 text-[9px] font-medium uppercase text-muted-foreground">
@@ -171,7 +174,7 @@ export function StickyAnalysisHeader({
           </>
         ) : (
           <span className="whitespace-nowrap">
-            {t('targetMarginPctLabel', language)} <span className="font-mono text-foreground">{formatPercent(marginOfSafetyPct, true)}</span>
+            {targetMarginLabel} <span className="font-mono text-foreground">{formatPercent(marginOfSafetyPct, true)}</span>
           </span>
         )}
         <span className="hidden text-border sm:inline">·</span>

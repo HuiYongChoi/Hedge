@@ -62,6 +62,13 @@ def test_active_ticker_context_is_registered_and_used_by_stock_and_sandbox_tabs(
     assert "useActiveTicker" in sandbox_src
     assert "hasHydratedActiveTickerRef" in sandbox_src
 
+    assert "activeTickerDisplayName" in context_src
+    assert "activeTickerInputValue" in context_src
+    assert "setActiveTicker: (ticker: string | null, identity?: Partial<ActiveTickerIdentity>)" in context_src
+    assert "validatedTickerIdentity" in stock_src
+    assert "setActiveTicker(validatedTicker || currentTicker, {" in stock_src
+    assert "activeTickerInputValue || activeTickerDisplayName" in sandbox_src
+
 
 def test_stock_search_redundant_top_status_box_is_not_rendered():
     src = read(TABS_DIR / "stock-search-tab.tsx")

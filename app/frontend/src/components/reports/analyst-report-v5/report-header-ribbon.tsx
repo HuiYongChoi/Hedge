@@ -197,6 +197,8 @@ export function ReportHeaderRibbon({
   const hasConsensusUpside = consensusUpsidePct !== null && consensusUpsidePct !== undefined && Number.isFinite(consensusUpsidePct);
   const hasTargetRangePos = targetRangePosPct !== null && targetRangePosPct !== undefined && Number.isFinite(targetRangePosPct);
   const showMarginFallback = marginOfSafety === null && marginReferencePrice === null && (hasConsensusUpside || hasTargetRangePos);
+  const primaryTickerLabel = companyName || displayTicker;
+  const secondaryTickerLabel = companyName ? ticker : null;
 
   return (
     <header className="overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-background via-muted/20 to-background shadow-sm">
@@ -228,9 +230,9 @@ export function ReportHeaderRibbon({
               )}
             </div>
             <h2 className="text-xl font-semibold tracking-tight text-foreground" title={ticker}>
-              {displayTicker}
-              {companyName && companyName !== displayTicker && (
-                <span className="ml-2 text-base font-medium text-muted-foreground">{companyName}</span>
+              {primaryTickerLabel}
+              {secondaryTickerLabel && (
+                <span className="ml-2 font-mono text-base font-medium text-muted-foreground">{secondaryTickerLabel}</span>
               )}
               {' · '}{activeAgent.name}
             </h2>

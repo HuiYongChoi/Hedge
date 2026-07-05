@@ -4,7 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { ModelSelector } from '@/components/ui/llm-selector';
-import { resolveTickerValue, TickerInput, type TickerInputValidationStatus } from '@/components/ui/ticker-input';
+import {
+  getTickerDisplayName,
+  resolveTickerValue,
+  TickerInput,
+  type TickerIdentity,
+  type TickerInputValidationStatus,
+} from '@/components/ui/ticker-input';
 import { useActiveTicker } from '@/contexts/active-ticker-context';
 import { useLanguage } from '@/contexts/language-context';
 import { useWorkspace, type Workspace } from '@/contexts/workspace-context';
@@ -132,6 +138,17 @@ function restoreStockAnalysisState(
   };
 }
 
+function toDisplayTickerInput(value: string) {
+  return value
+    .split(',')
+    .map(part => {
+      const trimmed = part.trim();
+      return trimmed ? getTickerDisplayName(trimmed) : '';
+    })
+    .filter(Boolean)
+    .join(', ');
+}
+
 function resolveRestoredModel(
   savedModel: LanguageModel | null | undefined,
   availableModels: LanguageModel[],
@@ -157,12 +174,12 @@ function restoreWorkspaceFromSavedInput(
 ): Partial<Workspace> {
   const state = (savedInput || {}) as SavedStockAnalysisInputState;
   const availableAgentKeys = new Set(availableAgents.map(agent => agent.key));
-  const rawTickers = Array.isArray(state.tickers)
-    ? state.tickers.join(', ')
-    : typeof state.tickers === 'string'
-      ? state.tickers
-      : typeof state.input_ticker === 'string'
-        ? state.input_ticker
+  const rawTickers = typeof state.input_ticker === 'string'
+    ? state.input_ticker
+    : Array.isArray(state.tickers)
+      ? state.tickers.join(', ')
+      : typeof state.tickers === 'string'
+        ? state.tickers
         : fallbackWorkspace.tickers;
   const selectedAgentKeys = (
     Array.isArray(state.selected_agent_keys)
@@ -173,7 +190,7 @@ function restoreWorkspaceFromSavedInput(
   ).filter(key => availableAgentKeys.has(key));
 
   return {
-    tickers: rawTickers,
+    tickers: toDisplayTickerInput(rawTickers),
     startDate:
       (typeof state.start_date === 'string' ? state.start_date : state.startDate) || fallbackWorkspace.startDate,
     endDate:
@@ -614,6 +631,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
   const [isConfigPanelCollapsed, setIsConfigPanelCollapsed] = useState(false);
   const [tickerValidationStatus, setTickerValidationStatus] = useState<TickerInputValidationStatus>('empty');
   const [validatedTicker, setValidatedTicker] = useState('');
+  const [validatedTickerIdentity, setValidatedTickerIdentity] = useState<TickerIdentity | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const savedRunIdRef = useRef<number | null>(null);
   const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -688,11 +706,20 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
     return rawTicker ? resolveTickerValue(rawTicker).toUpperCase() : '';
   }, [tickers]);
 
+  const tickerDisplayInput = useMemo(() => {
+    const rawTicker = tickers.split(',')[0]?.trim();
+    return validatedTickerIdentity?.inputValue || getTickerDisplayName(rawTicker || currentTicker);
+  }, [currentTicker, tickers, validatedTickerIdentity]);
+
   useEffect(() => {
     if (!currentTicker) return;
     if (tickerValidationStatus !== 'valid' && !completeResult && agentResults.size === 0) return;
-    setActiveTicker(validatedTicker || currentTicker);
-  }, [agentResults.size, completeResult, currentTicker, setActiveTicker, tickerValidationStatus, validatedTicker]);
+    setActiveTicker(validatedTicker || currentTicker, {
+      displayName: validatedTickerIdentity?.displayName || getTickerDisplayName(currentTicker),
+      inputValue: tickerDisplayInput,
+      market: validatedTickerIdentity?.market,
+    });
+  }, [agentResults.size, completeResult, currentTicker, setActiveTicker, tickerDisplayInput, tickerValidationStatus, validatedTicker, validatedTickerIdentity]);
 
   const sandboxOverrideForTicker = useMemo(() => (
     currentTicker ? getSandboxOverrideForTicker(sandboxOverrideSnapshot, currentTicker) : null
@@ -700,9 +727,10 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
 
   const sandboxOverrideFieldCount = countSandboxOverrideFields(sandboxOverrideForTicker);
 
-  const handleTickerValidationChange = useCallback((status: TickerInputValidationStatus, resolvedTicker?: string) => {
+  const handleTickerValidationChange = useCallback((status: TickerInputValidationStatus, resolvedTicker?: string, identity?: TickerIdentity) => {
     setTickerValidationStatus(status);
     setValidatedTicker(status === 'valid' && resolvedTicker ? resolvedTicker : '');
+    setValidatedTickerIdentity(status === 'valid' ? identity ?? null : null);
   }, []);
 
   useEffect(() => {
@@ -752,6 +780,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
       language,
       status: getStockAnalysisStatus(isRunning, errorMessage, completeResult, agentResults),
       request_data: {
+        input_ticker: tickerDisplayInput,
         tickers: firstTicker ? [firstTicker] : [],
         start_date: startDate,
         end_date: endDate,
@@ -792,6 +821,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
     selectedModel,
     startDate,
     tickers,
+    tickerDisplayInput,
     useDataSandboxOverrides,
   ]);
 
@@ -865,7 +895,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
     const singleTicker = (validatedTicker || resolveTickerValue(rawTicker)).toUpperCase();
     if (!singleTicker) return;
 
-    setTickers(rawTicker);
+    setTickers(tickerDisplayInput || rawTicker);
     setIsConfigPanelCollapsed(true);
 
     const latestSandboxSnapshot = loadDataSandboxOverrideSnapshot() || sandboxOverrideSnapshot;

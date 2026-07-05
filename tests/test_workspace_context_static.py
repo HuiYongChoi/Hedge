@@ -68,3 +68,12 @@ def test_stock_search_tab_persists_inputs_in_request_data_not_ui_state() -> None
     assert "selectedModel:" not in serialize_source
     assert "useDataSandboxOverrides" not in serialize_source
     assert "latestRun.request_data" in source
+
+
+def test_stock_search_restores_display_input_before_canonical_code() -> None:
+    source = STOCK_SEARCH_TAB.read_text(encoding="utf-8")
+
+    assert "state.input_ticker === 'string'" in source
+    assert "toDisplayTickerInput(rawTickers)" in source
+    assert "input_ticker: tickerDisplayInput" in source
+    assert "tickers: firstTicker ? [firstTicker] : []" in source

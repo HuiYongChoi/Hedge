@@ -77,3 +77,11 @@ def test_workspace_pill_exposes_data_sandbox_override_toggle() -> None:
     assert "loadDataSandboxOverrideSnapshot" in source
     assert "DATA_SANDBOX_OVERRIDES_EVENT" in source
     assert "dataSandboxOverridesAvailable" in source
+
+
+def test_workspace_pill_displays_company_name_before_code() -> None:
+    source = WORKSPACE_PILL.read_text(encoding="utf-8")
+
+    assert "getTickerDisplayName" in source
+    assert "displayName === resolvedTicker" in source
+    assert "`${displayName} · ${resolvedTicker}`" in source
