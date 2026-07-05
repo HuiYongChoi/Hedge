@@ -25,11 +25,9 @@ function LayoutContent() {
   const { isBottomCollapsed, expandBottomPanel, collapseBottomPanel, toggleBottomPanel } = useLayoutContext();
   const isFlowTab = activeTabType === 'flow';
   const isHomeActive = activeTabType === null;
-  // The workspace pill (active ticker / period / sandbox) only drives the stock
-  // analysis, flow, and data-sandbox flows. Other screens should not imply that
-  // their content is filtered by this global context.
-  const contextDrivenTabTypes = new Set(['flow', 'stock-search', 'data-sandbox']);
-  const showWorkspacePill = activeTabType ? contextDrivenTabTypes.has(activeTabType) : false;
+  // Stock analysis and Data Sandbox already show their own ticker/date/sandbox controls.
+  // Keep the compact workspace context only where it can sync flow node inputs.
+  const showWorkspacePill = activeTabType === 'flow';
   const hasFlowTab = flowTabs.length > 0;
   
   // Initialize sidebar states from storage service

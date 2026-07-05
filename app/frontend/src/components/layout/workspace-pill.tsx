@@ -108,27 +108,24 @@ export function WorkspacePill() {
   ), [primaryTicker, sandboxSnapshot]);
 
   const sandboxOverrideCount = countSandboxOverrideFields(sandboxOverrideForTicker);
-  const sandboxValueLabel = workspace.useDataSandboxOverrides && sandboxOverrideCount > 0
-    ? language === 'ko'
-      ? `사용 중 ${sandboxOverrideCount}`
-      : `On ${sandboxOverrideCount}`
-    : language === 'ko'
-      ? '미사용'
-      : 'Off';
+  const shouldShowSandboxChip = workspace.useDataSandboxOverrides && sandboxOverrideCount > 0;
+  const sandboxValueLabel = language === 'ko'
+    ? `사용 중 ${sandboxOverrideCount}`
+    : `On ${sandboxOverrideCount}`;
 
   const periodLabel = getPeriodLabel(workspace.startDate, workspace.endDate, language);
-  const stockAnalysisScopeTitle = language === 'ko'
-    ? '종목 분석 탭과 플로우 노드(워크스페이스 동기화 ON)에 적용됩니다'
-    : 'Applies to Stock analysis and flow nodes with workspace sync ON';
+  const workspaceScopeTitle = language === 'ko'
+    ? '플로우 노드의 워크스페이스 동기화가 켜진 경우에만 적용됩니다'
+    : 'Applies only to flow nodes with workspace sync ON';
   const sandboxScopeTitle = language === 'ko'
-    ? '종목 분석 / 플로우 실행 시 Data Sandbox 수정값을 함께 보냅니다'
-    : 'Sends Data Sandbox overrides with Stock analysis and flow runs';
+    ? 'Data Sandbox 수정값이 실제로 적용 중일 때만 표시됩니다'
+    : 'Shown only when Data Sandbox overrides are actively applied';
 
   return (
     <div
       className="flex items-center gap-1.5 rounded-full border border-border/70 bg-background/90 px-2 py-1 shadow-sm"
       role="group"
-      aria-label={language === 'ko' ? '종목 분석 컨텍스트' : 'Stock analysis context'}
+      aria-label={language === 'ko' ? '플로우 워크스페이스 컨텍스트' : 'Flow workspace context'}
     >
       <Popover>
         <PopoverTrigger asChild>
@@ -136,7 +133,7 @@ export function WorkspacePill() {
             icon={<Search className="h-3.5 w-3.5" />}
             label={t('activeTicker', language)}
             value={tickerLabel}
-            title={stockAnalysisScopeTitle}
+            title={workspaceScopeTitle}
           />
         </PopoverTrigger>
         <PopoverContent align="end" className="w-[320px] space-y-3 p-3">
@@ -161,7 +158,7 @@ export function WorkspacePill() {
             icon={<CalendarDays className="h-3.5 w-3.5" />}
             label={t('period', language)}
             value={periodLabel}
-            title={stockAnalysisScopeTitle}
+            title={workspaceScopeTitle}
           />
         </PopoverTrigger>
         <PopoverContent align="end" className="w-[340px] space-y-3 p-3">
@@ -205,41 +202,43 @@ export function WorkspacePill() {
         </PopoverContent>
       </Popover>
 
-      <Popover>
-        <PopoverTrigger asChild>
-          <PillButton
-            icon={<Database className="h-3.5 w-3.5" />}
-            label={t('sandboxLabel', language)}
-            value={sandboxValueLabel}
-            title={sandboxScopeTitle}
-          />
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-[340px] space-y-3 p-3">
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-primary">{t('useDataSandboxOverrides', language)}</div>
-            <div className="text-[11px] leading-relaxed text-muted-foreground">
-              {sandboxOverrideForTicker && primaryTicker
-                ? t('dataSandboxOverridesAvailable', language)
-                    .replace('{ticker}', primaryTicker)
-                    .replace('{count}', String(sandboxOverrideCount))
-                : t('dataSandboxOverridesUnavailable', language)}
-            </div>
-          </div>
-          <label className="flex items-start gap-2 rounded-md border bg-muted/20 p-3 text-sm">
-            <Checkbox
-              checked={workspace.useDataSandboxOverrides && Boolean(sandboxOverrideForTicker)}
-              disabled={!sandboxOverrideForTicker}
-              onCheckedChange={checked => setUseDataSandboxOverrides(checked === true)}
-              className="mt-0.5"
+      {shouldShowSandboxChip && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <PillButton
+              icon={<Database className="h-3.5 w-3.5" />}
+              label={t('sandboxLabel', language)}
+              value={sandboxValueLabel}
+              title={sandboxScopeTitle}
             />
-            <span className={!sandboxOverrideForTicker ? 'text-muted-foreground' : ''}>
-              {language === 'ko'
-                ? '다음 분석 요청에 Data Sandbox 수정값을 적용합니다.'
-                : 'Apply Data Sandbox overrides to the next analysis run.'}
-            </span>
-          </label>
-        </PopoverContent>
-      </Popover>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-[340px] space-y-3 p-3">
+            <div className="space-y-1">
+              <div className="text-xs font-semibold text-primary">{t('useDataSandboxOverrides', language)}</div>
+              <div className="text-[11px] leading-relaxed text-muted-foreground">
+                {sandboxOverrideForTicker && primaryTicker
+                  ? t('dataSandboxOverridesAvailable', language)
+                      .replace('{ticker}', primaryTicker)
+                      .replace('{count}', String(sandboxOverrideCount))
+                  : t('dataSandboxOverridesUnavailable', language)}
+              </div>
+            </div>
+            <label className="flex items-start gap-2 rounded-md border bg-muted/20 p-3 text-sm">
+              <Checkbox
+                checked={workspace.useDataSandboxOverrides && Boolean(sandboxOverrideForTicker)}
+                disabled={!sandboxOverrideForTicker}
+                onCheckedChange={checked => setUseDataSandboxOverrides(checked === true)}
+                className="mt-0.5"
+              />
+              <span className={!sandboxOverrideForTicker ? 'text-muted-foreground' : ''}>
+                {language === 'ko'
+                  ? '다음 분석 요청에 Data Sandbox 수정값을 적용합니다.'
+                  : 'Apply Data Sandbox overrides to the next analysis run.'}
+              </span>
+            </label>
+          </PopoverContent>
+        </Popover>
+      )}
     </div>
   );
 }

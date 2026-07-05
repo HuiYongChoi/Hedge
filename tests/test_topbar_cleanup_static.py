@@ -110,20 +110,22 @@ def test_layout_keeps_tabs_workspace_and_navigation_in_one_header_rail() -> None
 def test_workspace_pill_only_appears_on_context_driven_tabs() -> None:
     source = _read(LAYOUT)
 
-    assert "const contextDrivenTabTypes = new Set(['flow', 'stock-search', 'data-sandbox']);" in source
-    assert "const showWorkspacePill = activeTabType ? contextDrivenTabTypes.has(activeTabType) : false;" in source
-    assert "activeTabType !== 'stock-compare'" not in source
+    assert "const showWorkspacePill = activeTabType === 'flow';" in source
+    assert "contextDrivenTabTypes" not in source
+    assert "'stock-search'" not in source[source.index("const showWorkspacePill") : source.index("const hasFlowTab")]
+    assert "'data-sandbox'" not in source[source.index("const showWorkspacePill") : source.index("const hasFlowTab")]
 
 
-def test_workspace_pill_has_three_truthful_chips_with_scope_titles() -> None:
+def test_workspace_pill_hides_inactive_sandbox_state_and_scopes_to_flow() -> None:
     source = _read(WORKSPACE_PILL)
 
     assert source.count("<PillButton") == 3
-    assert "종목 분석" in source
-    assert "Stock analysis" in source
     assert "title?: string" in source
-    assert "종목 분석 탭과 플로우 노드(워크스페이스 동기화 ON)에 적용됩니다" in source
-    assert "종목 분석 / 플로우 실행 시 Data Sandbox 수정값을 함께 보냅니다" in source
+    assert "플로우 노드의 워크스페이스 동기화가 켜진 경우에만 적용됩니다" in source
+    assert "Data Sandbox 수정값이 실제로 적용 중일 때만 표시됩니다" in source
+    assert "workspace.useDataSandboxOverrides && sandboxOverrideCount > 0" in source
+    assert "'미사용'" not in source
+    assert "'Off'" not in source
 
 
 def test_workspace_pill_removes_agent_and_model_chip_dependencies() -> None:

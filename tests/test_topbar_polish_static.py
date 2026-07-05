@@ -72,8 +72,8 @@ class TopBarPolishStaticTests(unittest.TestCase):
     def test_workspace_pill_has_group_container(self):
         src = WORKSPACE_PILL.read_text(encoding="utf-8")
         self.assertIn('role="group"', src)
-        self.assertIn("종목 분석 컨텍스트", src)
-        self.assertIn("Stock analysis context", src)
+        self.assertIn("플로우 워크스페이스 컨텍스트", src)
+        self.assertIn("Flow workspace context", src)
 
     def test_pill_button_no_max_width_no_truncate(self):
         src = WORKSPACE_PILL.read_text(encoding="utf-8")
