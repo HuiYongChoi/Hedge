@@ -83,6 +83,9 @@ def test_frontend_normalizer_cleans_korean_english_redundancy() -> None:
     assert "신고점" in source
     assert "신뢰도\\s*\\(\\s*confidence\\s*\\)" in source
     assert "vs\\s*(?=[A-Za-z가-힣\\d])" in source
+    # 'low**로'처럼 볼드 마커가 조사 앞에 끼어도 '낮음으로'로 자연스럽게 교정
+    assert "low(\\*\\*)?로" in source
+    assert "낮음$1으로" in source
 
 
 def test_financial_language_normalizer_rewrites_machine_style_report_terms() -> None:

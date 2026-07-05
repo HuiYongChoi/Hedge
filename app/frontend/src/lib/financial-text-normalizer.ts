@@ -118,8 +118,11 @@ function normalizeKoreanEnglishRedundancy(text: string): string {
     .replace(/(관망|중립|보유|매수|매도|강세|약세)\s*\(\s*(?:neutral|hold|buy|sell|watch|bullish|bearish)\s*\)/giu, '$1')
     .replace(/신뢰도\s*\(\s*confidence\s*\)/giu, '신뢰도')
     .replace(/["'“”]?\bfresh\s+high\b["'“”]?/giu, '신고점')
-    .replace(/\blow(?=로\b|로\s|입니다|이라)/giu, '낮음')
-    .replace(/\bhigh(?=로\b|로\s|입니다|이라)/giu, '높음')
+    // 볼드 마커(**)가 조사 앞에 끼는 경우("low**로")까지 처리하고, 조사도 '으로'로 교정
+    .replace(/\blow(\*\*)?로/giu, '낮음$1으로')
+    .replace(/\bhigh(\*\*)?로/giu, '높음$1으로')
+    .replace(/\blow(?=(?:\*\*)?(?:입니다|이라))/giu, '낮음')
+    .replace(/\bhigh(?=(?:\*\*)?(?:입니다|이라))/giu, '높음')
     .replace(/(\d)\s*vs\s*(?=[A-Za-z가-힣\d])/gu, '$1 vs ');
 }
 
