@@ -124,8 +124,8 @@ function normalizeKoreanEnglishRedundancy(text: string): string {
     // 주의: '라' 뒤 공백에는 \b가 성립하지 않아(비ASCII) lookahead로 경계를 잡는다
     .replace(/\blow(\*\*)?라(?![가-힣])/giu, '낮아$1')
     .replace(/\bhigh(\*\*)?라(?![가-힣])/giu, '높아$1')
-    .replace(/\blow(?=(?:\*\*)?(?:입니다|이라))/giu, '낮음')
-    .replace(/\bhigh(?=(?:\*\*)?(?:입니다|이라))/giu, '높음')
+    .replace(/\blow(?=(?:\*\*)?(?:입니다|이라|이므로))/giu, '낮음')
+    .replace(/\bhigh(?=(?:\*\*)?(?:입니다|이라|이므로))/giu, '높음')
     // 한글 조사가 바로 붙은 영어 용어("confidence가")는 한국어 용어로 교체
     .replace(/\bconfidence(?=[가는를도은이의와])/giu, '신뢰도')
     // 조사 없이 이어지는 "신뢰도 low/high" (괄호 안 표기 등)

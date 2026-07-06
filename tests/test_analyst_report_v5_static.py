@@ -244,6 +244,12 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         self.assertIn("itemText.slice(Math.max(0, index - 28), index)", helpers)
         self.assertIn("label.pattern.test(before)", helpers)
+        # 기간 표기(3M/6M/12M)는 핵심 숫자에서 제외, 컨센서스 EPS 라벨은 '선행 EPS'
+        self.assertIn("(?:3|6|12)\\s?M$", helpers)
+        self.assertIn("ko: '선행 EPS'", helpers)
+        self.assertNotIn("ko: '다음분기 EPS'", helpers)
+        # 중복 문장 감지는 소수점(6.2)을 문장 경계로 보지 않는다
+        self.assertIn("|\\.(?=\\d))+[.!?。？！]?", helpers)
 
     def test_sticky_header_labels_margin_percent_as_margin_not_price(self):
         # 안전가(=가격) 라벨을 퍼센트 값에 붙이면 안 된다. 스티키 헤더의 안전마진 %는

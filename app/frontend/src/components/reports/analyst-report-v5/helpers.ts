@@ -105,7 +105,7 @@ const LABEL_CANDIDATES: Array<{ pattern: RegExp; ko: string; en: string }> = [
   // P/E ratio labels before the generic '현재가' so "Price-to-Earnings" context matches here first
   { pattern: /forward.*p\/?e|포워드.*p\/?e|forward per/i, ko: '포워드 P/E', en: 'Forward P/E' },
   { pattern: /trailing.*p\/?e|트레일링.*p\/?e/i, ko: '트레일링 P/E', en: 'Trailing P/E' },
-  { pattern: /forward.*eps|전망.*eps|컨센.*eps|다음.*eps/i, ko: '다음분기 EPS', en: 'Forward EPS' },
+  { pattern: /forward.*eps|전망.*eps|컨센.*eps|다음.*eps|선행.*eps/i, ko: '선행 EPS', en: 'Forward EPS' },
   { pattern: /ttm.*eps|trailing.*eps/i, ko: 'TTM EPS', en: 'TTM EPS' },
   // Narrowed: require a qualifier before 'price' so "Price-to-Earnings" won't match here
   { pattern: /현재가|주가\s*수준|share\s*price|stock\s*price|market\s*price|current\s*price/i, ko: '현재가', en: 'Current price' },
@@ -969,8 +969,9 @@ function mergeOrphanEvidenceHeadings(blocks: string[]) {
 }
 
 // 모델이 같은 문장을 두 번 이어 쓴 경우("…낮습니다. …낮습니다.") 한 번만 남긴다.
+// 소수점(6.2)의 마침표는 문장 경계로 보지 않는다 — 잘게 쪼개지면 중복 감지 임계(20자)에 못 미친다.
 function dedupeRepeatedSentences(text: string): string {
-  const sentences = text.match(/[^.!?。？！]+[.!?。？！]?\s*/gu);
+  const sentences = text.match(/(?:[^.!?。？！]|\.(?=\d))+[.!?。？！]?\s*/gu);
   if (!sentences || sentences.length < 2) return text;
   const seen = new Set<string>();
   const kept: string[] = [];
@@ -1448,6 +1449,8 @@ export function extractKeyNumbers(
     if (results.length >= 4) break;
     const value = match[0].trim();
     if (/^\d$/.test(value)) continue;
+    // "12M 선행 컨센 EPS" 같은 기간 표기(3M/6M/12M)는 핵심 숫자가 아니다
+    if (/^(?:3|6|12)\s?M$/.test(value)) continue;
 
     // 라벨은 숫자 "바로 앞" 근접 텍스트에서만 인정한다. 넓은 창(±80자)은
     // 항목 안의 다른 지표명("다음분기 EPS…")을 엉뚱한 숫자에 붙이는 오표기를 만든다.
