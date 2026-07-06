@@ -27,6 +27,14 @@ export function ReportSection({
 }: ReportSectionProps) {
   const title = language === 'ko' ? section.titleKo : section.titleEn;
   const items = parseEvidenceItems(sectionText);
+  const bullCount = items.filter(item => item.tone === 'bullish').length;
+  const bearCount = items.filter(item => item.tone === 'bearish').length;
+  const neutralCount = items.length - bullCount - bearCount;
+  const dominanceKey = bullCount > bearCount
+    ? 'toneDominanceBull'
+    : bearCount > bullCount
+      ? 'toneDominanceBear'
+      : 'toneDominanceBalanced';
   const headingId = `${section.id}-heading`;
   const matrix = extractSensitivityMatrix(activeReport);
   const showSensitivity = section.id === 'section-02' && shouldShowSensitivity(activeAgentKey, matrix);
@@ -48,6 +56,20 @@ export function ReportSection({
           </p>
         </div>
       </div>
+
+      {items.length >= 2 && (
+        <div
+          aria-label={language === 'ko' ? '섹션 근거 톤 요약' : 'Section evidence tone summary'}
+          className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-border/50 bg-muted/20 px-3 py-1.5 text-[11px] text-muted-foreground"
+        >
+          <span className="text-emerald-500">✓ {t('reportEvidenceBull', language)} {bullCount}</span>
+          <span className="text-border">·</span>
+          <span>− {t('reportEvidenceNeutral', language)} {neutralCount}</span>
+          <span className="text-border">·</span>
+          <span className="text-rose-500">✕ {t('reportEvidenceBear', language)} {bearCount}</span>
+          <span className="ml-auto font-semibold text-foreground">{t(dominanceKey, language)}</span>
+        </div>
+      )}
 
       {items.length > 0 ? (
         <div className="space-y-4">

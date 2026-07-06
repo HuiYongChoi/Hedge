@@ -88,7 +88,9 @@ const KOREAN_TICKER_DISPLAY_NAMES: Record<string, string> = {
 
 // %·배·통화 토큰에 더해, PER 6.2 / ROIC 21.4 처럼 지표 라벨 뒤 배수도 칩으로 강조한다
 // (하이라이트 유무 비일관 해소 — 뒤에 %·배 등 단위가 붙으면 기존 분기가 우선 매칭).
-const DATA_TOKEN_PATTERN = /(\$\d[\d,]*(?:\.\d+)?[BMK]?|\d[\d,]*(?:\.\d+)?\s?(?:%|배|x|X|B|M|K)|-\d[\d,]*(?:\.\d+)?%|(?<=\b(?:PER|PBR|PSR|ROE|ROIC|WACC|EPS|EV\/EBITDA)\s{0,2})-?\d{1,4}(?:\.\d+)?(?![%배xXBMK\d]))/g;
+// 지표명 뒤 배수는 콤마 자릿수 그룹까지 통째로 매칭한다 — "EPS 393,030.8"이
+// "[393]" + ",030.8"로 쪼개지지 않도록 lookahead에 콤마도 포함해 부분매칭을 막는다.
+const DATA_TOKEN_PATTERN = /(\$\d[\d,]*(?:\.\d+)?[BMK]?|\d[\d,]*(?:\.\d+)?\s?(?:%|배|x|X|B|M|K)|-\d[\d,]*(?:\.\d+)?%|(?<=\b(?:PER|PBR|PSR|ROE|ROIC|WACC|EPS|EV\/EBITDA)\s{0,2})-?\d{1,4}(?:,\d{3})*(?:\.\d+)?(?![%배xXBMK\d,]))/g;
 
 const LABEL_CANDIDATES: Array<{ pattern: RegExp; ko: string; en: string }> = [
   { pattern: /ROIC|투하자본/i, ko: 'ROIC', en: 'ROIC' },
@@ -1085,9 +1087,25 @@ export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
   const source = (rawBlocks.length > 0 ? mergeOrphanEvidenceHeadings(rawBlocks) : [normalized])
     .flatMap(splitLongEvidenceBlock);
 
-  return source
+  const items = source
     .map(buildEvidenceItem)
     .filter((item): item is EvidenceItem => !isBlankEvidenceItem(item));
+
+  return sortEvidenceItemsByTone(items);
+}
+
+// 근거 카드를 강세 → 중립 → 약세 순으로 정렬해 방향별로 순차 보고한다.
+// '결론' 카드는 섹션의 요지이므로 톤과 무관하게 항상 맨 앞에 고정.
+// 같은 톤 안에서는 원문 순서를 보존(안정 정렬).
+const EVIDENCE_TONE_ORDER: Record<ReportTone, number> = { bullish: 0, neutral: 1, bearish: 2 };
+
+export function sortEvidenceItemsByTone(items: EvidenceItem[]): EvidenceItem[] {
+  const rank = (item: EvidenceItem) =>
+    (item.heading ?? '').trim().startsWith('결론') ? -1 : (EVIDENCE_TONE_ORDER[item.tone] ?? 1);
+  return items
+    .map((item, order) => ({ item, order }))
+    .sort((a, b) => rank(a.item) - rank(b.item) || a.order - b.order)
+    .map(({ item }) => item);
 }
 
 export function classifyItemTone(itemText: string): ReportTone {

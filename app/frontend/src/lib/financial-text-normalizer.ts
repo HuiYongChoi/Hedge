@@ -121,8 +121,14 @@ function normalizeKoreanEnglishRedundancy(text: string): string {
     // 볼드 마커(**)가 조사 앞에 끼는 경우("low**로")까지 처리하고, 조사도 '으로'로 교정
     .replace(/\blow(\*\*)?로/giu, '낮음$1으로')
     .replace(/\bhigh(\*\*)?로/giu, '높음$1으로')
+    .replace(/\blow(\*\*)?라\b/giu, '낮아$1')
+    .replace(/\bhigh(\*\*)?라\b/giu, '높아$1')
     .replace(/\blow(?=(?:\*\*)?(?:입니다|이라))/giu, '낮음')
     .replace(/\bhigh(?=(?:\*\*)?(?:입니다|이라))/giu, '높음')
+    // 한글 조사가 바로 붙은 영어 용어("confidence가")는 한국어 용어로 교체
+    .replace(/\bconfidence(?=[가는를도은이의와])/giu, '신뢰도')
+    .replace(/\bforward\s+consensus\s+EPS\b/giu, '선행 컨센서스 EPS')
+    .replace(/\bearnings\s*\/\s*operating[\s-]?income\b/giu, '순이익/영업이익')
     .replace(/(\d)\s*vs\s*(?=[A-Za-z가-힣\d])/gu, '$1 vs ');
 }
 

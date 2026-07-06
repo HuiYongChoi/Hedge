@@ -190,6 +190,30 @@ class AnalystReportV5StaticTests(unittest.TestCase):
 
         self.assertIn("PER|PBR|PSR|ROE|ROIC|WACC|EPS|EV\\/EBITDA", helpers)
 
+    def test_evidence_items_sorted_by_tone_with_conclusion_pinned(self):
+        # 근거 카드는 강세→중립→약세 순으로 순차 보고하고, '결론' 카드는 항상 맨 앞.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        section = (V5_DIR / "report-section.tsx").read_text(encoding="utf-8")
+        prefs = LANG_PREFS.read_text(encoding="utf-8")
+
+        self.assertIn("sortEvidenceItemsByTone", helpers)
+        self.assertIn("{ bullish: 0, neutral: 1, bearish: 2 }", helpers)
+        self.assertIn(".trim().startsWith('결론') ? -1", helpers)
+        self.assertIn("|| a.order - b.order", helpers)  # 같은 톤 안에서는 원문 순서 보존
+
+        # 섹션 상단 톤 요약 스트립: 강세/중립/약세 카운트 + 우위 판정 한 줄
+        self.assertIn("toneDominanceBull", section)
+        self.assertIn("bullCount > bearCount", section)
+        self.assertIn("items.length >= 2 && (", section)
+        self.assertIn("toneDominanceBull: '강세 근거 우위'", prefs)
+        self.assertIn("toneDominanceBear: '약세 근거 우위'", prefs)
+        self.assertIn("toneDominanceBalanced: '강세·약세 균형'", prefs)
+
+    def test_data_token_pattern_keeps_comma_grouped_numbers_whole(self):
+        # "EPS 393,030.8"이 "[393]" + ",030.8"로 쪼개지면 안 된다.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("(?:,\\d{3})*(?:\\.\\d+)?(?![%배xXBMK\\d,])", helpers)
+
     def test_sticky_header_labels_margin_percent_as_margin_not_price(self):
         # 안전가(=가격) 라벨을 퍼센트 값에 붙이면 안 된다. 스티키 헤더의 안전마진 %는
         # 가격 타일(targetMarginLabel='안전가')과 구분되는 안전마진 라벨을 써야 한다.

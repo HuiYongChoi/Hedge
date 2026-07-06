@@ -86,6 +86,11 @@ def test_frontend_normalizer_cleans_korean_english_redundancy() -> None:
     # 'low**로'처럼 볼드 마커가 조사 앞에 끼어도 '낮음으로'로 자연스럽게 교정
     assert "low(\\*\\*)?로" in source
     assert "낮음$1으로" in source
+    # 'confidence가 low라' 류 후속 패턴: 조사 붙은 영어 용어를 한국어로
+    assert "confidence(?=[가는를도은이의와])" in source
+    assert "낮아$1" in source
+    assert "선행 컨센서스 EPS" in source
+    assert "순이익/영업이익" in source
 
 
 def test_financial_language_normalizer_rewrites_machine_style_report_terms() -> None:
