@@ -91,6 +91,9 @@ def test_frontend_normalizer_cleans_korean_english_redundancy() -> None:
     assert "낮아$1" in source
     assert "선행 컨센서스 EPS" in source
     assert "순이익/영업이익" in source
+    # 조사 없는 "(신뢰도 low)" 괄호 표기도 한국어로
+    assert "신뢰도 낮음" in source
+    assert "신뢰도 높음" in source
 
 
 def test_financial_language_normalizer_rewrites_machine_style_report_terms() -> None:

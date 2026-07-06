@@ -127,6 +127,9 @@ function normalizeKoreanEnglishRedundancy(text: string): string {
     .replace(/\bhigh(?=(?:\*\*)?(?:입니다|이라))/giu, '높음')
     // 한글 조사가 바로 붙은 영어 용어("confidence가")는 한국어 용어로 교체
     .replace(/\bconfidence(?=[가는를도은이의와])/giu, '신뢰도')
+    // 조사 없이 이어지는 "신뢰도 low/high" (괄호 안 표기 등)
+    .replace(/신뢰도\s+low\b/giu, '신뢰도 낮음')
+    .replace(/신뢰도\s+high\b/giu, '신뢰도 높음')
     .replace(/\bforward\s+consensus\s+EPS\b/giu, '선행 컨센서스 EPS')
     .replace(/\bearnings\s*\/\s*operating[\s-]?income\b/giu, '순이익/영업이익')
     .replace(/(\d)\s*vs\s*(?=[A-Za-z가-힣\d])/gu, '$1 vs ');
