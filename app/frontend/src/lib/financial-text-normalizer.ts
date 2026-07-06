@@ -121,8 +121,9 @@ function normalizeKoreanEnglishRedundancy(text: string): string {
     // 볼드 마커(**)가 조사 앞에 끼는 경우("low**로")까지 처리하고, 조사도 '으로'로 교정
     .replace(/\blow(\*\*)?로/giu, '낮음$1으로')
     .replace(/\bhigh(\*\*)?로/giu, '높음$1으로')
-    .replace(/\blow(\*\*)?라\b/giu, '낮아$1')
-    .replace(/\bhigh(\*\*)?라\b/giu, '높아$1')
+    // 주의: '라' 뒤 공백에는 \b가 성립하지 않아(비ASCII) lookahead로 경계를 잡는다
+    .replace(/\blow(\*\*)?라(?![가-힣])/giu, '낮아$1')
+    .replace(/\bhigh(\*\*)?라(?![가-힣])/giu, '높아$1')
     .replace(/\blow(?=(?:\*\*)?(?:입니다|이라))/giu, '낮음')
     .replace(/\bhigh(?=(?:\*\*)?(?:입니다|이라))/giu, '높음')
     // 한글 조사가 바로 붙은 영어 용어("confidence가")는 한국어 용어로 교체
@@ -135,13 +136,32 @@ function normalizeKoreanEnglishRedundancy(text: string): string {
     .replace(/(\d)\s*vs\s*(?=[A-Za-z가-힣\d])/gu, '$1 vs ');
 }
 
+// 모델이 소수점 뒤에 공백을 끼워 쓴 깨진 숫자("41. 1대비", "4. 9%/d")를 재결합한다.
+// 앞뒤가 모두 숫자이고 뒤 조각이 1~3자리일 때만 — 목록 번호("1. 2026년")나
+// 문장 경계("…하십시오. 3. 분기")는 앞이 숫자가 아니거나 뒤가 4자리라 매칭되지 않는다.
+function rejoinBrokenDecimals(text: string): string {
+  return text.replace(/(\d)\.\s+(\d{1,3})(?!\d)/gu, '$1.$2');
+}
+
+// LLM이 지시문(프롬프트)을 보고서 본문에 되뇌인 꼬리를 제거한다.
+// 예: "핵심 타겟 데이터: 이 분석을 위해 당신이 전처리 데이터에서 … 확인하십시오."
+// 근거 마커([+]/[-]/[~]/[?])나 헤딩(###)을 넘지 않는 범위에서 마지막 지시형 어미까지 삭제.
+function stripPromptEcho(text: string): string {
+  return text.replace(
+    /(?:핵심 타겟 데이터:\s*)?이 분석을 위해 당신이(?:(?!\[[+\-~?]\]|###)[\s\S])*(?:하십시오|하세요)[.。]?/gu,
+    '',
+  );
+}
+
 export function normalizeFinancialDisplayText(text: string) {
   if (typeof text !== 'string' || text.length === 0) return text;
 
   return normalizeNestedDebtRatioLabels(
     normalizeBrokenKoreanDecimalSeparators(
       normalizeKoreanEnglishRedundancy(
-        normalizeDuplicateFinancialNumbers(normalizeBnToKorean(normalizeDebtPercentSequences(text))),
+        normalizeDuplicateFinancialNumbers(
+          normalizeBnToKorean(normalizeDebtPercentSequences(stripPromptEcho(rejoinBrokenDecimals(text)))),
+        ),
       ),
     ),
   )

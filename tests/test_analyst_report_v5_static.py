@@ -210,9 +210,40 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("toneDominanceBalanced: '강세·약세 균형'", prefs)
 
     def test_data_token_pattern_keeps_comma_grouped_numbers_whole(self):
-        # "EPS 393,030.8"이 "[393]" + ",030.8"로 쪼개지면 안 된다.
+        # "EPS 393,030.8"이 "[393]" + ",030.8"로 쪼개지면 안 되고,
+        # 문장 구두점 콤마("41.1, ")에서 "41"로 백트래킹되어도 안 된다.
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
-        self.assertIn("(?:,\\d{3})*(?:\\.\\d+)?(?![%배xXBMK\\d,])", helpers)
+        self.assertIn("(?:,\\d{3})*(?:\\.\\d+)?(?![%배xXBMK\\d]|,\\d)", helpers)
+
+    def test_question_marker_items_stay_attached_to_parent(self):
+        # [?](검증 조건)는 별도 카드로 쪼개지 않는다 — 20번 "아래 중 하나가 확인돼야"
+        # 뒤의 조건 목록이 유실되던 문제의 회귀 방지.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        evidence = (V5_DIR / "evidence-item.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("(?:\\d+[.)]\\s+)?\\[[+\\-~]\\])/gu", helpers)  # prepare: [?] 제외
+        self.assertNotIn("(?:\\d+[.)]\\s+)?\\[[+\\-~?]\\])/gu", helpers)
+        self.assertIn("\\[\\?\\]\\s*/gu, ' · '", evidence)  # 본문 내 [?]는 · 목록으로
+
+    def test_mixed_signal_items_are_demoted_to_neutral(self):
+        # 강세·약세 근거가 둘 다 짙은 항목은 [-] 마커가 있어도 중립으로 강등 (19번 오판 방지)
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("const isMixed = bull >= 2 && bear >= 2", helpers)
+        self.assertIn("isMixed ? 'neutral' : 'bearish'", helpers)
+        self.assertIn("isMixed ? 'neutral' : 'bullish'", helpers)
+        self.assertIn("dedupeRepeatedSentences", helpers)
+
+    def test_inline_number_emphasis_is_subtle_not_boxed(self):
+        # 본문 숫자 강조는 박스 칩이 아니라 은은한 인라인(mono+색)이어야 한다.
+        chip = (V5_DIR / "inline-data-chip.tsx").read_text(encoding="utf-8")
+        self.assertIn("tabular-nums", chip)
+        self.assertNotIn("rounded-md border px-1.5", chip)
+
+    def test_key_number_labels_only_from_preceding_text(self):
+        # 핵심 숫자 라벨은 숫자 바로 앞 근접 텍스트에서만 추정 (오표기 방지)
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("itemText.slice(Math.max(0, index - 28), index)", helpers)
+        self.assertIn("label.pattern.test(before)", helpers)
 
     def test_sticky_header_labels_margin_percent_as_margin_not_price(self):
         # 안전가(=가격) 라벨을 퍼센트 값에 붙이면 안 된다. 스티키 헤더의 안전마진 %는

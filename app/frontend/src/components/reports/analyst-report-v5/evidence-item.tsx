@@ -134,10 +134,13 @@ function isHeadingOnlyBodyBlock(block: string) {
 function splitEvidenceBodyBlocks(body: string): string[] {
   return body
     .replace(/\r\n?/g, '\n')
-    .replace(/\s+(?=(?:\d+[.)]\s+)?\[[+\-~?]\])/gu, '\n\n')
-    .split(/\n{2,}|\n(?=\s*(?:#{2,3}\s+|\d+[.)]|[-*•]\s+|\[[+\-~?]\]))/u)
+    // [?](검증 조건)는 부모 문장의 목록이므로 새 블록으로 쪼개지 않고 '·' 목록으로 이어 붙인다.
+    .replace(/\s*\[\?\]\s*/gu, ' · ')
+    .replace(/\s+(?=(?:\d+[.)]\s+)?\[[+\-~]\])/gu, '\n\n')
+    .split(/\n{2,}|\n(?=\s*(?:#{2,3}\s+|\d+[.)]|[-*•]\s+|\[[+\-~]\]))/u)
     .map(block => block
       .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*|\[[+\-~?]\]\s*)/u, '')
+      .replace(/^\s*·\s*/u, '')
       .replace(/\s+/g, ' ')
       .trim())
     .filter(block => Boolean(block) && !isMarkerOnlyBodyBlock(block) && !isHeadingOnlyBodyBlock(block))

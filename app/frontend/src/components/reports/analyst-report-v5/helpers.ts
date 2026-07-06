@@ -89,8 +89,9 @@ const KOREAN_TICKER_DISPLAY_NAMES: Record<string, string> = {
 // %·배·통화 토큰에 더해, PER 6.2 / ROIC 21.4 처럼 지표 라벨 뒤 배수도 칩으로 강조한다
 // (하이라이트 유무 비일관 해소 — 뒤에 %·배 등 단위가 붙으면 기존 분기가 우선 매칭).
 // 지표명 뒤 배수는 콤마 자릿수 그룹까지 통째로 매칭한다 — "EPS 393,030.8"이
-// "[393]" + ",030.8"로 쪼개지지 않도록 lookahead에 콤마도 포함해 부분매칭을 막는다.
-const DATA_TOKEN_PATTERN = /(\$\d[\d,]*(?:\.\d+)?[BMK]?|\d[\d,]*(?:\.\d+)?\s?(?:%|배|x|X|B|M|K)|-\d[\d,]*(?:\.\d+)?%|(?<=\b(?:PER|PBR|PSR|ROE|ROIC|WACC|EPS|EV\/EBITDA)\s{0,2})-?\d{1,4}(?:,\d{3})*(?:\.\d+)?(?![%배xXBMK\d,]))/g;
+// "[393]" + ",030.8"로 쪼개지지 않도록 한다. 부정 lookahead는 "미소비 자릿수(,\d)"만
+// 거부하고 문장 구두점 콤마("41.1, ")는 허용해야 "41.1"이 "41"로 백트래킹되지 않는다.
+const DATA_TOKEN_PATTERN = /(\$\d[\d,]*(?:\.\d+)?[BMK]?|\d[\d,]*(?:\.\d+)?\s?(?:%|배|x|X|B|M|K)|-\d[\d,]*(?:\.\d+)?%|(?<=\b(?:PER|PBR|PSR|ROE|ROIC|WACC|EPS|EV\/EBITDA)\s{0,2})-?\d{1,4}(?:,\d{3})*(?:\.\d+)?(?![%배xXBMK\d]|,\d))/g;
 
 const LABEL_CANDIDATES: Array<{ pattern: RegExp; ko: string; en: string }> = [
   { pattern: /ROIC|투하자본/i, ko: 'ROIC', en: 'ROIC' },
@@ -912,9 +913,11 @@ export function prepareEvidenceLayoutText(sectionText: string) {
   return normalizeFinancialDisplayText(sectionText)
     .replace(/\r\n?/g, '\n')
     // Restore breaks before inline headings and verdict markers produced by dense model output.
+    // [?](검증 조건)는 분리하지 않는다 — 선행 문장("아래 중 하나가 확인돼야...")의 목록이므로
+    // 부모 카드에 붙여야 본문이 유실되지 않는다.
     .replace(/([^\n])\s+(?=#{2,3}\s+)/gu, '$1\n\n')
-    .replace(/\s+(?=(?:\d+[.)]\s+)?\[[+\-~?]\])/gu, '\n\n')
-    .replace(/\s+(?=[-*•]\s+\[[+\-~?]\])/gu, '\n\n')
+    .replace(/\s+(?=(?:\d+[.)]\s+)?\[[+\-~]\])/gu, '\n\n')
+    .replace(/\s+(?=[-*•]\s+\[[+\-~]\])/gu, '\n\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -965,6 +968,23 @@ function mergeOrphanEvidenceHeadings(blocks: string[]) {
   return merged;
 }
 
+// 모델이 같은 문장을 두 번 이어 쓴 경우("…낮습니다. …낮습니다.") 한 번만 남긴다.
+function dedupeRepeatedSentences(text: string): string {
+  const sentences = text.match(/[^.!?。？！]+[.!?。？！]?\s*/gu);
+  if (!sentences || sentences.length < 2) return text;
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const sentence of sentences) {
+    const key = sentence.replace(/\s+/g, ' ').trim();
+    if (key.length >= 20) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    kept.push(sentence);
+  }
+  return kept.join('');
+}
+
 function buildEvidenceItem(raw: string, index: number): EvidenceItem {
   const clean = raw
     .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*)/u, '')
@@ -974,7 +994,7 @@ function buildEvidenceItem(raw: string, index: number): EvidenceItem {
     id: `evidence-${index + 1}`,
     rawText: clean,
     heading,
-    body,
+    body: dedupeRepeatedSentences(body),
     tone: classifyItemTone(clean),
     citationLetters: [],
   };
@@ -1080,7 +1100,7 @@ export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
   if (!normalized) return [];
 
   const rawBlocks = normalized
-    .split(/\n{2,}|\n(?=\s*(?:#{2,3}\s+|\d+[.)]|[-*•]\s+|\[[+\-~?]\]))/u)
+    .split(/\n{2,}|\n(?=\s*(?:#{2,3}\s+|\d+[.)]|[-*•]\s+|\[[+\-~]\]))/u)
     .map(item => item.trim())
     .filter(Boolean);
 
@@ -1110,16 +1130,21 @@ export function sortEvidenceItemsByTone(items: EvidenceItem[]): EvidenceItem[] {
 
 export function classifyItemTone(itemText: string): ReportTone {
   const text = itemText.toLowerCase();
-  // 1) 명시적 마커가 최우선
-  if (/^\s*\[-\]/.test(text)) return 'bearish';
-  if (/^\s*\[\+\]/.test(text)) return 'bullish';
-  if (/^\s*\[~\]/.test(text)) return 'neutral';
+  const bear = (text.match(/bearish|sell|downside|negative|risk|overvalued|약세|매도|부정|위험|리스크|고평가|취약|부담|하락|둔화|악화|불확실/g) || []).length;
+  const bull = (text.match(/bullish|buy|upside|positive|undervalued|strong|강세|매수|긍정|상승|저평가|양호|우위|호조|증가|개선|확장|회복/g) || []).length;
+  // 강세·약세 근거가 모두 짙게 섞인 항목은 마커가 있어도 한 방향으로 단정하지 않는다.
+  // 예: "[-] 괴리 리스크… 다만 선행 PER < TTM PER은 이익 확장 신호" → 혼합 → 중립
+  const isMixed = bull >= 2 && bear >= 2;
+
+  // 1) 명시적 마커가 최우선([?]는 검증 조건이므로 중립) — 단, 혼합 신호면 중립으로 강등
+  if (/^\s*\[-\]/.test(text)) return isMixed ? 'neutral' : 'bearish';
+  if (/^\s*\[\+\]/.test(text)) return isMixed ? 'neutral' : 'bullish';
+  if (/^\s*\[[~?]\]/.test(text)) return 'neutral';
   // 2) 명시적 결론 단어(관망/중립/보류)는 방향 키워드보다 우선.
   //    "'확신 매수'로 가기엔 불리 → 관망" 같은 부정 문맥이 강세로 새는 것을 막는다.
   if (/관망|중립|보류|neutral|\bhold\b/.test(text)) return 'neutral';
-  // 3) 방향 키워드 가중 집계 — 한쪽이 우세할 때만 방향 판정, 동률이면 중립
-  const bear = (text.match(/bearish|sell|downside|negative|risk|overvalued|약세|매도|부정|위험|리스크|고평가|취약|부담|하락/g) || []).length;
-  const bull = (text.match(/bullish|buy|upside|positive|undervalued|strong|강세|매수|긍정|상승|저평가|양호|우위|호조/g) || []).length;
+  // 3) 방향 키워드 가중 집계 — 한쪽이 우세할 때만 방향 판정, 혼합·동률이면 중립
+  if (isMixed) return 'neutral';
   if (bear > bull) return 'bearish';
   if (bull > bear) return 'bullish';
   return 'neutral';
@@ -1424,11 +1449,11 @@ export function extractKeyNumbers(
     const value = match[0].trim();
     if (/^\d$/.test(value)) continue;
 
+    // 라벨은 숫자 "바로 앞" 근접 텍스트에서만 인정한다. 넓은 창(±80자)은
+    // 항목 안의 다른 지표명("다음분기 EPS…")을 엉뚱한 숫자에 붙이는 오표기를 만든다.
     const index = match.index ?? 0;
-    const contextStart = Math.max(0, index - 80);
-    const contextEnd = Math.min(itemText.length, index + value.length + 80);
-    const context = itemText.slice(contextStart, contextEnd);
-    const candidate = LABEL_CANDIDATES.find(label => label.pattern.test(context));
+    const before = itemText.slice(Math.max(0, index - 28), index);
+    const candidate = LABEL_CANDIDATES.find(label => label.pattern.test(before));
     let label = candidate ? (language === 'ko' ? candidate.ko : candidate.en) : (language === 'ko' ? `값 ${results.length + 1}` : `Value ${results.length + 1}`);
     // Unit guard: 배/x/X values are multiples, never absolute prices
     if (isMultipleValue(value) && (isAbsoluteAmountLabel(label) || isRatioPercentLabel(label))) {

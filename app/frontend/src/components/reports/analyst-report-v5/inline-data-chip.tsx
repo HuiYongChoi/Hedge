@@ -3,10 +3,14 @@ import { annotateTextWithCitations, splitTextIntoDataTokenParts, toneToClasses }
 import { CitationChip, findCitation } from './citation-chip';
 import { normalizeFinancialDisplayText } from '@/lib/financial-text-normalizer';
 
+// 본문 숫자는 박스 칩 대신 은은한 인라인 강조만 쓴다 — 박스가 문장을 파편화해
+// 오히려 가독성을 해쳤음. 방향성 있는 톤(강세/약세)만 색을 입히고,
+// 중립은 본문색 유지 + 굵기·mono로만 구분한다.
 export function InlineDataChip({ value, tone }: { value: string; tone: ReportTone }) {
   const classes = toneToClasses(tone);
+  const colorClass = tone === 'neutral' ? 'text-foreground' : classes.text;
   return (
-    <span className={`mx-0.5 inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-semibold sm:text-[11px] ${classes.border} ${classes.bg} ${classes.text}`}>
+    <span className={`font-mono text-[0.95em] font-semibold tabular-nums ${colorClass}`}>
       {value}
     </span>
   );

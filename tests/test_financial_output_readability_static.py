@@ -94,6 +94,13 @@ def test_frontend_normalizer_cleans_korean_english_redundancy() -> None:
     # 조사 없는 "(신뢰도 low)" 괄호 표기도 한국어로
     assert "신뢰도 낮음" in source
     assert "신뢰도 높음" in source
+    # '라' 뒤 공백에는 \b가 성립하지 않으므로 lookahead 경계를 쓴다 (low라 → 낮아)
+    assert "라(?![가-힣])" in source
+    # 깨진 소수점 재결합("41. 1대비" → "41.1대비")과 프롬프트 되뇌임 제거
+    assert "rejoinBrokenDecimals" in source
+    assert "(\\d)\\.\\s+(\\d{1,3})(?!\\d)" in source
+    assert "stripPromptEcho" in source
+    assert "이 분석을 위해 당신이" in source
 
 
 def test_financial_language_normalizer_rewrites_machine_style_report_terms() -> None:
