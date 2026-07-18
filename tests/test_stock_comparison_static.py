@@ -148,6 +148,25 @@ def test_comparison_can_export_current_screen_to_pdf():
     assert "#stock-compare-print-root *" in css
 
 
+def test_comparison_pdf_matches_screen_layout():
+    # PDF가 화면과 달라지던 원인 회귀 방지:
+    # (1) A4 가로 판형 주입 → lg 브레이크포인트 유지로 화면과 동일한 3열
+    # (2) 대형 섹션 break-inside:avoid 남용 금지 → 빈 첫 페이지·16페이지 파편화 방지
+    src = _read("components/tabs/stock-compare-tab.tsx")
+    css = _read("index.css")
+
+    assert "@page { size: A4 landscape; margin: 9mm; }" in src
+    assert "compare-print-orientation" in src
+    assert "orientationStyle.remove()" in src
+
+    assert '[class*="lg:grid-cols-3"]' in css
+    assert "repeat(3, minmax(0, 1fr)) !important" in css
+    # 섹션 단위 avoid는 금지(카드 단위만) — 문자열 재등장 감시
+    assert "#stock-compare-print-root section,\n  #stock-compare-print-root .rounded-lg" not in css
+    assert "#analyst-report-root article" in css
+    assert "@page {" in css
+
+
 def test_comparison_surfaces_current_price():
     src = _read("components/tabs/stock-compare-tab.tsx")
     assert "compareCurrentPrice" in src

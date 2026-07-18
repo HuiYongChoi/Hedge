@@ -1067,8 +1067,16 @@ export function StockCompareTab() {
       ? `종목간 비교 - ${tickers || '비교'}`
       : `Stock comparison - ${tickers || 'comparison'}`;
 
+    // 3열 비교는 가로 판형이 자연스럽다. A4 가로(뷰포트 ~1120px)로 인쇄하면
+    // lg 브레이크포인트가 유지되어 화면과 동일한 3열 레이아웃으로 출력된다.
+    const orientationStyle = document.createElement('style');
+    orientationStyle.id = 'compare-print-orientation';
+    orientationStyle.textContent = '@page { size: A4 landscape; margin: 9mm; }';
+    document.head.appendChild(orientationStyle);
+
     const restoreTitle = () => {
       document.title = previousTitle;
+      orientationStyle.remove();
       window.removeEventListener('afterprint', restoreTitle);
     };
 

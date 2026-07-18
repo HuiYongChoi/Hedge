@@ -492,11 +492,32 @@
     break-inside: avoid !important;
   }
 
-  #analyst-report-root section,
+  /* 페이지보다 큰 대형 섹션에 avoid를 걸면 섹션 전체가 다음 페이지로 밀려
+     첫 페이지가 통째로 비고(비교 PDF 1p), 카드가 페이지당 1장씩 낱장 배치되는
+     파편화(16페이지)가 생긴다. 낱개 카드·헤더 단위만 보호한다. */
+  #analyst-report-root article,
   #analyst-report-root > header,
-  #stock-compare-print-root section,
   #stock-compare-print-root .rounded-lg {
     break-inside: avoid;
+  }
+
+  /* 섹션 제목이 페이지 끝에 고아로 남지 않게 본문과 붙인다. */
+  #analyst-report-root section > div:first-child,
+  #stock-compare-print-root h2,
+  #stock-compare-print-root h3 {
+    break-after: avoid;
+  }
+
+  /* 브라우저 기본 헤더/푸터(날짜·URL)가 본문과 겹치지 않도록 여백을 지정한다. */
+  @page {
+    margin: 9mm;
+  }
+
+  /* 인쇄 뷰포트가 lg 브레이크포인트(1024px)보다 좁아도 비교 그리드는
+     화면과 동일한 3열을 유지한다(랭킹 카드·가격 요약). */
+  #stock-compare-print-root [class*="lg:grid-cols-3"],
+  #stock-compare-print-root [class*="md:grid-cols-3"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   }
 
   /* top/left/right:0 with NO bottom and NO fixed height → the report's height is
