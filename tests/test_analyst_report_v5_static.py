@@ -215,6 +215,20 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         self.assertIn("(?:,\\d{3})*(?:\\.\\d+)?(?![%배xXBMK\\d]|,\\d)", helpers)
 
+    def test_hyphen_bullet_before_marker_leaves_no_orphan_dash_cards(self):
+        # "- [+] …" 하이픈 불릿 뒤 마커에서 하이픈이 고아 블록("-")으로 남아
+        # 본문이 빈 카드(6,7,9~11번)가 생기던 회귀 방지.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        evidence = (V5_DIR / "evidence-item.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("(?:\\s+[-*•])?\\s+(?=(?:\\d+[.)]\\s+)?\\[[+\\-~]\\])", helpers)
+        self.assertIn("(?:\\s+[-*•])?\\s+(?=(?:\\d+[.)]\\s+)?\\[[+\\-~]\\])", evidence)
+        # 불릿 기호만 남은 블록은 카드로 렌더하지 않는다
+        self.assertIn("|[-–—·•]+)$", helpers)
+        self.assertIn("|[-–—·•]+)$", evidence)
+        # 콜론 없는 ### 헤딩도 본문과 병합 (제목만 있는 빈 카드 방지)
+        self.assertIn("[:：]?\\s*$/u.test(clean)", helpers)
+
     def test_question_marker_items_stay_attached_to_parent(self):
         # [?](검증 조건)는 별도 카드로 쪼개지 않는다 — 20번 "아래 중 하나가 확인돼야"
         # 뒤의 조건 목록이 유실되던 문제의 회귀 방지.

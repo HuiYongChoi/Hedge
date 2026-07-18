@@ -67,7 +67,7 @@ function isMarkerOnlyBodyBlock(block: string) {
     .replace(/^\s*\[[+\-~?]\]\s*/u, '')
     .replace(/\s+/g, ' ')
     .trim();
-  return /^(?:\d+[.)]?|[.)]+)$/u.test(clean);
+  return /^(?:\d+[.)]?|[.)]+|[-–—·•]+)$/u.test(clean);
 }
 
 const HEADING_ONLY_BODY_PATTERNS = [
@@ -136,7 +136,8 @@ function splitEvidenceBodyBlocks(body: string): string[] {
     .replace(/\r\n?/g, '\n')
     // [?](검증 조건)는 부모 문장의 목록이므로 새 블록으로 쪼개지 않고 '·' 목록으로 이어 붙인다.
     .replace(/\s*\[\?\]\s*/gu, ' · ')
-    .replace(/\s+(?=(?:\d+[.)]\s+)?\[[+\-~]\])/gu, '\n\n')
+    // "- [+] …" 하이픈 불릿 뒤 마커는 하이픈까지 삼켜 분리 (고아 "-" 블록 방지)
+    .replace(/(?:\s+[-*•])?\s+(?=(?:\d+[.)]\s+)?\[[+\-~]\])/gu, '\n\n')
     .split(/\n{2,}|\n(?=\s*(?:#{2,3}\s+|\d+[.)]|[-*•]\s+|\[[+\-~]\]))/u)
     .map(block => block
       .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*|\[[+\-~?]\]\s*)/u, '')

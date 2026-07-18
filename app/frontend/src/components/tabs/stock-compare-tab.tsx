@@ -1067,11 +1067,20 @@ export function StockCompareTab() {
       ? `종목간 비교 - ${tickers || '비교'}`
       : `Stock comparison - ${tickers || 'comparison'}`;
 
-    // 3열 비교는 가로 판형이 자연스럽다. A4 가로(뷰포트 ~1120px)로 인쇄하면
-    // lg 브레이크포인트가 유지되어 화면과 동일한 3열 레이아웃으로 출력된다.
+    // A4 분할은 카드가 페이지 경계마다 밀려 화면과 다른 결과물(빈 페이지·낱장
+    // 파편화)을 만든다. 화면 스크롤 전체를 그대로 담은 "통짜 한 페이지"로
+    // 출력해 눈에 보이는 것과 동일한 PDF를 만든다.
+    // - 폭 1280px: 화면 콘텐츠 폭(max-w-7xl)과 동일 → lg 3열 레이아웃 유지
+    // - 높이: 콘텐츠 전체 높이 + 25% 여유(인쇄 뷰포트 폭 차이로 늘어날 수 있음)
+    const printRoot = document.getElementById('stock-compare-print-root');
+    const pageWidthPx = 1280;
+    const pageHeightPx = Math.min(
+      Math.ceil((printRoot?.scrollHeight ?? 2400) * 1.25) + 200,
+      15000,
+    );
     const orientationStyle = document.createElement('style');
     orientationStyle.id = 'compare-print-orientation';
-    orientationStyle.textContent = '@page { size: A4 landscape; margin: 9mm; }';
+    orientationStyle.textContent = `@page { size: ${pageWidthPx}px ${pageHeightPx}px; margin: 0; }`;
     document.head.appendChild(orientationStyle);
 
     const restoreTitle = () => {

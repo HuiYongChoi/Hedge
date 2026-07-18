@@ -916,8 +916,9 @@ export function prepareEvidenceLayoutText(sectionText: string) {
     // [?](검증 조건)는 분리하지 않는다 — 선행 문장("아래 중 하나가 확인돼야...")의 목록이므로
     // 부모 카드에 붙여야 본문이 유실되지 않는다.
     .replace(/([^\n])\s+(?=#{2,3}\s+)/gu, '$1\n\n')
-    .replace(/\s+(?=(?:\d+[.)]\s+)?\[[+\-~]\])/gu, '\n\n')
-    .replace(/\s+(?=[-*•]\s+\[[+\-~]\])/gu, '\n\n')
+    // "- [+] …"처럼 하이픈 불릿 뒤에 마커가 오면 하이픈까지 삼켜서 분리한다.
+    // 하이픈을 남기면 "-" 하나만 든 고아 블록(빈 카드)이 생긴다.
+    .replace(/(?:\s+[-*•])?\s+(?=(?:\d+[.)]\s+)?\[[+\-~]\])/gu, '\n\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -947,10 +948,12 @@ function splitLongEvidenceBlock(block: string): string[] {
 
 function isOrphanEvidenceHeading(block: string) {
   const clean = block
-    .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*)/u, '')
+    .replace(/^\s*(?:[-*•]\s+|\d+[.)]\s*)/u, '')
     .trim();
+  // "### 다운사이드 시나리오(…)"처럼 콜론 없는 헤딩도 본문과 붙인다 —
+  // 그대로 두면 제목만 있고 본문이 빈 카드가 된다.
   return /^\[[+\-~?]\]\s*[^.!?。？！\n]{2,90}[:：]\s*$/u.test(clean)
-    || /^#{2,3}\s*[^.!?。？！\n]{2,90}[:：]\s*$/u.test(clean);
+    || /^#{2,3}\s*[^.!?。？！\n]{2,90}[:：]?\s*$/u.test(clean);
 }
 
 function mergeOrphanEvidenceHeadings(blocks: string[]) {
@@ -1006,7 +1009,8 @@ function isMarkerOnlyEvidenceText(text: string) {
     .replace(/^\s*\[[+\-~?]\]\s*/u, '')
     .replace(/\s+/g, ' ')
     .trim();
-  return /^(?:\d+[.)]?|[.)]+)$/u.test(clean);
+  // 숫자 번호·구두점·불릿 기호만 남은 블록은 내용이 없는 고아 조각이다.
+  return /^(?:\d+[.)]?|[.)]+|[-–—·•]+)$/u.test(clean);
 }
 
 const HEADING_ONLY_EVIDENCE_PATTERNS = [

@@ -150,12 +150,13 @@ def test_comparison_can_export_current_screen_to_pdf():
 
 def test_comparison_pdf_matches_screen_layout():
     # PDF가 화면과 달라지던 원인 회귀 방지:
-    # (1) A4 가로 판형 주입 → lg 브레이크포인트 유지로 화면과 동일한 3열
-    # (2) 대형 섹션 break-inside:avoid 남용 금지 → 빈 첫 페이지·16페이지 파편화 방지
+    # A4 분할은 카드가 페이지 경계마다 밀려 빈 페이지·낱장 파편화를 만들었다.
+    # 화면 스크롤 전체를 통짜 한 페이지로 출력해 눈에 보이는 것과 동일하게 만든다.
     src = _read("components/tabs/stock-compare-tab.tsx")
     css = _read("index.css")
 
-    assert "@page { size: A4 landscape; margin: 9mm; }" in src
+    assert "printRoot?.scrollHeight" in src
+    assert "size: ${pageWidthPx}px ${pageHeightPx}px; margin: 0;" in src
     assert "compare-print-orientation" in src
     assert "orientationStyle.remove()" in src
 
