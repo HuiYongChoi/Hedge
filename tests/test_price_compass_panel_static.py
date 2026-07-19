@@ -11,7 +11,7 @@ CALLOUTS = PANEL_DIR / "broker-callouts-row.tsx"
 CARD = PANEL_DIR / "broker-callout-card.tsx"
 BETA = PANEL_DIR / "beta-volatility-frame.tsx"
 OPINION = PANEL_DIR / "opinion-distribution.tsx"
-GRID = PANEL_DIR / "broker-detail-grid.tsx"
+GRID = PANEL_DIR / "broker-detail-grid.tsx"  # v5.2: removed (Price Compass 콜아웃과 중복)
 STACK = PANEL_DIR / "stacking-layout.ts"
 TYPES = PANEL_DIR / "types.ts"
 UTILS = PANEL_DIR / "utils.ts"
@@ -27,8 +27,14 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
     def test_old_bar_file_deleted(self):
         self.assertFalse(OLD_BAR.exists(), "price-compass-bar.tsx must be removed in v4")
 
+    def test_broker_detail_grid_removed(self):
+        # v5.2: 증권사 목표가 상세 그리드는 Price Compass 콜아웃과 완전 중복이라 제거됨
+        self.assertFalse(GRID.exists(), "broker-detail-grid.tsx must stay removed (duplicates compass callouts)")
+        lang = LANG.read_text(encoding="utf-8")
+        self.assertNotIn("pcpBrokerGridTitle", lang)
+
     def test_panel_directory_layout(self):
-        for path in [INDEX, BAR, CALLOUTS, CARD, BETA, OPINION, GRID, STACK, TYPES, UTILS]:
+        for path in [INDEX, BAR, CALLOUTS, CARD, BETA, OPINION, STACK, TYPES, UTILS]:
             self.assertTrue(path.exists(), f"missing {path.name}")
 
     def test_layout_wires_panel(self):
@@ -105,7 +111,7 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
     def test_i18n_keys_present(self):
         src = LANG.read_text(encoding="utf-8")
         for key in ["pcpTitle", "pcpSubtitle", "pcpLegendBear", "pcpLegendBull",
-                    "pcpBetaFrameTitle", "pcpOpinionTitle", "pcpBrokerGridTitle",
+                    "pcpBetaFrameTitle", "pcpOpinionTitle",
                     "pcpSignalBuy", "pcpSignalSell", "pcpNoBrokers",
                     "pcpPerTtm", "pcpEpsTtm", "pcpFwdEps", "pcpEpsCurFy", "pcpPerCurFy",
                     "pcpHighTarget", "pcpTtmHelp", "pcpCurFyHelp", "pcpFwdHelp", "pcpTargetsHelp"]:
@@ -152,14 +158,14 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
         self.assertIn("currency={currency}", index_src)
         self.assertIn("formatMoney", index_src)
         self.assertIn("₩", utils_src)
-        for path in [BAR, CARD, GRID, OPINION, BETA]:
+        for path in [BAR, CARD, OPINION, BETA]:
             src = path.read_text(encoding="utf-8")
             self.assertIn("currency", src, f"{path.name} must accept currency")
             self.assertIn("formatMoney", src, f"{path.name} must format money via currency")
 
     def test_no_per_eps_in_cards(self):
         """v5.1: broker cards/grid must not repeat ticker-level PER/EPS labels."""
-        for path in [CARD, GRID]:
+        for path in [CARD]:
             src = path.read_text(encoding="utf-8")
             for removed in ["PER (TTM)", "EPS (TTM)", "FWD EPS"]:
                 self.assertNotIn(removed, src, f"{path.name}: {removed}")
@@ -186,7 +192,7 @@ class PriceCompassPanelStaticTests(unittest.TestCase):
 
     def test_readable_text_sizes(self):
         """v5: all panel components must use legible text sizes (text-sm/text-xs/text-base)."""
-        files_to_check = [BAR, CARD, GRID, OPINION, BETA, INDEX]
+        files_to_check = [BAR, CARD, OPINION, BETA, INDEX]
         for path in files_to_check:
             src = path.read_text(encoding="utf-8")
             has_readable = (

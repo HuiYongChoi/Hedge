@@ -7,7 +7,6 @@ import { BrokerTargetBar } from './broker-target-bar';
 import { BrokerCalloutsRow } from './broker-callouts-row';
 import { BetaVolatilityFrame } from './beta-volatility-frame';
 import { OpinionDistribution } from './opinion-distribution';
-import { BrokerDetailGrid } from './broker-detail-grid';
 import type { SigmaMark } from './types';
 import { formatMoney } from './utils';
 
@@ -328,8 +327,10 @@ export function PriceCompassPanel({
         />
       )}
 
-      {/* ── Detail panels (beta + opinion + grid) ── */}
-      {(beta != null || distribution != null || brokers.length > 0) && (
+      {/* ── Detail panels (beta + opinion) ── */}
+      {/* 증권사별 목표가·상승여력·신호는 위 Price Compass 콜아웃에 이미 표시되므로
+         중복 그리드(증권사 목표가 상세)는 제거했다. */}
+      {(beta != null || distribution != null) && (
         <div className="space-y-3 border-t border-border/40 pt-3">
           {/* Beta frame + Opinion distribution side by side */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -351,16 +352,6 @@ export function PriceCompassPanel({
               language={language}
             />
           </div>
-
-          {/* Broker detail grid */}
-          <BrokerDetailGrid
-            brokers={brokers}
-            currentPrice={currentPrice}
-            hoveredBroker={hoveredBroker}
-            currency={currency}
-            onHoverChange={setHoveredBroker}
-            language={language}
-          />
         </div>
       )}
     </section>

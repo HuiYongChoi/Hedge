@@ -1,5 +1,3 @@
-import type { ReportLanguage } from '../types';
-
 export type SignalTone = {
   text: string;
   bg: string;
@@ -90,12 +88,6 @@ export function upsideClass(pct: number | null): string {
   if (pct == null) return 'text-muted-foreground';
   if (Math.abs(pct) <= 0.5) return 'text-muted-foreground';
   return pct > 0 ? 'text-emerald-400' : 'text-rose-400';
-}
-
-/** Days-ago label */
-export function formatDaysAgo(d: number, language: ReportLanguage): string {
-  if (language === 'ko') return `${d}일 전`;
-  return `${d}d ago`;
 }
 
 /** Compute upside% from target and current price */
