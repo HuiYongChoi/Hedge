@@ -1670,9 +1670,11 @@ function MetricBarRowView({
               key={item.slot.id}
               className={cn(
                 'grid items-center gap-2 text-xs',
+                // 인쇄 미디어쿼리 뷰포트는 md(768px)보다 좁게 계산되어 Tailwind md:
+                // 그리드가 무너진다 — print CSS가 이 전용 클래스로 열 구조를 강제한다.
                 hasSplitValueColumns
-                  ? 'md:grid-cols-[8rem_minmax(0,1fr)_2.75rem_8.5rem_7.5rem]'
-                  : 'md:grid-cols-[8rem_minmax(0,1fr)_7rem]',
+                  ? 'metricBarRowSplit md:grid-cols-[8rem_minmax(0,1fr)_2.75rem_8.5rem_7.5rem]'
+                  : 'metricBarRowSimple md:grid-cols-[8rem_minmax(0,1fr)_7rem]',
               )}
             >
               <div className="flex min-w-0 items-center gap-2">

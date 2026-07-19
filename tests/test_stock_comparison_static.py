@@ -166,6 +166,13 @@ def test_comparison_pdf_matches_screen_layout():
     assert "#stock-compare-print-root svg path[stroke]" in css
     assert "stroke-width: 2.75 !important" in css
     assert "stroke-opacity: 0.55 !important" in css
+    # 가로 막대 행: 인쇄 뷰포트에서 md: 그리드가 무너져 막대가 사라지던 회귀 방지
+    assert "metricBarRowSplit" in src
+    assert "metricBarRowSimple" in src
+    assert "#stock-compare-print-root .metricBarRowSplit" in css
+    assert "8rem minmax(0, 1fr) 2.75rem 8.5rem 7.5rem !important" in css
+    assert "#stock-compare-print-root .rounded-full.bg-muted" in css
+    assert "height: 10px !important" in css
     # 섹션 단위 avoid는 금지(카드 단위만) — 문자열 재등장 감시
     assert "#stock-compare-print-root section,\n  #stock-compare-print-root .rounded-lg" not in css
     assert "#analyst-report-root article" in css

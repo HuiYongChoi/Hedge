@@ -529,6 +529,22 @@
     stroke-opacity: 0.55 !important;
   }
 
+  /* 가로 막대 행: 인쇄 미디어쿼리 뷰포트가 md(768px)보다 좁게 계산되어
+     Tailwind md: 그리드가 세로 스택으로 무너진다 — 열 구조를 직접 강제한다. */
+  #stock-compare-print-root .metricBarRowSplit {
+    grid-template-columns: 8rem minmax(0, 1fr) 2.75rem 8.5rem 7.5rem !important;
+  }
+  #stock-compare-print-root .metricBarRowSimple {
+    grid-template-columns: 8rem minmax(0, 1fr) 7rem !important;
+  }
+
+  /* 막대 트랙·채움: 얇은(6~8px) 막대와 저대비 트랙은 통짜 페이지 축소
+     열람에서 소실된다 — 인쇄에서만 두껍고 또렷하게. */
+  #stock-compare-print-root .rounded-full.bg-muted {
+    height: 10px !important;
+    background: hsl(0 0% 24%) !important;
+  }
+
   /* top/left/right:0 with NO bottom and NO fixed height → the report's height is
      its full content height, so Chrome paginates it across pages instead of
      clamping to a single page (the old inset:0 clipped everything below). */
