@@ -162,6 +162,10 @@ def test_comparison_pdf_matches_screen_layout():
 
     assert '[class*="lg:grid-cols-3"]' in css
     assert "repeat(3, minmax(0, 1fr)) !important" in css
+    # 차트 선이 PDF 변환·축소 열람에서 사라지지 않게 인쇄에서 두껍고 진하게
+    assert "#stock-compare-print-root svg path[stroke]" in css
+    assert "stroke-width: 2.75 !important" in css
+    assert "stroke-opacity: 0.55 !important" in css
     # 섹션 단위 avoid는 금지(카드 단위만) — 문자열 재등장 감시
     assert "#stock-compare-print-root section,\n  #stock-compare-print-root .rounded-lg" not in css
     assert "#analyst-report-root article" in css

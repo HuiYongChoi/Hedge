@@ -520,6 +520,15 @@
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   }
 
+  /* 차트 선 보존: 화면용 초저불투명 그리드(0.08~0.18)와 1.5px 데이터 라인은
+     PDF 변환·축소 열람에서 사실상 사라진다. 인쇄에서만 진하고 두껍게. */
+  #stock-compare-print-root svg path[stroke] {
+    stroke-width: 2.75 !important;
+  }
+  #stock-compare-print-root svg line {
+    stroke-opacity: 0.55 !important;
+  }
+
   /* top/left/right:0 with NO bottom and NO fixed height → the report's height is
      its full content height, so Chrome paginates it across pages instead of
      clamping to a single page (the old inset:0 clipped everything below). */
