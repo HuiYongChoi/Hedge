@@ -334,7 +334,8 @@ export function getResearchLinks(ticker: string) {
     return [
       {
         label: 'DART 정기보고서',
-        href: `https://dart.fss.or.kr/dsab001/main.do?textCrpNm=${encodeURIComponent(code)}`,
+        // autoSearch=true + option=corp가 있어야 종목코드 자동 검색이 실행된다 (실검증 완료)
+        href: `https://dart.fss.or.kr/dsab001/main.do?autoSearch=true&option=corp&textCrpNm=${encodeURIComponent(code)}`,
       },
       {
         label: '네이버 증권',

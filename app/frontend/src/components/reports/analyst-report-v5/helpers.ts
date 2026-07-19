@@ -1100,6 +1100,37 @@ function isBlankEvidenceItem(item: EvidenceItem) {
   return body.length === 0 || isMarkerOnlyEvidenceText(body) || isHeadingOnlyEvidenceText(body);
 }
 
+// 목차(섹션) 간 반복 문장 제거: 모델이 같은 근거 문장을 여러 목차에 재서술해
+// 리포트의 26%가 중복되는 문제(실측). 섹션 순서대로 문장 지문을 누적해,
+// 앞 목차에 이미 나온 30자 이상 문장은 뒤 목차에서 지운다(첫 등장 위치에만 남음).
+// 짧은 수치 병기 문장(<30자)과 마커/헤딩은 보존되고, 문장이 모두 지워져 빈
+// 카드가 되면 기존 isBlankEvidenceItem 필터가 카드째 제거한다.
+export function dedupeSentencesAcrossSections(sectionTexts: string[]): string[] {
+  const seen = new Set<string>();
+  // 지문 계산 시 선두 마커([+]/###/번호)와 짧은 헤딩("결론:", "[+] 근거:")을 벗긴다 —
+  // 같은 본문이 목차마다 다른 헤딩을 달고 반복되는 패턴을 잡기 위함.
+  const fingerprint = (sentence: string) => sentence
+    .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*|\[[+\-~?]\]\s*)+/u, '')
+    .replace(/^[^:：.!?。]{0,40}[:：]\s*/u, '')
+    .replace(/\s+/g, '')
+    .trim();
+  return sectionTexts.map(text => {
+    if (!text) return text;
+    const sentences = text.match(/(?:[^.!?。？！]|\.(?=\d))+[.!?。？！]?\s*/gu);
+    if (!sentences || sentences.length < 2) return text;
+    const kept: string[] = [];
+    for (const sentence of sentences) {
+      const key = fingerprint(sentence);
+      if (key.length >= 30) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      kept.push(sentence);
+    }
+    return kept.join('');
+  });
+}
+
 export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
   const normalized = prepareEvidenceLayoutText(sectionText);
   if (!normalized) return [];
@@ -1342,8 +1373,10 @@ export function buildCitations(
       : '10-K · MD&A';
   const reportTypeKo = isKoreanStock ? 'DART' : isJapan ? 'EDINET' : 'SEC';
   const reportTypeEn = isKoreanStock ? 'DART' : isJapan ? 'EDINET' : 'SEC';
+  // DART는 autoSearch=true + option=corp가 있어야 종목코드로 자동 검색이 실행된다.
+  // (파라미터 없이 textCrpNm만 주면 검색이 실행되지 않아 빈 검색 화면이 뜬다 — 실검증 완료)
   const reportHref = isKoreanStock
-    ? `https://dart.fss.or.kr/dsab001/main.do?textCrpNm=${encodeURIComponent(code)}`
+    ? `https://dart.fss.or.kr/dsab001/main.do?autoSearch=true&option=corp&textCrpNm=${encodeURIComponent(code)}`
     : isJapan
       ? `https://disclosure2.edinet-fsa.go.jp/WEEK0010.aspx`
       : `https://www.sec.gov/edgar/browse/?CIK=${encodeURIComponent(normalized)}&owner=exclude`;
@@ -1375,7 +1408,11 @@ export function buildCitations(
       labelEn: 'Consensus EPS',
       typeKo: '데이터',
       typeEn: 'Data',
-      href: null,
+      // KR 컨센서스의 실제 데이터 소스(FnGuide)의 해당 종목 페이지로 연결 — 실검증 완료.
+      // US는 내부 데이터 API가 소스라 사용자용 확인 페이지가 없어 링크를 두지 않는다.
+      href: isKoreanStock
+        ? `https://comp.fnguide.com/SVO2/ASP/SVD_Main.asp?pGB=1&gicode=A${encodeURIComponent(code)}`
+        : null,
     },
     {
       letter: 'd',
@@ -1383,7 +1420,8 @@ export function buildCitations(
       labelEn: 'WACC · Damodaran',
       typeKo: '학술',
       typeEn: 'Academic',
-      href: 'https://pages.stern.nyu.edu/~adamodar/',
+      // 홈이 아니라 업종별 WACC 데이터 표 페이지로 직행 — 실검증 완료.
+      href: 'https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/wacc.htm',
     },
     {
       letter: 'e',

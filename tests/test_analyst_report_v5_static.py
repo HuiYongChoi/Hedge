@@ -215,6 +215,32 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         self.assertIn("(?:,\\d{3})*(?:\\.\\d+)?(?![%배xXBMK\\d]|,\\d)", helpers)
 
+    def test_citations_deep_link_to_ticker_specific_pages(self):
+        # 출처 링크는 대표 홈이 아니라 종목별/데이터별 정확한 페이지로 — 실검증된 URL 패턴.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        search = (ROOT / "app/frontend/src/components/tabs/stock-search-tab.tsx").read_text(encoding="utf-8")
+
+        # DART: autoSearch=true + option=corp 없이는 자동 검색이 실행되지 않는다
+        self.assertIn("dsab001/main.do?autoSearch=true&option=corp&textCrpNm=", helpers)
+        self.assertIn("dsab001/main.do?autoSearch=true&option=corp&textCrpNm=", search)
+        # KR 컨센서스: 실제 데이터 소스(FnGuide)의 해당 종목 페이지
+        self.assertIn("comp.fnguide.com/SVO2/ASP/SVD_Main.asp?pGB=1&gicode=A", helpers)
+        # Damodaran: 홈이 아니라 업종별 WACC 데이터 표
+        self.assertIn("New_Home_Page/datafile/wacc.htm", helpers)
+        self.assertNotIn("href: 'https://pages.stern.nyu.edu/~adamodar/',", helpers)
+
+    def test_sections_dedupe_repeated_sentences_across_toc(self):
+        # 목차 간 동일 문장 반복(실측 26%)을 렌더에서 제거 — 첫 목차에만 남긴다.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        body = (V5_DIR / "report-body.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("export function dedupeSentencesAcrossSections", helpers)
+        self.assertIn("key.length >= 30", helpers)
+        # 지문은 마커/헤딩 프리픽스를 벗겨 계산(같은 본문이 다른 헤딩을 달고 반복되는 패턴)
+        self.assertIn("[^:：.!?。]{0,40}[:：]", helpers)
+        self.assertIn("dedupeSentencesAcrossSections(", body)
+        self.assertIn("dedupedSectionTexts[sectionIndex]", body)
+
     def test_hyphen_bullet_before_marker_leaves_no_orphan_dash_cards(self):
         # "- [+] …" 하이픈 불릿 뒤 마커에서 하이픈이 고아 블록("-")으로 남아
         # 본문이 빈 카드(6,7,9~11번)가 생기던 회귀 방지.

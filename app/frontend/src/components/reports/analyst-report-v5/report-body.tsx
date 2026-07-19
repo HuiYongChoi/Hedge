@@ -1,4 +1,4 @@
-import { extractReasoningText, normalizeAgentReport, sanitizeForwardPeNarrative } from './helpers';
+import { dedupeSentencesAcrossSections, extractReasoningText, normalizeAgentReport, sanitizeForwardPeNarrative } from './helpers';
 import { ReportSection } from './report-section';
 import type { AgentReport, CanonicalForwardSnapshot, Citation, NormalizedReport, ReportLanguage, SectionDef, SectionId } from './types';
 
@@ -47,17 +47,22 @@ export function ReportBody({
 }: ReportBodyProps) {
   const normalizedReport = normalizeAgentReport(activeReport, ticker, language);
 
+  // 목차 간 중복 문장 제거: 섹션 순서대로 지문을 누적해 뒤 목차의 반복 서술을 걷어낸다.
+  const dedupedSectionTexts = dedupeSentencesAcrossSections(
+    sections.map(section => sanitizeForwardPeNarrative(
+      sectionText(normalizedReport, section.id) || fallbackSectionText(activeReport, normalizedReport, section.id),
+      canonicalForwardSnapshot,
+      language,
+    )),
+  );
+
   return (
     <main className={`min-w-0 flex-1 space-y-6 ${className}`}>
-      {sections.map(section => (
+      {sections.map((section, sectionIndex) => (
         <ReportSection
           key={section.id}
           section={section}
-          sectionText={sanitizeForwardPeNarrative(
-            sectionText(normalizedReport, section.id) || fallbackSectionText(activeReport, normalizedReport, section.id),
-            canonicalForwardSnapshot,
-            language,
-          )}
+          sectionText={dedupedSectionTexts[sectionIndex]}
           activeReport={activeReport}
           activeAgentKey={activeAgentKey}
           citations={citations}
