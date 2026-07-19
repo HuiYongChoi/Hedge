@@ -425,7 +425,11 @@
      the deeply-nested report can grow to its full height and paginate. The
      :not() scope leaves the report subtree's own positioning untouched, e.g.
      the Price Compass absolute markers. */
-  body :not(#analyst-report-root):not(#analyst-report-root *) {
+  /* 비교 루트 내부(*)도 제외한다 — height:auto 강제가 서브트리까지 미치면
+     h-2 막대 트랙·h-1.5 점수바 같은 고정 높이 요소가 0으로 접혀
+     막대그래프가 PDF에서 통째로 사라진다. 루트 자신의 클램프 해제는
+     아래 #stock-compare-print-root 전용 규칙이 담당한다. */
+  body :not(#analyst-report-root):not(#analyst-report-root *):not(#stock-compare-print-root *) {
     position: static !important;
     overflow: visible !important;
     height: auto !important;

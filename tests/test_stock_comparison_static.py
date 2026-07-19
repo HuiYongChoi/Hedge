@@ -173,6 +173,8 @@ def test_comparison_pdf_matches_screen_layout():
     assert "8rem minmax(0, 1fr) 2.75rem 8.5rem 7.5rem !important" in css
     assert "#stock-compare-print-root .rounded-full.bg-muted" in css
     assert "height: 10px !important" in css
+    # 전역 height:auto 언클램프가 비교 서브트리의 고정높이 막대를 0으로 접지 않게 제외
+    assert ":not(#stock-compare-print-root *)" in css
     # 섹션 단위 avoid는 금지(카드 단위만) — 문자열 재등장 감시
     assert "#stock-compare-print-root section,\n  #stock-compare-print-root .rounded-lg" not in css
     assert "#analyst-report-root article" in css
