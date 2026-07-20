@@ -974,6 +974,8 @@ function mergeOrphanEvidenceHeadings(blocks: string[]) {
         index += 1;
         continue;
       }
+      // 다음이 마커 카드면 소제목은 목차와 중복이므로 버린다(본문으로 새어나오지 않게).
+      continue;
     }
     merged.push(block);
   }
@@ -1018,8 +1020,8 @@ function isMarkerOnlyEvidenceText(text: string) {
     .replace(/^\s*\[[+\-~?]\]\s*/u, '')
     .replace(/\s+/g, ' ')
     .trim();
-  // 숫자 번호·구두점·불릿 기호만 남은 블록은 내용이 없는 고아 조각이다.
-  return /^(?:\d+[.)]?|[.)]+|[-–—·•]+)$/u.test(clean);
+  // 숫자 번호·구두점·불릿 기호만 남은 블록은 내용이 없는 고아 조각이다("2.", "2.3.", "..", "•").
+  return /^(?:\d+[.)]?\s*)+$|^[.)\-–—·•]+$/u.test(clean);
 }
 
 const HEADING_ONLY_EVIDENCE_PATTERNS = [

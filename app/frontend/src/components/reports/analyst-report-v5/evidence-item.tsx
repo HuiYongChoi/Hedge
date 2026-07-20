@@ -67,7 +67,7 @@ function isMarkerOnlyBodyBlock(block: string) {
     .replace(/^\s*\[[+\-~?]\]\s*/u, '')
     .replace(/\s+/g, ' ')
     .trim();
-  return /^(?:\d+[.)]?|[.)]+|[-–—·•]+)$/u.test(clean);
+  return /^(?:\d+[.)]?\s*)+$|^[.)\-–—·•]+$/u.test(clean);
 }
 
 const HEADING_ONLY_BODY_PATTERNS = [

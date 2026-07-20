@@ -264,8 +264,8 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("(?:\\s+[-*•])?\\s+(?=(?:\\d+[.)]\\s+)?\\[[+\\-~]\\])", helpers)
         self.assertIn("(?:\\s+[-*•])?\\s+(?=(?:\\d+[.)]\\s+)?\\[[+\\-~]\\])", evidence)
         # 불릿 기호만 남은 블록은 카드로 렌더하지 않는다
-        self.assertIn("|[-–—·•]+)$", helpers)
-        self.assertIn("|[-–—·•]+)$", evidence)
+        self.assertIn("^[.)\\-–—·•]+$", helpers)
+        self.assertIn("^[.)\\-–—·•]+$", evidence)
         # 콜론 없는 ### 헤딩도 본문과 병합 (제목만 있는 빈 카드 방지)
         self.assertIn("[:：]?\\s*$/u.test(clean)", helpers)
 
