@@ -974,7 +974,7 @@ function mergeOrphanEvidenceHeadings(blocks: string[]) {
 // 모델이 같은 문장을 두 번 이어 쓴 경우("…낮습니다. …낮습니다.") 한 번만 남긴다.
 // 소수점(6.2)의 마침표는 문장 경계로 보지 않는다 — 잘게 쪼개지면 중복 감지 임계(20자)에 못 미친다.
 function dedupeRepeatedSentences(text: string): string {
-  const sentences = text.match(/(?:[^.!?。？！]|\.(?=\d))+[.!?。？！]?\s*/gu);
+  const sentences = text.match(/(?:[^.!?。？！]|(?<=\d)\.(?=\d))+[.!?。？！]?\s*/gu);
   if (!sentences || sentences.length < 2) return text;
   const seen = new Set<string>();
   const kept: string[] = [];
@@ -1116,7 +1116,7 @@ export function dedupeSentencesAcrossSections(sectionTexts: string[]): string[] 
     .trim();
   return sectionTexts.map(text => {
     if (!text) return text;
-    const sentences = text.match(/(?:[^.!?。？！]|\.(?=\d))+[.!?。？！]?\s*/gu);
+    const sentences = text.match(/(?:[^.!?。？！]|(?<=\d)\.(?=\d))+[.!?。？！]?\s*/gu);
     if (!sentences || sentences.length < 2) return text;
     const kept: string[] = [];
     for (const sentence of sentences) {

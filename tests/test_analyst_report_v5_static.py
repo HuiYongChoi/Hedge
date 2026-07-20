@@ -289,7 +289,7 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("ko: '선행 EPS'", helpers)
         self.assertNotIn("ko: '다음분기 EPS'", helpers)
         # 중복 문장 감지는 소수점(6.2)을 문장 경계로 보지 않는다
-        self.assertIn("|\\.(?=\\d))+[.!?。？！]?", helpers)
+        self.assertIn("|(?<=\\d)\\.(?=\\d))+[.!?。？！]?", helpers)
 
     def test_sticky_header_labels_margin_percent_as_margin_not_price(self):
         # 안전가(=가격) 라벨을 퍼센트 값에 붙이면 안 된다. 스티키 헤더의 안전마진 %는
