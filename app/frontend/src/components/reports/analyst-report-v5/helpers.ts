@@ -912,6 +912,9 @@ export function buildSourceTrackingText(report: AgentReport | null | undefined) 
 export function prepareEvidenceLayoutText(sectionText: string) {
   return normalizeFinancialDisplayText(sectionText)
     .replace(/\r\n?/g, '\n')
+    // 닫는 괄호가 빠진 손상 마커("[?선행…", "[+매출…")를 복구한다 — 그대로 두면
+    // 마커로 인식되지 않아 제목이 만들어지지 않는다(제목 누락).
+    .replace(/\[([+\-~?])(?=[^\]\s])/gu, '[$1] ')
     // Restore breaks before inline headings and verdict markers produced by dense model output.
     // [?](검증 조건)는 분리하지 않는다 — 선행 문장("아래 중 하나가 확인돼야...")의 목록이므로
     // 부모 카드에 붙여야 본문이 유실되지 않는다.
@@ -962,9 +965,15 @@ function mergeOrphanEvidenceHeadings(blocks: string[]) {
     const block = blocks[index];
     const next = blocks[index + 1];
     if (next && isOrphanEvidenceHeading(block)) {
-      merged.push(`${block} ${next}`);
-      index += 1;
-      continue;
+      // 다음 블록이 자체 마커([+]/[-]/[~]/[?])를 가지면 병합하지 않는다 — 병합하면
+      // "핵심 근거 [+] 매출…"처럼 마커가 문장 중간에 묻혀 제목 인식이 깨진다.
+      // 소제목("### 핵심 근거")은 그대로 두면 빈 카드 필터가 제거한다.
+      const nextStartsWithMarker = /^\s*(?:[-*•]\s+|\d+[.)]\s*)?\[[+\-~?]\]/u.test(next);
+      if (!nextStartsWithMarker) {
+        merged.push(`${block} ${next}`);
+        index += 1;
+        continue;
+      }
     }
     merged.push(block);
   }
