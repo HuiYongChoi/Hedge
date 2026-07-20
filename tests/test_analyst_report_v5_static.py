@@ -241,6 +241,20 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("dedupeSentencesAcrossSections(", body)
         self.assertIn("dedupedSectionTexts[sectionIndex]", body)
 
+    def test_marker_card_heading_does_not_duplicate_body(self):
+        # 마커 근거 카드: 첫 문장을 제목으로 올리고 본문에서 제거 → 제목=본문 중복 방지,
+        # 단문은 제목만(본문 빈 카드는 제목이 실질이면 유지), 다문장은 볼드 제목+일반 본문.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+
+        self.assertIn("function splitLeadSentenceHeading", helpers)
+        self.assertIn("return splitLeadSentenceHeading(bodyText)", helpers)
+        self.assertNotIn("function deriveMarkerHeading", helpers)
+        self.assertNotIn("heading: deriveMarkerHeading(bodyText), body: bodyText", helpers)
+        # 단문일 때 본문을 비운다(중복 방지)
+        self.assertIn("? { heading: only, body: '' }", helpers)
+        # 본문이 비어도 제목이 실질 내용이면 카드 유지
+        self.assertIn("return bodyBlank && headingBlank", helpers)
+
     def test_hyphen_bullet_before_marker_leaves_no_orphan_dash_cards(self):
         # "- [+] …" 하이픈 불릿 뒤 마커에서 하이픈이 고아 블록("-")으로 남아
         # 본문이 빈 카드(6,7,9~11번)가 생기던 회귀 방지.

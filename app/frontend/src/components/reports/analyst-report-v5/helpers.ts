@@ -1097,7 +1097,14 @@ function isBlankEvidenceItem(item: EvidenceItem) {
     .replace(/^\s*\[[+\-~?]\]\s*$/u, '')
     .replace(/\s+/g, ' ')
     .trim();
-  return body.length === 0 || isMarkerOnlyEvidenceText(body) || isHeadingOnlyEvidenceText(body);
+  const bodyBlank = body.length === 0 || isMarkerOnlyEvidenceText(body) || isHeadingOnlyEvidenceText(body);
+  // 본문이 비어도 제목이 실질 내용(핵심문구)이면 카드를 유지한다 — 단문 근거 카드는
+  // splitLeadSentenceHeading이 문장을 제목으로 올리고 본문을 비우므로 여기서 지우면 안 된다.
+  const heading = (item.heading || '').replace(/\s+/g, ' ').trim();
+  const headingBlank = heading.length === 0
+    || isMarkerOnlyEvidenceText(heading)
+    || isHeadingOnlyEvidenceText(heading);
+  return bodyBlank && headingBlank;
 }
 
 // 목차(섹션) 간 반복 문장 제거: 모델이 같은 근거 문장을 여러 목차에 재서술해
@@ -1200,7 +1207,7 @@ export function extractItemHeading(itemText: string): { heading: string | null; 
     if (/[:：]\s*$/u.test(bodyText)) {
       return { heading: bodyText.replace(/[:：]\s*$/u, '').trim(), body: '' };
     }
-    return { heading: deriveMarkerHeading(bodyText), body: bodyText };
+    return splitLeadSentenceHeading(bodyText);
   }
 
   return { heading: null, body: normalizedItemText };
@@ -1223,16 +1230,28 @@ function findSafeHeadingBoundary(text: string) {
   return -1;
 }
 
-function deriveMarkerHeading(bodyText: string) {
-  const boundary = findSafeHeadingBoundary(bodyText);
-  const source = boundary > 0 ? bodyText.slice(0, boundary) : bodyText;
-  const compact = source
-    .replace(/[.!?]\s*$/u, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!compact) return null;
-  if (compact.length <= 60) return compact;
-  return null;
+// 근거 카드의 첫 문장을 '핵심 문구' 제목(볼드, 톤 배지 옆)으로 올리고, 그 문장을
+// 본문에서 제거한 나머지만 본문(일반 굵기)으로 남긴다. 이렇게 해야:
+//  (1) 단문 카드의 제목=본문 중복이 사라지고(본문이 비워짐)
+//  (2) 다문장 카드는 볼드 핵심문구 + 일반 이어지는 문구로 굵기 구분이 살고
+//  (3) 모든 마커 카드가 제목을 갖는다(제목 누락 방지).
+function splitLeadSentenceHeading(bodyText: string): { heading: string | null; body: string } {
+  const clean = bodyText.replace(/\s+/g, ' ').trim();
+  if (!clean) return { heading: null, body: '' };
+  const boundary = findSafeHeadingBoundary(clean);
+  const stripTail = (s: string) => s.replace(/[.!?。？！]\s*$/u, '').trim();
+
+  // 단일 문장: 문장 자체가 핵심문구 → 제목으로만, 본문은 비운다(중복 방지)
+  if (boundary <= 0 || boundary >= clean.length) {
+    const only = stripTail(clean);
+    return only.length <= 90 ? { heading: only, body: '' } : { heading: null, body: clean };
+  }
+
+  // 다문장: 첫 문장 = 제목, 나머지 = 본문
+  const heading = stripTail(clean.slice(0, boundary));
+  const body = clean.slice(boundary).trim();
+  if (!heading || heading.length > 90) return { heading: null, body: clean };
+  return { heading, body };
 }
 
 export function getDataTokenPattern() {
