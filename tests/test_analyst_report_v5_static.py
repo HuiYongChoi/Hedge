@@ -241,6 +241,23 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("dedupeSentencesAcrossSections(", body)
         self.assertIn("dedupedSectionTexts[sectionIndex]", body)
 
+    def test_conclusion_verdict_becomes_bold_heading(self):
+        # 결론 카드: "→보유·중립 (신뢰도 52%) · 본문…"에서 판정을 볼드 제목으로 승격.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("보유(?:\\s*·\\s*중립)?|중립|관망|비중\\s*축소", helpers)
+        self.assertIn("const verdict = normalizedItemText.match(", helpers)
+
+    def test_key_numbers_labeled_and_deduped(self):
+        # 핵심 숫자: '값 N' 대신 신뢰도/선행 PER/TTM PER 실라벨 + 같은 숫자 중복 제거 +
+        # 숫자에 가장 가까운 지표명을 고른다.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("ko: '신뢰도', en: 'Confidence'", helpers)
+        self.assertIn("ko: '선행 PER', en: 'Fwd P/E'", helpers)
+        self.assertIn("ko: 'TTM PER', en: 'TTM P/E'", helpers)
+        self.assertIn("const usedValues = new Set<string>()", helpers)
+        self.assertIn("if (usedValues.has(valueKey)) continue", helpers)
+        self.assertIn("m.index > bestPos", helpers)
+
     def test_marker_card_heading_does_not_duplicate_body(self):
         # 마커 근거 카드: 첫 문장을 제목으로 올리고 본문에서 제거 → 제목=본문 중복 방지,
         # 단문은 제목만(본문 빈 카드는 제목이 실질이면 유지), 다문장은 볼드 제목+일반 본문.
@@ -297,7 +314,8 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         # 핵심 숫자 라벨은 숫자 바로 앞 근접 텍스트에서만 추정 (오표기 방지)
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         self.assertIn("itemText.slice(Math.max(0, index - 28), index)", helpers)
-        self.assertIn("label.pattern.test(before)", helpers)
+        # 숫자에 가장 가까운(=before 끝에 근접한) 지표명을 고른다 (배열 first-match 아님)
+        self.assertIn("const m = before.match(c.pattern)", helpers)
         # 기간 표기(3M/6M/12M)는 핵심 숫자에서 제외, 컨센서스 EPS 라벨은 '선행 EPS'
         self.assertIn("(?:3|6|12)\\s?M$", helpers)
         self.assertIn("ko: '선행 EPS'", helpers)

@@ -94,6 +94,11 @@ const KOREAN_TICKER_DISPLAY_NAMES: Record<string, string> = {
 const DATA_TOKEN_PATTERN = /(\$\d[\d,]*(?:\.\d+)?[BMK]?|\d[\d,]*(?:\.\d+)?\s?(?:%|배|x|X|B|M|K)|-\d[\d,]*(?:\.\d+)?%|(?<=\b(?:PER|PBR|PSR|ROE|ROIC|WACC|EPS|EV\/EBITDA)\s{0,2})-?\d{1,4}(?:,\d{3})*(?:\.\d+)?(?![%배xXBMK\d]|,\d))/g;
 
 const LABEL_CANDIDATES: Array<{ pattern: RegExp; ko: string; en: string }> = [
+  { pattern: /신뢰도|confidence|컨센서스\s*신뢰/i, ko: '신뢰도', en: 'Confidence' },
+  // '선행 PER'·'TTM PER'는 한글 표기라 아래 forward/trailing p/e 영어 패턴에 안 걸린다.
+  // 결론 카드의 "선행 PER 4.5 … TTM PER 39.5"가 '값 N'으로 표기되던 문제.
+  { pattern: /선행\s*PER|선행\s*P\/?E|fwd\s*per/i, ko: '선행 PER', en: 'Fwd P/E' },
+  { pattern: /TTM\s*PER|TTM\s*P\/?E/i, ko: 'TTM PER', en: 'TTM P/E' },
   { pattern: /ROIC|투하자본/i, ko: 'ROIC', en: 'ROIC' },
   { pattern: /FCF\s*수익률|free cash flow yield|fcf yield/i, ko: 'FCF 수익률', en: 'FCF yield' },
   // Interest-bearing debt/equity (debt_to_equity field). Must precede the plain
@@ -1209,6 +1214,16 @@ export function extractItemHeading(itemText: string): { heading: string | null; 
   const bold = normalizedItemText.match(/^\*\*([^*]{2,80})\*\*:?\s*(.*)$/su);
   if (bold) return { heading: bold[1].trim(), body: bold[2].trim() };
 
+  // 결론 카드: "→보유·중립 (신뢰도 52%) · 실제 결론…"에서 판정을 볼드 제목으로 올린다.
+  // (긴 결론 문단이라 첫 문장 제목화가 안 걸려 제목이 비던 문제)
+  const verdict = normalizedItemText.match(
+    /^\s*[→↑↓]?\s*((?:강력\s*)?(?:매수|매도)|보유(?:\s*·\s*중립)?|중립|관망|비중\s*축소|매수\s*·\s*강세|매도\s*·\s*약세)\s*(\([^)]*\))?\s*·\s+(.+)$/su,
+  );
+  if (verdict) {
+    const heading = `${verdict[1].replace(/\s+/g, ' ').trim()}${verdict[2] ? ` ${verdict[2].trim()}` : ''}`;
+    return { heading, body: verdict[3].trim() };
+  }
+
   const colon = normalizedItemText.match(/^([^:：]{2,42})[:：]\s+(.+)$/su);
   if (colon) return { heading: colon[1].replace(/^\[[+\-~?]\]\s*/u, '').trim(), body: colon[2].trim() };
 
@@ -1515,6 +1530,7 @@ export function extractKeyNumbers(
 ): KeyNumber[] {
   const results: KeyNumber[] = [];
   const usedLabels = new Set<string>();
+  const usedValues = new Set<string>();
   DATA_TOKEN_PATTERN.lastIndex = 0;
 
   for (const match of itemText.matchAll(DATA_TOKEN_PATTERN)) {
@@ -1523,12 +1539,25 @@ export function extractKeyNumbers(
     if (/^\d$/.test(value)) continue;
     // "12M 선행 컨센 EPS" 같은 기간 표기(3M/6M/12M)는 핵심 숫자가 아니다
     if (/^(?:3|6|12)\s?M$/.test(value)) continue;
+    // 같은 숫자가 문장에 두 번 나와도 한 번만("TTM PER 39.5"가 두 번 → 값3·값4 중복 방지)
+    const valueKey = value.replace(/\s+/g, '');
+    if (usedValues.has(valueKey)) continue;
 
     // 라벨은 숫자 "바로 앞" 근접 텍스트에서만 인정한다. 넓은 창(±80자)은
     // 항목 안의 다른 지표명("다음분기 EPS…")을 엉뚱한 숫자에 붙이는 오표기를 만든다.
     const index = match.index ?? 0;
     const before = itemText.slice(Math.max(0, index - 28), index);
-    const candidate = LABEL_CANDIDATES.find(label => label.pattern.test(before));
+    // 숫자에 "가장 가까운" 지표명을 고른다. 배열 순서로 first-match를 잡으면
+    // "신뢰도 52% … 선행 PER 4.5"에서 4.5가 앞쪽 '신뢰도'에 붙어(이미 사용됨) 누락된다.
+    let candidate: (typeof LABEL_CANDIDATES)[number] | undefined;
+    let bestPos = -1;
+    for (const c of LABEL_CANDIDATES) {
+      const m = before.match(c.pattern);
+      if (m && m.index !== undefined && m.index > bestPos) {
+        bestPos = m.index;
+        candidate = c;
+      }
+    }
     let label = candidate ? (language === 'ko' ? candidate.ko : candidate.en) : (language === 'ko' ? `값 ${results.length + 1}` : `Value ${results.length + 1}`);
     // Unit guard: 배/x/X values are multiples, never absolute prices
     if (isMultipleValue(value) && (isAbsoluteAmountLabel(label) || isRatioPercentLabel(label))) {
@@ -1537,6 +1566,7 @@ export function extractKeyNumbers(
 
     if (usedLabels.has(label)) continue;
     usedLabels.add(label);
+    usedValues.add(valueKey);
     results.push({ label, value });
   }
 
