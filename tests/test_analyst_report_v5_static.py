@@ -241,6 +241,17 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("dedupeSentencesAcrossSections(", body)
         self.assertIn("dedupedSectionTexts[sectionIndex]", body)
 
+    def test_per_gap_comparison_deduped_to_most_detailed(self):
+        # 선행/TTM PER 격차 비교가 여러 섹션에 반복 서술되면 가장 상세한(긴) 블록
+        # 하나만 남기고 나머지 제거. 요약(섹션 01)은 보존.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        body = (V5_DIR / "report-body.tsx").read_text(encoding="utf-8")
+        self.assertIn("export function dedupePerGapComparisons(", helpers)
+        self.assertIn("c.len > a.len ? c : a", helpers)  # 가장 상세한(긴) 것 선택
+        self.assertIn("if (s === 0) return", helpers)      # 섹션 01 보존
+        # report-body가 실제로 이 패스를 적용
+        self.assertIn("dedupePerGapComparisons(dedupeSentencesAcrossSections(", body)
+
     def test_heading_boundary_excludes_comparative_boda(self):
         # 비교격 조사 '보다'의 '다'를 문장 종결로 오인해 제목이 "…39.5보다"에서
         # 잘리던 문제 방지: 종결 판정에서 '…보다'를 제외.

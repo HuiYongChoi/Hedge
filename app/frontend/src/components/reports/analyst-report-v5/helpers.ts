@@ -1154,6 +1154,45 @@ export function dedupeSentencesAcrossSections(sectionTexts: string[]): string[] 
   });
 }
 
+// 선행/TTM PER 격차 비교("선행 PER 4.x < TTM PER 39.5")가 중립·약세 등 여러 섹션에
+// 반복 서술되는 문제 — 모델이 같은 데이터 포인트를 각 섹션에서 재서술한다. 한 종목의
+// (선행 PER, TTM PER) 비교는 본질적으로 하나이므로, 그 비교를 담은 블록 중 "가장 상세한
+// (긴)" 하나만 남기고 나머지는 제거한다. 요약(섹션 01)은 요지 반복이 정상이라 제외.
+// (사용자 선택: "가장 상세한 1개만")
+const PER_GAP_FWD = /선행\s*P(?:ER|\/?E)|forward\s*p\/?e|fwd\s*per/i;
+const PER_GAP_TTM = /TTM\s*P(?:ER|\/?E)|trailing\s*p\/?e/i;
+const PER_GAP_BLOCK_SPLIT = /(\n{2,}|\n(?=\s*(?:#{2,3}\s+|\d+[.)]|[-*•]\s+|\[[+\-~]\])))/u;
+
+export function dedupePerGapComparisons(sectionTexts: string[]): string[] {
+  const isPerGapBlock = (block: string) =>
+    Boolean(block) && PER_GAP_FWD.test(block) && PER_GAP_TTM.test(block);
+
+  const parts = sectionTexts.map(text => (text ? text.split(PER_GAP_BLOCK_SPLIT) : []));
+  const candidates: Array<{ s: number; b: number; len: number }> = [];
+  parts.forEach((arr, s) => {
+    if (s === 0) return; // 결론 요약(섹션 01)은 보존
+    for (let b = 0; b < arr.length; b += 2) { // 짝수 인덱스 = 블록, 홀수 = 구분자
+      if (isPerGapBlock(arr[b])) candidates.push({ s, b, len: arr[b].trim().length });
+    }
+  });
+  if (candidates.length <= 1) return sectionTexts; // 반복 없음 → 그대로
+
+  // 가장 상세한(긴) 블록을 keeper로, 같은 비교의 나머지 블록은 제거
+  const keeper = candidates.reduce((a, c) => (c.len > a.len ? c : a));
+  const remove = new Set(candidates.filter(c => c !== keeper).map(c => `${c.s}:${c.b}`));
+  if (remove.size === 0) return sectionTexts;
+
+  return sectionTexts.map((text, s) => {
+    if (!text || s === 0) return text;
+    const arr = parts[s];
+    let changed = false;
+    for (let b = 0; b < arr.length; b += 2) {
+      if (remove.has(`${s}:${b}`)) { arr[b] = ''; changed = true; }
+    }
+    return changed ? arr.join('') : text;
+  });
+}
+
 export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
   const normalized = prepareEvidenceLayoutText(sectionText);
   if (!normalized) return [];

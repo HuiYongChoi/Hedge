@@ -1,4 +1,4 @@
-import { dedupeSentencesAcrossSections, extractReasoningText, normalizeAgentReport, sanitizeForwardPeNarrative } from './helpers';
+import { dedupePerGapComparisons, dedupeSentencesAcrossSections, extractReasoningText, normalizeAgentReport, sanitizeForwardPeNarrative } from './helpers';
 import { ReportSection } from './report-section';
 import type { AgentReport, CanonicalForwardSnapshot, Citation, NormalizedReport, ReportLanguage, SectionDef, SectionId } from './types';
 
@@ -48,13 +48,14 @@ export function ReportBody({
   const normalizedReport = normalizeAgentReport(activeReport, ticker, language);
 
   // 목차 간 중복 문장 제거: 섹션 순서대로 지문을 누적해 뒤 목차의 반복 서술을 걷어낸다.
-  const dedupedSectionTexts = dedupeSentencesAcrossSections(
+  // 이어서, 선행/TTM PER 격차 비교처럼 여러 섹션에 재서술되는 근거는 가장 상세한 하나만 남긴다.
+  const dedupedSectionTexts = dedupePerGapComparisons(dedupeSentencesAcrossSections(
     sections.map(section => sanitizeForwardPeNarrative(
       sectionText(normalizedReport, section.id) || fallbackSectionText(activeReport, normalizedReport, section.id),
       canonicalForwardSnapshot,
       language,
     )),
-  );
+  ));
 
   return (
     <main className={`min-w-0 flex-1 space-y-6 ${className}`}>
