@@ -125,6 +125,10 @@ function isHeadingOnlyBodyBlock(block: string) {
   if (!clean) return false;
   if (HEADING_ONLY_BODY_LABELS.has(clean)) return true;
   if (HEADING_ONLY_BODY_PATTERNS.some(pattern => pattern.test(clean))) return true;
+  // \uC885\uACB0\uBD80\uD638\uB85C \uB05D\uB098\uB294 \uC9E7\uC740 \uBB38\uC7A5(\uC608: "\uB530\uB77C\uC11C \uC911\uB9BD.")\uC740 \uB77C\uBCA8\uC774 \uC544\uB2C8\uB77C \uBCF8\uBB38 \uBB38\uC7A5\uC774\uBBC0\uB85C
+  // \uAE38\uC774 \uAE30\uBC18 heading-only \uD310\uC815\uC5D0\uC11C \uC81C\uC678\uD55C\uB2E4 \u2014 \uC720\uD6A8 \uBCF8\uBB38\uC774 \uD1B5\uC9F8\uB85C \uD544\uD130\uB9C1\uB3FC
+  // fallback\uC774 \uC6D0\uBCF8("- \u00B7 \uB530\uB77C\uC11C \uC911\uB9BD. 2.")\uC744 \uADF8\uB300\uB85C \uB178\uCD9C\uD558\uB358 \uBB38\uC81C \uBC29\uC9C0.
+  if (/[.!?\u3002\uFF1F\uFF01]\s*$/u.test(block.trim())) return false;
   return clean.length <= 24
     && /[\uAC00-\uD7A3]/u.test(clean)
     && !/[.!?。？！\d%$₩¥]/u.test(clean)
@@ -143,6 +147,9 @@ function splitEvidenceBodyBlocks(body: string): string[] {
       .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*|\[[+\-~?]\]\s*)/u, '')
       .replace(/^\s*·\s*/u, '')
       .replace(/\s+/g, ' ')
+      // 완결 문장 뒤에 매달린 목록 번호 조각(" 2." 등, 다음 항목 enumerator 누출) 제거.
+      // 종결부호 뒤 1~2자리 숫자여야만 잡아 실제 수치(예: "목표가 100.")는 보존.
+      .replace(/(?<=[.!?。？！])\s+\d{1,2}[.)]\s*$/u, '')
       .trim())
     .filter(block => Boolean(block) && !isMarkerOnlyBodyBlock(block) && !isHeadingOnlyBodyBlock(block))
     .flatMap(splitReadableChunk);

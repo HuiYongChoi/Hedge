@@ -300,6 +300,18 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         # 콜론 없는 ### 헤딩도 본문과 병합 (제목만 있는 빈 카드 방지)
         self.assertIn("[:：]?\\s*$/u.test(clean)", helpers)
 
+    def test_trailing_orphan_enumerator_stripped(self):
+        # 완결 문장 뒤에 매달린 목록 번호 조각(" 2.")은 다음 항목 enumerator 누출이므로
+        # 제거한다. 종결부호 뒤 1~2자리 숫자만 잡아 실제 수치("100.")는 보존.
+        evidence = (V5_DIR / "evidence-item.tsx").read_text(encoding="utf-8")
+        self.assertIn("(?<=[.!?。？！])\\s+\\d{1,2}[.)]\\s*$", evidence)
+
+    def test_sentence_terminated_short_block_is_not_heading_only(self):
+        # "따라서 중립."처럼 종결부호로 끝나는 짧은 문장은 라벨이 아니라 본문 문장이므로
+        # heading-only로 필터링해 fallback이 원본을 노출하지 않게 한다.
+        evidence = (V5_DIR / "evidence-item.tsx").read_text(encoding="utf-8")
+        self.assertIn("\\s*$/u.test(block.trim())) return false;", evidence)
+
     def test_question_marker_items_stay_attached_to_parent(self):
         # [?](검증 조건)는 별도 카드로 쪼개지 않는다 — 20번 "아래 중 하나가 확인돼야"
         # 뒤의 조건 목록이 유실되던 문제의 회귀 방지.
