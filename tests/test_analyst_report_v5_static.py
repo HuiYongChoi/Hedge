@@ -255,6 +255,18 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("ko: 'EPS', en: 'EPS'", helpers)
         self.assertIn("ko: 'PER', en: 'P/E'", helpers)
 
+    def test_unlabeled_numbers_use_context_or_are_omitted(self):
+        # 일반 해결책: 고정 지표명에 안 걸리는 서술형 숫자는 (1) 문맥 서술어/명사로 이름을
+        # 유도하고("62.5% 상승"→상승, "변동성 4.9%"→변동성), (2) 그래도 못 정하면
+        # 의미 없는 "값 N" 대신 강조 스트립에서 생략한다.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("function describeNumberFromContext(", helpers)
+        # 문맥 없으면 '값 N'을 밀어넣지 않고 건너뛴다
+        self.assertIn("if (!label) continue;", helpers)
+        self.assertNotIn("`값 ${results.length + 1}`", helpers)
+        # 단위 정합성: % 값에 원화 절대금액(EPS 등) 라벨 차단
+        self.assertIn("if (isPercent && wonAmount) label = null;", helpers)
+
     def test_per_gap_comparison_deduped_to_most_detailed(self):
         # 선행/TTM PER 격차 비교가 여러 섹션에 반복 서술되면 가장 상세한(긴) 블록
         # 하나만 남기고 나머지 제거. 요약(섹션 01)은 보존.

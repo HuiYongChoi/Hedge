@@ -1602,6 +1602,29 @@ function isRatioPercentLabel(label: string): boolean {
   return RATIO_PERCENT_LABEL_KO.has(label) || RATIO_PERCENT_LABEL_EN.has(label);
 }
 
+// 고정 지표명(LABEL_CANDIDATES)에 안 걸리는 서술형 숫자(예: "62.5% 상승", "변동성 4.9%")를
+// 문맥에서 이름을 유도한다. 지표명을 하나씩 늘리는 대신, 숫자를 수식하는 서술어/명사를 뽑아
+// 라벨로 쓰고, 그래도 못 뽑으면 호출부에서 스트립에 아예 표시하지 않는다("값 N" 제거).
+const NUMBER_DESC_VERB_MAP: Record<string, string> = {
+  올라: '상승', 올랐: '상승', 뛰: '상승', 늘: '증가', 내려: '하락', 내렸: '하락',
+  떨어: '하락', 줄: '감소', 폭등: '급등', 폭락: '급락',
+};
+function describeNumberFromContext(before: string, after: string): string | null {
+  // 1) 숫자 뒤 서술어(상승/하락/회복 등) → 그 동작을 라벨로 (예: "62.5% 상승" → 상승)
+  const verb = after.match(/(급등|폭등|급락|폭락|반등|상승|올라|올랐|뛰|증가|늘|확대|하락|내려|내렸|떨어|감소|줄|축소|회복|성장|개선|둔화|악화)/);
+  if (verb) return NUMBER_DESC_VERB_MAP[verb[1]] || verb[1];
+
+  // 2) 숫자 앞 서술 명사(…률/성/력/폭/마진/여력/변동성 등) → 그 지표를 라벨로 (예: "변동성 4.9%" → 변동성)
+  const nounMatch = before.match(/([가-힣]{2,10})\s*$/);
+  if (nounMatch) {
+    const noun = nounMatch[1].replace(/(으로|이|가|은|는|을|를|로|의|에|과|와|도)$/, '');
+    if (noun.length >= 2 && /(률|율|성|력|폭|마진|비중|여력|수익|괴리|점유율|배당|변동성|프리미엄|커버리지)$/.test(noun)) {
+      return noun;
+    }
+  }
+  return null;
+}
+
 export function extractKeyNumbers(
   itemText: string,
   language: ReportLanguage,
@@ -1625,17 +1648,16 @@ export function extractKeyNumbers(
     // 항목 안의 다른 지표명("다음분기 EPS…")을 엉뚱한 숫자에 붙이는 오표기를 만든다.
     const index = match.index ?? 0;
     const before = itemText.slice(Math.max(0, index - 28), index);
+    const after = itemText.slice(index + match[0].length, index + match[0].length + 16);
 
-    let label: string;
-    // 분기 태그가 붙은 EPS(예: "2025Q4 EPS 4,803")는 분기명을 라벨로 삼는다 — '값N'을 피하고,
-    // 같은 'EPS' 라벨로 뭉쳐 두 분기 값 중 하나가 라벨 중복으로 버려지는 것도 막는다.
+    let label: string | null = null;
+    // 분기 태그가 붙은 EPS(예: "2025Q4 EPS 4,803")는 분기명을 라벨로 → '값N' 방지 + 두 분기 구분.
     const quarterEps = before.match(/((?:20)?\d{2}\s*Q\s*[1-4]|[1-4]\s*Q\s*(?:20)?\d{2})\s*EPS\s*$/i);
     if (quarterEps) {
       label = `${quarterEps[1].replace(/\s+/g, '').toUpperCase()} EPS`;
     } else {
-      // 숫자에 "가장 가까운"(=before 끝에 근접한, 매칭 끝 위치가 가장 큰) 지표명을 고른다.
-      // 끝 위치가 같으면 배열에서 먼저 나온(더 구체적인) 라벨이 이긴다.
-      // 예: "신뢰도 52% … 선행 PER 4.5"의 4.5는 앞쪽 '신뢰도'가 아니라 인접한 '선행 PER'로.
+      // 숫자에 "가장 가까운"(매칭 끝 위치가 가장 큰) 지표명. 끝 위치가 같으면 배열에서
+      // 먼저 나온(더 구체적인) 라벨이 이긴다. 예: "…선행 PER 4.5"의 4.5는 '선행 PER'.
       let candidate: (typeof LABEL_CANDIDATES)[number] | undefined;
       let bestPos = -1;
       for (const c of LABEL_CANDIDATES) {
@@ -1648,13 +1670,23 @@ export function extractKeyNumbers(
           }
         }
       }
-      label = candidate ? (language === 'ko' ? candidate.ko : candidate.en) : (language === 'ko' ? `값 ${results.length + 1}` : `Value ${results.length + 1}`);
+      if (candidate) label = language === 'ko' ? candidate.ko : candidate.en;
     }
-    // Unit guard: 배/x/X values are multiples, never absolute prices
-    // Unit guard: 배/x/X values are multiples, never absolute prices
-    if (isMultipleValue(value) && (isAbsoluteAmountLabel(label) || isRatioPercentLabel(label))) {
-      label = language === 'ko' ? `값 ${results.length + 1}` : `Value ${results.length + 1}`;
+
+    // 단위 정합성: 값의 단위와 라벨 종류가 어긋나면 라벨을 버린다(오표기 방지).
+    if (label) {
+      const isPercent = /%$/.test(value);
+      const wonAmount = isAbsoluteAmountLabel(label) || /EPS$/.test(label);
+      if (isPercent && wonAmount) label = null;                                   // "EPS 82%" 차단(EPS=원화 절대금액)
+      else if (isMultipleValue(value) && (wonAmount || isRatioPercentLabel(label))) label = null; // 배수에 금액/% 라벨 차단
     }
+
+    // 지표명이 없으면 문맥의 서술어/명사로 이름을 유도(예: "62.5% 상승"→상승, "변동성 4.9%"→변동성).
+    if (!label && language === 'ko') label = describeNumberFromContext(before, after);
+
+    // 그래도 이름이 없으면 의미 없는 "값 N" 대신 이 숫자를 강조 스트립에서 생략한다.
+    // (숫자는 본문 문장에 문맥과 함께 그대로 남아 있다.)
+    if (!label) continue;
 
     if (usedLabels.has(label)) continue;
     usedLabels.add(label);
