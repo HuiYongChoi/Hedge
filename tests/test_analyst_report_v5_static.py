@@ -241,6 +241,20 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("dedupeSentencesAcrossSections(", body)
         self.assertIn("dedupedSectionTexts[sectionIndex]", body)
 
+    def test_heading_boundary_excludes_comparative_boda(self):
+        # 비교격 조사 '보다'의 '다'를 문장 종결로 오인해 제목이 "…39.5보다"에서
+        # 잘리던 문제 방지: 종결 판정에서 '…보다'를 제외.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("if (/보다$/u.test(word)) continue", helpers)
+
+    def test_malformed_bold_does_not_split_sentence(self):
+        # 잘못 닫힌 강조(**)가 문장 중간을 끊어 제목이 "…(Confidence" 파편이 되던
+        # 문제 방지: 괄호 불균형·소문자 라틴 연속·조사 시작을 감지해 이어 붙임.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("function looksLikeMidSentenceBoldSplit(", helpers)
+        self.assertIn("if (opens > closes) return true", helpers)
+        self.assertIn("if (!looksLikeMidSentenceBoldSplit(boldHeading, boldBody))", helpers)
+
     def test_conclusion_verdict_becomes_bold_heading(self):
         # 결론 카드: "→보유·중립 (신뢰도 52%) · 본문…"에서 판정을 볼드 제목으로 승격.
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")

@@ -1209,10 +1209,35 @@ export function classifyItemTone(itemText: string): ReportTone {
   return 'neutral';
 }
 
+// 모델이 강조(**)를 문장 중간에서 잘못 닫으면(예: "**…낮음(Confidence** low)으로…")
+// 제목이 문장 조각("…(Confidence")이 되고 본문이 그 뒤를 잇는 파편("low)으로…")이 된다.
+// 이런 '문장 중간 끊김'을 감지해 강조를 제목 경계로 인정하지 않는다.
+function looksLikeMidSentenceBoldSplit(heading: string, body: string): boolean {
+  if (!body) return false;
+  // 여는 괄호가 제목에서 안 닫히고 본문으로 넘어감 → 한 구(句)가 갈렸다는 신호
+  const opens = (heading.match(/[(（[]/gu) || []).length;
+  const closes = (heading.match(/[)）\]]/gu) || []).length;
+  if (opens > closes) return true;
+  // 본문이 소문자 라틴·닫는 괄호로 시작 → 앞 제목 단어의 연속("Confidence" + "low)")
+  if (/^[a-z)\]）]/u.test(body)) return true;
+  // 본문이 한국어 조사/연결어미로 시작 → 앞 제목의 문법적 연속(완결된 제목이 아님)
+  if (/^(?:으로|은|는|이|가|을|를|와|과|의|에서|에게|보다|처럼|만큼|까지|부터|이며|하며|이고|라고|지만|면서)\b/u.test(body)) return true;
+  return false;
+}
+
 export function extractItemHeading(itemText: string): { heading: string | null; body: string } {
   const normalizedItemText = normalizeFinancialDisplayText(itemText);
   const bold = normalizedItemText.match(/^\*\*([^*]{2,80})\*\*:?\s*(.*)$/su);
-  if (bold) return { heading: bold[1].trim(), body: bold[2].trim() };
+  if (bold) {
+    const boldHeading = bold[1].trim();
+    const boldBody = bold[2].trim();
+    if (!looksLikeMidSentenceBoldSplit(boldHeading, boldBody)) {
+      return { heading: boldHeading, body: boldBody };
+    }
+    // 잘못 닫힌 강조: 마커만 제거하고 한 문장으로 이어 붙인 뒤 정상 경계에서 분리
+    const merged = normalizedItemText.replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
+    return splitLeadSentenceHeading(merged);
+  }
 
   // 결론 카드: "→보유·중립 (신뢰도 52%) · 실제 결론…"에서 판정을 볼드 제목으로 올린다.
   // (긴 결론 문단이라 첫 문장 제목화가 안 걸려 제목이 비던 문제)
@@ -1250,6 +1275,11 @@ function findSafeHeadingBoundary(text: string) {
       return index + 1;
     }
     if (char === '다' && (index === text.length - 1 || /\s/u.test(text[index + 1] || ''))) {
+      // 비교격 조사 '보다'(예: "39.5보다 낮습니다")는 서술어 종결이 아니므로
+      // 제목/본문 경계로 삼지 않는다 — 한 문장이 "…보다"에서 잘려 제목이
+      // 문장 조각이 되던 문제. 뒤 서술어까지 이어져야 완결된 제목이 된다.
+      const word = (text.slice(0, index + 1).match(/[가-힣]+$/u) || [''])[0];
+      if (/보다$/u.test(word)) continue;
       return index + 1;
     }
   }
