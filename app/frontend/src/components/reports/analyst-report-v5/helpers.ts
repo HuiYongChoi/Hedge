@@ -122,6 +122,15 @@ const LABEL_CANDIDATES: Array<{ pattern: RegExp; ko: string; en: string }> = [
   { pattern: /시가총액|market cap/i, ko: '시가총액', en: 'Market cap' },
   { pattern: /매출|revenue/i, ko: '매출', en: 'Revenue' },
   { pattern: /영업이익|operating income/i, ko: '영업이익', en: 'Operating income' },
+  // 제네릭 지표명 — 위의 구체 라벨(선행/TTM/포워드 등)이 먼저·우선 매칭되고, 없을 때만 쓴다.
+  // DATA_TOKEN이 값을 뽑는 컨텍스트(PBR/PSR/ROE/EV\/EBITDA/EPS/PER 바로 뒤)에 이름을 붙여
+  // "값 N" 표기를 최소화한다("최대한 그 값의 이름을 표기").
+  { pattern: /\bPBR\b|주가\s*순자산|price[- ]?to[- ]?book|\bP\/?B\b/i, ko: 'PBR', en: 'PBR' },
+  { pattern: /\bPSR\b|주가\s*매출|price[- ]?to[- ]?sales|\bP\/?S\b/i, ko: 'PSR', en: 'PSR' },
+  { pattern: /\bROE\b|자기자본이익률/i, ko: 'ROE', en: 'ROE' },
+  { pattern: /EV\s*\/\s*EBITDA|이브이\s*에비타/i, ko: 'EV/EBITDA', en: 'EV/EBITDA' },
+  { pattern: /\bEPS\b|주당\s*순이익/i, ko: 'EPS', en: 'EPS' },
+  { pattern: /\bPER\b|\bP\/?E\b|주가\s*수익비율/i, ko: 'PER', en: 'P/E' },
 ];
 
 const SENTENCE_RULES: Array<{
@@ -1616,18 +1625,32 @@ export function extractKeyNumbers(
     // 항목 안의 다른 지표명("다음분기 EPS…")을 엉뚱한 숫자에 붙이는 오표기를 만든다.
     const index = match.index ?? 0;
     const before = itemText.slice(Math.max(0, index - 28), index);
-    // 숫자에 "가장 가까운" 지표명을 고른다. 배열 순서로 first-match를 잡으면
-    // "신뢰도 52% … 선행 PER 4.5"에서 4.5가 앞쪽 '신뢰도'에 붙어(이미 사용됨) 누락된다.
-    let candidate: (typeof LABEL_CANDIDATES)[number] | undefined;
-    let bestPos = -1;
-    for (const c of LABEL_CANDIDATES) {
-      const m = before.match(c.pattern);
-      if (m && m.index !== undefined && m.index > bestPos) {
-        bestPos = m.index;
-        candidate = c;
+
+    let label: string;
+    // 분기 태그가 붙은 EPS(예: "2025Q4 EPS 4,803")는 분기명을 라벨로 삼는다 — '값N'을 피하고,
+    // 같은 'EPS' 라벨로 뭉쳐 두 분기 값 중 하나가 라벨 중복으로 버려지는 것도 막는다.
+    const quarterEps = before.match(/((?:20)?\d{2}\s*Q\s*[1-4]|[1-4]\s*Q\s*(?:20)?\d{2})\s*EPS\s*$/i);
+    if (quarterEps) {
+      label = `${quarterEps[1].replace(/\s+/g, '').toUpperCase()} EPS`;
+    } else {
+      // 숫자에 "가장 가까운"(=before 끝에 근접한, 매칭 끝 위치가 가장 큰) 지표명을 고른다.
+      // 끝 위치가 같으면 배열에서 먼저 나온(더 구체적인) 라벨이 이긴다.
+      // 예: "신뢰도 52% … 선행 PER 4.5"의 4.5는 앞쪽 '신뢰도'가 아니라 인접한 '선행 PER'로.
+      let candidate: (typeof LABEL_CANDIDATES)[number] | undefined;
+      let bestPos = -1;
+      for (const c of LABEL_CANDIDATES) {
+        const m = before.match(c.pattern);
+        if (m && m.index !== undefined) {
+          const end = m.index + m[0].length;
+          if (end > bestPos) {
+            bestPos = end;
+            candidate = c;
+          }
+        }
       }
+      label = candidate ? (language === 'ko' ? candidate.ko : candidate.en) : (language === 'ko' ? `값 ${results.length + 1}` : `Value ${results.length + 1}`);
     }
-    let label = candidate ? (language === 'ko' ? candidate.ko : candidate.en) : (language === 'ko' ? `값 ${results.length + 1}` : `Value ${results.length + 1}`);
+    // Unit guard: 배/x/X values are multiples, never absolute prices
     // Unit guard: 배/x/X values are multiples, never absolute prices
     if (isMultipleValue(value) && (isAbsoluteAmountLabel(label) || isRatioPercentLabel(label))) {
       label = language === 'ko' ? `값 ${results.length + 1}` : `Value ${results.length + 1}`;

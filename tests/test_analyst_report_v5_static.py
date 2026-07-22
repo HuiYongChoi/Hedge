@@ -241,6 +241,20 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("dedupeSentencesAcrossSections(", body)
         self.assertIn("dedupedSectionTexts[sectionIndex]", body)
 
+    def test_key_number_labels_cover_more_metrics(self):
+        # "값 N" 최소화: 분기 태그 EPS(2025Q4 EPS)는 분기명 라벨, 그리고 DATA_TOKEN이
+        # 값을 뽑는 컨텍스트(PBR/PSR/ROE/EV·EBITDA/EPS/PER)에 제네릭 실라벨을 붙인다.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        # 분기 EPS 특례 + 매칭 끝 위치(가장 가까운) 기반 선택
+        self.assertIn("EPS\\s*$/i", helpers)
+        self.assertIn("const end = m.index + m[0].length", helpers)
+        # 제네릭 라벨 후보(구체 라벨 뒤에 배치)
+        self.assertIn("ko: 'PBR', en: 'PBR'", helpers)
+        self.assertIn("ko: 'ROE', en: 'ROE'", helpers)
+        self.assertIn("ko: 'EV/EBITDA', en: 'EV/EBITDA'", helpers)
+        self.assertIn("ko: 'EPS', en: 'EPS'", helpers)
+        self.assertIn("ko: 'PER', en: 'P/E'", helpers)
+
     def test_per_gap_comparison_deduped_to_most_detailed(self):
         # 선행/TTM PER 격차 비교가 여러 섹션에 반복 서술되면 가장 상세한(긴) 블록
         # 하나만 남기고 나머지 제거. 요약(섹션 01)은 보존.
@@ -281,7 +295,9 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("ko: 'TTM PER', en: 'TTM P/E'", helpers)
         self.assertIn("const usedValues = new Set<string>()", helpers)
         self.assertIn("if (usedValues.has(valueKey)) continue", helpers)
-        self.assertIn("m.index > bestPos", helpers)
+        # 숫자에 가장 가까운(=매칭 끝 위치가 가장 큰) 지표명 선택
+        self.assertIn("const end = m.index + m[0].length", helpers)
+        self.assertIn("if (end > bestPos)", helpers)
 
     def test_marker_card_heading_does_not_duplicate_body(self):
         # 마커 근거 카드: 첫 문장을 제목으로 올리고 본문에서 제거 → 제목=본문 중복 방지,
