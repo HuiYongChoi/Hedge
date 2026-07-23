@@ -981,7 +981,7 @@ function ForwardConsensusTile({
         {formatCurrency(forwardEps, currency)}
       </div>
       <div className="text-[10px] text-muted-foreground">
-        FwdPER {forwardPerText} · {t('targetEpsSubtitle', language)}
+        {t('fwdPerCurrentLabel', language)} {forwardPerText}
       </div>
     </div>
   );
@@ -1043,7 +1043,7 @@ function ConsensusBridgeTile({
         {formatCurrency(consensus, currency)}
       </div>
       <div className="text-[10px] text-muted-foreground">
-        FwdPER {perText(impliedFwdPer)} · PBR {formatPbrMultiple(impliedPbr)}
+        {t('fwdPerTargetLabel', language)} {perText(impliedFwdPer)} · PBR {formatPbrMultiple(impliedPbr)}
       </div>
       <dl className="mt-2 space-y-0.5 text-[10px]">
         <Row label={language === 'ko' ? '역사적 PBR 중위값 기준 주가' : 'Historical median PBR price'}>

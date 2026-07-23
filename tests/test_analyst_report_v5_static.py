@@ -255,6 +255,21 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("ko: 'EPS', en: 'EPS'", helpers)
         self.assertIn("ko: 'PER', en: 'P/E'", helpers)
 
+    def test_fwd_per_tiles_label_price_basis(self):
+        # 사이드바의 두 FwdPER(현재가 기준 vs 목표가 내재)는 같은 12M 선행 EPS를 쓰지만
+        # 분자가 달라 값이 다르다 → 화면에 기준+기간을 표기해 혼동을 없앤다.
+        prefs = LANG_PREFS.read_text(encoding="utf-8")
+        self.assertIn("fwdPerCurrentLabel: '현재가 기준 12M 선행 PER'", prefs)
+        self.assertIn("fwdPerTargetLabel: '목표가 기준 12M 선행 PER'", prefs)
+        self.assertIn("fwdPerCurrentLabel: '12M fwd P/E · current price'", prefs)
+        self.assertIn("fwdPerTargetLabel: '12M fwd P/E · target-implied'", prefs)
+        sidebar = (V5_DIR / "target-data-sidebar.tsx").read_text(encoding="utf-8")
+        self.assertIn("t('fwdPerCurrentLabel', language)", sidebar)
+        self.assertIn("t('fwdPerTargetLabel', language)", sidebar)
+        # 기준 없는 맨 'FwdPER ...' 표기는 남지 않아야 한다
+        self.assertNotIn("FwdPER {forwardPerText}", sidebar)
+        self.assertNotIn("FwdPER {perText(impliedFwdPer)}", sidebar)
+
     def test_unlabeled_numbers_use_context_or_are_omitted(self):
         # 일반 해결책: 고정 지표명에 안 걸리는 서술형 숫자는 (1) 문맥 서술어/명사로 이름을
         # 유도하고("62.5% 상승"→상승, "변동성 4.9%"→변동성), (2) 그래도 못 정하면

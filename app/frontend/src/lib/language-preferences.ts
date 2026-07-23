@@ -471,6 +471,9 @@ export const translations = {
     targetDataTitle: '핵심 타겟 데이터',
     targetEpsLabel: '선행 12M 컨센 EPS',
     targetEpsSubtitle: '12개월 선행 추정',
+    // FwdPER 기준 구분: 같은 12개월 선행 EPS를 쓰되 분자(현재가 vs 목표가)가 달라 값이 다르다.
+    fwdPerCurrentLabel: '현재가 기준 12M 선행 PER',
+    fwdPerTargetLabel: '목표가 기준 12M 선행 PER',
     valuationModelsSummaryTitle: '밸류에이션 모델 요약 (주당)',
     valuationLowConfidenceBadge: '낮은 신뢰도',
     targetIntrinsicLabel: '1주당 내재가치',
@@ -1071,6 +1074,9 @@ export const translations = {
     targetDataTitle: 'Target Data',
     targetEpsLabel: '12M forward consensus EPS',
     targetEpsSubtitle: 'Forward 12-month estimate',
+    // FwdPER basis: same 12M forward EPS, but numerator differs (current vs target price).
+    fwdPerCurrentLabel: '12M fwd P/E · current price',
+    fwdPerTargetLabel: '12M fwd P/E · target-implied',
     valuationModelsSummaryTitle: 'Valuation models (per share)',
     valuationLowConfidenceBadge: 'Low confidence',
     targetIntrinsicLabel: 'Intrinsic Value / Share',
