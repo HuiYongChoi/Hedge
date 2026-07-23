@@ -67,7 +67,9 @@ function isMarkerOnlyBodyBlock(block: string) {
     .replace(/^\s*\[[+\-~?]\]\s*/u, '')
     .replace(/\s+/g, ' ')
     .trim();
-  return /^(?:\d+[.)]?\s*)+$|^[.)\-–—·•]+$/u.test(clean);
+  return /^(?:\d+[.)]?\s*)+$|^[.)[\]+~?\-–—·•]+$/u.test(clean)
+    // 단위만 붙은 숫자 조각("2.0%/d.", "0%/d.")도 문장이 아니다 — 값은 핵심 숫자 스트립이 담당
+    || /^[\d.,]+\s?(?:%|배|x|X|bp|bps)?(?:\/[a-zA-Z]+)?\.?$/u.test(clean);
 }
 
 const HEADING_ONLY_BODY_PATTERNS = [
@@ -144,7 +146,8 @@ function splitEvidenceBodyBlocks(body: string): string[] {
     .replace(/(?:\s+[-*•])?\s+(?=(?:\d+[.)]\s+)?\[[+\-~]\])/gu, '\n\n')
     .split(/\n{2,}|\n(?=\s*(?:#{2,3}\s+|\d+[.)]|[-*•]\s+|\[[+\-~]\]))/u)
     .map(block => block
-      .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*|\[[+\-~?]\]\s*)/u, '')
+      // 선두 목록 번호 제거 — "2.0%/d"의 "2."(소수점)는 번호가 아니므로 (?!\d) 가드
+      .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+\.(?!\d)\s*|\d+\)\s*|\[[+\-~?]\]\s*)/u, '')
       .replace(/^\s*·\s*/u, '')
       .replace(/\s+/g, ' ')
       // 완결 문장 뒤에 매달린 목록 번호 조각(" 2." 등, 다음 항목 enumerator 누출) 제거.

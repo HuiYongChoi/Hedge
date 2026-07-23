@@ -255,6 +255,50 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("ko: 'EPS', en: 'EPS'", helpers)
         self.assertIn("ko: 'PER', en: 'P/E'", helpers)
 
+    def test_leading_decimal_not_stripped_as_enumerator(self):
+        # "2.0%/d"의 선두 "2."를 목록 번호로 오인해 지워 "0%/d"가 되던 문제 —
+        # 모든 선두 번호 제거에 (?!\d) 소수점 가드.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        evidence = (V5_DIR / "evidence-item.tsx").read_text(encoding="utf-8")
+        self.assertIn("\\d+\\.(?!\\d)\\s*|\\d+\\)\\s*", helpers)
+        self.assertIn("\\d+\\.(?!\\d)\\s*|\\d+\\)\\s*", evidence)
+        # 내용을 지우는 선두 스트립에 가드 없는 \d+[.)] 가 남아 있으면 안 된다
+        self.assertNotIn("|[-*•]\\s+|\\d+[.)]\\s*)/u, '')", helpers)
+        self.assertNotIn("|[-*•]\\s+|\\d+[.)]\\s*|\\[[+\\-~?]\\]\\s*)/u, '')", evidence)
+
+    def test_abbreviation_period_not_sentence_boundary(self):
+        # "Alphabet Inc.의 …"가 'Inc'에서 잘려 제목이 회사명 조각만 되던 문제 —
+        # 약어(Inc/Corp/U.S 등) 뒤 마침표는 제목 경계가 아니다.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("Inc|Corp|Co|Ltd|LLC|plc|PLC|vs", helpers)
+
+    def test_long_first_sentence_gets_clause_heading(self):
+        # 90자 초과 첫 문장 카드는 제목이 통째로 사라지지 않고 절 경계(쉼표)에서
+        # 볼드 제목을 확보한다.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("function splitLeadClauseHeading(", helpers)
+        self.assertIn(".lastIndexOf(',')", helpers)
+
+    def test_numeric_unit_fragment_filtered(self):
+        # "2.0%/d."·"0%/d." 같은 숫자+단위 조각과 "[?" 깨진 마커 조각은 본문/카드로
+        # 렌더하지 않는다(값은 핵심 숫자 스트립이 담당).
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        evidence = (V5_DIR / "evidence-item.tsx").read_text(encoding="utf-8")
+        for src in (helpers, evidence):
+            self.assertIn("(?:\\/[a-zA-Z]+)?\\.?$", src)
+
+    def test_after_noun_metric_label(self):
+        # "높은 프리미엄과 2.0%/d 변동성"의 2.0%는 프리미엄이 아니라 변동성 —
+        # 숫자 바로 뒤 지표 명사가 앞쪽 명사보다 우선한다.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("const METRIC_NOUN_TAIL", helpers)
+        self.assertIn("const afterNoun = after.match(", helpers)
+
+    def test_verdict_heading_allows_leading_marker(self):
+        # "[~] →보유·중립 (신뢰도 58%) · …"처럼 마커 뒤 판정도 볼드 제목으로 추출.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("(?:\\[[+\\-~?]\\]\\s*)?[→↑↓]?", helpers)
+
     def test_fwd_per_tiles_label_price_basis(self):
         # 사이드바의 두 FwdPER(현재가 기준 vs 목표가 내재)는 같은 12M 선행 EPS를 쓰지만
         # 분자가 달라 값이 다르다 → 화면에 기준+기간을 표기해 혼동을 없앤다.
@@ -336,7 +380,7 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertNotIn("function deriveMarkerHeading", helpers)
         self.assertNotIn("heading: deriveMarkerHeading(bodyText), body: bodyText", helpers)
         # 단문일 때 본문을 비운다(중복 방지)
-        self.assertIn("? { heading: only, body: '' }", helpers)
+        self.assertIn("if (only.length <= 90) return { heading: only, body: '' };", helpers)
         # 본문이 비어도 제목이 실질 내용이면 카드 유지
         self.assertIn("return bodyBlank && headingBlank", helpers)
 
@@ -349,8 +393,8 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("(?:\\s+[-*•])?\\s+(?=(?:\\d+[.)]\\s+)?\\[[+\\-~]\\])", helpers)
         self.assertIn("(?:\\s+[-*•])?\\s+(?=(?:\\d+[.)]\\s+)?\\[[+\\-~]\\])", evidence)
         # 불릿 기호만 남은 블록은 카드로 렌더하지 않는다
-        self.assertIn("^[.)\\-–—·•]+$", helpers)
-        self.assertIn("^[.)\\-–—·•]+$", evidence)
+        self.assertIn("^[.)[\\]+~?\\-–—·•]+$", helpers)
+        self.assertIn("^[.)[\\]+~?\\-–—·•]+$", evidence)
         # 콜론 없는 ### 헤딩도 본문과 병합 (제목만 있는 빈 카드 방지)
         self.assertIn("[:：]?\\s*$/u.test(clean)", helpers)
 

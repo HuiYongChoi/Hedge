@@ -965,7 +965,7 @@ function splitLongEvidenceBlock(block: string): string[] {
 
 function isOrphanEvidenceHeading(block: string) {
   const clean = block
-    .replace(/^\s*(?:[-*•]\s+|\d+[.)]\s*)/u, '')
+    .replace(/^\s*(?:[-*•]\s+|\d+\.(?!\d)\s*|\d+\)\s*)/u, '')
     .trim();
   // "### 다운사이드 시나리오(…)"처럼 콜론 없는 헤딩도 본문과 붙인다 —
   // 그대로 두면 제목만 있고 본문이 빈 카드가 된다.
@@ -1016,7 +1016,8 @@ function dedupeRepeatedSentences(text: string): string {
 
 function buildEvidenceItem(raw: string, index: number): EvidenceItem {
   const clean = raw
-    .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*)/u, '')
+    // 선두 목록 번호 제거 — 단, "2.0%/d"의 "2."(소수점)는 번호가 아니므로 (?!\d) 가드
+    .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+\.(?!\d)\s*|\d+\)\s*)/u, '')
     .trim();
   const { heading, body } = extractItemHeading(clean);
   return {
@@ -1034,8 +1035,10 @@ function isMarkerOnlyEvidenceText(text: string) {
     .replace(/^\s*\[[+\-~?]\]\s*/u, '')
     .replace(/\s+/g, ' ')
     .trim();
-  // 숫자 번호·구두점·불릿 기호만 남은 블록은 내용이 없는 고아 조각이다("2.", "2.3.", "..", "•").
-  return /^(?:\d+[.)]?\s*)+$|^[.)\-–—·•]+$/u.test(clean);
+  // 숫자 번호·구두점·불릿 기호만 남은 블록은 내용이 없는 고아 조각이다("2.", "..", "•", "[?").
+  return /^(?:\d+[.)]?\s*)+$|^[.)[\]+~?\-–—·•]+$/u.test(clean)
+    // 단위만 붙은 숫자 조각("2.0%/d.", "0%/d.")도 문장이 아니다 — 값은 핵심 숫자 스트립이 담당
+    || /^[\d.,]+\s?(?:%|배|x|X|bp|bps)?(?:\/[a-zA-Z]+)?\.?$/u.test(clean);
 }
 
 const HEADING_ONLY_EVIDENCE_PATTERNS = [
@@ -1093,7 +1096,7 @@ function hasDataToken(text: string) {
 
 function stripEvidenceLabelNoise(text: string) {
   return text
-    .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*)/u, '')
+    .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+\.(?!\d)\s*|\d+\)\s*)/u, '')
     .replace(/^\s*\[[+\-~?]\]\s*/u, '')
     .replace(/\*\*/g, '')
     .replace(/[:：.!?。？！]+$/u, '')
@@ -1142,7 +1145,7 @@ export function dedupeSentencesAcrossSections(sectionTexts: string[]): string[] 
   // 지문 계산 시 선두 마커([+]/###/번호)와 짧은 헤딩("결론:", "[+] 근거:")을 벗긴다 —
   // 같은 본문이 목차마다 다른 헤딩을 달고 반복되는 패턴을 잡기 위함.
   const fingerprint = (sentence: string) => sentence
-    .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+[.)]\s*|\[[+\-~?]\]\s*)+/u, '')
+    .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+\.(?!\d)\s*|\d+\)\s*|\[[+\-~?]\]\s*)+/u, '')
     .replace(/^[^:：.!?。]{0,40}[:：]\s*/u, '')
     .replace(/\s+/g, '')
     .trim();
@@ -1290,7 +1293,7 @@ export function extractItemHeading(itemText: string): { heading: string | null; 
   // 결론 카드: "→보유·중립 (신뢰도 52%) · 실제 결론…"에서 판정을 볼드 제목으로 올린다.
   // (긴 결론 문단이라 첫 문장 제목화가 안 걸려 제목이 비던 문제)
   const verdict = normalizedItemText.match(
-    /^\s*[→↑↓]?\s*((?:강력\s*)?(?:매수|매도)|보유(?:\s*·\s*중립)?|중립|관망|비중\s*축소|매수\s*·\s*강세|매도\s*·\s*약세)\s*(\([^)]*\))?\s*·\s+(.+)$/su,
+    /^\s*(?:\[[+\-~?]\]\s*)?[→↑↓]?\s*((?:강력\s*)?(?:매수|매도)|보유(?:\s*·\s*중립)?|중립|관망|비중\s*축소|매수\s*·\s*강세|매도\s*·\s*약세)\s*(\([^)]*\))?\s*·\s+(.+)$/su,
   );
   if (verdict) {
     const heading = `${verdict[1].replace(/\s+/g, ' ').trim()}${verdict[2] ? ` ${verdict[2].trim()}` : ''}`;
@@ -1320,6 +1323,14 @@ function findSafeHeadingBoundary(text: string) {
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
     if ((char === '.' || char === '!' || char === '?') && !isDecimalPoint(text, index)) {
+      if (char === '.') {
+        // 회사명/일반 약어(Inc., Corp., U.S. 등) 뒤 마침표는 문장 종결이 아니다 —
+        // "Alphabet Inc.의 …"가 'Inc'에서 잘려 제목이 회사명 조각만 되던 문제.
+        const abbr = (text.slice(0, index).match(/[A-Za-z][A-Za-z.]*$/u) || [''])[0];
+        if (/^(?:Inc|Corp|Co|Ltd|LLC|plc|PLC|vs|Mr|Ms|Dr|Jr|Sr|St|No|etc|U\.S|e\.g|i\.e)$/.test(abbr) || /^[A-Z]$/.test(abbr)) {
+          continue;
+        }
+      }
       return index + 1;
     }
     if (char === '다' && (index === text.length - 1 || /\s/u.test(text[index + 1] || ''))) {
@@ -1348,13 +1359,27 @@ function splitLeadSentenceHeading(bodyText: string): { heading: string | null; b
   // 단일 문장: 문장 자체가 핵심문구 → 제목으로만, 본문은 비운다(중복 방지)
   if (boundary <= 0 || boundary >= clean.length) {
     const only = stripTail(clean);
-    return only.length <= 90 ? { heading: only, body: '' } : { heading: null, body: clean };
+    if (only.length <= 90) return { heading: only, body: '' };
+    return splitLeadClauseHeading(clean) ?? { heading: null, body: clean };
   }
 
   // 다문장: 첫 문장 = 제목, 나머지 = 본문
   const heading = stripTail(clean.slice(0, boundary));
   const body = clean.slice(boundary).trim();
-  if (!heading || heading.length > 90) return { heading: null, body: clean };
+  if (!heading) return { heading: null, body: clean };
+  if (heading.length > 90) return splitLeadClauseHeading(clean) ?? { heading: null, body: clean };
+  return { heading, body };
+}
+
+// 90자를 넘는 긴 첫 문장은 제목이 통째로 사라지지 않도록, 90자 이내 마지막 쉼표(절 경계)에서
+// 제목/본문을 나눈다 — "…부합하지만, 반대로 …" → 제목 "…부합하지만" + 본문 "반대로 …".
+// 이렇게 해야 긴 문장 카드도 볼드 핵심문구를 갖는다(제목 누락 방지).
+function splitLeadClauseHeading(clean: string): { heading: string; body: string } | null {
+  const commaIdx = clean.slice(0, 91).lastIndexOf(',');
+  if (commaIdx < 16) return null;
+  const heading = clean.slice(0, commaIdx).trim();
+  const body = clean.slice(commaIdx + 1).trim();
+  if (!heading || !body) return null;
   return { heading, body };
 }
 
@@ -1609,16 +1634,26 @@ const NUMBER_DESC_VERB_MAP: Record<string, string> = {
   올라: '상승', 올랐: '상승', 뛰: '상승', 늘: '증가', 내려: '하락', 내렸: '하락',
   떨어: '하락', 줄: '감소', 폭등: '급등', 폭락: '급락',
 };
+const METRIC_NOUN_TAIL = /(률|율|성|력|폭|마진|비중|여력|수익|괴리|점유율|배당|변동성|프리미엄|커버리지)$/u;
+
 function describeNumberFromContext(before: string, after: string): string | null {
   // 1) 숫자 뒤 서술어(상승/하락/회복 등) → 그 동작을 라벨로 (예: "62.5% 상승" → 상승)
   const verb = after.match(/(급등|폭등|급락|폭락|반등|상승|올라|올랐|뛰|증가|늘|확대|하락|내려|내렸|떨어|감소|줄|축소|회복|성장|개선|둔화|악화)/);
   if (verb) return NUMBER_DESC_VERB_MAP[verb[1]] || verb[1];
 
-  // 2) 숫자 앞 서술 명사(…률/성/력/폭/마진/여력/변동성 등) → 그 지표를 라벨로 (예: "변동성 4.9%" → 변동성)
+  // 2) 숫자 바로 뒤 지표 명사("2.0%/d 변동성" → 변동성) — 단위 꼬리(/d 등) 허용.
+  //    앞쪽의 다른 명사("높은 프리미엄과 2.0%/d 변동성"의 프리미엄)보다 우선한다.
+  const afterNoun = after.match(/^\s*(?:\/[a-zA-Z]+)?\.?\s*([가-힣]{2,10})/u);
+  if (afterNoun) {
+    const noun = afterNoun[1].replace(/(으로|이|가|은|는|을|를|로|의|에|과|와|도)$/u, '');
+    if (noun.length >= 2 && METRIC_NOUN_TAIL.test(noun)) return noun;
+  }
+
+  // 3) 숫자 앞 서술 명사(…률/성/력/폭/마진/여력/변동성 등) → 그 지표를 라벨로 (예: "변동성 4.9%" → 변동성)
   const nounMatch = before.match(/([가-힣]{2,10})\s*$/);
   if (nounMatch) {
     const noun = nounMatch[1].replace(/(으로|이|가|은|는|을|를|로|의|에|과|와|도)$/, '');
-    if (noun.length >= 2 && /(률|율|성|력|폭|마진|비중|여력|수익|괴리|점유율|배당|변동성|프리미엄|커버리지)$/.test(noun)) {
+    if (noun.length >= 2 && METRIC_NOUN_TAIL.test(noun)) {
       return noun;
     }
   }
