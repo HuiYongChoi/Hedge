@@ -998,8 +998,13 @@ function mergeOrphanEvidenceHeadings(blocks: string[]) {
 
 // 모델이 같은 문장을 두 번 이어 쓴 경우("…낮습니다. …낮습니다.") 한 번만 남긴다.
 // 소수점(6.2)의 마침표는 문장 경계로 보지 않는다 — 잘게 쪼개지면 중복 감지 임계(20자)에 못 미친다.
+// 문장 분리 공용 정규식: 마침표가 소수점("39.5")이나 약어("Alphabet Inc." / "U.S." 등)
+// 내부이면 문장 경계로 보지 않는다 — 약어에서 잘리면 중복 제거 후
+// "저는 Alphabet Inc." + "2.3" 같은 고아 파편이 남는다(실사례).
+const SENTENCE_MATCH_RE = /(?:[^.!?。？！]|(?<=\d)\.(?=\d)|(?<=\b(?:Inc|Corp|Co|Ltd|LLC|plc|PLC|vs|Mr|Ms|Dr|Jr|Sr|St|No|etc)|\b[A-Z])\.)+[.!?。？！]?\s*/gu;
+
 function dedupeRepeatedSentences(text: string): string {
-  const sentences = text.match(/(?:[^.!?。？！]|(?<=\d)\.(?=\d))+[.!?。？！]?\s*/gu);
+  const sentences = text.match(SENTENCE_MATCH_RE);
   if (!sentences || sentences.length < 2) return text;
   const seen = new Set<string>();
   const kept: string[] = [];
@@ -1151,7 +1156,7 @@ export function dedupeSentencesAcrossSections(sectionTexts: string[]): string[] 
     .trim();
   return sectionTexts.map(text => {
     if (!text) return text;
-    const sentences = text.match(/(?:[^.!?。？！]|(?<=\d)\.(?=\d))+[.!?。？！]?\s*/gu);
+    const sentences = text.match(SENTENCE_MATCH_RE);
     if (!sentences || sentences.length < 2) return text;
     const kept: string[] = [];
     for (const sentence of sentences) {
@@ -1523,11 +1528,13 @@ export function buildCitations(
   const reportTypeEn = isKoreanStock ? 'DART' : isJapan ? 'EDINET' : 'SEC';
   // DART는 autoSearch=true + option=corp가 있어야 종목코드로 자동 검색이 실행된다.
   // (파라미터 없이 textCrpNm만 주면 검색이 실행되지 않아 빈 검색 화면이 뜬다 — 실검증 완료)
+  // SEC: 신형 EDGAR 브라우즈 경로는 숫자 CIK만 받아 티커(GOOGL)로는 "CIK Not Found"가 뜬다(실검증).
+  // cgi-bin browse-edgar는 티커를 서버에서 CIK로 해석해 10-K 목록을 바로 보여준다(200 확인).
   const reportHref = isKoreanStock
     ? `https://dart.fss.or.kr/dsab001/main.do?autoSearch=true&option=corp&textCrpNm=${encodeURIComponent(code)}`
     : isJapan
       ? `https://disclosure2.edinet-fsa.go.jp/WEEK0010.aspx`
-      : `https://www.sec.gov/edgar/browse/?CIK=${encodeURIComponent(normalized)}&owner=exclude`;
+      : `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${encodeURIComponent(normalized)}&type=10-K&dateb=&owner=exclude&count=40`;
 
   const labels = [
     {
@@ -1577,7 +1584,13 @@ export function buildCitations(
       labelEn: 'Sector report',
       typeKo: '섹터',
       typeEn: 'Sector',
-      href: null,
+      // '출처 링크 미연결' 해소 — 종목별 섹터/업종 맥락 페이지로 직결(전부 200 실검증):
+      // KR FnGuide 업종 내 순위, US stockanalysis 종목 개요(섹터·산업 표기), JP Yahoo JP 종목.
+      href: isKoreanStock
+        ? `https://comp.fnguide.com/SVO2/ASP/SVD_UJRank.asp?pGB=1&gicode=A${encodeURIComponent(code)}`
+        : isJapan
+          ? `https://finance.yahoo.co.jp/quote/${encodeURIComponent(normalized)}`
+          : `https://stockanalysis.com/stocks/${encodeURIComponent(normalized.toLowerCase())}/`,
     },
   ];
 

@@ -255,6 +255,28 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("ko: 'EPS', en: 'EPS'", helpers)
         self.assertIn("ko: 'PER', en: 'P/E'", helpers)
 
+    def test_sec_citation_uses_ticker_capable_endpoint(self):
+        # SEC edgar/browse/?CIK=는 숫자 CIK 전용 → 티커로는 Not Found(스크린샷 실증).
+        # cgi-bin browse-edgar가 티커를 해석해 10-K 목록으로 직결(200 실검증).
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("cgi-bin/browse-edgar?action=getcompany&CIK=${encodeURIComponent(normalized)}&type=10-K", helpers)
+        self.assertNotIn("edgar/browse/?CIK=", helpers)
+
+    def test_sector_citation_has_market_specific_link(self):
+        # '출처 링크 미연결: 섹터 리포트' 해소 — 시장별 섹터 페이지로 연결(전부 200 실검증).
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("SVD_UJRank.asp?pGB=1&gicode=A", helpers)
+        self.assertIn("stockanalysis.com/stocks/", helpers)
+        self.assertNotIn("typeEn: 'Sector',\n      href: null", helpers)
+
+    def test_sentence_split_keeps_abbreviations_together(self):
+        # 문장 중복 제거기가 "Alphabet Inc."의 마침표에서 문장을 잘라
+        # "저는 Alphabet Inc.2.3" 고아 파편을 만들던 문제 — 약어 가드 공용 정규식 사용.
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("const SENTENCE_MATCH_RE", helpers)
+        self.assertEqual(helpers.count("SENTENCE_MATCH_RE"), 3)  # 정의 + 두 분리기
+        self.assertIn("Inc|Corp|Co|Ltd|LLC|plc|PLC|vs|Mr|Ms|Dr|Jr|Sr|St|No|etc", helpers)
+
     def test_leading_decimal_not_stripped_as_enumerator(self):
         # "2.0%/d"의 선두 "2."를 목록 번호로 오인해 지워 "0%/d"가 되던 문제 —
         # 모든 선두 번호 제거에 (?!\d) 소수점 가드.
@@ -444,8 +466,9 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("(?:3|6|12)\\s?M$", helpers)
         self.assertIn("ko: '선행 EPS'", helpers)
         self.assertNotIn("ko: '다음분기 EPS'", helpers)
-        # 중복 문장 감지는 소수점(6.2)을 문장 경계로 보지 않는다
-        self.assertIn("|(?<=\\d)\\.(?=\\d))+[.!?。？！]?", helpers)
+        # 중복 문장 감지는 소수점(6.2)·약어(Inc. 등)를 문장 경계로 보지 않는다
+        # (SENTENCE_MATCH_RE 공용 정규식 — 소수점 가드 + 약어 가드)
+        self.assertIn("|(?<=\\d)\\.(?=\\d)|", helpers)
 
     def test_sticky_header_labels_margin_percent_as_margin_not_price(self):
         # 안전가(=가격) 라벨을 퍼센트 값에 붙이면 안 된다. 스티키 헤더의 안전마진 %는

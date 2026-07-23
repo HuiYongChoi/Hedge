@@ -347,7 +347,8 @@ export function getResearchLinks(ticker: string) {
   return [
     {
       label: 'SEC 10-K',
-      href: `https://www.sec.gov/edgar/browse/?CIK=${encodeURIComponent(normalized)}&owner=exclude`,
+      // 신형 EDGAR 브라우즈 경로는 숫자 CIK만 받아 티커로는 Not Found — cgi-bin이 티커를 해석한다.
+      href: `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${encodeURIComponent(normalized)}&type=10-K&dateb=&owner=exclude&count=40`,
     },
     {
       label: 'Finviz',

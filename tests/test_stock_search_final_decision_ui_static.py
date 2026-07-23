@@ -65,8 +65,10 @@ class StockSearchFinalDecisionUiStaticTests(unittest.TestCase):
         self.assertIn("function getResearchLinks", source)
         self.assertIn("참고 자료 및 원본 공시", source)
         self.assertIn("SEC 10-K", source)
-        self.assertIn("https://www.sec.gov/edgar/browse/?CIK=${encodeURIComponent(normalized)}&owner=exclude", source)
-        self.assertNotIn("cgi-bin/browse-edgar?action=getcompany", source)
+        # edgar/browse/?CIK=는 숫자 CIK 전용이라 티커(GOOGL)로는 "CIK Not Found"(실검증).
+        # cgi-bin browse-edgar는 티커를 서버에서 해석해 10-K 목록을 보여준다(200 확인).
+        self.assertIn("cgi-bin/browse-edgar?action=getcompany&CIK=${encodeURIComponent(normalized)}&type=10-K", source)
+        self.assertNotIn("edgar/browse/?CIK=", source)
         self.assertIn("Finviz", source)
         self.assertIn("DART 정기보고서", source)
         self.assertIn("네이버 증권", source)
