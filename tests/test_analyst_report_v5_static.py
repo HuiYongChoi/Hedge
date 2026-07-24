@@ -262,6 +262,12 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         self.assertIn("cgi-bin/browse-edgar?action=getcompany&CIK=${encodeURIComponent(normalized)}&type=10-K", helpers)
         self.assertNotIn("edgar/browse/?CIK=", helpers)
 
+    def test_consensus_eps_citation_has_market_specific_link(self):
+        # '출처 링크 미연결: 컨센서스 EPS' 해소 — US/JP에도 확인 페이지 연결(200 실검증).
+        helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+        self.assertIn("stockanalysis.com/stocks/${encodeURIComponent(normalized.toLowerCase())}/forecast/", helpers)
+        self.assertIn("minkabu.jp/stock/${encodeURIComponent(code)}/analyst_consensus", helpers)
+
     def test_sector_citation_has_market_specific_link(self):
         # '출처 링크 미연결: 섹터 리포트' 해소 — 시장별 섹터 페이지로 연결(전부 200 실검증).
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")

@@ -1563,11 +1563,14 @@ export function buildCitations(
       labelEn: 'Consensus EPS',
       typeKo: '데이터',
       typeEn: 'Data',
-      // KR 컨센서스의 실제 데이터 소스(FnGuide)의 해당 종목 페이지로 연결 — 실검증 완료.
-      // US는 내부 데이터 API가 소스라 사용자용 확인 페이지가 없어 링크를 두지 않는다.
+      // '출처 링크 미연결' 해소 — 시장별 컨센서스 EPS 확인 페이지로 직결(전부 200 실검증):
+      // KR FnGuide 종목 메인(컨센서스 표), US stockanalysis 애널리스트 예측(EPS 추정),
+      // JP minkabu 애널리스트 컨센서스.
       href: isKoreanStock
         ? `https://comp.fnguide.com/SVO2/ASP/SVD_Main.asp?pGB=1&gicode=A${encodeURIComponent(code)}`
-        : null,
+        : isJapan
+          ? `https://minkabu.jp/stock/${encodeURIComponent(code)}/analyst_consensus`
+          : `https://stockanalysis.com/stocks/${encodeURIComponent(normalized.toLowerCase())}/forecast/`,
     },
     {
       letter: 'd',
