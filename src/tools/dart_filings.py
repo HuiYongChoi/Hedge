@@ -91,6 +91,25 @@ def get_corp_code(stock_code: str) -> Optional[str]:
     return _corp_code_cache[1].get(code)
 
 
+def _read_main_document(archive: zipfile.ZipFile, rcept_no: str) -> str:
+    """ZIP 안에서 '본문' XML 을 고른다.
+
+    document.xml 은 본문 + 첨부(감사보고서·재무제표)를 함께 담는다. 첫 파일을
+    그냥 읽으면 회사에 따라 첨부를 본문으로 오인한다(실측: 삼성전자는 첫 파일이
+    본문이었지만 SK하이닉스·NAVER 는 첨부가 먼저였다).
+    본문 파일명은 보통 '{rcept_no}.xml' 이고, 아니면 가장 큰 파일이 본문이다.
+    """
+    names = archive.namelist()
+    if not names:
+        return ""
+    exact = f"{rcept_no}.xml"
+    for name in names:
+        if name.rsplit("/", 1)[-1].lower() == exact.lower():
+            return archive.read(name).decode("utf-8", errors="ignore")
+    largest = max(names, key=lambda n: archive.getinfo(n).file_size)
+    return archive.read(largest).decode("utf-8", errors="ignore")
+
+
 def xml_to_text(raw_xml: str) -> str:
     """공시 XML → 평문. 표준 라이브러리만 사용한다."""
     text = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw_xml)
@@ -216,7 +235,7 @@ def fetch_latest_filing_sections(
 
         payload = _http_get(_DOCUMENT_URL, {"crtfc_key": _api_key(), "rcept_no": rcept_no})
         with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-            raw = archive.read(archive.namelist()[0]).decode("utf-8", errors="ignore")
+            raw = _read_main_document(archive, rcept_no)
         text = xml_to_text(raw)
         result.sections = extract_kr_sections(text, items=items, budget_per_section=budget_per_section)
         if not result.sections:

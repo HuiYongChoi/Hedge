@@ -68,6 +68,15 @@ class MultiMarketFilingStaticTests(unittest.TestCase):
         self.assertIn("_KR_HEADING_RE", DART)
         self.assertIn("I{1,3}|IV|VI{0,3}|V|IX|XI{0,2}|X", DART)
 
+    def test_dart_picks_main_document_not_attachment(self):
+        """document.xml ZIP 은 본문 + 첨부(감사보고서·재무제표)를 함께 담는다.
+        첫 파일을 그냥 읽으면 회사에 따라 첨부를 본문으로 오인한다
+        (실측: 삼성전자는 첫 파일이 본문, SK하이닉스·NAVER 는 첨부가 먼저)."""
+        self.assertIn("def _read_main_document(", DART)
+        self.assertIn('exact = f"{rcept_no}.xml"', DART)
+        self.assertIn("max(names, key=lambda n: archive.getinfo(n).file_size)", DART)
+        self.assertNotIn("archive.read(archive.namelist()[0])", DART)
+
     def test_dart_key_from_env_only(self):
         """키를 소스에 하드코딩하지 않는다."""
         self.assertIn('os.environ.get("DART_API_KEY"', DART)
