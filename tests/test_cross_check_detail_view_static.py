@@ -16,7 +16,10 @@ def test_llm_injects_exact_cross_check_prompt() -> None:
     assert "핵심 타겟 데이터" in source
     assert "원문 추적 섹션" in source
     assert "경영진 멘트 검증" in source
-    assert "CROSS_CHECK_GUIDE_REQUIREMENT not in text" in source
+    # 중복 주입 방지는 고유 마커로 판정한다. 전체 문자열 비교는 sanitize/normalize 가
+    # 지침 본문을 한 글자만 바꿔도 실패해서 같은 지침이 매 호출마다 다시 붙었다.
+    assert '"[추가 지시사항: 원문 대조 가이드 작성]" not in text' in source
+    assert "CROSS_CHECK_GUIDE_REQUIREMENT not in text" not in source
     assert "CROSS_CHECK_GUIDE_REQUIREMENT" in source[source.index("def _make_system_message") :]
 
 

@@ -13,6 +13,7 @@ import type { ReportLanguage } from '@/components/reports/analyst-report-v5/type
 import { downloadJson, formatDateLong, getSavedDisplayName, sourceTabBadgeClass, sourceTabLabel } from './helpers';
 import { SavedEmptyState } from './saved-empty-state';
 import { SavedStockDetail } from './saved-stock-detail';
+import { SnapshotDiffPanel } from './snapshot-diff-panel';
 import { SavedSandboxDetail } from './saved-sandbox-detail';
 import { SavedCompareDetail } from './saved-compare-detail';
 import { cn } from '@/lib/utils';
@@ -219,7 +220,10 @@ export function SavedDetailPanel({ detail, language, isListCollapsed = false, on
       </header>
       <div className="flex-1 overflow-y-auto p-4">
         {detail.source_tab === 'stock_analysis' && (
-          <SavedStockDetail detail={detail} language={language} />
+          <div className="flex flex-col gap-3">
+            <SnapshotDiffPanel current={detail} language={language} />
+            <SavedStockDetail detail={detail} language={language} />
+          </div>
         )}
         {detail.source_tab === 'data_sandbox' && (
           <SavedSandboxDetail detail={detail} language={language} />

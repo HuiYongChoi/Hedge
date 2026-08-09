@@ -1118,6 +1118,9 @@ function isHeadingOnlyEvidenceText(text: string) {
   if (!clean || hasDataToken(clean)) return false;
   if (HEADING_ONLY_EVIDENCE_LABELS.has(clean)) return true;
   if (HEADING_ONLY_EVIDENCE_PATTERNS.some(pattern => pattern.test(clean))) return true;
+  // '제공된 자료에서 확인 불가'는 라벨이 아니라 근거의 부재를 명시하는 실질 내용이다.
+  // (원문 그라운딩 지침이 만들어내는 문구 — 필터링되면 표시가 통째로 사라진다)
+  if (/확인\s*불가|확인할\s*수\s*없/u.test(clean)) return false;
 
   return clean.length <= 24
     && /[\uAC00-\uD7A3]/u.test(clean)

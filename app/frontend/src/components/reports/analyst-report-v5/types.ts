@@ -251,6 +251,7 @@ export interface AnalystReportDashboardProps {
   language: ReportLanguage;
   compositeScore: number;
   analysisGeneratedAt?: string | null;
-  onSave?: () => void;
+  // 저장 시 "그때 시장 값" 스냅샷을 함께 넘긴다(과거 대비 변화 추적의 전제).
+  onSave?: (marketSnapshot?: import('./market-snapshot').MarketSnapshot) => void;
   isSaving?: boolean;
 }

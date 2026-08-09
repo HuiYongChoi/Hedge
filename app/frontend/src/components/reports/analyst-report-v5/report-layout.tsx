@@ -34,6 +34,7 @@ import {
   resolveHeadlineVerdict,
   resolveMarginOfSafetySnapshot,
 } from './helpers';
+import { buildMarketSnapshot } from './market-snapshot';
 import { PriceCompassPanel } from './price-compass-panel';
 import { ReportBody } from './report-body';
 import { ReportHeaderRibbon } from './report-header-ribbon';
@@ -403,6 +404,33 @@ export function ReportLayout({
     () => buildValuationDeepDive(valuationReport, effectiveCurrentPrice),
     [effectiveCurrentPrice, valuationReport],
   );
+  // 저장 시 "그때 시장 값"을 함께 남긴다 — 저장된 리포트를 나중에 열면 liveTarget이
+  // 재조회되어 오늘 값으로 덮이므로, 스냅샷이 없으면 과거 대비 변화를 볼 수 없다.
+  const handleSaveWithSnapshot = useMemo(() => {
+    if (!onSave) return undefined;
+    return () => onSave(buildMarketSnapshot({
+      capturedAt: new Date().toISOString(),
+      currency: effectiveCurrency,
+      currentPrice: effectiveCurrentPrice,
+      consensusTarget: brokerConsensus.consensus,
+      analystCount: brokerConsensus.brokerCount,
+      forwardEps: canonicalForwardSnapshot.fwdEps ?? canonicalForwardSnapshot.currentFyEps,
+      forwardPer: canonicalForwardSnapshot.fwdPer,
+      trailingEps: liveTarget?.trailing_eps ?? null,
+      trailingPer: liveTarget?.trailing_pe ?? canonicalForwardSnapshot.ttmPer,
+      pbr: valuationDeepDive?.pbr?.currentPbr ?? null,
+      pbrPositionLabel: valuationDeepDive?.pbr?.positionLabel ?? null,
+      sigmaAnnual: canonicalForwardSnapshot.sigmaAnnual,
+      signal: headlineVerdict.label,
+      confidence: stickyConfidence,
+      compositeScore,
+    }));
+  }, [
+    brokerConsensus, canonicalForwardSnapshot, compositeScore, effectiveCurrency,
+    effectiveCurrentPrice, stickyConfidence, headlineVerdict, liveTarget, onSave,
+    valuationDeepDive,
+  ]);
+
   const tiles = extractTargetTiles(effectiveMetrics, displayAgentKey, language, effectiveCurrency);
   const otherAgents = listOtherAgents(completeResult, displayAgentKey, activeTicker, agentMetaMap, language);
 
@@ -492,7 +520,7 @@ export function ReportLayout({
         onRefreshMarketData={() => refreshMarketData(true)}
         isRefreshingMarketData={isRefreshingMarketData}
         onCompareSourceClick={openDetailReport}
-        onSave={onSave}
+        onSave={handleSaveWithSnapshot}
         isSaving={isSaving}
       />
 

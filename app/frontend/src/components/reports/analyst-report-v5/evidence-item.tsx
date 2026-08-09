@@ -127,6 +127,9 @@ function isHeadingOnlyBodyBlock(block: string) {
   if (!clean) return false;
   if (HEADING_ONLY_BODY_LABELS.has(clean)) return true;
   if (HEADING_ONLY_BODY_PATTERNS.some(pattern => pattern.test(clean))) return true;
+  // '제공된 자료에서 확인 불가'는 라벨이 아니라 근거의 부재를 명시하는 실질 내용이다.
+  // (원문 그라운딩 지침이 만들어내는 문구 — 필터링되면 표시가 통째로 사라진다)
+  if (/확인\s*불가|확인할\s*수\s*없/u.test(clean)) return false;
   // \uC885\uACB0\uBD80\uD638\uB85C \uB05D\uB098\uB294 \uC9E7\uC740 \uBB38\uC7A5(\uC608: "\uB530\uB77C\uC11C \uC911\uB9BD.")\uC740 \uB77C\uBCA8\uC774 \uC544\uB2C8\uB77C \uBCF8\uBB38 \uBB38\uC7A5\uC774\uBBC0\uB85C
   // \uAE38\uC774 \uAE30\uBC18 heading-only \uD310\uC815\uC5D0\uC11C \uC81C\uC678\uD55C\uB2E4 \u2014 \uC720\uD6A8 \uBCF8\uBB38\uC774 \uD1B5\uC9F8\uB85C \uD544\uD130\uB9C1\uB3FC
   // fallback\uC774 \uC6D0\uBCF8("- \u00B7 \uB530\uB77C\uC11C \uC911\uB9BD. 2.")\uC744 \uADF8\uB300\uB85C \uB178\uCD9C\uD558\uB358 \uBB38\uC81C \uBC29\uC9C0.

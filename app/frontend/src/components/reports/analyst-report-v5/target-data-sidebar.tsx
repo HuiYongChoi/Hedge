@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { t } from '@/lib/language-preferences';
+import { krwEquivalentText, useKrwRate } from '@/hooks/use-krw-equivalent';
 import { ChevronRight } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { computePbrTrend, toneToClasses } from './helpers';
@@ -36,6 +37,15 @@ function formatCurrency(value: number | null | undefined, currency: string) {
   if (currency.toUpperCase() === 'KRW') return `₩${value.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}`;
   if (currency.toUpperCase() === 'JPY') return `¥${value.toLocaleString('ja-JP', { maximumFractionDigits: 0 })}`;
   return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+// 달러/엔 헤드라인 금액 옆에 원화 환산을 병기한다 — 한국 투자자 체감용.
+// 환율 조회 실패나 원화 종목이면 아무것도 렌더하지 않는다(조용히 생략).
+function KrwEquivalent({ value, currency }: { value: number | null | undefined; currency: string }) {
+  const rate = useKrwRate(currency);
+  const text = krwEquivalentText(value, rate);
+  if (!text) return null;
+  return <span className="ml-1.5 align-middle text-[11px] font-normal text-muted-foreground">({text})</span>;
 }
 
 function formatPercent(value: number | null | undefined) {
@@ -946,6 +956,7 @@ function BrokerConsensusTile({
       </div>
       <div className="mt-1 font-mono text-lg font-semibold text-foreground">
         {formatCurrency(consensus, currency)}
+        <KrwEquivalent value={consensus} currency={currency} />
       </div>
       <div className="text-[10px] text-muted-foreground">{subtitle}</div>
     </div>
@@ -979,6 +990,7 @@ function ForwardConsensusTile({
       </div>
       <div className="mt-1 font-mono text-lg font-semibold text-foreground">
         {formatCurrency(forwardEps, currency)}
+        <KrwEquivalent value={forwardEps} currency={currency} />
       </div>
       <div className="text-[10px] text-muted-foreground">
         {t('fwdPerCurrentLabel', language)} {forwardPerText}
@@ -1041,6 +1053,7 @@ function ConsensusBridgeTile({
       </div>
       <div className="mt-1 font-mono text-lg font-semibold text-foreground">
         {formatCurrency(consensus, currency)}
+        <KrwEquivalent value={consensus} currency={currency} />
       </div>
       <div className="text-[10px] text-muted-foreground">
         {t('fwdPerTargetLabel', language)} {perText(impliedFwdPer)} · PBR {formatPbrMultiple(impliedPbr)}

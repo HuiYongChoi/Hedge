@@ -33,6 +33,29 @@ RATIO_SCALE_REQUIREMENT = (
     "Rewrite them as natural Korean phrases such as 해자 점수 4.4점, 해자 경쟁력 약함, 예측가능성 낮음, and FCF 수익률 43%. "
     "For Korean-company KRW values such as Market Cap(시가총액), use 조/억 원 units instead of long raw numbers."
 )
+SOURCE_GROUNDING_MARKER = "SOURCE GROUNDING REQUIREMENT:"
+SOURCE_GROUNDING_REQUIREMENT = (
+    # NOTE: 이 문자열은 sanitize_data_gap_language 를 통과해도 변형되지 않아야 한다.
+    # 'missing', 'insufficient data', 'not available' 같은 표현은 그 패턴에 걸려
+    # 문구가 치환되고, 그러면 중복 주입 방지 검사가 깨진다. 의도적으로 회피한 표현들이다.
+    f"{SOURCE_GROUNDING_MARKER} Every factual assertion must trace to data provided in this prompt. "
+    "This governs FACTS; it does not override DATA GAP HANDLING, which governs numeric metrics marked N/A. "
+    "Distinguish the two: an N/A metric means keep analyzing with proxies; "
+    "an unverified FACT means do not assert it at all.\n"
+    "- Do NOT state specific management remarks, earnings-call quotes, guidance figures, product/segment facts, "
+    "customer names, dates, or events unless that exact information appears in the provided data.\n"
+    "- When a factual point is genuinely required for the argument but absent from the provided data, "
+    "write exactly `제공된 자료에서 확인 불가` for that point and continue the analysis without it. "
+    "Do not pad the gap with plausible-sounding narrative.\n"
+    "- Separate fact from inference in the wording. Facts present in the data: `…이다`, `…로 제시된다`. "
+    "Your own reasoning: `…로 해석된다`, `…로 볼 여지가 있다`, `…일 가능성이 있다`.\n"
+    "- Do NOT narrate yourself as an investor persona. Never write first-person stance sentences such as "
+    "`저는 ...를 ... 종목으로 봅니다` or `제 생각에는`. Write the analysis itself, not a character speaking.\n"
+    "- Do NOT use unsourced generality markers: `일반적으로`, `흔히`, `알려진 바에 따르면`, `업계에서는`, "
+    "`시장에서는 ...로 본다` without a provided source.\n"
+    "- If you round or estimate a number, say so explicitly (예: `약`, `추정`). Never present an estimate as a reported figure."
+)
+
 COMPANY_IDENTITY_REQUIREMENT = (
     "COMPANY IDENTITY REQUIREMENT: Refer to the company by the company_name "
     "provided in the human message. Do NOT invent, translate, or paraphrase "
@@ -157,21 +180,57 @@ def sanitize_data_gap_language(text: str) -> str:
     return normalize_financial_language(sanitized)
 
 
+#: 이미 프롬프트에 덧붙은 지침 블록을 식별하는 고유 마커.
+#: 전체 문자열 비교 대신 이 마커로 중복 주입을 판정한다 — sanitize/normalize 가 지침 본문을
+#: 한 글자라도 바꾸면 전체 비교는 실패해서 같은 지침이 매 호출마다 다시 붙기 때문이다.
+REQUIREMENT_MARKERS = (
+    "DATA GAP HANDLING REQUIREMENT:",
+    "RATIO SCALE REQUIREMENT:",
+    SOURCE_GROUNDING_MARKER,
+    "[추가 지시사항: 부채의 질적 평가]",
+    "[추가 지시사항: 원문 대조 가이드 작성]",
+    "[추가 지시사항: 결과 보고 품질]",
+    "스키마 호환 지시사항:",
+    "CRITICAL REQUIREMENT:",
+)
+
+
+def _split_at_appended_requirements(text: str) -> tuple[str, str]:
+    """(에이전트 본문, 이미 붙어 있는 지침 블록) 으로 나눈다.
+
+    지침 블록에는 'insufficient data' 같은 *금지 예시 문구*가 그대로 들어 있어서,
+    거기에 sanitize_data_gap_language 를 다시 돌리면 예시가 치환되어
+    "'N/A로 표시된 …' 라고 쓰지 마라" 같은 무의미한 지침으로 훼손된다.
+    그래서 지침 블록은 손대지 않고 본문만 정규화한다.
+    """
+    positions = [pos for pos in (text.find(m) for m in REQUIREMENT_MARKERS) if pos >= 0]
+    if not positions:
+        return text, ""
+    cut = min(positions)
+    return text[:cut], text[cut:]
+
+
 def _append_korean_requirement_to_text(text: str) -> str:
     """Append prompt-wide data-gap, debt-quality, cross-check guide, and Korean-only instructions once."""
-    text = sanitize_data_gap_language(text).rstrip()
+    body, already_appended = _split_at_appended_requirements(text)
+    body = sanitize_data_gap_language(body).rstrip()
+    text = f"{body}\n\n{already_appended}".strip() if already_appended else body
     requirements = []
-    if DATA_GAP_HANDLING_REQUIREMENT not in text:
+    if "DATA GAP HANDLING REQUIREMENT:" not in text:
         requirements.append(DATA_GAP_HANDLING_REQUIREMENT)
-    if RATIO_SCALE_REQUIREMENT not in text:
+    # 마커로 검사한다 — 전체 문자열 비교는 sanitize 로 한 글자만 바뀌어도 실패해
+    # 같은 지침이 매 호출마다 덧붙는다(프롬프트 비대화).
+    if SOURCE_GROUNDING_MARKER not in text:
+        requirements.append(SOURCE_GROUNDING_REQUIREMENT)
+    if "RATIO SCALE REQUIREMENT:" not in text:
         requirements.append(RATIO_SCALE_REQUIREMENT)
-    if DEBT_QUALITY_REQUIREMENT not in text:
+    if "[추가 지시사항: 부채의 질적 평가]" not in text:
         requirements.append(DEBT_QUALITY_REQUIREMENT)
-    if CROSS_CHECK_GUIDE_REQUIREMENT not in text:
+    if "[추가 지시사항: 원문 대조 가이드 작성]" not in text:
         requirements.append(CROSS_CHECK_GUIDE_REQUIREMENT)
-    if REPORT_QUALITY_REQUIREMENT not in text:
+    if "[추가 지시사항: 결과 보고 품질]" not in text:
         requirements.append(REPORT_QUALITY_REQUIREMENT)
-    if SCHEMA_COMPATIBILITY_REQUIREMENT not in text:
+    if "스키마 호환 지시사항:" not in text:
         requirements.append(SCHEMA_COMPATIBILITY_REQUIREMENT)
     if KOREAN_OUTPUT_REQUIREMENT not in text:
         requirements.append(KOREAN_OUTPUT_REQUIREMENT)

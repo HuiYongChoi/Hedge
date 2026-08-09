@@ -34,6 +34,7 @@ import {
 // Phase 2 moved markdown rendering out of this tab. Legacy static markers:
 // parseSentimentMarker renderInlineMarkdown renderTonedContent TONE_STYLES ToneLegend
 // sortReportSentimentLines(markdown) normalizeReportOrderedMarkers(sortReportSentimentLines(markdown)).
+import type { MarketSnapshot } from '@/components/reports/analyst-report-v5/market-snapshot';
 import { savedAnalysisService } from '@/services/saved-analyses-service';
 import { stockAnalysisRunService, StockAnalysisRunStatus } from '@/services/stock-analysis-run-service';
 import {
@@ -1113,7 +1114,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
     setSelectedDetailReport(null);
   };
 
-  const handleSaveAnalysis = async () => {
+  const handleSaveAnalysis = async (marketSnapshot?: MarketSnapshot) => {
     if (isSavingAnalysis) return;
 
     const agentResultList = Array.from(agentResults.values());
@@ -1146,6 +1147,8 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
           agent_results: agentResultList,
           complete_result: completeResult,
           analysis_generated_at: analysisGeneratedAt,
+          // 저장 시점의 시장 값 — 없으면 나중에 열 때 실시간 값으로 덮여 변화 추적 불가
+          market_snapshot: marketSnapshot ?? null,
         },
       );
 
