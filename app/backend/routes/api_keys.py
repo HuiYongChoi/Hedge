@@ -4,6 +4,21 @@ from typing import List
 
 from app.backend.database import get_db
 from app.backend.repositories.api_key_repository import ApiKeyRepository
+
+MASKED_KEY_PREFIX = "••••"
+
+
+def _masked(api_key):
+    """API 키 원문이 응답에 실려 나가지 않도록 마스킹한 사본을 만든다.
+
+    이 라우터에는 인증이 없다. 원문을 반환하면 엔드포인트에 도달할 수 있는 누구나
+    사용자의 LLM API 키를 그대로 가져갈 수 있다. 화면은 '설정됨' 표시만 필요하다.
+    """
+    response = ApiKeyResponse.from_orm(api_key)
+    raw = getattr(api_key, "key_value", "") or ""
+    response.key_value = f"{MASKED_KEY_PREFIX}{raw[-4:]}" if len(raw) >= 4 else MASKED_KEY_PREFIX
+    return response
+
 from app.backend.models.schemas import (
     ApiKeyCreateRequest,
     ApiKeyUpdateRequest,
@@ -34,7 +49,7 @@ async def create_or_update_api_key(request: ApiKeyCreateRequest, db: Session = D
             description=request.description,
             is_active=request.is_active
         )
-        return ApiKeyResponse.from_orm(api_key)
+        return _masked(api_key)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create/update API key: {str(e)}")
 
@@ -71,7 +86,7 @@ async def get_api_key(provider: str, db: Session = Depends(get_db)):
         api_key = repo.get_api_key_by_provider(provider)
         if not api_key:
             raise HTTPException(status_code=404, detail="API key not found")
-        return ApiKeyResponse.from_orm(api_key)
+        return _masked(api_key)
     except HTTPException:
         raise
     except Exception as e:
@@ -98,7 +113,7 @@ async def update_api_key(provider: str, request: ApiKeyUpdateRequest, db: Sessio
         )
         if not api_key:
             raise HTTPException(status_code=404, detail="API key not found")
-        return ApiKeyResponse.from_orm(api_key)
+        return _masked(api_key)
     except HTTPException:
         raise
     except Exception as e:
@@ -174,7 +189,7 @@ async def bulk_update_api_keys(request: ApiKeyBulkUpdateRequest, db: Session = D
             for key in request.api_keys
         ]
         api_keys = repo.bulk_create_or_update(api_keys_data)
-        return [ApiKeyResponse.from_orm(key) for key in api_keys]
+        return [_masked(key) for key in api_keys]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to bulk update API keys: {str(e)}")
 

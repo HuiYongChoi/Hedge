@@ -299,10 +299,15 @@ class ApiKeyUpdateRequest(BaseModel):
 
 
 class ApiKeyResponse(BaseModel):
-    """Complete API key response"""
+    """API key response.
+
+    보안: key_value 는 절대 원문으로 내보내지 않는다. 이 엔드포인트는 인증이 없어
+    원문을 반환하면 누구나 LLM API 키를 가져갈 수 있다. 화면은 '키가 설정돼 있다'는
+    표시만 필요하므로 마스킹 값(sk-…abcd)을 준다.
+    """
     id: int
     provider: str
-    key_value: str
+    key_value: str  # masked — 원문 아님
     is_active: bool
     description: Optional[str]
     created_at: datetime

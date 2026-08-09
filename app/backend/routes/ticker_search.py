@@ -1,3 +1,5 @@
+import os
+
 from fastapi import APIRouter, Query
 import httpx
 import asyncio
@@ -5,8 +7,9 @@ from typing import Optional
 
 router = APIRouter(prefix="/ticker-search", tags=["ticker-search"])
 
-FMP_API_KEY = "WnoeVdSBlKezrKNExH7jtXfEWXg8YrtE"
-AV_API_KEY = "QCE8EC5Q5OP74PYD"
+# 키는 환경변수에서만 읽는다. 소스에 두면 저장소를 통해 그대로 유출된다.
+FMP_API_KEY = os.environ.get("FMP_API_KEY", "")
+AV_API_KEY = os.environ.get("AV_API_KEY", "")
 
 # Major exchanges to prioritize for US/global stocks
 US_EXCHANGES = {"NASDAQ", "NYSE", "AMEX", "NYSE ARCA", "NMS", "NGM", "NCM", "NYQ", "ASE"}
@@ -244,7 +247,9 @@ async def _search_yfinance(query: str) -> list[dict]:
 
 
 async def _search_fmp(query: str) -> list[dict]:
-    """FMP stable/search-name API 호출"""
+    """FMP stable/search-name API 호출. 키가 없으면 이 소스를 건너뛴다."""
+    if not FMP_API_KEY:
+        return []
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(
@@ -276,7 +281,9 @@ async def _search_fmp(query: str) -> list[dict]:
 
 
 async def _search_alphavantage(query: str) -> list[dict]:
-    """AlphaVantage SYMBOL_SEARCH API 호출"""
+    """AlphaVantage SYMBOL_SEARCH API 호출. 키가 없으면 이 소스를 건너뛴다."""
+    if not AV_API_KEY:
+        return []
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(

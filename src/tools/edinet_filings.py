@@ -30,7 +30,8 @@ from src.tools.filing_types import FilingSection, FilingSections
 
 _DOCUMENTS_URL = "https://api.edinet-fsa.go.jp/api/v2/documents.json"
 _DOCUMENT_URL = "https://api.edinet-fsa.go.jp/api/v2/documents/{doc_id}"
-_VIEWER_URL = "https://disclosure2.edinet-fsa.go.jp/WZEK0040.aspx?S100{doc_id}"
+#: docID 자체가 "S100…" 형태라 접두어를 덧붙이면 안 된다.
+_VIEWER_URL = "https://disclosure2.edinet-fsa.go.jp/WZEK0040.aspx?{doc_id}"
 
 _HTTP_TIMEOUT = 60
 _CACHE_TTL = 6 * 60 * 60
@@ -58,6 +59,32 @@ def _http_get(url: str, params: dict | None = None) -> bytes:
     })
     with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as response:
         return response.read()
+
+
+#: EDINET 은 티커 조회 API 가 없어 '날짜별 제출목록'을 훑어야 한다. 그대로 하루씩
+#: 되짚으면 400회 호출이 되어 비현실적이므로, (1) 휴일 제외 (2) 제출이 몰리는 달 우선
+#: (3) 총 호출수 상한으로 실용적인 범위에서 찾는다.
+MAX_PROBE_REQUESTS = 80
+
+#: 일본 기업 다수가 3월 결산 → 유가증권보고서는 6월에 몰린다. 12월 결산은 3월.
+_ANNUAL_PRIORITY_MONTHS = (6, 7, 3, 9, 12)
+_QUARTERLY_PRIORITY_MONTHS = (8, 11, 2, 5)
+
+
+def _candidate_dates(lookback_days: int, form: str) -> list[str]:
+    """탐색할 날짜를 '가능성 높은 순'으로 정렬해 돌려준다."""
+    priority = _ANNUAL_PRIORITY_MONTHS if form == "annual" else _QUARTERLY_PRIORITY_MONTHS
+    now = time.time()
+    scored: list[tuple[int, int, str]] = []
+    for days_ago in range(lookback_days):
+        stamp = time.gmtime(now - days_ago * 86400)
+        # EDINET 은 토·일에 제출을 받지 않는다(tm_wday: 5=토, 6=일)
+        if stamp.tm_wday >= 5:
+            continue
+        rank = priority.index(stamp.tm_mon) if stamp.tm_mon in priority else len(priority)
+        scored.append((rank, days_ago, time.strftime("%Y-%m-%d", stamp)))
+    scored.sort(key=lambda row: (row[0], row[1]))
+    return [day for _, _, day in scored]
 
 
 def normalize_jp_code(ticker: str) -> Optional[str]:
@@ -153,9 +180,11 @@ def fetch_latest_filing_sections(
 
     try:
         target = None
-        # 제출목록을 최근 날짜부터 거슬러 훑는다. 유가증권보고서는 결산 후 3개월 내 제출.
-        for days_ago in range(0, lookback_days, 1):
-            day = time.strftime("%Y-%m-%d", time.gmtime(time.time() - days_ago * 86400))
+        probes = 0
+        for day in _candidate_dates(lookback_days, form):
+            if probes >= MAX_PROBE_REQUESTS:
+                break
+            probes += 1
             try:
                 listing = json.loads(_http_get(_DOCUMENTS_URL, {"date": day, "type": "2"}).decode("utf-8"))
             except Exception:
@@ -171,7 +200,10 @@ def fetch_latest_filing_sections(
                 break
 
         if target is None:
-            result.error = f"No {form} filing found for secCode {sec_code5} in last {lookback_days} days"
+            result.error = (
+                f"No {form} filing found for secCode {sec_code5} "
+                f"(probed {probes} dates within {lookback_days}d)"
+            )
             _filing_cache[cache_key] = (time.time(), result)
             return result
 

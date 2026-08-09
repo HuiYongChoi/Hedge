@@ -6,8 +6,8 @@ sec_filings.py 의 한국판. 같은 목적 — 에이전트가 "제공된 자�
 미국 10-K 와의 섹션 대응
   US Item 1  (Business)      ↔ KR II. 사업의 내용
   US Item 7  (MD&A)          ↔ KR IV. 이사의 경영진단 및 분석의견
-  US Item 1A (Risk Factors)  ↔ (한국 보고서에는 독립 섹션이 없다. 사업의 내용 안의
-                                '위험관리' 소절이 가장 가깝다)
+  US Item 1A (Risk Factors)  ↔ 독립 섹션이 없어 '위험관리 및 파생거래'(사업위험)와
+                                '재무·금융위험관리'(주석)를 합성해 만든다
 
 설계 메모
 - 외부 파서 의존성 없이 표준 라이브러리만 사용한다(sec_filings.py 와 동일 방침).
@@ -135,10 +135,61 @@ _KR_SECTION_SPECS = (
     ("7", "이사의 경영진단 및 분석의견 (MD&A)", re.compile(r"이사의\s*경영진단")),
 )
 
+#: 한국 사업보고서에는 미국 Item 1A 같은 '독립 리스크 섹션'이 없다. 대신 위험 서술이
+#: 두 군데로 흩어져 있어(실측: 삼성전자·SK하이닉스·NAVER·현대차 공통) 이를 모아
+#: Item 1A 에 해당하는 섹션을 합성한다.
+#:   - 사업의 내용 안 "5. 위험관리 및 파생거래"  → 사업/시장 위험
+#:   - 재무제표 주석 "재무위험관리 / 금융위험관리" → 환·이자율·신용·유동성 위험
+_KR_RISK_HEADING_RE = re.compile(
+    r"(?m)^\s*\d{1,2}\s*[.．]\s*.{0,40}?(?:위험관리|리스크\s*관리)"
+)
+#: 같은 레벨(숫자) 소제목 또는 상위 로마숫자 제목이 나오면 그 소절은 끝난다.
+_KR_SUBHEADING_RE = re.compile(r"(?m)^\s*\d{1,2}\s*[.．]\s*\S")
+_KR_MIN_RISK_BLOCK = 300
+
+
+def extract_kr_risk_section(text: str, budget: int = 6000) -> Optional[FilingSection]:
+    """흩어진 위험 서술을 모아 미국 Item 1A 에 대응하는 섹션을 합성한다.
+
+    같은 내용이 '(연결)'과 별도재무제표 주석에 두 번 실리는 경우가 많아, 앞부분이
+    겹치는 블록은 한 번만 담는다.
+    """
+    bounds = sorted({m.start() for m in _KR_SUBHEADING_RE.finditer(text)}
+                    | {m.start() for m in _KR_HEADING_RE.finditer(text)})
+
+    blocks: list[str] = []
+    seen_prefixes: set[str] = set()
+    total_chars = 0
+    for match in _KR_RISK_HEADING_RE.finditer(text):
+        start = match.start()
+        end = next((b for b in bounds if b > start), len(text))
+        if end - start < _KR_MIN_RISK_BLOCK:
+            continue
+        block = text[start:end].strip()
+        # 연결/별도 중복 제거: 제목 뒤 본문 앞부분이 같으면 같은 내용으로 본다
+        body_head = re.sub(r"\s+", "", block)[:160]
+        if body_head in seen_prefixes:
+            continue
+        seen_prefixes.add(body_head)
+        blocks.append(block)
+        total_chars += len(block)
+
+    if not blocks:
+        return None
+
+    merged = "\n\n".join(blocks)
+    return FilingSection(
+        item="1A",
+        title="위험관리 (사업위험 + 재무위험 통합)",
+        text=merged[:budget].strip(),
+        char_count=total_chars,
+        truncated=len(merged) > budget,
+    )
+
 
 def extract_kr_sections(
     text: str,
-    items: tuple[str, ...] = ("1", "7"),
+    items: tuple[str, ...] = ("1A", "1", "7"),
     budget_per_section: int = 6000,
 ) -> list[FilingSection]:
     """대제목 경계로 섹션을 잘라낸다."""
@@ -148,6 +199,10 @@ def extract_kr_sections(
     starts = [pos for pos, _ in headings]
 
     sections: list[FilingSection] = []
+    if "1A" in items:
+        risk = extract_kr_risk_section(text, budget=budget_per_section)
+        if risk is not None:
+            sections.append(risk)
     for item, title, pattern in _KR_SECTION_SPECS:
         if item not in items:
             continue
@@ -174,7 +229,7 @@ def extract_kr_sections(
 def fetch_latest_filing_sections(
     ticker: str,
     form: str = "annual",
-    items: tuple[str, ...] = ("1", "7"),
+    items: tuple[str, ...] = ("1A", "1", "7"),
     budget_per_section: int = 6000,
 ) -> FilingSections:
     """최신 사업보고서(annual) 또는 분기/반기보고서(quarterly)의 섹션을 추출한다.

@@ -5,7 +5,7 @@
 
 from fastapi import APIRouter, Query
 
-from src.tools.filings import detect_market, fetch_filing_sections
+from src.tools.filings import detect_market, fetch_filing_sections, is_japan_enabled
 
 router = APIRouter(prefix="/sec-filings", tags=["sec-filings"])
 
@@ -30,5 +30,8 @@ def get_filing_sections(
         budget_per_section=budget,
     )
     payload = filing.to_dict()
-    payload["detected_market"] = detect_market(ticker)
+    market = detect_market(ticker)
+    payload["detected_market"] = market
+    # 일본은 구독키가 있을 때만 지원 대상으로 표시한다.
+    payload["supported"] = market != "JP" or is_japan_enabled()
     return payload

@@ -84,6 +84,18 @@ class MultiMarketFilingStaticTests(unittest.TestCase):
         self.assertIn('os.environ.get("DART_API_KEY"', DART)
         self.assertNotIn("514cd3e", DART)
 
+    def test_kr_risk_section_is_synthesized(self):
+        """한국 보고서에는 미국 Item 1A 같은 독립 리스크 섹션이 없다.
+        '위험관리 및 파생거래'(사업위험) + '재무/금융위험관리'(주석)를 합성한다."""
+        self.assertIn("def extract_kr_risk_section(", DART)
+        self.assertIn("_KR_RISK_HEADING_RE", DART)
+        self.assertIn("위험관리|리스크\\s*관리", DART)
+        self.assertIn('item="1A"', DART)
+        # 연결/별도 중복 서술을 두 번 담지 않는다
+        self.assertIn("seen_prefixes", DART)
+        # 디스패처 기본값에도 1A 포함
+        self.assertIn('"KR": ("1A", "7")', DISPATCH)
+
     # ── 일본(EDINET) ──────────────────────────────────────────────────────
     def test_edinet_requires_subscription_key_and_degrades(self):
         """키가 없으면 조용히 원문 없이 진행해야 한다(분석을 막지 않음)."""
@@ -91,6 +103,30 @@ class MultiMarketFilingStaticTests(unittest.TestCase):
         self.assertIn("Ocp-Apim-Subscription-Key", EDINET)
         self.assertIn("EDINET_API_KEY not configured", EDINET)
         self.assertIn("def is_configured(", EDINET)
+
+    def test_japan_path_inert_without_key(self):
+        """키가 없으면 일본 코드는 아예 실행되지 않아야 한다(모듈 임포트조차 하지 않음)."""
+        self.assertIn("def is_japan_enabled(", DISPATCH)
+        self.assertIn("JAPAN_DISABLED_MESSAGE", DISPATCH)
+        self.assertIn("if not is_japan_enabled():", DISPATCH)
+        # 게이트가 edinet 임포트보다 먼저 와야 한다
+        gate = DISPATCH.index("if not is_japan_enabled():")
+        imp = DISPATCH.index("from src.tools.edinet_filings import")
+        self.assertLess(gate, imp, "gate must precede the edinet import")
+
+    def test_edinet_probe_is_bounded(self):
+        """날짜별 목록을 하루씩 400회 훑으면 비현실적이다. 주말 제외 + 성수기 우선 +
+        총 호출수 상한으로 제한한다."""
+        self.assertIn("MAX_PROBE_REQUESTS", EDINET)
+        self.assertIn("def _candidate_dates(", EDINET)
+        self.assertIn("stamp.tm_wday >= 5", EDINET)
+        self.assertIn("_ANNUAL_PRIORITY_MONTHS", EDINET)
+        self.assertNotIn("for days_ago in range(0, lookback_days, 1):", EDINET)
+
+    def test_edinet_viewer_url_has_no_duplicate_prefix(self):
+        """docID 자체가 'S100…' 이라 접두어를 덧붙이면 깨진 링크가 된다."""
+        self.assertIn('WZEK0040.aspx?{doc_id}', EDINET)
+        self.assertNotIn('WZEK0040.aspx?S100{doc_id}', EDINET)
 
     def test_edinet_setup_doc_exists(self):
         self.assertTrue(EDINET_DOC.exists(), "EDINET 키 발급 안내 문서가 있어야 한다")

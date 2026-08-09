@@ -16,19 +16,31 @@ _FORM_BY_MARKET = {
     "JP": {"annual": "annual", "quarterly": "quarterly"},
 }
 
-#: 시장별로 뽑을 섹션 기본값. 한국 보고서에는 미국 Item 1A 에 해당하는
-#: 독립 리스크 섹션이 없어서 사업의 내용(1) + MD&A(7) 을 쓴다.
+#: 시장별로 뽑을 섹션 기본값. 한국은 독립 리스크 섹션이 없어 '위험관리' 소절들을
+#: 합성해 1A 를 만든다(dart_filings.extract_kr_risk_section).
 _DEFAULT_ITEMS = {
     "US": ("1A", "7"),
-    "KR": ("1", "7"),
+    "KR": ("1A", "7"),
     "JP": ("1A", "7"),
 }
 
 
+#: 일본(EDINET)은 구독키가 있어야 동작한다. 키가 없으면 일본 관련 코드는 실행하지 않는다.
+JAPAN_DISABLED_MESSAGE = (
+    "Japan (EDINET) filing support is not enabled — set EDINET_API_KEY "
+    "(see docs/filings/EDINET_SETUP.md)"
+)
+
+
+def is_japan_enabled() -> bool:
+    """EDINET 구독키가 설정돼 있는지. 모듈 임포트 없이 환경변수만 본다."""
+    import os
+
+    return bool((os.environ.get("EDINET_API_KEY") or "").strip())
+
+
 def detect_market(ticker: str) -> str:
     """티커 → 시장. 기존 프론트엔드 판별 규칙과 같은 기준을 쓴다."""
-    from src.tools.sec_filings import get_cik_for_ticker  # 지연 임포트(네트워크 모듈)
-
     value = (ticker or "").strip().upper()
     if not value:
         return "US"
@@ -58,6 +70,14 @@ def fetch_filing_sections(
         from src.tools.dart_filings import fetch_latest_filing_sections as fetch_kr
         return fetch_kr(ticker, form=form, items=resolved_items, budget_per_section=budget_per_section)
     if market == "JP":
+        # 키가 없으면 일본 경로는 아예 실행하지 않는다 — 모듈 임포트도, 네트워크 호출도
+        # 하지 않고 즉시 '미활성' 상태로 돌려준다(운영에 일본 기능이 노출되지 않도록).
+        if not is_japan_enabled():
+            return FilingSections(
+                ticker=(ticker or "").strip().upper(),
+                market="JP",
+                error=JAPAN_DISABLED_MESSAGE,
+            )
         from src.tools.edinet_filings import fetch_latest_filing_sections as fetch_jp
         return fetch_jp(ticker, form=form, items=resolved_items, budget_per_section=budget_per_section)
 

@@ -189,8 +189,9 @@ def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None)
     return prices
 
 
-FMP_API_KEY = "WnoeVdSBlKezrKNExH7jtXfEWXg8YrtE"
-AV_API_KEY = "QCE8EC5Q5OP74PYD"
+# 키는 환경변수에서만 읽는다. 소스에 두면 저장소를 통해 그대로 유출된다.
+FMP_API_KEY = os.environ.get("FMP_API_KEY", "")
+AV_API_KEY = os.environ.get("AV_API_KEY", "")
 FMP_STABLE_BASE = "https://financialmodelingprep.com/stable"
 
 
@@ -623,6 +624,9 @@ def _line_items_newer_than_metrics(
 
 def _fmp_get(endpoint: str, params: dict) -> list | dict | None:
     """FMP stable endpoint GET helper. Returns parsed JSON or None on failure."""
+    if not FMP_API_KEY:
+        # 키 미설정 시 무의미한 외부 호출을 하지 않는다(호출부는 None 을 처리한다).
+        return None
     try:
         params["apikey"] = FMP_API_KEY
         r = requests.get(f"{FMP_STABLE_BASE}/{endpoint}", params=params, timeout=8)

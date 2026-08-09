@@ -75,6 +75,13 @@ const LLM_API_KEYS: ApiKey[] = [
   }
 ];
 
+// 서버는 키 원문 대신 '••••abcd' 형태의 마스킹 값을 내려준다.
+const MASKED_KEY_PREFIX = '••••';
+
+export function isMaskedKey(value: string): boolean {
+  return typeof value === 'string' && value.trimStart().startsWith(MASKED_KEY_PREFIX);
+}
+
 export function ApiKeysSettings() {
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
@@ -92,7 +99,7 @@ export function ApiKeysSettings() {
       setError(null);
       const apiKeysSummary = await apiKeysService.getAllApiKeys();
       
-      // Load actual key values for existing keys
+      // 서버는 키 원문을 주지 않는다(마스킹). 화면은 '설정됨' 표시만 하면 된다.
       const keysData: Record<string, string> = {};
       for (const summary of apiKeysSummary) {
         try {
@@ -102,7 +109,7 @@ export function ApiKeysSettings() {
           console.warn(`Failed to load key for ${summary.provider}:`, err);
         }
       }
-      
+
       setApiKeys(keysData);
     } catch (err) {
       console.error('Failed to load API keys:', err);
@@ -118,6 +125,10 @@ export function ApiKeysSettings() {
       ...prev,
       [key]: value
     }));
+
+    // 서버가 내려준 마스킹 값은 실제 키가 아니다. 그대로 저장하면 진짜 키가
+    // '••••abcd' 로 덮여버리므로, 사용자가 새로 입력한 경우에만 저장한다.
+    if (isMaskedKey(value)) return;
 
     // Auto-save with debouncing
     try {
