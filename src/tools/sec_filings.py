@@ -19,8 +19,9 @@ import json
 import re
 import time
 import urllib.request
-from dataclasses import dataclass, field
 from typing import Optional
+
+from src.tools.filing_types import FilingSection, FilingSections
 
 SEC_USER_AGENT = "HyFin Research admin@hyfin.duckdns.org"
 _TICKER_MAP_URL = "https://www.sec.gov/files/company_tickers.json"
@@ -32,52 +33,6 @@ _CACHE_TTL = 6 * 60 * 60  # 공시는 분기 단위로 갱신되므로 길게 �
 
 _ticker_map_cache: tuple[float, dict[str, int]] | None = None
 _filing_cache: dict[str, tuple[float, "FilingSections"]] = {}
-
-
-@dataclass
-class FilingSection:
-    """공시 원문에서 잘라낸 한 섹션."""
-
-    item: str          # "1A", "7" 등
-    title: str         # "Risk Factors"
-    text: str          # 발췌된 본문
-    char_count: int    # 원본 섹션 전체 길이(발췌 전) — 얼마나 잘렸는지 알려준다
-    truncated: bool
-
-
-@dataclass
-class FilingSections:
-    ticker: str
-    cik: Optional[int]
-    company_name: Optional[str]
-    form: Optional[str]           # "10-K" / "10-Q"
-    filing_date: Optional[str]
-    accession: Optional[str]
-    source_url: Optional[str]
-    sections: list[FilingSection] = field(default_factory=list)
-    error: Optional[str] = None
-
-    def to_dict(self) -> dict:
-        return {
-            "ticker": self.ticker,
-            "cik": self.cik,
-            "company_name": self.company_name,
-            "form": self.form,
-            "filing_date": self.filing_date,
-            "accession": self.accession,
-            "source_url": self.source_url,
-            "sections": [
-                {
-                    "item": s.item,
-                    "title": s.title,
-                    "text": s.text,
-                    "char_count": s.char_count,
-                    "truncated": s.truncated,
-                }
-                for s in self.sections
-            ],
-            "error": self.error,
-        }
 
 
 def _http_get(url: str) -> bytes:
@@ -214,10 +169,7 @@ def fetch_latest_filing_sections(
     if cached and time.time() - cached[0] < _CACHE_TTL:
         return cached[1]
 
-    result = FilingSections(
-        ticker=ticker_key, cik=None, company_name=None, form=None,
-        filing_date=None, accession=None, source_url=None,
-    )
+    result = FilingSections(ticker=ticker_key, market="US")
 
     cik = get_cik_for_ticker(ticker_key)
     if cik is None:

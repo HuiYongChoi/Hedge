@@ -1,0 +1,228 @@
+"""DART 사업보고서/분기보고서 원문 수집 + 섹션 파싱 (한국).
+
+sec_filings.py 의 한국판. 같은 목적 — 에이전트가 "제공된 자료"만 근거로 쓰도록
+실제 공시 원문을 프롬프트에 넣는다.
+
+미국 10-K 와의 섹션 대응
+  US Item 1  (Business)      ↔ KR II. 사업의 내용
+  US Item 7  (MD&A)          ↔ KR IV. 이사의 경영진단 및 분석의견
+  US Item 1A (Risk Factors)  ↔ (한국 보고서에는 독립 섹션이 없다. 사업의 내용 안의
+                                '위험관리' 소절이 가장 가깝다)
+
+설계 메모
+- 외부 파서 의존성 없이 표준 라이브러리만 사용한다(sec_filings.py 와 동일 방침).
+- document.xml API 는 ZIP 을 돌려주고, 그 안 첫 XML 이 본문이다.
+- 기존 src/tools/dart_api.py 는 '재무제표' 용도라 서술 원문이 없다. 그래서 별도 모듈.
+"""
+
+from __future__ import annotations
+
+import html
+import io
+import json
+import os
+import re
+import time
+import urllib.parse
+import urllib.request
+import zipfile
+from typing import Optional
+
+from src.tools.filing_types import FilingSection, FilingSections
+
+_LIST_URL = "https://opendart.fss.or.kr/api/list.json"
+_DOCUMENT_URL = "https://opendart.fss.or.kr/api/document.xml"
+_CORP_CODE_URL = "https://opendart.fss.or.kr/api/corpCode.xml"
+_VIEWER_URL = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}"
+
+_HTTP_TIMEOUT = 60
+_CACHE_TTL = 6 * 60 * 60
+
+_corp_code_cache: tuple[float, dict[str, str]] | None = None
+_filing_cache: dict[str, tuple[float, FilingSections]] = {}
+
+#: 정기공시에서 고를 보고서 종류
+ANNUAL_REPORT = "사업보고서"
+QUARTERLY_REPORTS = ("분기보고서", "반기보고서")
+
+
+def _api_key() -> str:
+    return (os.environ.get("DART_API_KEY") or "").strip()
+
+
+def _http_get(url: str, params: dict | None = None) -> bytes:
+    if params:
+        url = f"{url}?{urllib.parse.urlencode(params)}"
+    request = urllib.request.Request(url, headers={"User-Agent": "HyFin Research"})
+    with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as response:
+        return response.read()
+
+
+def normalize_kr_code(ticker: str) -> Optional[str]:
+    """'005930.KS', '005930', '삼성전자(005930)' → '005930'."""
+    match = re.search(r"\d{6}", ticker or "")
+    return match.group(0) if match else None
+
+
+def get_corp_code(stock_code: str) -> Optional[str]:
+    """종목코드(6자리) → DART corp_code(8자리). 공식 매핑 ZIP 을 캐시해 쓴다."""
+    global _corp_code_cache
+    code = normalize_kr_code(stock_code)
+    if not code or not _api_key():
+        return None
+
+    now = time.time()
+    if _corp_code_cache is None or now - _corp_code_cache[0] > _CACHE_TTL:
+        try:
+            payload = _http_get(_CORP_CODE_URL, {"crtfc_key": _api_key()})
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                xml = archive.read(archive.namelist()[0]).decode("utf-8", errors="ignore")
+            mapping: dict[str, str] = {}
+            for block in re.finditer(r"<list>(.*?)</list>", xml, re.S):
+                body = block.group(1)
+                corp = re.search(r"<corp_code>\s*(\d+)\s*</corp_code>", body)
+                stock = re.search(r"<stock_code>\s*(\d{6})\s*</stock_code>", body)
+                if corp and stock:
+                    mapping[stock.group(1)] = corp.group(1)
+            _corp_code_cache = (now, mapping)
+        except Exception:
+            if _corp_code_cache is None:
+                return None
+    return _corp_code_cache[1].get(code)
+
+
+def xml_to_text(raw_xml: str) -> str:
+    """공시 XML → 평문. 표준 라이브러리만 사용한다."""
+    text = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw_xml)
+    # 블록 종료 태그를 줄바꿈으로 — 섹션 제목이 줄 단위로 잡히게 한다
+    text = re.sub(r"(?i)<br\s*/?>|</P>|</TD>|</TR>|</TITLE>|</SECTION-?\d?>", " \n", text)
+    text = re.sub(r"(?s)<[^>]+>", " ", text)
+    text = html.unescape(text).replace("\xa0", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
+    return "\n".join(line.strip() for line in text.split("\n")).strip()
+
+
+#: 대제목은 ASCII 로마숫자(I, II, III…)로 매겨진다. 본문 안 표 제목은 전각(Ⅰ,Ⅱ)을 쓰므로
+#: ASCII 만 잡으면 소제목 오탐을 피할 수 있다(실측 확인).
+_KR_HEADING_RE = re.compile(
+    r"(?m)^\s*(I{1,3}|IV|VI{0,3}|V|IX|XI{0,2}|X)\s*[.．]\s*(.{2,40})$"
+)
+
+#: 우리가 뽑을 섹션 — 미국 Item 과 같은 키로 맞춰 프롬프트 형식을 통일한다.
+_KR_SECTION_SPECS = (
+    ("1", "사업의 내용", re.compile(r"사업의\s*내용")),
+    ("7", "이사의 경영진단 및 분석의견 (MD&A)", re.compile(r"이사의\s*경영진단")),
+)
+
+
+def extract_kr_sections(
+    text: str,
+    items: tuple[str, ...] = ("1", "7"),
+    budget_per_section: int = 6000,
+) -> list[FilingSection]:
+    """대제목 경계로 섹션을 잘라낸다."""
+    headings = [(m.start(), m.group(2).strip()) for m in _KR_HEADING_RE.finditer(text)]
+    if not headings:
+        return []
+    starts = [pos for pos, _ in headings]
+
+    sections: list[FilingSection] = []
+    for item, title, pattern in _KR_SECTION_SPECS:
+        if item not in items:
+            continue
+        best_pos, best_len = None, 0
+        for pos, heading_title in headings:
+            if not pattern.search(heading_title):
+                continue
+            nxt = next((p for p in starts if p > pos), len(text))
+            if nxt - pos > best_len:
+                best_pos, best_len = pos, nxt - pos
+        if best_pos is None or best_len < 2000:
+            continue
+        body = text[best_pos:best_pos + best_len].strip()
+        sections.append(FilingSection(
+            item=item,
+            title=title,
+            text=body[:budget_per_section].strip(),
+            char_count=len(body),
+            truncated=len(body) > budget_per_section,
+        ))
+    return sections
+
+
+def fetch_latest_filing_sections(
+    ticker: str,
+    form: str = "annual",
+    items: tuple[str, ...] = ("1", "7"),
+    budget_per_section: int = 6000,
+) -> FilingSections:
+    """최신 사업보고서(annual) 또는 분기/반기보고서(quarterly)의 섹션을 추출한다.
+
+    실패해도 예외를 던지지 않는다 — 원문은 부가 근거이므로 분석을 막으면 안 된다.
+    """
+    code = normalize_kr_code(ticker) or (ticker or "").strip().upper()
+    cache_key = f"KR:{code}:{form}:{','.join(items)}:{budget_per_section}"
+    cached = _filing_cache.get(cache_key)
+    if cached and time.time() - cached[0] < _CACHE_TTL:
+        return cached[1]
+
+    result = FilingSections(
+        ticker=code, market="KR", cik=None, company_name=None, form=None,
+        filing_date=None, accession=None, source_url=None,
+    )
+
+    if not _api_key():
+        result.error = "DART_API_KEY not configured"
+        _filing_cache[cache_key] = (time.time(), result)
+        return result
+
+    corp_code = get_corp_code(code)
+    if not corp_code:
+        result.error = "DART corp_code not found for ticker (not a KR listing?)"
+        _filing_cache[cache_key] = (time.time(), result)
+        return result
+
+    try:
+        listing = json.loads(_http_get(_LIST_URL, {
+            "crtfc_key": _api_key(),
+            "corp_code": corp_code,
+            "bgn_de": time.strftime("%Y%m%d", time.gmtime(time.time() - 400 * 86400)),
+            "pblntf_ty": "A",     # 정기공시
+            "page_count": "20",
+        }).decode("utf-8"))
+        if listing.get("status") != "000":
+            result.error = f"DART list error: {listing.get('status')} {listing.get('message')}"
+            _filing_cache[cache_key] = (time.time(), result)
+            return result
+
+        wanted = (ANNUAL_REPORT,) if form == "annual" else QUARTERLY_REPORTS
+        entry = next(
+            (item for item in (listing.get("list") or [])
+             if any(name in item.get("report_nm", "") for name in wanted)),
+            None,
+        )
+        if entry is None:
+            result.error = f"No {form} report found in recent DART filings"
+            _filing_cache[cache_key] = (time.time(), result)
+            return result
+
+        rcept_no = entry["rcept_no"]
+        result.company_name = entry.get("corp_name")
+        result.form = entry.get("report_nm", "").strip()
+        result.filing_date = entry.get("rcept_dt")
+        result.accession = rcept_no
+        result.source_url = _VIEWER_URL.format(rcept_no=rcept_no)
+
+        payload = _http_get(_DOCUMENT_URL, {"crtfc_key": _api_key(), "rcept_no": rcept_no})
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            raw = archive.read(archive.namelist()[0]).decode("utf-8", errors="ignore")
+        text = xml_to_text(raw)
+        result.sections = extract_kr_sections(text, items=items, budget_per_section=budget_per_section)
+        if not result.sections:
+            result.error = "Filing fetched but no sections could be located"
+    except Exception as exc:
+        result.error = f"{type(exc).__name__}: {exc}"
+
+    _filing_cache[cache_key] = (time.time(), result)
+    return result

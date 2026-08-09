@@ -432,9 +432,10 @@ def _sec_grounding_settings() -> tuple[bool, int, tuple[str, ...]]:
         budget = max(1000, int(os.getenv("SEC_GROUNDING_BUDGET", "6000")))
     except ValueError:
         budget = 6000
-    raw_items = os.getenv("SEC_GROUNDING_ITEMS", "1A,7")
+    # 비워두면 시장별 기본값(미국 1A+7 / 한국 사업의내용+MD&A)을 쓴다.
+    raw_items = os.getenv("SEC_GROUNDING_ITEMS", "")
     items = tuple(part.strip().upper() for part in raw_items.split(",") if part.strip())
-    return enabled, budget, (items or ("1A", "7"))
+    return enabled, budget, items
 
 
 def attach_sec_grounding_context(prompt: any, state: AgentState | None) -> any:
@@ -447,6 +448,8 @@ def attach_sec_grounding_context(prompt: any, state: AgentState | None) -> any:
     - 미국 상장이 아니면(CIK 없음) 조용히 원문 없이 진행한다.
     - 네트워크 실패도 분석을 막지 않는다.
     """
+    import os
+
     if state is None:
         return prompt
     enabled, budget, items = _sec_grounding_settings()
@@ -458,12 +461,17 @@ def attach_sec_grounding_context(prompt: any, state: AgentState | None) -> any:
         if not tickers:
             return prompt
 
-        from src.tools.sec_filings import build_grounding_context, fetch_latest_filing_sections
+        from src.tools.filings import build_grounding_context, fetch_filing_sections
+
+        period = os.environ.get("SEC_GROUNDING_PERIOD", "annual").strip().lower()
+        if period not in ("annual", "quarterly"):
+            period = "annual"
 
         blocks = []
         for ticker in tickers[:2]:  # 다종목 분석에서 프롬프트가 폭주하지 않도록 제한
-            filing = fetch_latest_filing_sections(
-                ticker, items=items, budget_per_section=budget,
+            filing = fetch_filing_sections(
+                ticker, period=period,
+                items=items or None, budget_per_section=budget,
             )
             block = build_grounding_context(filing)
             if block:
