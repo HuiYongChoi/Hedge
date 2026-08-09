@@ -34,6 +34,9 @@ RATIO_SCALE_REQUIREMENT = (
     "For Korean-company KRW values such as Market Cap(시가총액), use 조/억 원 units instead of long raw numbers."
 )
 SOURCE_GROUNDING_MARKER = "SOURCE GROUNDING REQUIREMENT:"
+#: 프롬프트에 주입된 공시 원문 블록의 시작 표식. 이 뒤는 원문 그대로 보존해야 하므로
+#: sanitize/normalize 를 적용하지 않는다(원문이 변조되면 그라운딩이 무의미해진다).
+SEC_SOURCE_TEXT_MARKER = "[SEC FILING SOURCE TEXT"
 SOURCE_GROUNDING_REQUIREMENT = (
     # NOTE: 이 문자열은 sanitize_data_gap_language 를 통과해도 변형되지 않아야 한다.
     # 'missing', 'insufficient data', 'not available' 같은 표현은 그 패턴에 걸려
@@ -210,6 +213,16 @@ def _split_at_appended_requirements(text: str) -> tuple[str, str]:
     return text[:cut], text[cut:]
 
 
+def sanitize_preserving_source_text(text: str) -> str:
+    """공시 원문 블록은 건드리지 않고 그 앞부분만 정규화한다."""
+    if not isinstance(text, str):
+        return text
+    cut = text.find(SEC_SOURCE_TEXT_MARKER)
+    if cut < 0:
+        return sanitize_data_gap_language(text)
+    return sanitize_data_gap_language(text[:cut]) + text[cut:]
+
+
 def _append_korean_requirement_to_text(text: str) -> str:
     """Append prompt-wide data-gap, debt-quality, cross-check guide, and Korean-only instructions once."""
     body, already_appended = _split_at_appended_requirements(text)
@@ -317,7 +330,7 @@ def enforce_korean_output_requirement(prompt: any) -> any:
         for message in messages:
             content = getattr(message, "content", None)
             if isinstance(content, str):
-                updated_messages.append(_clone_message_with_content(message, sanitize_data_gap_language(content)))
+                updated_messages.append(_clone_message_with_content(message, sanitize_preserving_source_text(content)))
             else:
                 updated_messages.append(message)
         system_index = None
@@ -407,6 +420,79 @@ def create_fallback_response(pydantic_model: type[BaseModel], default_factory=No
     return ensure_korean_default_texts(create_default_response(pydantic_model))
 
 
+#: 원문 그라운딩 주입 설정. 공시 원문은 토큰을 많이 먹으므로 환경변수로 조절한다.
+#:  SEC_GROUNDING_ENABLED=0        → 완전 비활성
+#:  SEC_GROUNDING_BUDGET=6000      → 섹션당 발췌 글자수
+#:  SEC_GROUNDING_ITEMS=1A,7       → 주입할 Item (기본: 리스크 + MD&A)
+def _sec_grounding_settings() -> tuple[bool, int, tuple[str, ...]]:
+    import os
+
+    enabled = os.getenv("SEC_GROUNDING_ENABLED", "1").strip().lower() not in ("0", "false", "no")
+    try:
+        budget = max(1000, int(os.getenv("SEC_GROUNDING_BUDGET", "6000")))
+    except ValueError:
+        budget = 6000
+    raw_items = os.getenv("SEC_GROUNDING_ITEMS", "1A,7")
+    items = tuple(part.strip().upper() for part in raw_items.split(",") if part.strip())
+    return enabled, budget, (items or ("1A", "7"))
+
+
+def attach_sec_grounding_context(prompt: any, state: AgentState | None) -> any:
+    """SEC 공시 원문 발췌를 human 메시지 뒤에 덧붙인다.
+
+    SOURCE GROUNDING 지침은 "제공된 자료 밖은 쓰지 마라"고 요구하는데, 정작
+    제공되는 자료가 숫자 지표뿐이면 모델이 서술을 자기 기억으로 채우게 된다.
+    실제 10-K 원문(리스크·MD&A)을 넣어줘야 지침이 의미를 갖는다.
+
+    - 미국 상장이 아니면(CIK 없음) 조용히 원문 없이 진행한다.
+    - 네트워크 실패도 분석을 막지 않는다.
+    """
+    if state is None:
+        return prompt
+    enabled, budget, items = _sec_grounding_settings()
+    if not enabled:
+        return prompt
+
+    try:
+        tickers = (state.get("data") or {}).get("tickers") or []
+        if not tickers:
+            return prompt
+
+        from src.tools.sec_filings import build_grounding_context, fetch_latest_filing_sections
+
+        blocks = []
+        for ticker in tickers[:2]:  # 다종목 분석에서 프롬프트가 폭주하지 않도록 제한
+            filing = fetch_latest_filing_sections(
+                ticker, items=items, budget_per_section=budget,
+            )
+            block = build_grounding_context(filing)
+            if block:
+                blocks.append(block)
+        if not blocks:
+            return prompt
+
+        grounding = "\n\n" + "\n\n".join(blocks)
+        messages = getattr(prompt, "messages", None)
+        if not messages:
+            return prompt
+
+        # 마지막 human 메시지 뒤에 붙인다 — 시스템 지침이 아니라 '자료'이기 때문.
+        updated = list(messages)
+        for index in range(len(updated) - 1, -1, -1):
+            message = updated[index]
+            content = getattr(message, "content", None)
+            if not isinstance(content, str):
+                continue
+            if "SEC FILING SOURCE TEXT" in content:
+                return prompt  # 이미 붙어 있음
+            updated[index] = _clone_message_with_content(message, content + grounding)
+            return _clone_prompt_with_messages(prompt, updated)
+        return prompt
+    except Exception:
+        # 원문은 부가 근거다. 어떤 실패도 분석 자체를 막지 않는다.
+        return prompt
+
+
 def call_llm(
     prompt: any,
     pydantic_model: type[BaseModel],
@@ -461,6 +547,7 @@ def call_llm(
         print(f"Error initializing LLM {model_provider}/{model_name}: {e}")
         return create_fallback_response(pydantic_model, default_factory)
 
+    prompt = attach_sec_grounding_context(prompt, state)
     prompt = enforce_korean_output_requirement(prompt)
 
     # Call the LLM with retries

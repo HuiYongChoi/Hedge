@@ -13,6 +13,7 @@ from app.backend.routes.stock_analysis_runs import router as stock_analysis_runs
 from app.backend.routes.saved_analyses import router as saved_analyses_router
 from app.backend.routes.analyst_targets import router as analyst_targets_router
 from app.backend.routes.fx_rates import router as fx_rates_router
+from app.backend.routes.sec_filings import router as sec_filings_router
 
 # Main API router
 api_router = APIRouter()
@@ -31,3 +32,4 @@ api_router.include_router(stock_analysis_runs_router, tags=["stock-analysis-runs
 api_router.include_router(saved_analyses_router, tags=["saved-analyses"])
 api_router.include_router(analyst_targets_router, tags=["analyst-targets"])
 api_router.include_router(fx_rates_router, tags=["fx-rates"])
+api_router.include_router(sec_filings_router, tags=["sec-filings"])
