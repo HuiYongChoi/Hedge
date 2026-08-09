@@ -30,6 +30,7 @@ export function sourceTabLabel(source: string, language: ReportLanguage): string
   if (source === 'stock_analysis') return language === 'ko' ? '종목 분석' : 'Stock Analysis';
   if (source === 'data_sandbox')   return language === 'ko' ? '데이터 샌드박스' : 'Data Sandbox';
   if (source === 'stock_compare')  return language === 'ko' ? '종목 비교' : 'Stock Compare';
+  if (source === 'flow')           return language === 'ko' ? '플로우' : 'Flow';
   return source;
 }
 
@@ -40,11 +41,13 @@ export function sourceTabBadgeClass(source: string): string {
     return 'border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-300';
   if (source === 'stock_compare')
     return 'border-cyan-500/30 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300';
+  if (source === 'flow')
+    return 'border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-300';
   return 'border-zinc-500/30 bg-zinc-500/10 text-zinc-500';
 }
 
 export function agentCountSummary(item: SavedAnalysis, language: ReportLanguage): string {
-  if (item.source_tab === 'stock_analysis') {
+  if (item.source_tab === 'stock_analysis' || item.source_tab === 'flow') {
     const n =
       item.result_data?.agent_results?.length ??
       item.request_data?.selected_agent_keys?.length ??

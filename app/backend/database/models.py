@@ -139,7 +139,7 @@ class SavedAnalysis(Base):
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    source_tab = Column(String(50), nullable=False)  # 'stock_analysis' or 'data_sandbox'
+    source_tab = Column(String(50), nullable=False)  # 'stock_analysis' | 'data_sandbox' | 'stock_compare' | 'flow'
     ticker = Column(String(50), nullable=False, index=True)
     language = Column(String(10), nullable=False, default="ko")
     

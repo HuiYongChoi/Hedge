@@ -219,7 +219,7 @@ export function SavedDetailPanel({ detail, language, isListCollapsed = false, on
         </div>
       </header>
       <div className="flex-1 overflow-y-auto p-4">
-        {detail.source_tab === 'stock_analysis' && (
+        {(detail.source_tab === 'stock_analysis' || detail.source_tab === 'flow') && (
           <div className="flex flex-col gap-3">
             <SnapshotDiffPanel current={detail} language={language} />
             <SavedStockDetail detail={detail} language={language} />
@@ -231,7 +231,7 @@ export function SavedDetailPanel({ detail, language, isListCollapsed = false, on
         {detail.source_tab === 'stock_compare' && (
           <SavedCompareDetail detail={detail} language={language} />
         )}
-        {detail.source_tab !== 'stock_analysis' && detail.source_tab !== 'data_sandbox' && detail.source_tab !== 'stock_compare' && (
+        {detail.source_tab !== 'stock_analysis' && detail.source_tab !== 'flow' && detail.source_tab !== 'data_sandbox' && detail.source_tab !== 'stock_compare' && (
           <SavedEmptyState language={language} />
         )}
       </div>
