@@ -11,7 +11,8 @@ sec_filings.py 의 한국판. 같은 목적 — 에이전트가 "제공된 자�
 
 설계 메모
 - 외부 파서 의존성 없이 표준 라이브러리만 사용한다(sec_filings.py 와 동일 방침).
-- document.xml API 는 ZIP 을 돌려주고, 그 안 첫 XML 이 본문이다.
+- document.xml API 는 ZIP(본문 + 감사보고서 등 첨부)을 돌려준다. 첫 파일이
+  본문이라는 보장이 없어 '{rcept_no}.xml' 우선, 없으면 최대 크기 파일을 고른다.
 - 기존 src/tools/dart_api.py 는 '재무제표' 용도라 서술 원문이 없다. 그래서 별도 모듈.
 """
 

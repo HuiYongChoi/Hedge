@@ -75,7 +75,9 @@ class MultiMarketFilingStaticTests(unittest.TestCase):
         self.assertIn("def _read_main_document(", DART)
         self.assertIn('exact = f"{rcept_no}.xml"', DART)
         self.assertIn("max(names, key=lambda n: archive.getinfo(n).file_size)", DART)
-        self.assertNotIn("archive.read(archive.namelist()[0])", DART)
+        # 문서 ZIP 경로에서 첫 파일을 그대로 읽으면 안 된다.
+        # (corpCode 매핑 ZIP 은 파일이 하나뿐이라 namelist()[0] 사용이 정당하다)
+        self.assertIn("raw = _read_main_document(archive, rcept_no)", DART)
 
     def test_dart_key_from_env_only(self):
         """키를 소스에 하드코딩하지 않는다."""
