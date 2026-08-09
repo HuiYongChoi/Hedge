@@ -51,7 +51,17 @@ class SnapshotDiffStaticTests(unittest.TestCase):
 
         tab = STOCK_TAB.read_text(encoding="utf-8")
         self.assertIn("handleSaveAnalysis = async (marketSnapshot?: MarketSnapshot)", tab)
-        self.assertIn("market_snapshot: marketSnapshot ?? null", tab)
+        self.assertIn("market_snapshot: snapshotToSave ?? null", tab)
+        # 탭 상단 저장 버튼은 리포트 내부 liveTarget 에 접근할 수 없다 —
+        # 리포트가 올려준 스냅샷을 ref 로 들고 있다가 저장 시 사용해야 한다.
+        self.assertIn("latestMarketSnapshotRef", tab)
+        self.assertIn("onMarketSnapshotChange={snapshot =>", tab)
+        self.assertIn(
+            "marketSnapshot ?? latestMarketSnapshotRef.current ?? undefined", tab
+        )
+        # MouseEvent 가 marketSnapshot 자리로 들어가지 않도록 인자 없이 호출
+        self.assertIn("onClick={() => handleSaveAnalysis()}", tab)
+        self.assertNotIn("onClick={handleSaveAnalysis}", tab)
 
     def test_diff_panel_wired_into_saved_detail(self):
         panel = (SAVED_DIR / "snapshot-diff-panel.tsx").read_text(encoding="utf-8")
