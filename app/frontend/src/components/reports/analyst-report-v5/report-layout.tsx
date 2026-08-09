@@ -154,6 +154,7 @@ export function ReportLayout({
   compositeScore,
   analysisGeneratedAt,
   onSave,
+  onMarketSnapshotChange,
   isSaving,
 }: AnalystReportDashboardProps) {
   const tickers = useMemo(() => resolveTickers(ticker, completeResult), [ticker, completeResult]);
@@ -406,30 +407,36 @@ export function ReportLayout({
   );
   // 저장 시 "그때 시장 값"을 함께 남긴다 — 저장된 리포트를 나중에 열면 liveTarget이
   // 재조회되어 오늘 값으로 덮이므로, 스냅샷이 없으면 과거 대비 변화를 볼 수 없다.
-  const handleSaveWithSnapshot = useMemo(() => {
-    if (!onSave) return undefined;
-    return () => onSave(buildMarketSnapshot({
-      capturedAt: new Date().toISOString(),
-      currency: effectiveCurrency,
-      currentPrice: effectiveCurrentPrice,
-      consensusTarget: brokerConsensus.consensus,
-      analystCount: brokerConsensus.brokerCount,
-      forwardEps: canonicalForwardSnapshot.fwdEps ?? canonicalForwardSnapshot.currentFyEps,
-      forwardPer: canonicalForwardSnapshot.fwdPer,
-      trailingEps: liveTarget?.trailing_eps ?? null,
-      trailingPer: liveTarget?.trailing_pe ?? canonicalForwardSnapshot.ttmPer,
-      pbr: valuationDeepDive?.pbr?.currentPbr ?? null,
-      pbrPositionLabel: valuationDeepDive?.pbr?.positionLabel ?? null,
-      sigmaAnnual: canonicalForwardSnapshot.sigmaAnnual,
-      signal: headlineVerdict.label,
-      confidence: stickyConfidence,
-      compositeScore,
-    }));
-  }, [
+  const marketSnapshot = useMemo(() => buildMarketSnapshot({
+    capturedAt: new Date().toISOString(),
+    currency: effectiveCurrency,
+    currentPrice: effectiveCurrentPrice,
+    consensusTarget: brokerConsensus.consensus,
+    analystCount: brokerConsensus.brokerCount,
+    forwardEps: canonicalForwardSnapshot.fwdEps ?? canonicalForwardSnapshot.currentFyEps,
+    forwardPer: canonicalForwardSnapshot.fwdPer,
+    trailingEps: liveTarget?.trailing_eps ?? null,
+    trailingPer: liveTarget?.trailing_pe ?? canonicalForwardSnapshot.ttmPer,
+    pbr: valuationDeepDive?.pbr?.currentPbr ?? null,
+    pbrPositionLabel: valuationDeepDive?.pbr?.positionLabel ?? null,
+    sigmaAnnual: canonicalForwardSnapshot.sigmaAnnual,
+    signal: headlineVerdict.label,
+    confidence: stickyConfidence,
+    compositeScore,
+  }), [
     brokerConsensus, canonicalForwardSnapshot, compositeScore, effectiveCurrency,
-    effectiveCurrentPrice, stickyConfidence, headlineVerdict, liveTarget, onSave,
-    valuationDeepDive,
+    effectiveCurrentPrice, stickyConfidence, headlineVerdict, liveTarget, valuationDeepDive,
   ]);
+
+  // 탭 상단 저장 버튼 등 리포트 밖 경로도 같은 스냅샷으로 저장할 수 있게 올려준다.
+  useEffect(() => {
+    onMarketSnapshotChange?.(marketSnapshot);
+  }, [marketSnapshot, onMarketSnapshotChange]);
+
+  const handleSaveWithSnapshot = useMemo(
+    () => (onSave ? () => onSave(marketSnapshot) : undefined),
+    [marketSnapshot, onSave],
+  );
 
   const tiles = extractTargetTiles(effectiveMetrics, displayAgentKey, language, effectiveCurrency);
   const otherAgents = listOtherAgents(completeResult, displayAgentKey, activeTicker, agentMetaMap, language);

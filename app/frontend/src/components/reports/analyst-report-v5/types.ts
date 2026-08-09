@@ -253,5 +253,7 @@ export interface AnalystReportDashboardProps {
   analysisGeneratedAt?: string | null;
   // 저장 시 "그때 시장 값" 스냅샷을 함께 넘긴다(과거 대비 변화 추적의 전제).
   onSave?: (marketSnapshot?: import('./market-snapshot').MarketSnapshot) => void;
+  // 탭 상단의 저장 버튼처럼 리포트 밖에서 저장하는 경로도 같은 스냅샷을 쓸 수 있도록 올려준다.
+  onMarketSnapshotChange?: (marketSnapshot: import('./market-snapshot').MarketSnapshot) => void;
   isSaving?: boolean;
 }

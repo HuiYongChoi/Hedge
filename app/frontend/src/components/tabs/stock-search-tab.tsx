@@ -630,6 +630,8 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
   const [selectedDetailReport, setSelectedDetailReport] = useState<DetailReportState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSavingAnalysis, setIsSavingAnalysis] = useState(false);
+  // 리포트가 계산한 '그때 시장 값' 스냅샷 — 탭 상단 저장 버튼도 같은 값을 쓴다.
+  const latestMarketSnapshotRef = useRef<MarketSnapshot | null>(null);
   const [sandboxOverrideSnapshot, setSandboxOverrideSnapshot] = useState(() => loadDataSandboxOverrideSnapshot());
   const [isConfigPanelCollapsed, setIsConfigPanelCollapsed] = useState(false);
   const [tickerValidationStatus, setTickerValidationStatus] = useState<TickerInputValidationStatus>('empty');
@@ -1116,6 +1118,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
 
   const handleSaveAnalysis = async (marketSnapshot?: MarketSnapshot) => {
     if (isSavingAnalysis) return;
+    const snapshotToSave = marketSnapshot ?? latestMarketSnapshotRef.current ?? undefined;
 
     const agentResultList = Array.from(agentResults.values());
     const savedTicker =
@@ -1148,7 +1151,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
           complete_result: completeResult,
           analysis_generated_at: analysisGeneratedAt,
           // 저장 시점의 시장 값 — 없으면 나중에 열 때 실시간 값으로 덮여 변화 추적 불가
-          market_snapshot: marketSnapshot ?? null,
+          market_snapshot: snapshotToSave ?? null,
         },
       );
 
@@ -1426,7 +1429,10 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
               type="button"
               variant="outline"
               size="sm"
-              onClick={handleSaveAnalysis}
+              // 마우스 이벤트가 marketSnapshot 자리로 들어가지 않도록 인자 없이 호출.
+              // (이 경로로 저장하면 시장 스냅샷 없이 저장된다 — 리포트 안의 저장 버튼이
+              //  스냅샷을 포함하는 정식 경로다.)
+              onClick={() => handleSaveAnalysis()}
               disabled={!hasSavableResults || isSavingAnalysis}
             >
               {isSavingAnalysis ? (
@@ -1481,6 +1487,7 @@ export function StockSearchTab({ isTabActive = true }: StockSearchTabProps) {
                 compositeScore={score}
                 analysisGeneratedAt={analysisGeneratedAt}
                 onSave={handleSaveAnalysis}
+                onMarketSnapshotChange={snapshot => { latestMarketSnapshotRef.current = snapshot; }}
                 isSaving={isSavingAnalysis}
               />
             );
