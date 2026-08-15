@@ -13,6 +13,8 @@ from src.tools.api import (
     get_market_cap,
     search_line_items,
 )
+from src.tools.life_cycle import diagnose as diagnose_life_cycle
+from src.tools.management_scorecard import assess as assess_management
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
     FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
@@ -147,6 +149,24 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             analysis_data[ticker]["valuation_confidence_note"] = valuation_confidence_note
         company_name = resolve_company_name(ticker)
         analysis_data[ticker]["company_name"] = company_name
+
+        # ─── 생애주기 진단 + 경영진 자본배분 평가 ──────────────────────────────
+        # Damodaran, *The Corporate Life Cycle* — 단계마다 맞는 가치평가법과 전략이
+        # 다르고, 가치 파괴는 대개 '단계에 맞지 않는 행동'에서 온다.
+        # LLM 추측이 아니라 위에서 이미 받아온 재무 시계열로 결정론적으로 계산한다.
+        progress.update_status(agent_id, ticker, "Diagnosing corporate life cycle")
+        life_cycle = diagnose_life_cycle(line_items_annual or line_items, metrics)
+        analysis_data[ticker]["life_cycle"] = life_cycle.to_dict()
+
+        progress.update_status(agent_id, ticker, "Assessing management capital allocation")
+        wacc_estimate = risk_analysis.get("cost_of_equity") if isinstance(risk_analysis, dict) else None
+        management = assess_management(
+            line_items_annual or line_items,
+            metrics,
+            wacc=wacc_estimate,
+            stage=life_cycle.stage,
+        )
+        analysis_data[ticker]["management_assessment"] = management.to_dict()
 
         # ─── LLM: craft Damodaran-style narrative ──────────────────────────────
         progress.update_status(agent_id, ticker, "Generating Damodaran analysis")
@@ -475,6 +495,22 @@ def generate_damodaran_output(
                   ◦ Connect that story to key numerical drivers: revenue growth, margins, reinvestment, risk
                   ◦ Conclude with value: your FCFF DCF estimate, margin of safety, and relative valuation sanity checks
                   ◦ Highlight major uncertainties and how they affect value
+
+                CORPORATE LIFE CYCLE REQUIREMENT (your own framework — *The Corporate Life Cycle*):
+                입력 데이터의 `life_cycle` 과 `management_assessment` 는 재무 시계열에서
+                결정론적으로 계산된 값이다. 추측하지 말고 그 값을 근거로 서술하라.
+                - `life_cycle.stage_label_ko` 로 이 기업이 어느 단계인지 먼저 못 박아라.
+                  근거는 `life_cycle.evidence_ko` 의 수치를 그대로 인용하라.
+                - `life_cycle.playbook.valuation_ko` 에 적힌 '이 단계에 맞는 가치평가법'을
+                  제시하고, 지금 쓰고 있는 DCF/상대가치가 그 처방과 맞는지 짚어라.
+                  (성숙기 기업에 성장주 배수를 쓰는 식의 불일치가 있으면 명시)
+                - `life_cycle.alignment_score` 는 단계가 요구하는 전략 대비 실제 행동의
+                  이행도다. 낮으면 `alignment_notes_ko` 를 인용해 무엇이 어긋났는지 써라.
+                  당신의 핵심 주장 — 가치 파괴는 대개 '나이에 맞지 않는 행동'에서 온다.
+                - `management_assessment` 는 자본배분 실적 기반 경영진 평가다.
+                  `grade_ko` 와 `axes` 의 구체 수치를 인용하되, `insufficient` 가 true 이거나
+                  `score` 가 null 인 축은 단정하지 말고 판단 보류로 남겨라.
+                  경영진의 인품·비전 같은 검증 불가 항목은 절대 지어내지 마라.
                 {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
 
                 {COMPANY_IDENTITY_REQUIREMENT}
