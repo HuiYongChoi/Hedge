@@ -13,8 +13,11 @@ from src.tools.api import (
     get_market_cap,
     search_line_items,
 )
+from src.tools.earnings_release import fetch_latest_earnings_release
+from src.tools.filings import fetch_filing_sections
 from src.tools.life_cycle import diagnose as diagnose_life_cycle
 from src.tools.management_scorecard import assess as assess_management
+from src.tools.narrative_check import check as check_narrative
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
     FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
@@ -167,6 +170,35 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             stage=life_cycle.stage,
         )
         analysis_data[ticker]["management_assessment"] = management.to_dict()
+
+        # ─── 경영진이 직접 한 말 + 서사 일관성 ────────────────────────────────
+        # Damodaran 의 "Story → Numbers → Value" 중 Story 축. 다만 서사를 창작하지 않고
+        # 회사가 공시·실적 보도자료에 **직접 쓴 문장**만 근거로 삼는다.
+        progress.update_status(agent_id, ticker, "Collecting management's own words")
+        company_text_parts: list[str] = []
+        try:
+            filing = fetch_filing_sections(ticker, period="annual", budget_per_section=8000)
+            company_text_parts += [s.text for s in filing.sections if s.item == "7"]
+        except Exception:
+            filing = None
+        try:
+            release = fetch_latest_earnings_release(ticker, budget=8000)
+            if release.text:
+                company_text_parts.append(release.text)
+            if release.quotes or release.outlook_text:
+                analysis_data[ticker]["management_said"] = {
+                    "source_url": release.source_url,
+                    "filing_date": release.filing_date,
+                    "quotes": [
+                        {"speaker": q.speaker, "text": q.text} for q in release.quotes
+                    ],
+                    "outlook_text": release.outlook_text,
+                }
+        except Exception:
+            pass
+
+        narrative = check_narrative(life_cycle.stage, "\n".join(company_text_parts))
+        analysis_data[ticker]["narrative_check"] = narrative.to_dict()
 
         # ─── LLM: craft Damodaran-style narrative ──────────────────────────────
         progress.update_status(agent_id, ticker, "Generating Damodaran analysis")
@@ -513,6 +545,18 @@ def generate_damodaran_output(
                   `grade_ko` 와 `axes` 의 구체 수치를 인용하되, `insufficient` 가 true 이거나
                   `score` 가 null 인 축은 단정하지 말고 판단 보류로 남겨라.
                   경영진의 인품·비전 같은 검증 불가 항목은 절대 지어내지 마라.
+
+                STORY 축 (당신의 "Story → Numbers → Value" 중 Story):
+                - `management_said` 는 회사가 SEC 에 직접 제출한 실적 보도자료에서 뽑은
+                  **경영진 원문 인용**과 전망이다. 경영진 발언을 쓸 때는 반드시 이 안의
+                  문장만 인용하고, 화자(`speaker`)를 함께 밝혀라. 없으면 인용하지 마라.
+                - `narrative_check` 는 회사가 스스로 쓴 서술의 어조를 재무로 판정한
+                  생애주기 단계와 대조한 결과다. `aligned` 가 false 면 그 괴리를
+                  분석의 핵심 리스크로 다뤄라 — 성숙한 기업이 성장 서사를 유지하면
+                  그 이야기를 실현하려 과잉 투자로 가치를 파괴한다는 것이 당신의 논지다.
+                  `evidence_ko` 에 담긴 회사 문장을 근거로 인용하라.
+                - `narrative_check.insufficient` 가 true 면 서사 판정을 하지 마라.
+                - 서사를 새로 지어내지 마라. 회사가 쓴 문장을 인용·대조만 하라.
                 {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
 
                 {COMPANY_IDENTITY_REQUIREMENT}

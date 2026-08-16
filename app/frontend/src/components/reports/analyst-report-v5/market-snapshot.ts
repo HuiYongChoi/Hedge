@@ -19,6 +19,15 @@ export interface MarketSnapshot {
   signal: string | null;
   confidence: number | null;
   compositeScore: number | null;
+  /**
+   * 저장 시점의 생애주기 단계와 회사가 제시한 전망(가이던스) 요약.
+   * 분기가 지나 다시 저장하면 "경영진이 약속한 것 대비 실제"를 비교할 수 있다
+   * (가이던스 이행 추적의 전제 — 지금은 값을 남겨두기만 한다).
+   */
+  lifeCycleStage?: string | null;
+  lifeCycleStageLabel?: string | null;
+  narrativeAligned?: boolean | null;
+  guidanceText?: string | null;
 }
 
 export const MARKET_SNAPSHOT_KEY = 'market_snapshot';
@@ -43,6 +52,10 @@ export function buildMarketSnapshot(input: {
   signal?: string | null;
   confidence?: number | null;
   compositeScore?: number | null;
+  lifeCycleStage?: string | null;
+  lifeCycleStageLabel?: string | null;
+  narrativeAligned?: boolean | null;
+  guidanceText?: string | null;
 }): MarketSnapshot {
   return {
     capturedAt: input.capturedAt,
@@ -60,6 +73,10 @@ export function buildMarketSnapshot(input: {
     signal: input.signal ?? null,
     confidence: finiteOrNull(input.confidence),
     compositeScore: finiteOrNull(input.compositeScore),
+    lifeCycleStage: input.lifeCycleStage ?? null,
+    lifeCycleStageLabel: input.lifeCycleStageLabel ?? null,
+    narrativeAligned: input.narrativeAligned ?? null,
+    guidanceText: input.guidanceText ?? null,
   };
 }
 
@@ -140,6 +157,42 @@ export function diffMarketSnapshots(
       direction: directionOf(bNum, aNum),
       higherIsBetter: def.higherIsBetter,
     });
+  }
+
+  // 생애주기 단계가 바뀌면 가장 중요한 변화다(가치평가 방법 자체가 달라진다).
+  if (before.lifeCycleStage || after.lifeCycleStage) {
+    if ((before.lifeCycleStage ?? null) !== (after.lifeCycleStage ?? null)) {
+      rows.unshift({
+        key: 'lifeCycleStageLabel',
+        labelKo: '생애주기 단계',
+        labelEn: 'Life-cycle stage',
+        format: 'text',
+        before: before.lifeCycleStageLabel ?? before.lifeCycleStage ?? null,
+        after: after.lifeCycleStageLabel ?? after.lifeCycleStage ?? null,
+        changePct: null,
+        direction: 'flat',
+        higherIsBetter: null,
+      });
+    }
+  }
+
+  // 서사 정합성이 부합 → 괴리로 바뀌면 경고 신호다.
+  if (before.narrativeAligned != null || after.narrativeAligned != null) {
+    if (before.narrativeAligned !== after.narrativeAligned) {
+      const toText = (v: boolean | null | undefined) =>
+        v === true ? '부합' : v === false ? '괴리' : '—';
+      rows.unshift({
+        key: 'narrativeAligned',
+        labelKo: '서사 정합성',
+        labelEn: 'Narrative alignment',
+        format: 'text',
+        before: toText(before.narrativeAligned),
+        after: toText(after.narrativeAligned),
+        changePct: null,
+        direction: 'flat',
+        higherIsBetter: null,
+      });
+    }
   }
 
   // 신호는 문자열이라 별도 처리 — 바뀐 경우에만 노출
