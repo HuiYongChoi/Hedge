@@ -16,6 +16,7 @@ from src.tools.narrative_check import check  # noqa: E402
 from src.tools.earnings_release import extract_outlook, extract_quotes  # noqa: E402
 
 AGENT = (ROOT / "src/agents/aswath_damodaran.py").read_text(encoding="utf-8")
+LLM = (ROOT / "src/utils/llm.py").read_text(encoding="utf-8")
 RELEASE = (ROOT / "src/tools/earnings_release.py").read_text(encoding="utf-8")
 NARRATIVE = (ROOT / "src/tools/narrative_check.py").read_text(encoding="utf-8")
 SNAPSHOT = (ROOT / "app/frontend/src/components/reports/analyst-report-v5/market-snapshot.ts").read_text(encoding="utf-8")
@@ -142,6 +143,43 @@ class AgentWiringTests(unittest.TestCase):
         self.assertIn("서사를 새로 지어내지 마라", AGENT)
         self.assertIn("화자(`speaker`)를 함께 밝혀라", AGENT)
         self.assertIn("narrative_check.insufficient", AGENT)
+
+
+class BaselineGroundingTests(unittest.TestCase):
+    """경영진 발언은 특정 에이전트 전용이 아니라 전 에이전트의 기본 근거다."""
+
+    def test_earnings_injected_for_all_agents(self):
+        """call_llm 단일 관문에서 주입되므로 모든 에이전트가 공유한다."""
+        self.assertIn("from src.tools.earnings_release import (", LLM)
+        self.assertIn("build_earnings_context", LLM)
+        self.assertIn("EARNINGS_GROUNDING_ENABLED", LLM)
+        self.assertIn("EARNINGS_GROUNDING_BUDGET", LLM)
+
+    def test_earnings_failure_does_not_block_filing_grounding(self):
+        """실적 보도자료 조회 실패가 10-K 원문 주입까지 막으면 안 된다."""
+        block = LLM[LLM.index("if earnings_enabled:"):LLM.index("if not blocks:")]
+        self.assertIn("try:", block)
+        self.assertIn("except Exception:", block)
+
+    def test_management_quotes_are_never_sanitized(self):
+        """인용문이 정규화로 바뀌면 경영진을 '잘못 인용'하게 된다."""
+        self.assertIn('MANAGEMENT_SAID_MARKER = "[MANAGEMENT SAID"', LLM)
+        self.assertIn("SOURCE_TEXT_MARKERS = (SEC_SOURCE_TEXT_MARKER, MANAGEMENT_SAID_MARKER)", LLM)
+        self.assertIn("cut = min(positions)", LLM)
+
+    def test_duplicate_injection_checks_both_markers(self):
+        self.assertIn("any(marker in content for marker in SOURCE_TEXT_MARKERS)", LLM)
+
+    def test_prompt_tells_agents_how_to_use_quotes(self):
+        """재료만 주고 쓰는 법을 안 알려주면 무시된다."""
+        self.assertIn("[MANAGEMENT SAID", LLM)
+        self.assertIn("화자를 함께 밝혀라", LLM)
+        self.assertIn("한 글자도 바꾸지 말고", LLM)
+
+    def test_narrative_check_stays_with_damodaran(self):
+        """서사 대조는 생애주기 단계가 있어야 성립하므로 전 에이전트로 넓히지 않는다."""
+        self.assertNotIn("narrative_check", LLM)
+        self.assertIn("check as check_narrative", AGENT)
 
 
 class GuidanceTrackingInfraTests(unittest.TestCase):

@@ -37,6 +37,10 @@ SOURCE_GROUNDING_MARKER = "SOURCE GROUNDING REQUIREMENT:"
 #: 프롬프트에 주입된 공시 원문 블록의 시작 표식. 이 뒤는 원문 그대로 보존해야 하므로
 #: sanitize/normalize 를 적용하지 않는다(원문이 변조되면 그라운딩이 무의미해진다).
 SEC_SOURCE_TEXT_MARKER = "[SEC FILING SOURCE TEXT"
+#: 경영진 직접 인용 블록. 인용문이 정규화로 한 글자라도 바뀌면 '잘못 인용'이 된다.
+MANAGEMENT_SAID_MARKER = "[MANAGEMENT SAID"
+#: 프롬프트에 주입된 원문 블록들 — 이 지점부터는 절대 손대지 않는다.
+SOURCE_TEXT_MARKERS = (SEC_SOURCE_TEXT_MARKER, MANAGEMENT_SAID_MARKER)
 SOURCE_GROUNDING_REQUIREMENT = (
     # NOTE: 이 문자열은 sanitize_data_gap_language 를 통과해도 변형되지 않아야 한다.
     # 'missing', 'insufficient data', 'not available' 같은 표현은 그 패턴에 걸려
@@ -56,7 +60,11 @@ SOURCE_GROUNDING_REQUIREMENT = (
     "`저는 ...를 ... 종목으로 봅니다` or `제 생각에는`. Write the analysis itself, not a character speaking.\n"
     "- Do NOT use unsourced generality markers: `일반적으로`, `흔히`, `알려진 바에 따르면`, `업계에서는`, "
     "`시장에서는 ...로 본다` without a provided source.\n"
-    "- If you round or estimate a number, say so explicitly (예: `약`, `추정`). Never present an estimate as a reported figure."
+    "- If you round or estimate a number, say so explicitly (예: `약`, `추정`). Never present an estimate as a reported figure.\n"
+    "- 프롬프트에 `[MANAGEMENT SAID …]` 블록이 있으면 그것이 회사가 규제기관에 직접 제출한 "
+    "실적 발표 원문이다. 경영진 발언·가이던스를 언급할 때는 그 블록 안의 문장만 인용하고 "
+    "화자를 함께 밝혀라. 인용문은 한 글자도 바꾸지 말고, 블록에 없는 발언은 지어내지 마라. "
+    "블록이 없으면 경영진 발언을 아예 언급하지 마라."
 )
 
 COMPANY_IDENTITY_REQUIREMENT = (
@@ -217,9 +225,10 @@ def sanitize_preserving_source_text(text: str) -> str:
     """공시 원문 블록은 건드리지 않고 그 앞부분만 정규화한다."""
     if not isinstance(text, str):
         return text
-    cut = text.find(SEC_SOURCE_TEXT_MARKER)
-    if cut < 0:
+    positions = [pos for pos in (text.find(m) for m in SOURCE_TEXT_MARKERS) if pos >= 0]
+    if not positions:
         return sanitize_data_gap_language(text)
+    cut = min(positions)
     return sanitize_data_gap_language(text[:cut]) + text[cut:]
 
 
@@ -467,6 +476,15 @@ def attach_sec_grounding_context(prompt: any, state: AgentState | None) -> any:
         if period not in ("annual", "quarterly"):
             period = "annual"
 
+        # 경영진이 직접 한 말(실적 보도자료 인용·가이던스)도 기본 근거로 넣는다.
+        # 특정 에이전트 전용이 아니라 '자료'이므로 전 에이전트가 공유한다
+        # (해석 틀 — 예: 생애주기 대비 서사 대조 — 은 해당 전문가 에이전트에 남긴다).
+        earnings_enabled = os.getenv("EARNINGS_GROUNDING_ENABLED", "1").strip().lower() not in ("0", "false", "no")
+        try:
+            earnings_budget = max(1000, int(os.getenv("EARNINGS_GROUNDING_BUDGET", "4000")))
+        except ValueError:
+            earnings_budget = 4000
+
         blocks = []
         for ticker in tickers[:2]:  # 다종목 분석에서 프롬프트가 폭주하지 않도록 제한
             filing = fetch_filing_sections(
@@ -476,6 +494,21 @@ def attach_sec_grounding_context(prompt: any, state: AgentState | None) -> any:
             block = build_grounding_context(filing)
             if block:
                 blocks.append(block)
+
+            if earnings_enabled:
+                # 실패해도 공시 원문 주입까지 막지 않도록 개별 보호한다.
+                try:
+                    from src.tools.earnings_release import (
+                        build_earnings_context,
+                        fetch_latest_earnings_release,
+                    )
+
+                    release = fetch_latest_earnings_release(ticker, budget=earnings_budget)
+                    said = build_earnings_context(release)
+                    if said:
+                        blocks.append(said)
+                except Exception:
+                    pass
         if not blocks:
             return prompt
 
@@ -491,7 +524,7 @@ def attach_sec_grounding_context(prompt: any, state: AgentState | None) -> any:
             content = getattr(message, "content", None)
             if not isinstance(content, str):
                 continue
-            if "SEC FILING SOURCE TEXT" in content:
+            if any(marker in content for marker in SOURCE_TEXT_MARKERS):
                 return prompt  # 이미 붙어 있음
             updated[index] = _clone_message_with_content(message, content + grounding)
             return _clone_prompt_with_messages(prompt, updated)
