@@ -506,6 +506,8 @@ def generate_damodaran_output(
                   (성숙기 기업에 성장주 배수를 쓰는 식의 불일치가 있으면 명시)
                 - `life_cycle.alignment_score` 는 단계가 요구하는 전략 대비 실제 행동의
                   이행도다. 낮으면 `alignment_notes_ko` 를 인용해 무엇이 어긋났는지 써라.
+                  단, `alignment_checked` 가 `alignment_total_checks` 보다 작으면 일부 항목만
+                  점검된 것이니 만점이라도 '문제 없음'으로 단정하지 말고 그 사실을 밝혀라.
                   당신의 핵심 주장 — 가치 파괴는 대개 '나이에 맞지 않는 행동'에서 온다.
                 - `management_assessment` 는 자본배분 실적 기반 경영진 평가다.
                   `grade_ko` 와 `axes` 의 구체 수치를 인용하되, `insufficient` 가 true 이거나

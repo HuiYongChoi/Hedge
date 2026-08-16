@@ -111,6 +111,11 @@ def _cagr(values: list[float]) -> Optional[float]:
         return None
 
 
+#: 전략 이행도에서 점검하는 항목 수(재투자 강도·지분 환원·현금흐름).
+#: 데이터 결측으로 일부만 점검됐는데 만점이 나오면 '검증 완료'로 오해된다.
+_ALIGNMENT_TOTAL_CHECKS = 3
+
+
 @dataclass
 class LifeCycleDiagnosis:
     stage: str
@@ -122,6 +127,9 @@ class LifeCycleDiagnosis:
     #: 단계가 요구하는 행동 대비 실제 행동의 정합성
     alignment_score: Optional[float] = None       # 0~100
     alignment_notes_ko: list[str] = field(default_factory=list)
+    #: 전략 이행도에서 실제로 점검한 항목 수 / 전체
+    alignment_checked: int = 0
+    alignment_total_checks: int = _ALIGNMENT_TOTAL_CHECKS
     insufficient: bool = False
 
     def to_dict(self) -> dict:
@@ -134,6 +142,8 @@ class LifeCycleDiagnosis:
             "playbook": self.playbook,
             "alignment_score": self.alignment_score,
             "alignment_notes_ko": self.alignment_notes_ko,
+            "alignment_checked": self.alignment_checked,
+            "alignment_total_checks": self.alignment_total_checks,
             "insufficient": self.insufficient,
         }
 
@@ -300,7 +310,9 @@ def classify_stage(signals: dict[str, Optional[float]]) -> tuple[str, float, lis
     return stage, confidence, evidence
 
 
-def assess_alignment(stage: str, signals: dict[str, Optional[float]]) -> tuple[Optional[float], list[str]]:
+def assess_alignment(
+    stage: str, signals: dict[str, Optional[float]]
+) -> tuple[Optional[float], list[str], int]:
     """단계가 요구하는 행동 대비 실제 행동의 정합성(0~100).
 
     Damodaran 의 핵심 주장 — 가치 파괴는 대개 '나이에 맞지 않는 행동'에서 온다.
@@ -358,8 +370,16 @@ def assess_alignment(stage: str, signals: dict[str, Optional[float]]) -> tuple[O
             notes.append("성장 단계의 음(-)의 잉여현금흐름은 정상 범위로 볼 수 있다.")
 
     if checked == 0:
-        return None, ["전략 이행도 판정에 필요한 투자·환원 데이터가 부족"]
-    return max(0.0, min(100.0, score)), notes
+        return None, ["전략 이행도 판정에 필요한 투자·환원 데이터가 부족"], 0
+    # 점검하지 못한 항목이 있으면 명시한다. 데이터가 없어 감점 요인을 찾지 못한 것을
+    # '완벽히 부합'으로 읽으면 안 된다(실측: 삼성전자는 감가상각 결측으로 재투자 강도를
+    # 확인조차 못 했는데 100점이 나왔다).
+    if checked < _ALIGNMENT_TOTAL_CHECKS:
+        notes.append(
+            f"※ 전략 이행도는 {_ALIGNMENT_TOTAL_CHECKS}개 항목 중 {checked}개만 확인했다 "
+            "— 나머지는 데이터가 없어 점검하지 못했으므로 '이상 없음'으로 단정할 수 없다."
+        )
+    return max(0.0, min(100.0, score)), notes, checked
 
 
 def diagnose(line_items: list, metrics: list | None = None) -> LifeCycleDiagnosis:
@@ -378,7 +398,7 @@ def diagnose(line_items: list, metrics: list | None = None) -> LifeCycleDiagnosi
         )
 
     stage, confidence, evidence = classify_stage(signals)
-    alignment, notes = assess_alignment(stage, signals)
+    alignment, notes, checked = assess_alignment(stage, signals)
     return LifeCycleDiagnosis(
         stage=stage,
         stage_label_ko=STAGE_LABELS_KO[stage],
@@ -388,4 +408,5 @@ def diagnose(line_items: list, metrics: list | None = None) -> LifeCycleDiagnosi
         playbook=STAGE_PLAYBOOK.get(stage, {}),
         alignment_score=alignment,
         alignment_notes_ko=notes,
+        alignment_checked=checked,
     )
