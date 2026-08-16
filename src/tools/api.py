@@ -1870,7 +1870,21 @@ def get_insider_trades(
             break
 
     if not all_trades:
-        return []
+        # 데이터 API 가 빈 배열을 돌려주는 경우가 있다(실측: 전 종목 0건).
+        # 실패가 아니라 정상 응답이라 조용히 '내부자 거래 없음'으로 처리되어,
+        # 이 데이터를 쓰는 8개 에이전트가 모두 중립으로 돌고 있었다.
+        # SEC Form 4 는 같은 정보의 1차 원천이므로 폴백으로 사용한다.
+        try:
+            from src.tools.insider_filings import fetch_insider_trades_from_sec
+
+            sec_trades = fetch_insider_trades_from_sec(
+                ticker, end_date=end_date, start_date=start_date,
+            )
+        except Exception:
+            sec_trades = []
+        if sec_trades:
+            _cache.set_insider_trades(cache_key, [t.model_dump() for t in sec_trades])
+        return sec_trades
 
     # Cache the results using the comprehensive cache key
     _cache.set_insider_trades(cache_key, [trade.model_dump() for trade in all_trades])

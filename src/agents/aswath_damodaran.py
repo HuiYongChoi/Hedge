@@ -18,6 +18,7 @@ from src.tools.filings import fetch_filing_sections
 from src.tools.life_cycle import diagnose as diagnose_life_cycle
 from src.tools.management_scorecard import assess as assess_management
 from src.tools.narrative_check import check as check_narrative
+from src.tools.proxy_statement import fetch_latest_proxy
 from src.utils.api_key import get_api_key_from_state
 from src.utils.forward_outlook import (
     FORWARD_OUTLOOK_SYSTEM_INSTRUCTION,
@@ -199,6 +200,24 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
 
         narrative = check_narrative(life_cycle.stage, "\n".join(company_text_parts))
         analysis_data[ticker]["narrative_check"] = narrative.to_dict()
+
+        # ─── 경영진 보상 구조(위임장) ─────────────────────────────────────────
+        # 자본배분 실적은 '결과'다. 그 결과를 만든 '인센티브'가 빠지면 절반이다.
+        progress.update_status(agent_id, ticker, "Reading executive compensation")
+        try:
+            proxy = fetch_latest_proxy(ticker)
+            if proxy.sections or proxy.say_on_pay_support is not None:
+                analysis_data[ticker]["compensation"] = {
+                    "source_url": proxy.source_url,
+                    "filing_date": proxy.filing_date,
+                    "say_on_pay_support": proxy.say_on_pay_support,
+                    "sections": [
+                        {"key": s.key, "title": s.title, "text": s.text}
+                        for s in proxy.sections
+                    ],
+                }
+        except Exception:
+            pass
 
         # ─── LLM: craft Damodaran-style narrative ──────────────────────────────
         progress.update_status(agent_id, ticker, "Generating Damodaran analysis")
@@ -557,6 +576,10 @@ def generate_damodaran_output(
                   `evidence_ko` 에 담긴 회사 문장을 근거로 인용하라.
                 - `narrative_check.insufficient` 가 true 면 서사 판정을 하지 마라.
                 - 서사를 새로 지어내지 마라. 회사가 쓴 문장을 인용·대조만 하라.
+                - `compensation` 은 위임장(DEF 14A)의 보상 원문이다. 자본배분 '결과'와
+                  그것을 유도한 '인센티브'를 함께 봐라 — 보상이 성과에 연동돼 있는지,
+                  단기 주가에만 걸려 있는지가 앞으로의 자본배분 행동을 좌우한다.
+                  수치는 원문에 있는 것만 쓰고, 없으면 `제공된 자료에서 확인 불가`.
                 {FORWARD_OUTLOOK_SYSTEM_INSTRUCTION}
 
                 {COMPANY_IDENTITY_REQUIREMENT}
