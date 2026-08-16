@@ -89,7 +89,10 @@ class SecFilingsStaticTests(unittest.TestCase):
         self.assertIn("for ticker in tickers[:2]:", LLM_SRC)
 
     def test_injection_is_idempotent(self):
-        self.assertIn('if "SEC FILING SOURCE TEXT" in content:', LLM_SRC)
+        # 공시 원문과 경영진 발언 두 블록을 주입하므로 두 마커를 모두 검사해야
+        # 중복 주입이 막힌다(발언 블록만 있는 경우도 포함).
+        self.assertIn("any(marker in content for marker in SOURCE_TEXT_MARKERS)", LLM_SRC)
+        self.assertIn("SOURCE_TEXT_MARKERS = (SEC_SOURCE_TEXT_MARKER, MANAGEMENT_SAID_MARKER)", LLM_SRC)
 
     def test_source_text_is_never_sanitized(self):
         """정규화기가 공시 원문의 'missing'/'not available' 등을 치환하면
