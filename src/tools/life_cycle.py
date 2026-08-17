@@ -132,10 +132,28 @@ class LifeCycleDiagnosis:
     alignment_total_checks: int = _ALIGNMENT_TOTAL_CHECKS
     insufficient: bool = False
 
+    @property
+    def stage_meaning_ko(self) -> str:
+        """'5단계 · 성숙 안정' 만 적으면 독자는 그게 좋은지 나쁜지 모른다.
+        단계를 말했으면 그 단계에서 무엇을 어떻게 봐야 하는지까지 붙인다."""
+        if not self.playbook:
+            return ""
+        parts = [f"'{self.stage_label_ko}' 단계입니다."]
+        if self.playbook.get("value_driver_ko"):
+            parts.append(f"이 단계에서 주가를 움직이는 것은 {self.playbook['value_driver_ko']}")
+        if self.playbook.get("valuation_ko"):
+            parts.append(f"따라서 값을 매길 때는 {self.playbook['valuation_ko']}")
+        if self.playbook.get("strategy_ko"):
+            parts.append(f"경영진이 해야 할 일은 {self.playbook['strategy_ko']}")
+        if self.playbook.get("key_risk_ko"):
+            parts.append(f"이 단계에서 가장 조심할 것은 {self.playbook['key_risk_ko']}")
+        return " ".join(parts)
+
     def to_dict(self) -> dict:
         return {
             "stage": self.stage,
             "stage_label_ko": self.stage_label_ko,
+            "stage_meaning_ko": self.stage_meaning_ko,
             "confidence": self.confidence,
             "signals": self.signals,
             "evidence_ko": self.evidence_ko,

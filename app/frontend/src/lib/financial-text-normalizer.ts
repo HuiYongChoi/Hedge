@@ -219,6 +219,10 @@ const RAW_FIELD_GLOSSARY: Array<[RegExp, string]> = [
   [/\bforward\s*P\/?E\b/gi, '선행 PER'],
   [/신뢰도가\s*low\b/gi, '신뢰도가 낮음'],
   [/신뢰도가\s*high\b/gi, '신뢰도가 높음'],
+  // 원시 신호값이 그대로 인쇄된다("종합 신호 bearish. 신뢰도: 56.0점.").
+  [/\bbearish\b/gi, '약세'],
+  [/\bbullish\b/gi, '강세'],
+  [/\bneutral\b/gi, '중립'],
   // 프롬프트에서 온 말. 독자에게는 아무 의미가 없다.
   [/\s*\(\s*전처리\s*\)/g, ''],
   [/\s*,\s*전처리\s*(?=\))/g, ''],

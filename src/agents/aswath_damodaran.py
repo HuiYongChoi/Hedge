@@ -608,6 +608,18 @@ def generate_damodaran_output(
 
                 - `score` 값이 `"DATA_INSUFFICIENT"` 인 항목은 점수를 인용하지 말고 "데이터 부족으로 평가 보류"라고 명시한다. 그 축을 근거로 단정적 매수/매도 판단을 하지 않는다.
 
+                - **숫자와 단계는 그 자체로 결론이 아니다.** 점수·배수·단계를 적었으면
+                  반드시 같은 문장 안에서 "그래서 무슨 뜻인지"를 이어 써라.
+                  · 나쁨: "재투자 수익성 점수 41.5 — 세후 ROIC 7.3% vs 자본비용 9.0%"
+                  · 좋음: "재투자 수익성 41.5점. 번 수익률(7.3%)이 조달 비용(9.0%)보다
+                    1.7%p 낮아, 재투자를 늘릴수록 주주 가치가 깎이는 구간이다."
+                  `management_assessment.axes[].meaning_ko` 와
+                  `life_cycle.stage_meaning_ko` 에 그 해석이 이미 들어 있으니 활용하라.
+                - 단계 이름만 적고 끝내지 마라("5단계 · 성숙 안정." 만 쓰는 식). 그 단계이므로
+                  어떤 잣대로 값을 매겨야 하고 무엇을 조심해야 하는지까지 한 문장으로 붙여라.
+                - `signal` 의 영문 값(bearish/bullish/neutral)을 그대로 쓰지 말고
+                  한국어(약세/강세/중립)로 쓰고, 왜 그 방향인지 한 줄을 덧붙여라.
+
                 {VALUATION_CONFIDENCE_REQUIREMENT}
 
                 Return ONLY the JSON specified below.""",

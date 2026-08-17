@@ -41,6 +41,13 @@ class ScoreAxis:
     label_ko: str
     score: Optional[float]        # 0~100, None 이면 판단 보류
     detail_ko: str
+    #: 그 숫자가 '그래서 무슨 뜻인지'. 숫자만 보여주면 독자가 해석을 떠안는다.
+    meaning_ko: str = ""
+
+    @property
+    def full_ko(self) -> str:
+        """숫자와 해석을 한 문장으로. 소비 측이 숫자만 인용하는 것을 막는다."""
+        return f"{self.detail_ko} — {self.meaning_ko}" if self.meaning_ko else self.detail_ko
 
 
 @dataclass
@@ -57,7 +64,8 @@ class ManagementAssessment:
             "overall": self.overall,
             "grade_ko": self.grade_ko,
             "axes": [
-                {"key": a.key, "label_ko": a.label_ko, "score": a.score, "detail_ko": a.detail_ko}
+                {"key": a.key, "label_ko": a.label_ko, "score": a.score,
+                 "detail_ko": a.full_ko, "meaning_ko": a.meaning_ko}
                 for a in self.axes
             ],
             "strengths_ko": self.strengths_ko,
@@ -120,7 +128,18 @@ def assess(
         spread = roic - hurdle
         score = max(0.0, min(100.0, 50 + spread * 500))
         detail = f"세후 ROIC 약 {roic:.1%} vs 자본비용 {hurdle:.1%} (초과수익 {spread:+.1%}p)"
-        axes.append(ScoreAxis("roic_spread", "재투자 수익성", round(score, 1), detail))
+        if spread > 0.03:
+            meaning = (f"돈을 굴려 번 수익률({roic:.1%})이 그 돈을 끌어오는 값({hurdle:.1%})을 "
+                       f"{spread:.1%}p 웃돕니다. 사업에 재투자할수록 주주 몫이 늘어나는 구간이라, "
+                       "성장 투자를 늘리는 편이 유리합니다.")
+        elif spread > 0:
+            meaning = (f"번 수익률이 조달 비용을 겨우 {spread:.1%}p 넘습니다. 재투자를 해도 "
+                       "가치가 크게 늘지는 않는 본전 언저리 구간입니다.")
+        else:
+            meaning = (f"그 돈을 끌어오는 값({hurdle:.1%})보다 그 돈으로 번 수익률({roic:.1%})이 "
+                       f"{abs(spread):.1%}p 낮습니다. 지금 조건이 이어지면 재투자를 늘릴수록 "
+                       "주주 가치가 깎입니다 — 배당·자사주로 돌려주는 편이 나은 국면입니다.")
+        axes.append(ScoreAxis("roic_spread", "재투자 수익성", round(score, 1), detail, meaning))
         if spread > 0.03:
             strengths.append(f"투하자본이 자본비용을 {spread:.1%}p 웃도는 수익을 내고 있다.")
         elif spread < -0.01:
@@ -140,7 +159,17 @@ def assess(
             inc_roic = d_ebit / d_capital
             score = max(0.0, min(100.0, 50 + inc_roic * 400))
             detail = f"최근 2년 증분 투하자본 대비 증분 세후영업이익 {inc_roic:.1%}"
-            axes.append(ScoreAxis("incremental_roic", "증분 자본 효율", round(score, 1), detail))
+            if inc_roic < 0:
+                meaning = ("최근 2년 사이 자본을 더 넣었는데 영업이익은 오히려 줄었습니다. "
+                           "투자가 아직 성과로 돌아오지 않았거나 판단이 빗나갔다는 신호이므로, "
+                           "무엇에 썼는지부터 확인해야 합니다.")
+            elif inc_roic > 0.15:
+                meaning = (f"최근 2년 새로 넣은 돈 100원이 매년 {inc_roic * 100:.0f}원을 벌어왔습니다. "
+                           "최근 투자 판단이 잘 맞았다는 뜻입니다.")
+            else:
+                meaning = (f"새로 넣은 돈 100원이 매년 {inc_roic * 100:.0f}원을 벌어왔습니다. "
+                           "자본비용 언저리라 최근 투자가 가치를 크게 더하지는 못했습니다.")
+            axes.append(ScoreAxis("incremental_roic", "증분 자본 효율", round(score, 1), detail, meaning))
             if inc_roic < 0:
                 concerns.append("자본을 더 넣었는데 영업이익은 오히려 줄었다 — 최근 투자 판단을 확인할 필요.")
             elif inc_roic > 0.15:
@@ -170,7 +199,15 @@ def assess(
         else:
             score = max(0.0, min(100.0, 60 - change * 400))
             detail = f"기간 중 주식수 {change:+.1%}"
-        axes.append(ScoreAxis("share_discipline", "지분 관리", round(score, 1), detail))
+        if change < -0.02:
+            meaning = (f"자사주를 사서 없앤 만큼 주식 수가 {abs(change):.1%} 줄었습니다. "
+                       "같은 이익이라도 1주당 몫이 그만큼 커집니다.")
+        elif change > 0.05:
+            meaning = (f"주식 수가 {change:.1%} 늘었습니다. 회사가 같은 이익을 내도 "
+                       "나눠 가질 사람이 늘어 기존 주주 몫은 그만큼 줄어듭니다(희석).")
+        else:
+            meaning = "주식 수가 거의 그대로입니다. 희석도 환원도 크지 않습니다."
+        axes.append(ScoreAxis("share_discipline", "지분 관리", round(score, 1), detail, meaning))
         if change > 0.05 and not is_early:
             concerns.append(f"주식수가 {change:.1%} 늘어 기존 주주 지분이 희석됐다.")
         elif change > 0.35 and is_early:
@@ -185,7 +222,16 @@ def assess(
         leverage = debt[-1] / (op_income[-1] * 0.75)
         score = max(0.0, min(100.0, 100 - leverage * 12))
         detail = f"순영업이익 대비 총차입금 약 {leverage:.1f}배"
-        axes.append(ScoreAxis("leverage", "재무 규율", round(score, 1), detail))
+        if leverage > 5:
+            meaning = (f"빚이 한 해 벌이의 {leverage:.1f}배입니다. 이익이 조금만 줄어도 "
+                       "이자 부담이 빠르게 커지는 구조라, 불황에 특히 취약합니다.")
+        elif leverage < 2:
+            meaning = (f"빚이 한 해 벌이의 {leverage:.1f}배에 그칩니다. 이익이 흔들려도 "
+                       "갚는 데 무리가 없고, 필요하면 더 빌려 투자할 여력도 있습니다.")
+        else:
+            meaning = (f"빚이 한 해 벌이의 {leverage:.1f}배입니다. 감당 가능한 수준이지만 "
+                       "이익이 크게 줄면 부담이 눈에 띄게 커집니다.")
+        axes.append(ScoreAxis("leverage", "재무 규율", round(score, 1), detail, meaning))
         if leverage > 5:
             concerns.append(f"차입금이 세후영업이익의 {leverage:.1f}배 — 이익 변동 시 부담이 커진다.")
         elif leverage < 2:
@@ -200,7 +246,17 @@ def assess(
         conversion = fcf[-1] / net_income[-1]
         score = max(0.0, min(100.0, conversion * 80))
         detail = f"잉여현금흐름 / 순이익 {conversion:.0%}"
-        axes.append(ScoreAxis("cash_conversion", "현금 전환", round(score, 1), detail))
+        if conversion > 1.0:
+            meaning = ("장부에 찍힌 이익보다 실제로 들어온 현금이 더 많습니다. "
+                       "이익이 숫자놀음이 아니라 진짜 현금으로 확인된다는 뜻입니다.")
+        elif conversion < 0.5:
+            meaning = (f"장부 이익 중 {conversion:.0%}만 실제 현금으로 들어왔습니다. "
+                       "나머지는 재고나 아직 못 받은 대금에 묶여 있을 수 있어, "
+                       "이익의 질을 따로 확인해야 합니다.")
+        else:
+            meaning = (f"장부 이익의 {conversion:.0%}가 현금으로 들어왔습니다. "
+                       "이익과 현금이 대체로 같이 움직이는 정상 범위입니다.")
+        axes.append(ScoreAxis("cash_conversion", "현금 전환", round(score, 1), detail, meaning))
         if conversion < 0.5:
             concerns.append(f"순이익 대비 현금 전환이 {conversion:.0%}에 그친다 — 이익의 질을 확인할 필요.")
         elif conversion > 1.0:

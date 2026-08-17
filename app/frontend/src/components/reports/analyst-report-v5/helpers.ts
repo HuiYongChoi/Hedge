@@ -1277,6 +1277,13 @@ export function classifyItemTone(itemText: string): ReportTone {
   // 예: "[-] 괴리 리스크… 다만 선행 PER < TTM PER은 이익 확장 신호" → 혼합 → 중립
   const isMixed = bull >= 2 && bear >= 2;
 
+  // 0) 사실이 마커를 이긴다. 자본비용에 미달하는 초과수익은 어떤 마커가 붙어도 강세가 아니다.
+  //    실측: "[+] 재투자 수익성 41.5 — 세후 ROIC 7.3% vs 자본비용 9.0% (초과수익 -1.7%p)"
+  //    이 카드가 ✓강세로 표시됐다. 모델이 마커를 잘못 붙여도 숫자는 반대를 말한다.
+  if (/초과수익\s*[-−]\d|자본비용에\s*[\d.]+%?p?\s*미달|자본비용을?\s*(?:밑돌|하회)/u.test(itemText)) {
+    return 'bearish';
+  }
+
   // 1) 명시적 마커가 최우선([?]는 검증 조건이므로 중립) — 단, 혼합 신호면 중립으로 강등
   if (/^\s*\[-\]/.test(text)) return isMixed ? 'neutral' : 'bearish';
   if (/^\s*\[\+\]/.test(text)) return isMixed ? 'neutral' : 'bullish';
