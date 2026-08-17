@@ -157,6 +157,33 @@ function stripPromptEcho(text: string): string {
 // 실측: 보고서 본문 끝에 "[SEC FILING SOURCE TEXT — DART · … filed 20260317] URL:https://…"
 // 가 그대로 인쇄됐다. 이건 모델에게 준 자료의 머리표지이지 독자가 읽을 문장이 아니다.
 // 출처는 인용 칩으로 따로 렌더링되므로 본문의 맨 URL도 함께 걷어낸다.
+// 같은 라벨이 괄호 속에 겹겹이 쌓여 문장이 무너진다.
+// 실측: "이자부채비율 (이자부채비율, 이자부채비율 (이자부채비율 (이자부채비율 (debt-to-equity))))"
+export function collapseRepeatedRatioLabels(text: string): string {
+  return text.replace(
+    /([가-힣]{2,10}비율)(?:\s*[(,]\s*\1)+(?:\s*\(\s*(debt-to-equity)\s*\))?[\s)]*/gu,
+    (_full, label: string, english?: string) => (english ? `${label} (${english}) ` : `${label} `),
+  );
+}
+
+// 퍼센트가 조각나 붙은 형태("290.0%.9%")는 첫 값만 남긴다.
+function repairFragmentedPercents(text: string): string {
+  return text.replace(/(\d+(?:\.\d+)?)%(?:\s*\.\d+%)+/g, '$1%');
+}
+
+// 원화 금액에 달러 기호가 잘못 붙는다("USD 435,059 백만원"). 단위는 원 쪽이 맞다.
+function stripMismatchedCurrencyPrefix(text: string): string {
+  return text.replace(/\bUSD\s+(?=[\d,]+(?:\.\d+)?\s*(?:백만원|억원|조원|만원|원))/g, '');
+}
+
+// 체크박스·미해결 마커가 본문에 그대로 인쇄된다("검토 필요 - [ ] 위험관리", "[?] 경영진 종합평가").
+function stripLeftoverMarkers(text: string): string {
+  return text
+    .replace(/\[\s*[?xX✓]?\s*\]\s*/gu, '')
+    // 여는 괄호 없이 홀로 남은 닫는 대괄호("… 해석하지 않습니다. ] 근거(수치 인용):")
+    .replace(/(?<!\[[^\]]{0,200})\s\]\s*/gu, ' ');
+}
+
 export function stripLeakedSourceMarkers(text: string): string {
   return text
     .replace(/\[(?:SEC FILING SOURCE TEXT|MANAGEMENT SAID|SOURCE GROUNDING)[^\]]*\]\s*/gu, '')
@@ -168,6 +195,33 @@ export function stripLeakedSourceMarkers(text: string): string {
 
 //: 모델이 분석 데이터의 키 이름을 그대로 옮겨 적는다. 독자에게는 암호다.
 const RAW_FIELD_GLOSSARY: Array<[RegExp, string]> = [
+  // 두 키가 붙어 나오는 형태를 먼저 처리한다("life_cycle. evidence_ko에 따르면").
+  [/\blife_cycle\s*\.\s*evidence_ko\b/gi, '생애주기 진단 근거'],
+  [/\bnarrative_check\s*\.\s*aligned\s*=\s*false\b/gi, '서사 일관성 점검 결과 회사 서술과 실적이 어긋났고'],
+  [/\bnarrative_check\s*\.\s*aligned\s*=\s*true\b/gi, '서사 일관성 점검 결과 회사 서술과 실적이 맞았고'],
+  [/\baligned\s*=\s*false\b/gi, '서술과 실적이 어긋남'],
+  [/\baligned\s*=\s*true\b/gi, '서술과 실적이 맞음'],
+  [/\balignment_checked\s*(\d+)\s*vs\s*alignment_total_checks\s*(\d+)/gi, '전체 $2개 항목 중 $1개만 점검'],
+  [/\balignment_total_checks\b/gi, '전체 점검 항목 수'],
+  [/\balignment_checked\b/gi, '점검한 항목 수'],
+  [/\bconcerns_ko\b/gi, '우려 사항'],
+  [/\bevidence_ko\b/gi, '근거'],
+  [/\bverdict_ko\b/gi, '판정'],
+  [/\bnotes_ko\b/gi, '설명'],
+  [/\bgrade_ko\b/gi, '등급'],
+  [/\bstrengths_ko\b/gi, '강점'],
+  [/\blife_cycle\b/gi, '생애주기 진단'],
+  [/\bCorporate\s+Life\s+Cycle\b/gi, '기업 생애주기'],
+  [/\bStory\s*\(\s*기업\s*[“"']?이야기[”"']?\s*\)/gi, '기업 이야기'],
+  [/\bManagement\s*\/\s*자본배분/gi, '경영진 · 자본배분'],
+  [/경영진\s*평가\s+overall\b/gi, '경영진 평가 종합 점수'],
+  [/\boverall\s+(?=\d)/gi, '종합 점수 '],
+  [/\bforward\s*P\/?E\b/gi, '선행 PER'],
+  [/신뢰도가\s*low\b/gi, '신뢰도가 낮음'],
+  [/신뢰도가\s*high\b/gi, '신뢰도가 높음'],
+  // 프롬프트에서 온 말. 독자에게는 아무 의미가 없다.
+  [/\s*\(\s*전처리\s*\)/g, ''],
+  [/\s*,\s*전처리\s*(?=\))/g, ''],
   [/\bmargin_of_safety\b/gi, '안전마진'],
   [/\binterest_coverage\b/gi, '이자보상배율'],
   [/\balignment_score\b/gi, '전략 이행도 점수'],
@@ -259,6 +313,87 @@ function humanizeRawFieldNames(text: string): string {
   ));
 }
 
+// ── 평이한 한국어 ────────────────────────────────────────────────────────────
+// 모델이 논문 투로 쓴다("…가 제시된다", "…확인이 제한된다"). 같은 보고서 안에서
+// 어떤 문장은 '…합니다'로 끝나 문체도 뒤섞인다. 전문 용어는 그대로 두고 문장 끝과
+// 굳은 표현만 일상어로 바꾼다 — 읽는 사람이 바뀌는 게 아니라 말투만 바뀐다.
+
+//: 인용부호 안은 회사·공시의 말이다. 남의 말을 고쳐 쓰면 근거가 아니게 된다.
+function mapOutsideQuotes(text: string, transform: (chunk: string) => string): string {
+  const parts = text.split(/([“"][^“”"]*[”"]|「[^」]*」|『[^』]*』)/u);
+  return parts.map((part, index) => (index % 2 === 1 ? part : transform(part))).join('');
+}
+
+//: 문장을 맺는 '…다'를 '…습니다'로. 긴 표현을 먼저 맞춰야 짧은 표현에 먹히지 않는다.
+const SENTENCE_ENDINGS: Record<string, string> = {
+  '그대로 제시된다': '그대로 나와 있습니다',
+  '제시된다': '나와 있습니다',
+  '명시된다': '적혀 있습니다',
+  '확인된다': '확인됩니다',
+  '언급한다': '언급합니다',
+  '설명한다': '설명합니다',
+  '시사한다': '시사합니다',
+  '의미한다': '의미합니다',
+  '보인다': '보입니다',
+  '나타난다': '나타납니다',
+  '드러난다': '드러납니다',
+  '이어진다': '이어집니다',
+  '연결된다': '연결됩니다',
+  '어긋난다': '어긋납니다',
+  '충돌한다': '충돌합니다',
+  '우세하다': '우세합니다',
+  '가능하다': '가능합니다',
+  '필요하다': '필요합니다',
+  '충분하다': '충분합니다',
+  '유리하다': '유리합니다',
+  '불리하다': '불리합니다',
+  '유효하다': '유효합니다',
+  '한다': '합니다',
+  '된다': '됩니다',
+  '이다': '입니다',
+  '아니다': '아닙니다',
+  '없다': '없습니다',
+  '있다': '있습니다',
+  '같다': '같습니다',
+  '크다': '큽니다',
+  '작다': '작습니다',
+  '높다': '높습니다',
+  '낮다': '낮습니다',
+  '많다': '많습니다',
+  '적다': '적습니다',
+  '쉽다': '쉽습니다',
+  '어렵다': '어렵습니다',
+  '둔다': '둡니다',
+};
+
+const SENTENCE_ENDING_RE = new RegExp(
+  `(${Object.keys(SENTENCE_ENDINGS).sort((a, b) => b.length - a.length).join('|')})(?=\\s*(?:[.。!?]|·|$))`,
+  'gu',
+);
+
+//: 문장 끝이 아니라 표현 자체가 딱딱한 경우. 뜻은 그대로 두고 말만 쉽게 바꾼다.
+const STILTED_PHRASES: Array<[RegExp, string]> = [
+  // 긴 표현을 먼저 맞춘다. 짧은 규칙이 앞서면 문장 조각만 바뀌어 더 어색해진다.
+  [/여부를\s*단정할\s*만큼의\s*세부는\s*제공된\s*텍스트\s*범위에서\s*확인이\s*제한된다/g,
+    '여부는 제공된 자료만으로는 확인하기 어렵습니다'],
+  [/확인이\s*제한된다/g, '확인하기 어렵습니다'],
+  [/단정할\s*만큼의\s*세부는\s*제공된\s*텍스트\s*범위에서/g, '자세한 내용은 제공된 자료로는'],
+  [/를\s*그대로\s*고려하면/g, '를 함께 보면'],
+  [/으로\s*단정할\s*수는\s*없다/g, '이라고 단정할 수는 없습니다'],
+  [/정황이\s*있어/g, '흔적이 있어'],
+  [/에\s*가까운\s*현금흐름\s*\/\s*마진\s*프로파일을\s*보이지만/g, '에 가까운 현금흐름·마진 구조지만'],
+  [/보수적으로\s*해석해야\s*한다/g, '보수적으로 읽어야 합니다'],
+  [/그\s*대로\s*제시된다/g, '그대로 나와 있습니다'],
+];
+
+export function normalizeToPlainKorean(text: string): string {
+  return mapOutsideQuotes(text, chunk => {
+    let out = chunk;
+    for (const [pattern, replacement] of STILTED_PHRASES) out = out.replace(pattern, replacement);
+    return out.replace(SENTENCE_ENDING_RE, matched => SENTENCE_ENDINGS[matched] ?? matched);
+  });
+}
+
 // 모델이 원시 실수를 그대로 적고 말줄임표로 끊어("-0.166752…", "12.439…") 읽을 수 없게 만든다.
 // 비율 라벨이 앞에 오고 절댓값이 1 미만이면 퍼센트로, 그 밖에는 소수 둘째 자리로 정리한다.
 const RATIO_LABEL_RE = /(?:안전마진|마진|성장률|수익률|증가율|비율|margin|growth|rate|yield)\s*[^.\n]{0,20}$/iu;
@@ -285,7 +420,14 @@ export function normalizeTruncatedDecimals(text: string): string {
       }
       return tidyDecimal(value);
     })
-    // 3) 말줄임표가 없더라도 소수 넷째 자리를 넘으면 읽기 어렵다.
+    // 3) 안전마진은 비율로 적히면 크기가 안 읽힌다. "음수 (-0.43)" → "-43%"
+    .replace(
+      /((?:안전마진|margin\s*of\s*safety)[^.\n]{0,24}?)\(?\s*(-?0?\.\d{1,4})\s*\)?/giu,
+      (_full, prefix: string, num: string) => `${prefix}${tidyDecimal(Number(num) * 100)}%`,
+    )
+    // 4) 퍼센트는 소수 둘째 자리를 넘으면 정밀도가 아니라 잡음이다("12.999%" → "13%").
+    .replace(/(\d+\.\d{3,})%/g, (_full, num: string) => `${tidyDecimal(Number(num))}%`)
+    // 5) 말줄임표가 없더라도 소수 넷째 자리를 넘으면 읽기 어렵다.
     .replace(/(-?\d+\.\d{4,})(?!\d)/gu, (_full, num: string, offset: number, whole: string) => {
       const value = Number(num);
       if (!Number.isFinite(value)) return num;
@@ -316,8 +458,12 @@ export function normalizeFinancialDisplayText(text: string) {
       normalizeKoreanEnglishRedundancy(
         normalizeDuplicateFinancialNumbers(
           normalizeBnToKorean(normalizeDebtPercentSequences(
-            normalizeOversizedAmounts(normalizeTruncatedDecimals(humanizeRawFieldNames(
-              stripLeakedSourceMarkers(stripPromptEcho(rejoinBrokenDecimals(text))),
+            normalizeToPlainKorean(normalizeOversizedAmounts(normalizeTruncatedDecimals(
+              humanizeRawFieldNames(stripMismatchedCurrencyPrefix(repairFragmentedPercents(
+                collapseRepeatedRatioLabels(stripLeftoverMarkers(
+                  stripLeakedSourceMarkers(stripPromptEcho(rejoinBrokenDecimals(text))),
+                )),
+              ))),
             ))),
           )),
         ),
