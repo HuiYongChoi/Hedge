@@ -99,7 +99,10 @@ function formatMargin(
 ) {
   if (value === null && referencePrice === null) return language === 'ko' ? '안전마진 N/A' : 'Margin N/A';
   if (referencePrice !== null) {
-    const label = language === 'ko' ? '안전가' : 'Safety Price';
+    // 여기 값은 내재가치(적정가)이지 안전가가 아니다. 안전가는 사이드바가 보여주는
+    // '적정가 −25%'(target-data-sidebar)다. 같은 화면에서 두 값이 모두 '안전가'로
+    // 불려 25% 차이 나는 두 숫자가 같은 이름을 달고 있었다(실측: ₩1,405,619 vs ₩1,054,214).
+    const label = language === 'ko' ? '적정가' : 'Fair Value';
     const pct = value !== null ? ` · ${formatSignedPercent(value)}` : '';
     return `${label} ${formatMoney(referencePrice, currency, { maximumFractionDigits: 0 })}${pct}`;
   }
