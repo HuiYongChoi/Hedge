@@ -12,8 +12,10 @@ DEF 14A 에서 뽑는 것
     · Say-on-Pay                  — 보상안에 대한 주주 찬성률
 
 한국·일본
-    DART 사업보고서의 '임원의 보수' 항목이 대응되며 이미 filings 파이프라인이
-    본문을 받아온다. 여기서는 미국 DEF 14A 만 다룬다.
+    한국에는 위임장 공시 제도가 없다. 대신 사업보고서 'VIII. 임원 및 직원 등에
+    관한 사항'의 이사·감사 보수현황 표가 대응되며, 이는
+    `dart_filings.extract_kr_compensation` 이 담당한다(items 에 "COMP").
+    이 모듈은 미국 DEF 14A 만 다룬다.
 """
 
 from __future__ import annotations

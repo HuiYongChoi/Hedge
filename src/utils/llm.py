@@ -470,7 +470,7 @@ def attach_sec_grounding_context(prompt: any, state: AgentState | None) -> any:
         if not tickers:
             return prompt
 
-        from src.tools.filings import build_grounding_context, fetch_filing_sections
+        from src.tools.filings import build_grounding_context, detect_market, fetch_filing_sections
 
         period = os.environ.get("SEC_GROUNDING_PERIOD", "annual").strip().lower()
         if period not in ("annual", "quarterly"):
@@ -497,14 +497,27 @@ def attach_sec_grounding_context(prompt: any, state: AgentState | None) -> any:
 
             if earnings_enabled:
                 # 실패해도 공시 원문 주입까지 막지 않도록 개별 보호한다.
+                # 미국은 8-K Item 2.02(실적 보도자료), 한국은 영업(잠정)실적 공정공시가
+                # 같은 역할을 한다 — 어느 쪽이든 '회사가 직접 한 말'이다.
                 try:
-                    from src.tools.earnings_release import (
-                        build_earnings_context,
-                        fetch_latest_earnings_release,
-                    )
+                    if detect_market(ticker) == "KR":
+                        from src.tools.dart_earnings import (
+                            build_kr_earnings_context,
+                            fetch_latest_kr_earnings,
+                        )
 
-                    release = fetch_latest_earnings_release(ticker, budget=earnings_budget)
-                    said = build_earnings_context(release)
+                        said = build_kr_earnings_context(
+                            fetch_latest_kr_earnings(ticker, budget=earnings_budget)
+                        )
+                    else:
+                        from src.tools.earnings_release import (
+                            build_earnings_context,
+                            fetch_latest_earnings_release,
+                        )
+
+                        said = build_earnings_context(
+                            fetch_latest_earnings_release(ticker, budget=earnings_budget)
+                        )
                     if said:
                         blocks.append(said)
                 except Exception:

@@ -147,6 +147,12 @@ _KR_RISK_HEADING_RE = re.compile(
 _KR_SUBHEADING_RE = re.compile(r"(?m)^\s*\d{1,2}\s*[.．]\s*\S")
 _KR_MIN_RISK_BLOCK = 300
 
+#: 미국은 위임장(DEF 14A)으로 경영진 보상을 받아오지만, 한국은 별도 위임장 공시가 없고
+#: 사업보고서 'VIII. 임원 및 직원 등에 관한 사항' 안의 보수 표가 그 역할을 한다.
+#: 목차에는 '임원의 보수'가 나오지만 '보수총액'은 본문 표에만 나오므로 이를 기준점으로 쓴다.
+_KR_COMP_ANCHOR_RE = re.compile(r"보수\s*총액|1인당\s*평균\s*보수액?")
+_KR_MIN_COMP_CHARS = 500
+
 
 def extract_kr_risk_section(text: str, budget: int = 6000) -> Optional[FilingSection]:
     """흩어진 위험 서술을 모아 미국 Item 1A 에 대응하는 섹션을 합성한다.
@@ -187,18 +193,47 @@ def extract_kr_risk_section(text: str, budget: int = 6000) -> Optional[FilingSec
     )
 
 
+def extract_kr_compensation(text: str, budget: int = 4000) -> Optional[FilingSection]:
+    """사업보고서에서 임원 보수 표를 잘라낸다(미국 DEF 14A 보상 섹션에 대응).
+
+    보수 표는 '임원 및 직원 등에 관한 사항' 섹션 뒤쪽에 있어서 섹션 머리부터
+    자르면 직원 현황만 담기고 정작 보수는 잘려나간다. 그래서 표 자체를 가리키는
+    '보수총액'을 기준점으로 잡고 그 앞뒤를 취한다.
+    """
+    match = _KR_COMP_ANCHOR_RE.search(text)
+    if match is None:
+        return None
+    start = max(0, match.start() - 400)
+    body = text[start:start + budget].strip()
+    if len(body) < _KR_MIN_COMP_CHARS:
+        return None
+    return FilingSection(
+        item="COMP",
+        title="임원 보수 (이사·감사 보수현황)",
+        text=body,
+        char_count=len(body),
+        truncated=len(text) - start > budget,
+    )
+
+
 def extract_kr_sections(
     text: str,
     items: tuple[str, ...] = ("1A", "1", "7"),
     budget_per_section: int = 6000,
 ) -> list[FilingSection]:
     """대제목 경계로 섹션을 잘라낸다."""
+    sections: list[FilingSection] = []
+    # 보수 표는 대제목 경계가 아니라 표 자체를 기준으로 잡으므로 먼저 처리한다.
+    if "COMP" in items:
+        compensation = extract_kr_compensation(text, budget=min(budget_per_section, 4000))
+        if compensation is not None:
+            sections.append(compensation)
+
     headings = [(m.start(), m.group(2).strip()) for m in _KR_HEADING_RE.finditer(text)]
     if not headings:
-        return []
+        return sections
     starts = [pos for pos, _ in headings]
 
-    sections: list[FilingSection] = []
     if "1A" in items:
         risk = extract_kr_risk_section(text, budget=budget_per_section)
         if risk is not None:

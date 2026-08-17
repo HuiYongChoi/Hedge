@@ -141,7 +141,8 @@ class MultiMarketFilingStaticTests(unittest.TestCase):
 
     # ── 주입 ──────────────────────────────────────────────────────────────
     def test_injection_uses_dispatcher(self):
-        self.assertIn("from src.tools.filings import build_grounding_context, fetch_filing_sections", LLM)
+        self.assertIn("from src.tools.filings import build_grounding_context", LLM)
+        self.assertIn("fetch_filing_sections", LLM)
         self.assertNotIn("from src.tools.sec_filings import build_grounding_context", LLM)
 
     def test_all_markets_fail_soft(self):

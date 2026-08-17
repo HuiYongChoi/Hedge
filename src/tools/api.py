@@ -1873,13 +1873,23 @@ def get_insider_trades(
         # 데이터 API 가 빈 배열을 돌려주는 경우가 있다(실측: 전 종목 0건).
         # 실패가 아니라 정상 응답이라 조용히 '내부자 거래 없음'으로 처리되어,
         # 이 데이터를 쓰는 8개 에이전트가 모두 중립으로 돌고 있었다.
-        # SEC Form 4 는 같은 정보의 1차 원천이므로 폴백으로 사용한다.
+        # SEC Form 4 / DART 임원·주요주주 소유상황보고가 같은 정보의 1차 원천이므로
+        # 시장에 맞춰 폴백한다(공급자는 한국 종목을 아예 담지 않는다).
         try:
-            from src.tools.insider_filings import fetch_insider_trades_from_sec
+            from src.tools.filings import detect_market
 
-            sec_trades = fetch_insider_trades_from_sec(
-                ticker, end_date=end_date, start_date=start_date,
-            )
+            if detect_market(ticker) == "KR":
+                from src.tools.dart_insider import fetch_insider_trades_from_dart
+
+                sec_trades = fetch_insider_trades_from_dart(
+                    ticker, end_date=end_date, start_date=start_date,
+                )
+            else:
+                from src.tools.insider_filings import fetch_insider_trades_from_sec
+
+                sec_trades = fetch_insider_trades_from_sec(
+                    ticker, end_date=end_date, start_date=start_date,
+                )
         except Exception:
             sec_trades = []
         if sec_trades:

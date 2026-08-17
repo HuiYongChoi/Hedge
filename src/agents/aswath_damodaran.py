@@ -203,19 +203,39 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
 
         # ─── 경영진 보상 구조(위임장) ─────────────────────────────────────────
         # 자본배분 실적은 '결과'다. 그 결과를 만든 '인센티브'가 빠지면 절반이다.
+        # 한국은 별도 위임장 공시가 없다. 사업보고서의 '이사·감사 보수현황'이 대응된다.
         progress.update_status(agent_id, ticker, "Reading executive compensation")
         try:
-            proxy = fetch_latest_proxy(ticker)
-            if proxy.sections or proxy.say_on_pay_support is not None:
-                analysis_data[ticker]["compensation"] = {
-                    "source_url": proxy.source_url,
-                    "filing_date": proxy.filing_date,
-                    "say_on_pay_support": proxy.say_on_pay_support,
-                    "sections": [
-                        {"key": s.key, "title": s.title, "text": s.text}
-                        for s in proxy.sections
-                    ],
-                }
+            from src.tools.filings import detect_market
+
+            if detect_market(ticker) == "KR":
+                from src.tools.dart_filings import fetch_latest_filing_sections
+
+                filing = fetch_latest_filing_sections(
+                    ticker, form="annual", items=("COMP",), budget_per_section=4000,
+                )
+                if filing.sections:
+                    analysis_data[ticker]["compensation"] = {
+                        "source_url": filing.source_url,
+                        "filing_date": filing.filing_date,
+                        "say_on_pay_support": None,   # 한국에는 보상안 주주투표 제도가 없다
+                        "sections": [
+                            {"key": s.item, "title": s.title, "text": s.text}
+                            for s in filing.sections
+                        ],
+                    }
+            else:
+                proxy = fetch_latest_proxy(ticker)
+                if proxy.sections or proxy.say_on_pay_support is not None:
+                    analysis_data[ticker]["compensation"] = {
+                        "source_url": proxy.source_url,
+                        "filing_date": proxy.filing_date,
+                        "say_on_pay_support": proxy.say_on_pay_support,
+                        "sections": [
+                            {"key": s.key, "title": s.title, "text": s.text}
+                            for s in proxy.sections
+                        ],
+                    }
         except Exception:
             pass
 
