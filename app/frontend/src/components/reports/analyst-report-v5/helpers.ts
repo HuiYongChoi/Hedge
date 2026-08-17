@@ -907,11 +907,31 @@ function buildFallbackCrossCheckGuideFromReport(
     : isJapan
       ? 'EDINET 유가증권보고서(사업 현황, 재무 현황 섹션)'
       : '사업보고서/10-K의 MD&A, 재무제표 주석';
+  // 크로스체크는 '다음에 무엇을 볼지'를 짚어 주는 자리다. 길게 쓰면 본문과 겹쳐
+  // 읽는 부담만 커진다. 한 줄씩, 셋으로 끝낸다. 원문은 아래 출처 섹션에서 펼쳐 본다.
   const snippets = pickMetricSummary(report, ['signal', 'confidence', 'intrinsic_value', 'wacc', 'forward_pe', 'margin_of_safety']);
-  if (snippets) {
-    return `1. **핵심 타겟 데이터:** ${snippets}.\n2. **원문 추적 섹션:** ${sourceRef}, 리스크 요인을 대조하십시오.\n3. **경영진 멘트 검증:** 숫자 변화가 경영진 설명과 일치하는지 확인하십시오.`;
-  }
-  return `1. **핵심 타겟 데이터:** 전처리 데이터의 신호, 신뢰도, 밸류에이션 가정을 확인하십시오.\n2. **원문 추적 섹션:** ${sourceRef}와 최근 어닝콜을 대조하십시오.\n3. **경영진 멘트 검증:** 투자 논거와 리스크 문구가 원문과 일치하는지 확인하십시오.`;
+  return [
+    snippets
+      ? `1. **핵심 숫자 재확인:** ${snippets}`
+      : `1. **핵심 숫자 재확인:** 신호·신뢰도와 밸류에이션 가정(할인율, 성장률)`,
+    `2. **원문 대조:** ${sourceRef}의 리스크 요인 — 아래 출처 섹션에서 바로 펼쳐 볼 수 있습니다.`,
+    `3. **경영진 발언 대조:** 숫자 변화가 회사 설명과 같은 방향인지`,
+  ].join('\n');
+}
+
+// 본문에 남은 '검토 필요 - … 실제 표현 확인' 류의 체크리스트를 걷어낸다.
+// 이건 분석 결과가 아니라 작성자에게 남긴 숙제다. 원문 확인은 출처 섹션의
+// '공시 원문 펼쳐보기'가 대신하므로, 리스크 근거 자리를 차지할 이유가 없다.
+// 실측 카드: "검토 필요 - 위험관리 … 외환거래 투기 금지, 내부자금 공유 등 실제 표현 확인."
+// 안에 '환율 5%' 같은 숫자가 있어도 그건 확인할 '주제'이지 분석 결과가 아니다.
+// 그래서 수치 유무가 아니라 '지시로 시작해 지시로 끝나는가'로 판별한다.
+// 주의: JS 정규식의 \b 는 한글 뒤에서 성립하지 않는다(‘필요\b’ 는 절대 안 걸린다).
+const HOMEWORK_HEAD_RE = /^\s*(?:검토|확인|추가\s*확인)\s*필요(?![가-힣])/u;
+const HOMEWORK_TAIL_RE = /(?:실제\s*표현\s*)?확인(?:하십시오|하세요|해야\s*한다|해야\s*합니다|이\s*필요합니다|합니다|한다)?\s*[.。]?\s*$/u;
+
+export function isHomeworkEvidenceText(text: string): boolean {
+  const clean = (text || '').replace(/^\s*\[[+\-~?]\]\s*/u, '').replace(/\s+/g, ' ').trim();
+  return HOMEWORK_HEAD_RE.test(clean) && HOMEWORK_TAIL_RE.test(clean);
 }
 
 export function buildSourceTrackingText(report: AgentReport | null | undefined) {
@@ -1250,7 +1270,8 @@ export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
 
   const items = source
     .map(buildEvidenceItem)
-    .filter((item): item is EvidenceItem => !isBlankEvidenceItem(item));
+    .filter((item): item is EvidenceItem => !isBlankEvidenceItem(item))
+    .filter(item => !isHomeworkEvidenceText(item.rawText));
 
   return sortEvidenceItemsByTone(items);
 }

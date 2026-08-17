@@ -64,6 +64,7 @@ export function ReportBody({
           key={section.id}
           section={section}
           sectionText={dedupedSectionTexts[sectionIndex]}
+          ticker={ticker}
           activeReport={activeReport}
           activeAgentKey={activeAgentKey}
           citations={citations}

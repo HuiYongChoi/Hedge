@@ -1,12 +1,14 @@
 import { t } from '@/lib/language-preferences';
 import { extractSensitivityMatrix, parseEvidenceItems, shouldShowSensitivity } from './helpers';
 import { EvidenceItem } from './evidence-item';
+import { FilingSourceDisclosure } from './filing-source-disclosure';
 import { SensitivityHeatmap } from './sensitivity-heatmap';
 import type { AgentReport, Citation, ReportLanguage, SectionDef } from './types';
 
 interface ReportSectionProps {
   section: SectionDef;
   sectionText: string;
+  ticker: string;
   activeReport: AgentReport | null;
   activeAgentKey: string;
   citations: Citation[];
@@ -18,6 +20,7 @@ interface ReportSectionProps {
 export function ReportSection({
   section,
   sectionText,
+  ticker,
   activeReport,
   activeAgentKey,
   citations,
@@ -99,6 +102,12 @@ export function ReportSection({
           currentGrowth={centerCell?.growth ?? 0}
           language={language}
         />
+      )}
+
+      {/* 출처 섹션에서만 원문을 붙인다. 평소엔 접혀 있고 확인하고 싶을 때만 편다 —
+          본문에 "실제 표현 확인" 같은 숙제를 남기는 대신 원문 자체를 여기에 둔다. */}
+      {section.id === 'section-06' && ticker && (
+        <FilingSourceDisclosure ticker={ticker} language={language} />
       )}
     </section>
   );

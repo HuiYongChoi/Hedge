@@ -97,5 +97,43 @@ class RawSignalWordTests(unittest.TestCase):
         self.assertIn("stage_meaning_ko", AGENT)
 
 
+class SourceDisclosureTests(unittest.TestCase):
+    """본문에 '실제 표현 확인' 숙제를 남기는 대신, 원문을 접어 두고 필요할 때 펼친다."""
+
+    DISCLOSURE = (ROOT / "app/frontend/src/components/reports/analyst-report-v5/filing-source-disclosure.tsx")
+    SECTION = (ROOT / "app/frontend/src/components/reports/analyst-report-v5/report-section.tsx")
+
+    def test_disclosure_component_exists(self):
+        self.assertTrue(self.DISCLOSURE.exists())
+
+    def test_fetches_lazily_on_first_open(self):
+        """원문은 수십만 자다. 미리 받으면 화면이 느려진다."""
+        src = self.DISCLOSURE.read_text(encoding="utf-8")
+        self.assertIn("if (!next || payload || loading || !ticker) return;", src)
+        self.assertIn("/sec-filings/", src)
+
+    def test_mounted_only_in_source_section(self):
+        src = self.SECTION.read_text(encoding="utf-8")
+        self.assertIn("section.id === 'section-06'", src)
+        self.assertIn("FilingSourceDisclosure", src)
+
+    def test_homework_items_dropped_from_evidence(self):
+        """'검토 필요 … 실제 표현 확인.'은 분석 결과가 아니라 작성자에게 남긴 숙제다."""
+        self.assertIn("isHomeworkEvidenceText", HELPERS)
+        self.assertIn("HOMEWORK_HEAD_RE", HELPERS)
+        self.assertIn("HOMEWORK_TAIL_RE", HELPERS)
+
+    def test_homework_head_avoids_korean_word_boundary(self):
+        r"""JS 정규식의 \b 는 한글 뒤에서 성립하지 않는다 — 규칙이 조용히 안 걸린다."""
+        head_line = next(l for l in HELPERS.splitlines() if "HOMEWORK_HEAD_RE =" in l)
+        self.assertNotIn("필요\\b", head_line)
+        self.assertIn("필요(?![가-힣])", head_line)
+
+    def test_cross_check_guide_is_three_short_lines(self):
+        """크로스체크는 '다음에 뭘 볼지'만 짚는다. 길면 본문과 겹친다."""
+        self.assertIn("1. **핵심 숫자 재확인:**", HELPERS)
+        self.assertIn("아래 출처 섹션에서 바로 펼쳐 볼 수 있습니다", HELPERS)
+
+
 if __name__ == "__main__":
     unittest.main()
