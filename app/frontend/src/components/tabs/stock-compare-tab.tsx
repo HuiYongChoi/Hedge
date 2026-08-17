@@ -69,8 +69,27 @@ interface CompareSlot {
   targetConsensus?: number | null;
   valuation?: ValuationDeepDive | null;
   signal?: { signal: string; confidence: number } | null;
+  insiderSignals?: InsiderSignals | null;
   error?: string;
   progressMessage?: string;
+}
+
+/** 내부자 재량 거래 요약 + 회사가 마지막으로 직접 밝힌 실적 공시 (/insider-signals). */
+interface InsiderSignals {
+  market: string;
+  window_days: number;
+  net_shares: number | null;
+  buy_count: number;
+  sell_count: number;
+  distinct_insiders: number;
+  latest_transaction_date: string | null;
+  has_data: boolean;
+  disclosure?: {
+    title: string | null;
+    filing_date: string | null;
+    source_url: string | null;
+    has_data: boolean;
+  } | null;
 }
 
 type ChartMetricKey = 'relative_price' | 'eps' | 'free_cash_flow' | 'operating_income_growth' | 'liabilities_to_equity';
@@ -120,6 +139,61 @@ const FINANCIAL_ROWS: Array<{ key: string; ko: string; en: string; percent?: boo
 ];
 
 const ANNUAL_GROWTH_KEYS = new Set(['revenue_growth', 'operating_income_growth', 'earnings_growth']);
+
+const fmtSharesSigned = (value: number | null | undefined) => {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  const sign = value > 0 ? '+' : value < 0 ? '−' : '';
+  return `${sign}${Math.abs(Math.round(value)).toLocaleString()}`;
+};
+
+// 비교 표에 넣을 내부자·공시 항목. 순매수는 방향(색)까지 함께 읽히도록 톤을 준다.
+const INSIDER_ROWS: Array<{
+  key: string;
+  ko: string;
+  en: string;
+  render: (s: InsiderSignals | null | undefined, language: 'ko' | 'en') => string;
+  toneClass?: (s: InsiderSignals | null | undefined) => string;
+}> = [
+  {
+    key: 'net_shares',
+    ko: '내부자 순매수 (6개월, 주)',
+    en: 'Insider net buy (6m, shares)',
+    render: s => (s?.has_data ? fmtSharesSigned(s.net_shares) : '—'),
+    toneClass: s => {
+      const net = s?.has_data ? s.net_shares ?? 0 : 0;
+      if (net > 0) return 'text-emerald-600 dark:text-emerald-400';
+      if (net < 0) return 'text-rose-600 dark:text-rose-400';
+      return '';
+    },
+  },
+  {
+    key: 'buy_sell',
+    ko: '매수 / 매도 건수',
+    en: 'Buy / sell count',
+    render: s => (s?.has_data ? `${s.buy_count} / ${s.sell_count}` : '—'),
+  },
+  {
+    key: 'insiders',
+    ko: '거래 내부자 수',
+    en: 'Distinct insiders',
+    render: s => (s?.has_data ? String(s.distinct_insiders) : '—'),
+  },
+  {
+    key: 'latest',
+    ko: '최근 내부자 거래일',
+    en: 'Latest insider trade',
+    render: s => s?.latest_transaction_date || '—',
+  },
+  {
+    key: 'disclosure',
+    ko: '최근 실적 공시 (회사 발표)',
+    en: 'Latest earnings disclosure',
+    render: (s, lang) => {
+      if (!s?.disclosure?.has_data) return '—';
+      return s.disclosure.filing_date || (lang === 'ko' ? '확인됨' : 'available');
+    },
+  },
+];
 
 const VALUATION_BAR_ROWS = [
   { key: 'dcf', ko: 'DCF', en: 'DCF', higherIsBetter: true },
@@ -958,6 +1032,16 @@ export function StockCompareTab() {
           progressMessage: language === 'ko' ? `${displayTicker} · 재무 데이터 완료 · 가치평가 중` : `${displayTicker} · Metrics ready · valuing`,
         });
 
+        // 내부자 신호·회사 발언은 부가 근거다. 실패해도 비교 자체를 막지 않도록
+        // 가치평가와 별개로 띄워 보내고 결과만 슬롯에 채운다.
+        void fetch(`${API_BASE_URL}/insider-signals/${encodeURIComponent(resolvedTicker)}`, { signal: controller.signal })
+          .then(res => (res.ok ? res.json() : null))
+          .then((insider: InsiderSignals | null) => {
+            if (controller.signal.aborted || !insider) return;
+            updateSlot(slot.id, { insiderSignals: insider });
+          })
+          .catch(() => { /* 부가 근거 — 조용히 넘어간다 */ });
+
         void runValuationForTicker(resolvedTicker, displayTicker, slot.id, controller.signal)
           .then(complete => {
             if (controller.signal.aborted) return;
@@ -1295,6 +1379,46 @@ export function StockCompareTab() {
                 </table>
               </div>
             </section>
+
+            {/* 내부자 신호 · 회사 발언 — 재무비율만으로는 안 보이는 '사람'의 판단.
+                미국 SEC Form 4 / 한국 DART 임원·주요주주 소유상황보고에서 스톡 보상과
+                우리사주 인출을 걸러낸 재량 거래만 집계한다. */}
+            {readySlots.some(s => s.insiderSignals) && (
+              <section className="rounded-lg border">
+                <div className="border-b px-3 py-2 text-sm font-medium">
+                  {language === 'ko' ? '내부자 신호 · 회사 발언' : 'Insider signal · company statements'}
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-muted-foreground">
+                        <th className="px-3 py-2">{language === 'ko' ? '항목' : 'Item'}</th>
+                        {readySlots.map(s => (
+                          <th key={s.id} className="px-3 py-2 text-right">{s.ticker || '—'}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {INSIDER_ROWS.map(row => (
+                        <tr key={row.key} className="border-t">
+                          <td className="px-3 py-2 text-xs">{language === 'ko' ? row.ko : row.en}</td>
+                          {readySlots.map(s => (
+                            <td key={s.id} className={`px-3 py-2 text-right font-mono ${row.toneClass?.(s.insiderSignals) ?? ''}`}>
+                              {row.render(s.insiderSignals, language)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="border-t px-3 py-2 text-[11px] text-muted-foreground">
+                  {language === 'ko'
+                    ? '재량 거래(장내·장외·시간외 매매)만 집계합니다. 스톡 보상·우리사주 인출·옵션 행사는 경영진의 판단이 아니므로 제외했습니다.'
+                    : 'Discretionary open-market trades only; equity awards, ESOP withdrawals and option exercises are excluded.'}
+                </div>
+              </section>
+            )}
 
             {/* Financial charts comparison (normalized price overlay) */}
             <section className="rounded-lg border">

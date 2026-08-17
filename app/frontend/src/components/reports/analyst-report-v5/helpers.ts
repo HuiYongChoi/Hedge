@@ -1023,6 +1023,10 @@ function buildEvidenceItem(raw: string, index: number): EvidenceItem {
   const clean = raw
     // 선두 목록 번호 제거 — 단, "2.0%/d"의 "2."(소수점)는 번호가 아니므로 (?!\d) 가드
     .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+\.(?!\d)\s*|\d+\)\s*)/u, '')
+    // 다단계 번호("1.2. 원문 추적 섹션") — 숫자 뒤에 공백과 비숫자가 와야 번호로 본다.
+    .replace(/^\s*\d+(?:\.\d+)+\.?\s+(?=[^\d\s])/u, '')
+    // 꼬리에 남은 빈 번호("… 연결) 1.")는 다음 항목의 머리만 떨어져 나온 조각이다.
+    .replace(/\s+\d+\.\s*$/u, '')
     .trim();
   const { heading, body } = extractItemHeading(clean);
   return {
@@ -1157,18 +1161,37 @@ export function dedupeSentencesAcrossSections(sectionTexts: string[]): string[] 
     .replace(/^[^:：.!?。]{0,40}[:：]\s*/u, '')
     .replace(/\s+/g, '')
     .trim();
+  // 문장을 블록(근거 카드) 단위로 묶는다. 블록 중간이나 머리의 문장을 지우면 뒤 문장이
+  // 기대던 주어·목적어가 사라져 "극단적으로 낮아 …" 같은 목 잘린 문단이 남는다(실측).
+  // 그래서 지우는 범위를 (1) 블록 전체가 중복일 때 통째로, (2) 아니면 블록 꼬리에서
+  // 이어지는 중복만 — 두 경우로 제한한다. 꼬리 문장은 뒤에 기대는 문장이 없어 안전하다.
+  const startsNewBlock = (sentence: string) =>
+    /^\s*(?:\n|#{2,3}\s+|[-*•]\s+|\d+[.)](?!\d)\s*|\[[+\-~?]\]\s*)/u.test(sentence);
+
   return sectionTexts.map(text => {
     if (!text) return text;
     const sentences = text.match(SENTENCE_MATCH_RE);
     if (!sentences || sentences.length < 2) return text;
-    const kept: string[] = [];
+
+    const blocks: string[][] = [];
     for (const sentence of sentences) {
-      const key = fingerprint(sentence);
-      if (key.length >= 30) {
-        if (seen.has(key)) continue;
-        seen.add(key);
+      if (blocks.length === 0 || startsNewBlock(sentence)) blocks.push([sentence]);
+      else blocks[blocks.length - 1].push(sentence);
+    }
+
+    const kept: string[] = [];
+    for (const block of blocks) {
+      const keys = block.map(fingerprint);
+      const eligible = keys.filter(key => key.length >= 30);
+      const isWholeBlockDuplicate =
+        eligible.length > 0 && eligible.every(key => seen.has(key));
+      if (isWholeBlockDuplicate) {
+        continue; // 같은 본문이 다른 헤딩을 달고 반복되는 패턴 — 통째로 제거
       }
-      kept.push(sentence);
+      let end = block.length;
+      while (end > 1 && keys[end - 1].length >= 30 && seen.has(keys[end - 1])) end -= 1;
+      keys.forEach(key => { if (key.length >= 30) seen.add(key); });
+      kept.push(...block.slice(0, end));
     }
     return kept.join('');
   });

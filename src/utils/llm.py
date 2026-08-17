@@ -522,6 +522,26 @@ def attach_sec_grounding_context(prompt: any, state: AgentState | None) -> any:
                         blocks.append(said)
                 except Exception:
                     pass
+
+                # 어닝콜 전사(선택) — 보도자료·공정공시는 '실적 숫자' 문서라 전망 문장이
+                # 없다. 배수의 전제를 회사가 실제로 말했는지 확인하려면 콜 발언이 필요하다.
+                # 키가 없으면 임포트도 네트워크 호출도 하지 않는다.
+                try:
+                    from src.tools.earnings_call import is_roic_enabled
+
+                    if is_roic_enabled():
+                        from src.tools.earnings_call import (
+                            build_earnings_call_context,
+                            fetch_latest_earnings_call,
+                        )
+
+                        spoken = build_earnings_call_context(
+                            fetch_latest_earnings_call(ticker, budget=earnings_budget)
+                        )
+                        if spoken:
+                            blocks.append(spoken)
+                except Exception:
+                    pass
         if not blocks:
             return prompt
 
