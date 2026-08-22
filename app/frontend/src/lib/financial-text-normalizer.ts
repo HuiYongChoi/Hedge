@@ -217,6 +217,22 @@ const RAW_FIELD_GLOSSARY: Array<[RegExp, string]> = [
   [/경영진\s*평가\s+overall\b/gi, '경영진 평가 종합 점수'],
   [/\boverall\s+(?=\d)/gi, '종합 점수 '],
   [/\bforward\s*P\/?E\b/gi, '선행 PER'],
+  [/\bmargin\s+of\s+safety\b/gi, '안전마진'],
+  [/\s*\(\s*표기\s*원문\s*값\s*\)/g, ''],
+  [/\s*\(\s*전처리\s*\)/g, ''],
+  [/\bforward\s+P\/?E\b/gi, '선행 PER'],
+  // 'forward전망' 처럼 한글에 바로 붙어 나오는 경우까지 잡는다.
+  [/\bforward\s*(?=[가-힣])/gi, '선행 '],
+  [/\bStory\b(?=\s*[(（])/g, '서사'],
+  [/\bNumbers\b(?=\s*[(（])/g, '핵심 숫자'],
+  // 구체 규칙이 먼저다. 넓은 규칙이 앞서면 ': true' 가 남는다.
+  [/\binsufficient\s*[:：]\s*true\b/gi, '판정 불가'],
+  [/\binsufficient\b/gi, '판정 불가'],
+  // "(leverage 축 score 91.6)" 처럼 한국어 문장 안에 남은 코드 낱말
+  [/\bleverage\s*축(?![가-힣])/gi, '재무 규율'],
+  [/\bscore\s*(?=[\d(])/gi, '점수 '],
+  // 이자부채비율이라고 이미 한국어로 적었으므로 영어 병기는 군더더기다
+  [/\s*\(\s*debt-to-equity\s*\)/gi, ''],
   [/신뢰도가\s*low\b/gi, '신뢰도가 낮음'],
   [/신뢰도가\s*high\b/gi, '신뢰도가 높음'],
   // 원시 신호값이 그대로 인쇄된다("종합 신호 bearish. 신뢰도: 56.0점.").
@@ -241,7 +257,6 @@ const RAW_FIELD_GLOSSARY: Array<[RegExp, string]> = [
   [/\bPositive\s+FCFF\s+growth\b/gi, 'FCFF 성장 플러스'],
   [/\bRevenue\s+CAGR\b/gi, '매출 연평균성장률'],
   [/\bForward\s+outlook\b/gi, '선행 전망'],
-  [/\binsufficient\s*[:：]\s*true\b/gi, '판정 불가'],
 ];
 
 // "checked 2 / total 3" → "3개 항목 중 2개 점검"
@@ -311,7 +326,7 @@ function humanizeRawFieldNames(text: string): string {
   return fixParticlesAfterGlossaryTerms(fixKoreanParticleSpacing(
     out
       // 치환 결과로 생기는 "안전마진(안전마진)" 같은 자기중복 괄호를 접는다.
-      .replace(/([가-힣][가-힣\s]{1,14}?)\s*\(\s*\1\s*\)/gu, '$1')
+      .replace(/([가-힣][가-힣A-Za-z0-9/\s]{1,20}?)\s*\(\s*\1\s*\)/gu, '$1')
       // "서사(서사 일관성 점검)"처럼 괄호 안이 앞 낱말을 포함해 더 자세하면 괄호 쪽만 남긴다.
       .replace(/([가-힣]{2,10})\s*\(\s*(\1[가-힣\s]{1,20})\s*\)/gu, '$2'),
   ));
@@ -324,7 +339,7 @@ function humanizeRawFieldNames(text: string): string {
 
 //: 인용부호 안은 회사·공시의 말이다. 남의 말을 고쳐 쓰면 근거가 아니게 된다.
 function mapOutsideQuotes(text: string, transform: (chunk: string) => string): string {
-  const parts = text.split(/([“"][^“”"]*[”"]|「[^」]*」|『[^』]*』)/u);
+  const parts = text.split(/([“"][^“”"]{0,300}[”"]|「[^」]*」|『[^』]*』)/u);
   return parts.map((part, index) => (index % 2 === 1 ? part : transform(part))).join('');
 }
 
@@ -445,6 +460,19 @@ export function normalizeTruncatedDecimals(text: string): string {
 
 // 자릿수가 큰 원화 총액은 자릿점만으로는 읽히지 않는다.
 // 실측: "FCFF DCF 내재가치 972,992,820,105,704.6 (제공된 값)" → "약 973조 원".
+//: 비율을 소수로 적으면 크기가 안 잡힌다. 실측: "이자부채비율 0.06", "안전마진 -0.43".
+//: '배율'은 배수라서 제외한다("이자보상배율 11.78"을 1178%로 바꾸면 안 된다).
+const RATIO_AS_DECIMAL_RE =
+  /((?:안전마진|이자부채비율|부채비율|성장률|수익률|증가율|이익률|마진)\s*(?:\([^)]*\))?\s*(?:이|가|은|는)?\s*)(-?0\.\d{1,3})(?![\d%]|\s*(?:배|포인트))/gu;
+
+export function normalizeRatiosWrittenAsDecimals(text: string): string {
+  return text.replace(RATIO_AS_DECIMAL_RE, (_full, label: string, value: string) => {
+    const ratio = Number(value);
+    if (!Number.isFinite(ratio) || Math.abs(ratio) >= 1) return _full;
+    return `${label}${tidyDecimal(ratio * 100)}%`;
+  });
+}
+
 export function normalizeOversizedAmounts(text: string): string {
   return text.replace(/(?<![\d.])\d{1,3}(?:,\d{3}){3,}(?:\.\d+)?/gu, raw => {
     const value = Number(raw.replace(/,/g, ''));
@@ -454,22 +482,38 @@ export function normalizeOversizedAmounts(text: string): string {
   });
 }
 
+// 자릿점 없는 큰 수는 한눈에 안 읽힌다. 통화 기호나 금액 라벨이 앞설 때만 손댄다
+// (종목코드 005930 같은 식별자를 건드리면 안 된다).
+function groupLargeAmounts(text: string): string {
+  return text.replace(
+    /((?:[₩$]\s?)|(?:\b(?:EPS|주당순이익|목표가|주가|내재가치|적정가)\s*[:：]?\s*))(\d{5,}(?:\.\d+)?)/gu,
+    (_full, label: string, digits: string) => {
+      const value = Number(digits);
+      if (!Number.isFinite(value)) return _full;
+      return `${label}${Math.round(value).toLocaleString('en-US')}`;
+    },
+  );
+}
+
 export function normalizeFinancialDisplayText(text: string) {
   if (typeof text !== 'string' || text.length === 0) return text;
+
+  // 순서가 중요하다. 찌꺼기를 먼저 걷어내고(마커·중첩라벨·깨진 숫자),
+  // 그 다음 용어를 한국어로 바꾸고, 숫자를 읽기 좋게 만든 뒤, 마지막에 문체를 다듬는다.
+  const cleaned = collapseRepeatedRatioLabels(stripLeftoverMarkers(
+    stripLeakedSourceMarkers(stripPromptEcho(rejoinBrokenDecimals(text))),
+  ));
+  const worded = humanizeRawFieldNames(stripMismatchedCurrencyPrefix(repairFragmentedPercents(cleaned)));
+  const numbered = groupLargeAmounts(normalizeRatiosWrittenAsDecimals(
+    normalizeOversizedAmounts(normalizeTruncatedDecimals(worded)),
+  ));
+  const phrased = normalizeToPlainKorean(numbered);
 
   return normalizeNestedDebtRatioLabels(
     normalizeBrokenKoreanDecimalSeparators(
       normalizeKoreanEnglishRedundancy(
         normalizeDuplicateFinancialNumbers(
-          normalizeBnToKorean(normalizeDebtPercentSequences(
-            normalizeToPlainKorean(normalizeOversizedAmounts(normalizeTruncatedDecimals(
-              humanizeRawFieldNames(stripMismatchedCurrencyPrefix(repairFragmentedPercents(
-                collapseRepeatedRatioLabels(stripLeftoverMarkers(
-                  stripLeakedSourceMarkers(stripPromptEcho(rejoinBrokenDecimals(text))),
-                )),
-              ))),
-            ))),
-          )),
+          normalizeBnToKorean(normalizeDebtPercentSequences(phrased)),
         ),
       ),
     ),
