@@ -474,12 +474,34 @@ export function normalizeRatiosWrittenAsDecimals(text: string): string {
 }
 
 export function normalizeOversizedAmounts(text: string): string {
-  return text.replace(/(?<![\d.])\d{1,3}(?:,\d{3}){3,}(?:\.\d+)?/gu, raw => {
-    const value = Number(raw.replace(/,/g, ''));
-    if (!Number.isFinite(value) || Math.abs(value) < 1e12) return raw;
-    const jo = value / 1e12;
-    return `약 ${jo >= 100 ? Math.round(jo) : Number(jo.toFixed(1))}조 원`;
-  });
+  return text
+    .replace(/(?<![\d.])\d{1,3}(?:,\d{3}){3,}(?:\.\d+)?/gu, raw => {
+      const value = Number(raw.replace(/,/g, ''));
+      if (!Number.isFinite(value) || Math.abs(value) < 1e12) return raw;
+      const jo = value / 1e12;
+      return `약 ${jo >= 100 ? Math.round(jo) : Number(jo.toFixed(1))}조 원`;
+    })
+    // 원문에 이미 단위가 붙어 있으면 '973조 원원'이 된다(실측).
+    // '원원'은 한국어에 없다 — 변환된 단위 뒤에 원문의 단위가 남은 흔적이므로 무조건 하나로.
+    // (lookahead 로 뒤를 막으면 조사가 붙는 '원원으로'·'원원과'를 놓친다.)
+    .replace(/(조|억)(\s*)원\s*원/gu, '$1$2원')
+    .replace(/(조|억)\s*원\s*(?:KRW|won)(?![A-Za-z])/giu, '$1 원')
+    // 같은 값을 괄호로 되풀이하는 꼬리를 접는다: "약 973조 원(= 972.99조 원 약)"
+    .replace(/((?:약\s*)?\d[\d,.]*\s*조\s*원)\s*\(\s*=?\s*(?:약\s*)?[\d,.]+\s*조\s*원?\s*(?:약)?\s*\)/gu, '$1');
+}
+
+// 모델이 같은 수치를 괄호로 되풀이한다: "매출 CAGR 13.3%(= 13.3%로 제시)".
+// 괄호 안이 앞 숫자와 같은 값이면 군더더기다.
+export function dropSelfReferentialParenthetical(text: string): string {
+  return text.replace(
+    /(-?[\d,]+(?:\.\d+)?)\s*(%|배|조\s*원|억\s*원|원)?\s*\(\s*=?\s*(-?[\d,]+(?:\.\d+)?)\s*(?:%|배|조\s*원|억\s*원|원)?\s*(?:로|으로)?\s*(?:제시|표기|기재|명시)?(?:됨|된다|되며|입니다)?\s*\)/gu,
+    (full, first: string, unit: string | undefined, second: string) => {
+      const a = Number(first.replace(/,/g, ''));
+      const b = Number(second.replace(/,/g, ''));
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return full;
+      return Math.abs(a - b) < 1e-9 ? `${first}${unit ?? ''}` : full;
+    },
+  );
 }
 
 // 자릿점 없는 큰 수는 한눈에 안 읽힌다. 통화 기호나 금액 라벨이 앞설 때만 손댄다
@@ -504,9 +526,9 @@ export function normalizeFinancialDisplayText(text: string) {
     stripLeakedSourceMarkers(stripPromptEcho(rejoinBrokenDecimals(text))),
   ));
   const worded = humanizeRawFieldNames(stripMismatchedCurrencyPrefix(repairFragmentedPercents(cleaned)));
-  const numbered = groupLargeAmounts(normalizeRatiosWrittenAsDecimals(
+  const numbered = dropSelfReferentialParenthetical(groupLargeAmounts(normalizeRatiosWrittenAsDecimals(
     normalizeOversizedAmounts(normalizeTruncatedDecimals(worded)),
-  ));
+  )));
   const phrased = normalizeToPlainKorean(numbered);
 
   return normalizeNestedDebtRatioLabels(

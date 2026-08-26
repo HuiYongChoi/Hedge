@@ -926,6 +926,41 @@ function buildFallbackCrossCheckGuideFromReport(
 // 안에 '환율 5%' 같은 숫자가 있어도 그건 확인할 '주제'이지 분석 결과가 아니다.
 // 그래서 수치 유무가 아니라 '지시로 시작해 지시로 끝나는가'로 판별한다.
 // 주의: JS 정규식의 \b 는 한글 뒤에서 성립하지 않는다(‘필요\b’ 는 절대 안 걸린다).
+// 다모다란 분석의 '틀' 이름만 적히고 내용이 없는 카드가 나온다(실측):
+//   "Story → Numbers"
+//   "가치(Value): FCFF DCF + 안전마진 + 상대가치 체크"
+// 목차이지 판정이 아니다. 독자에게는 아무 정보가 없으므로 근거 목록에서 뺀다.
+// 같은 제목이라도 실제 수치나 서술이 붙어 있으면 남긴다.
+const FRAMEWORK_LABEL_RE = new RegExp(
+  '^(?:' +
+    'story\\s*(?:→|->|~>|=>)\\s*numbers' +
+    '|스토리\\s*(?:→|->)\\s*(?:넘버스|숫자)' +
+    '|가치\\s*\\(\\s*value\\s*\\)' +
+    '|value\\s*\\(\\s*가치\\s*\\)' +
+    '|내러티브\\s*(?:→|->)\\s*숫자' +
+  ')\\s*[:：]?\\s*',
+  'iu',
+);
+
+//: 방법론 나열("FCFF DCF + 안전마진 + 상대가치 체크")은 결과가 아니다.
+const METHOD_LIST_RE = /^[A-Za-z가-힣0-9/\s]+(?:\s*\+\s*[A-Za-z가-힣0-9/\s]+){1,}\s*(?:체크|점검|확인)?\s*[.。]?$/u;
+
+export function isFrameworkLabelOnly(text: string): boolean {
+  const clean = (text || '')
+    .replace(/^\s*\[[+\-~?]\]\s*/u, '')
+    .replace(/\*\*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!clean) return false;
+  const withoutLabel = clean.replace(FRAMEWORK_LABEL_RE, '').trim();
+  // 틀 이름을 떼고 나면 아무것도 안 남는다 → 목차 조각
+  if (withoutLabel === '') return true;
+  // 틀 이름 뒤가 방법 나열뿐이고 수치·판정이 없다 → 역시 목차 조각
+  const hasSubstance = /\d/.test(withoutLabel) || /입니다|합니다|됩니다|습니다/.test(withoutLabel);
+  if (withoutLabel !== clean && !hasSubstance) return true;
+  return !hasSubstance && METHOD_LIST_RE.test(clean) && clean.length <= 60;
+}
+
 const HOMEWORK_HEAD_RE = /^\s*(?:검토|확인|추가\s*확인)\s*필요(?![가-힣])/u;
 const HOMEWORK_TAIL_RE = /(?:실제\s*표현\s*)?확인(?:하십시오|하세요|해야\s*한다|해야\s*합니다|이\s*필요합니다|합니다|한다)?\s*[.。]?\s*$/u;
 
@@ -1271,7 +1306,8 @@ export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
   const items = source
     .map(buildEvidenceItem)
     .filter((item): item is EvidenceItem => !isBlankEvidenceItem(item))
-    .filter(item => !isHomeworkEvidenceText(item.rawText));
+    .filter(item => !isHomeworkEvidenceText(item.rawText))
+    .filter(item => !isFrameworkLabelOnly(item.rawText));
 
   return sortEvidenceItemsByTone(items);
 }

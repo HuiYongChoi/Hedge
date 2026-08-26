@@ -16,6 +16,7 @@ from src.tools.api import (
 from src.tools.earnings_release import fetch_latest_earnings_release
 from src.tools.filings import fetch_filing_sections
 from src.tools.life_cycle import diagnose as diagnose_life_cycle
+from src.tools.money_ko import describe_valuation_gap
 from src.tools.management_scorecard import assess as assess_management
 from src.tools.narrative_check import check as check_narrative
 from src.tools.proxy_statement import fetch_latest_proxy
@@ -133,6 +134,16 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             signal = "bearish"
         else:
             signal = "neutral"
+
+        # 내재가치만 던지면 독자가 시가총액을 찾아 직접 나눠 봐야 한다.
+        # '얼마 vs 얼마 → 그래서 싼가 비싼가'를 여기서 문장으로 만들어 둔다.
+        gap_text = describe_valuation_gap(intrinsic_value, market_cap, margin_of_safety)
+        if gap_text:
+            intrinsic_val_analysis = {**intrinsic_val_analysis, "meaning_ko": gap_text}
+            details = list(intrinsic_val_analysis.get("details") or [])
+            intrinsic_val_analysis["details"] = [
+                d.replace("FCFF DCF completed", "FCFF DCF 산출 완료") for d in details
+            ] + [gap_text]
 
         analysis_data[ticker] = {
             "signal": signal,
@@ -619,6 +630,14 @@ def generate_damodaran_output(
                   어떤 잣대로 값을 매겨야 하고 무엇을 조심해야 하는지까지 한 문장으로 붙여라.
                 - `signal` 의 영문 값(bearish/bullish/neutral)을 그대로 쓰지 말고
                   한국어(약세/강세/중립)로 쓰고, 왜 그 방향인지 한 줄을 덧붙여라.
+                - **내재가치를 말할 때는 반드시 시가총액과 견주어라.** 계산값만 적으면
+                  싼지 비싼지 알 수 없다. `intrinsic_val_analysis.meaning_ko` 에
+                  '얼마 vs 얼마 → 그래서 싼가 비싼가'가 문장으로 들어 있으니 그대로 쓰라.
+                  금액은 '973조 원'처럼 한국어 단위로 적고, 자릿수를 늘어놓지 마라.
+                - **틀(프레임워크) 제목만 적고 끝내지 마라.** "Story → Numbers",
+                  "가치(Value): FCFF DCF + 안전마진 + 상대가치 체크" 같은 목차성 문구는
+                  독자에게 아무 정보가 아니다. 그 틀로 이 기업을 실제로 판정한 결과를 쓰거나,
+                  쓸 내용이 없으면 그 항목을 아예 만들지 마라.
                 - **점수를 적을 때는 눈금을 함께 밝혀라.** "41.5점"만 쓰면 좋은지 나쁜지
                   알 수 없다. `management_assessment.axes[].scale_ko` 에 축마다 몇 점이
                   본전인지 적혀 있으니 그것을 근거로 "50점이 본전인데 41.5점" 처럼 써라.
