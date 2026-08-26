@@ -53,6 +53,25 @@ class ScoreAxisMeaningTests(unittest.TestCase):
     def test_dict_exposes_meaning(self):
         self.assertIn('"meaning_ko": a.meaning_ko', SCORECARD)
         self.assertIn('"detail_ko": a.full_ko', SCORECARD)
+        self.assertIn('"scale_ko": a.scale_ko', SCORECARD)
+
+    def test_score_scale_is_stated(self):
+        """'41.5점'만으로는 좋은지 나쁜지 알 수 없다. 몇 점이 본전인지 밝혀야 한다."""
+        axis = ScoreAxis("roic_spread", "재투자 수익성", 41.5, "세후 ROIC 7.3%",
+                         "재투자할수록 가치가 깎입니다.", "0~100점. 50점이 본전입니다.")
+        self.assertIn("점수 눈금: 0~100점. 50점이 본전입니다.", axis.full_ko)
+        # 숫자 → 눈금 → 해석 순서
+        self.assertLess(axis.full_ko.index("세후 ROIC"), axis.full_ko.index("점수 눈금"))
+        self.assertLess(axis.full_ko.index("점수 눈금"), axis.full_ko.index("깎입니다"))
+
+    def test_every_scored_axis_states_its_own_scale(self):
+        """축마다 산식이 다르다 — 공통 '0~100' 문구로 뭉뚱그리면 틀린 안내가 된다."""
+        for anchor in ("50점이 수익률과 자본비용이 딱 맞는 본전",
+                       "50점이 새로 넣은 돈의 수익 0%",
+                       "60점이 주식수 변화 없음",
+                       "무차입이 100점",
+                       "순이익의 125% 이상이 현금으로"):
+            self.assertIn(anchor, SCORECARD)
 
 
 class LifeCycleMeaningTests(unittest.TestCase):
@@ -95,6 +114,9 @@ class RawSignalWordTests(unittest.TestCase):
         self.assertIn("숫자와 단계는 그 자체로 결론이 아니다", AGENT)
         self.assertIn("meaning_ko", AGENT)
         self.assertIn("stage_meaning_ko", AGENT)
+        self.assertIn("점수를 적을 때는 눈금을 함께 밝혀라", AGENT)
+        self.assertIn("scale_ko", AGENT)
+        self.assertIn("신뢰도(confidence)도 마찬가지다", AGENT)
 
 
 class SourceDisclosureTests(unittest.TestCase):

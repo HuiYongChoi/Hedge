@@ -43,11 +43,22 @@ class ScoreAxis:
     detail_ko: str
     #: 그 숫자가 '그래서 무슨 뜻인지'. 숫자만 보여주면 독자가 해석을 떠안는다.
     meaning_ko: str = ""
+    #: 점수의 눈금. 축마다 산식이 달라 "41.5점"만으로는 좋은지 나쁜지 알 수 없다.
+    #: 몇 점이 본전인지를 밝혀야 점수가 정보가 된다.
+    scale_ko: str = ""
 
     @property
     def full_ko(self) -> str:
-        """숫자와 해석을 한 문장으로. 소비 측이 숫자만 인용하는 것을 막는다."""
-        return f"{self.detail_ko} — {self.meaning_ko}" if self.meaning_ko else self.detail_ko
+        """점수 눈금 + 근거 수치 + 해석을 한 덩어리로.
+
+        소비 측(LLM·화면)이 숫자만 떼어 인용하는 경로를 없앤다.
+        """
+        parts = [self.detail_ko]
+        if self.scale_ko:
+            parts.append(f"점수 눈금: {self.scale_ko}")
+        if self.meaning_ko:
+            parts.append(self.meaning_ko)
+        return " — ".join(parts)
 
 
 @dataclass
@@ -65,7 +76,8 @@ class ManagementAssessment:
             "grade_ko": self.grade_ko,
             "axes": [
                 {"key": a.key, "label_ko": a.label_ko, "score": a.score,
-                 "detail_ko": a.full_ko, "meaning_ko": a.meaning_ko}
+                 "detail_ko": a.full_ko, "meaning_ko": a.meaning_ko,
+                 "scale_ko": a.scale_ko}
                 for a in self.axes
             ],
             "strengths_ko": self.strengths_ko,
@@ -139,7 +151,8 @@ def assess(
             meaning = (f"그 돈을 끌어오는 값({hurdle:.1%})보다 그 돈으로 번 수익률({roic:.1%})이 "
                        f"{abs(spread):.1%}p 낮습니다. 지금 조건이 이어지면 재투자를 늘릴수록 "
                        "주주 가치가 깎입니다 — 배당·자사주로 돌려주는 편이 나은 국면입니다.")
-        axes.append(ScoreAxis("roic_spread", "재투자 수익성", round(score, 1), detail, meaning))
+        axes.append(ScoreAxis("roic_spread", "재투자 수익성", round(score, 1), detail, meaning,
+            "0~100점. 50점이 수익률과 자본비용이 딱 맞는 본전 지점이고, 초과수익 1%p마다 5점씩 움직입니다."))
         if spread > 0.03:
             strengths.append(f"투하자본이 자본비용을 {spread:.1%}p 웃도는 수익을 내고 있다.")
         elif spread < -0.01:
@@ -169,7 +182,8 @@ def assess(
             else:
                 meaning = (f"새로 넣은 돈 100원이 매년 {inc_roic * 100:.0f}원을 벌어왔습니다. "
                            "자본비용 언저리라 최근 투자가 가치를 크게 더하지는 못했습니다.")
-            axes.append(ScoreAxis("incremental_roic", "증분 자본 효율", round(score, 1), detail, meaning))
+            axes.append(ScoreAxis("incremental_roic", "증분 자본 효율", round(score, 1), detail, meaning,
+                "0~100점. 50점이 새로 넣은 돈의 수익 0%이고, 12.5% 이상이면 만점입니다."))
             if inc_roic < 0:
                 concerns.append("자본을 더 넣었는데 영업이익은 오히려 줄었다 — 최근 투자 판단을 확인할 필요.")
             elif inc_roic > 0.15:
@@ -207,7 +221,8 @@ def assess(
                        "나눠 가질 사람이 늘어 기존 주주 몫은 그만큼 줄어듭니다(희석).")
         else:
             meaning = "주식 수가 거의 그대로입니다. 희석도 환원도 크지 않습니다."
-        axes.append(ScoreAxis("share_discipline", "지분 관리", round(score, 1), detail, meaning))
+        axes.append(ScoreAxis("share_discipline", "지분 관리", round(score, 1), detail, meaning,
+            "0~100점. 60점이 주식수 변화 없음이고, 줄이면 오르고 늘리면 내려갑니다."))
         if change > 0.05 and not is_early:
             concerns.append(f"주식수가 {change:.1%} 늘어 기존 주주 지분이 희석됐다.")
         elif change > 0.35 and is_early:
@@ -231,7 +246,8 @@ def assess(
         else:
             meaning = (f"빚이 한 해 벌이의 {leverage:.1f}배입니다. 감당 가능한 수준이지만 "
                        "이익이 크게 줄면 부담이 눈에 띄게 커집니다.")
-        axes.append(ScoreAxis("leverage", "재무 규율", round(score, 1), detail, meaning))
+        axes.append(ScoreAxis("leverage", "재무 규율", round(score, 1), detail, meaning,
+            "0~100점. 무차입이 100점, 한 해 벌이의 8배를 넘게 빌리면 0점입니다."))
         if leverage > 5:
             concerns.append(f"차입금이 세후영업이익의 {leverage:.1f}배 — 이익 변동 시 부담이 커진다.")
         elif leverage < 2:
@@ -256,7 +272,8 @@ def assess(
         else:
             meaning = (f"장부 이익의 {conversion:.0%}가 현금으로 들어왔습니다. "
                        "이익과 현금이 대체로 같이 움직이는 정상 범위입니다.")
-        axes.append(ScoreAxis("cash_conversion", "현금 전환", round(score, 1), detail, meaning))
+        axes.append(ScoreAxis("cash_conversion", "현금 전환", round(score, 1), detail, meaning,
+            "0~100점. 순이익의 125% 이상이 현금으로 들어오면 만점, 절반이면 40점입니다."))
         if conversion < 0.5:
             concerns.append(f"순이익 대비 현금 전환이 {conversion:.0%}에 그친다 — 이익의 질을 확인할 필요.")
         elif conversion > 1.0:
