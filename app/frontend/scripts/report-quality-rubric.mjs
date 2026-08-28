@@ -48,6 +48,8 @@ const RUBRIC = [
     bad: /(?:확인\s*필요|위치를?\s*확인|체크리스트|원문\s*대조)\s*[.。]?/g },
   { id: 'awkward',     w: 6,  label: '어색한 이음말 ("낮음 입니다")',
     bad: /(?:낮음|높음|없음|있음)\s+(?:입니다|이다|임)/g },
+  { id: 'doubleend',   w: 6,  label: '종결어미 중첩 ("…했습니다 입니다")',
+    bad: /(?:습니다|합니다|됩니다|입니다)\s+입니다/g },
   { id: 'dupclaim',    w: 6,  label: '카드 간 같은 주장 반복 (DCF 대비 %, 선행 PER vs TTM)',
     test: text => {
       const hits = [];
