@@ -1434,11 +1434,38 @@ const READABLE_BLOCK_TARGET = 200;
 export function splitReadableChunk(block: string): string[] {
   if (block.length <= READABLE_BLOCK_MAX) return [block];
 
-  const sentences = block.match(/[^.!?。？！]+[.!?。？！]?/gu) ?? [block];
+  // 소수점을 문장 끝으로 보면 "…축 점수 26." 에서 잘려 "9점…" 이 다음 덩어리가 된다
+  // (실측). 종결부호 뒤에 숫자가 오면 문장 경계가 아니다.
+  const sentences = block.split(/(?<=[.!?。？！])(?!\d)\s+/u).filter(Boolean);
   const chunks: string[] = [];
   let current = '';
 
-  sentences.forEach(sentence => {
+  // 한 문장이 통째로 길면(마침표가 없는 긴 나열) 문장 단위로는 못 나눈다.
+  // 그럴 때는 쉼표(절 경계)에서 더 잘라야 읽힌다.
+  //: 인용문이 문단의 상당 부분을 차지하면 자를 수 없다 — 쉼표가 인용 안에 있어
+  //: 거기서 끊으면 원문이 두 동강 난다. 조금 길어도 통째로 두는 편이 낫다.
+  const quoteHeavy = (text: string) => {
+    const quoted = (text.match(/["“][^"”]*["”]/g) || []).join('').length;
+    return quoted > text.length * 0.4;
+  };
+  const splitLongSentence = (sentence: string): string[] => {
+    if (sentence.length <= READABLE_BLOCK_MAX || quoteHeavy(sentence)) return [sentence];
+    const pieces: string[] = [];
+    let piece = '';
+    for (const part of sentence.split(/(?<=[,，])\s+/u)) {
+      const merged = piece ? `${piece} ${part}` : part;
+      if (piece && merged.length > READABLE_BLOCK_TARGET) {
+        pieces.push(piece);
+        piece = part;
+      } else {
+        piece = merged;
+      }
+    }
+    if (piece) pieces.push(piece);
+    return pieces.length > 0 ? pieces : [sentence];
+  };
+
+  sentences.flatMap(splitLongSentence).forEach(sentence => {
     const clean = sentence.trim();
     if (!clean) return;
     const next = current ? `${current} ${clean}` : clean;

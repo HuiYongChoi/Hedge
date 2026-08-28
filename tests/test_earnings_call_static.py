@@ -103,5 +103,23 @@ class WiringTests(unittest.TestCase):
         self.assertIn("result.error = ", SRC)
 
 
+
+
+class EnglishQuoteTranslationTests(unittest.TestCase):
+    """영어 원문만 실으면 읽는 사람이 뜻을 모른다. 번역을 나란히 붙인다."""
+
+    AGENT = (ROOT / "src/agents/aswath_damodaran.py").read_text(encoding="utf-8")
+
+    def test_grounding_block_asks_for_translation(self):
+        self.assertIn("한국어 번역을 붙여라", SRC)
+
+    def test_prompt_shows_the_expected_shape(self):
+        self.assertIn("영어 발언을 인용하면 한국어 번역을 함께 적어라", self.AGENT)
+        self.assertIn("(번역:", self.AGENT)
+
+    def test_original_must_not_be_altered(self):
+        """번역을 붙이되 원문을 고치면 근거가 아니게 된다."""
+        self.assertIn("원문을 고치지는 마라", self.AGENT)
+
 if __name__ == "__main__":
     unittest.main()

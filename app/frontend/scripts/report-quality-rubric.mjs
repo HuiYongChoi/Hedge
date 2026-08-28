@@ -43,8 +43,15 @@ const RUBRIC = [
     bad: /\b(?:Alignment|Story|Numbers|Value|Management)\b/g },
   { id: 'orphan',      w: 12, label: '괄호/조각으로 시작하거나 끝나는 줄',
     bad: /^\s*\(\s*\w+\s*$|^\s*[A-Za-z]+\s*[,，]\s*$/gmu },
+  // 인용문이 문단의 40% 를 넘으면 쪼갤 수 없다(인용 안에서 끊으면 원문이 깨진다).
   { id: 'longline',    w: 6,  label: '줄바꿈 없이 250자 넘는 문단',
-    test: text => text.split('\n').filter(l => l.trim().length > 250).map(l => l.slice(0, 90) + '…') },
+    test: text => text.split('\n')
+      .filter(l => {
+        if (l.trim().length <= 250) return false;
+        const quoted = (l.match(/["“][^"”]*["”]/g) || []).join('').length;
+        return quoted <= l.length * 0.4;
+      })
+      .map(l => l.slice(0, 90) + '…') },
   { id: 'stubbody',    w: 10, label: '본문이 조각뿐 ("입니다." 만 남음)',
     test: text => text.split('\n').map(l => l.trim())
       .filter(l => /^(?:입니다|임|이다|합니다)\s*[.。]?$/u.test(l)) },
@@ -68,6 +75,19 @@ const RUBRIC = [
     } },
   { id: 'noheading',   w: 12, label: '제목 없는 카드',
     test: () => MISSING_HEADINGS },
+  { id: 'decimalsplit', w: 12, label: '소수점에서 문장이 잘림 ("206." / "12로 …")',
+    bad: /\d+\.\s*$|^\s*\d{1,3}(?:로|으로|이|가|은|는)\s/gm },
+  { id: 'noisyratio', w: 6,  label: '배율의 불필요한 소수 둘째 자리 (206.12)',
+    bad: /(?:배율|비율)\s*\d+\.\d{2,}/g },
+  { id: 'brokenmark', w: 8,  label: '깨진 마커 ("[!", "- [!")',
+    bad: /\[!|\[\s*$/g },
+  // 인용부호 안 영어는 원문(근거)이므로 세지 않는다 — 번역 병기 규칙이 따로 담당한다.
+  // 서술 문장에 섞인 영어만 잡는다.
+  { id: 'englishword', w: 8, label: '서술에 남은 영어 낱말 (playbook, low, figure)',
+    test: text => {
+      const outside = text.replace(/["“][^"”]*["”]/g, ' ');
+      return [...new Set(outside.match(/\b(?:playbook|low|high|figure|terminal growth|confidence)\b/gi) || [])];
+    } },
   // 결론(01)은 요약이라 요지를 한 번 되풀이하는 것이 정상이다. 본문끼리의 반복만 센다.
   { id: 'dupclaim',    w: 6,  label: '본문 카드 간 같은 주장 반복 (DCF 대비 %, 선행 PER vs TTM)',
     test: () => {

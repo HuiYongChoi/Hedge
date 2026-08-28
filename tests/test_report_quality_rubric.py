@@ -79,19 +79,65 @@ class CorpusSweepTests(unittest.TestCase):
     """
 
     SWEEP = FRONTEND / "scripts/report-quality-sweep.mjs"
-    FIXTURES = ROOT / "tests/fixtures"
+    CORPUS = ROOT / "tests/fixtures/corpus"
 
     def test_corpus_is_not_empty(self):
         """코퍼스가 비면 스윕이 항상 통과해 의미가 없어진다."""
-        files = list(self.FIXTURES.glob("*.txt"))
+        files = list(self.CORPUS.glob("*.txt"))
         self.assertGreaterEqual(len(files), 20, "실측 보고서 코퍼스가 20개 이상이어야 한다")
 
     @unittest.skipUnless(NODE.exists() and (FRONTEND / "node_modules/typescript").exists(),
                          "node 런타임 또는 typescript 가 없는 환경")
     def test_full_marks_three_rounds(self):
         result = subprocess.run(
-            [str(NODE), "scripts/report-quality-sweep.mjs", str(self.FIXTURES), "--rounds", "3"],
+            [str(NODE), "scripts/report-quality-sweep.mjs", str(self.CORPUS), str(FIXTURE), "--rounds", "3"],
             cwd=FRONTEND, capture_output=True, text=True, timeout=900,
         )
         self.assertEqual(result.returncode, 0, f"스윕 미달:\n{result.stdout[-3000:]}")
         self.assertIn("연속 만점", result.stdout)
+
+
+class CorpusCollectorTests(unittest.TestCase):
+    """분석을 돌릴 때마다 코퍼스가 두꺼워지도록 적립기를 둔다."""
+
+    COLLECTOR = ROOT / "scripts/collect_report_corpus.py"
+
+    def test_collector_exists(self):
+        self.assertTrue(self.COLLECTOR.exists())
+
+    def test_dedupes_by_content_hash(self):
+        """같은 본문을 반복 적립하면 개수만 늘고 검증력은 그대로다."""
+        src = self.COLLECTOR.read_text(encoding="utf-8")
+        self.assertIn("hashlib.sha1", src)
+        self.assertIn("if digest in known:", src)
+
+    def test_caps_corpus_size(self):
+        """무한히 쌓이면 스윕이 느려져 배포 게이트가 부담이 된다."""
+        src = self.COLLECTOR.read_text(encoding="utf-8")
+        self.assertIn("while len(files) > max_files:", src)
+
+    def test_only_report_text_is_collected(self):
+        """설정값·키가 든 컬럼을 담지 않도록 본문 키만 본다."""
+        src = self.COLLECTOR.read_text(encoding="utf-8")
+        self.assertIn('key in ("reasoning", "summary")', src)
+
+
+class DeployGateTests(unittest.TestCase):
+    """결함을 화면에서 발견하기 전에 배포를 막는다."""
+
+    DEPLOY = ROOT / "deploy_aws.sh"
+
+    def test_deploy_runs_the_sweep(self):
+        src = self.DEPLOY.read_text(encoding="utf-8")
+        self.assertIn("report-quality-sweep.mjs", src)
+        self.assertIn("배포를 중단합니다", src)
+
+    def test_gate_runs_before_deploying(self):
+        """게이트가 배포 뒤에 있으면 이미 나간 뒤라 의미가 없다."""
+        src = self.DEPLOY.read_text(encoding="utf-8")
+        self.assertLess(src.index("report-quality-sweep.mjs"), src.index("Deploying to"))
+
+    def test_skip_is_explicit_and_logged(self):
+        src = self.DEPLOY.read_text(encoding="utf-8")
+        self.assertIn("SKIP_REPORT_QUALITY_GATE", src)
+        self.assertIn("건너뜁니다", src)

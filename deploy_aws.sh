@@ -9,6 +9,27 @@ SSH_USER="${HEDGE_USER:-admin}"
 WEBROOT="${HEDGE_WEBROOT:-/var/www/html/hedge}"
 HOST="${SSH_USER}@${HOST_IP}"
 
+# ── 배포 전 보고서 품질 게이트 ───────────────────────────────────────────────
+# 실제 저장된 리포트 본문을 전부 채점한다. 한 건이라도 미달이면 배포하지 않는다.
+# 결함을 사용자가 화면에서 발견하고 지적하는 것보다, 여기서 막는 편이 낫다.
+# 급할 때는 SKIP_REPORT_QUALITY_GATE=1 로 건너뛸 수 있다(그 사실이 로그에 남는다).
+if [ "${SKIP_REPORT_QUALITY_GATE:-0}" = "1" ]; then
+  echo "⚠ 보고서 품질 게이트를 건너뜁니다 (SKIP_REPORT_QUALITY_GATE=1)."
+else
+  NODE_BIN="${HEDGE_NODE:-/Users/huiyong/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node}"
+  REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+  if [ -x "$NODE_BIN" ] && [ -d "$REPO_DIR/app/frontend/node_modules/typescript" ]; then
+    echo "보고서 품질 채점 중 ..."
+    if ! (cd "$REPO_DIR/app/frontend" && "$NODE_BIN" scripts/report-quality-sweep.mjs \
+            ../../tests/fixtures/corpus ../../tests/fixtures/report_defects.txt --rounds 2); then
+      echo "✗ 보고서 품질 미달 — 배포를 중단합니다. 위 감점 항목을 먼저 고치세요."
+      exit 1
+    fi
+  else
+    echo "⚠ node 또는 typescript 가 없어 품질 게이트를 실행하지 못했습니다."
+  fi
+fi
+
 echo "Deploying to ${HOST} (web root ${WEBROOT}) ..."
 ssh -o StrictHostKeyChecking=no -i "$KEY" "$HOST" "WEBROOT='${WEBROOT}' bash -s" <<'EOF'
 set -x

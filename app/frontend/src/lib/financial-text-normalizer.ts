@@ -243,6 +243,8 @@ export function rewriteBareCheckCounts(text: string): string {
 function stripLeftoverMarkers(text: string): string {
   return text
     .replace(/\[\s*[?xX✓]?\s*\]\s*/gu, '')
+    // 닫히지 않은 마커 조각("- [! - [! 핵심")도 본문에 그대로 인쇄된다.
+    .replace(/(?:[-–—]\s*)?\[\s*[!?+~\-]?\s*(?=\s|$)/gu, '')
     // 여는 괄호 없이 홀로 남은 닫는 대괄호("… 해석하지 않습니다. ] 근거(수치 인용):")
     .replace(/(?<!\[[^\]]{0,200})\s\]\s*/gu, ' ');
 }
@@ -304,6 +306,14 @@ const RAW_FIELD_GLOSSARY: Array<[RegExp, string]> = [
   // 제목에 남는 영어 틀 이름
   [/\bAlignment\b/g, '이행도'],
   [/\bValue\b/g, '가치'],
+  [/\bplaybook\b/gi, '처방'],
+  [/\bterminal\s+growth\b/gi, '영구 성장률'],
+  [/\bforward\s+figure\b/gi, '선행 추정치'],
+  [/\bfigure\b/gi, '수치'],
+  // 따옴표에 감싸인 판정값도 그대로 인쇄된다("신뢰도가 'low'로 표시").
+  [/['"“‘]\s*low\s*['"”’]/gi, '낮음'],
+  [/['"“‘]\s*high\s*['"”’]/gi, '높음'],
+  [/\bconfidence\b/gi, '신뢰도'],
   [/\bStory\b/g, '서사'],
   [/\bNumbers\b/g, '숫자'],
   [/\bManagement\b/g, '경영진'],
@@ -364,6 +374,12 @@ const FIELD_WORD_KO: Record<string, string> = {
   relative: '상대가치', management: '경영진', assessment: '평가', narrative: '서사',
   check: '점검', life: '생애', cycle: '주기', stage: '단계', alignment: '이행도',
   coverage: '충실도', safety: '안전', of: '', and: '', to: '', fcff: 'FCFF', fcf: 'FCF',
+  // 언어 접미사와 구조용 낱말은 사람이 읽을 말이 아니므로 지운다.
+  ko: '', en: '', label: '', ja: '',
+  valuation: '가치평가', key: '핵심', notes: '메모', evidence: '근거', verdict: '판정',
+  grade: '등급', playbook: '처방', signals: '신호', driver: '동인', strategy: '전략',
+  concerns: '우려', strengths: '강점', axes: '항목', meaning: '해석', scale: '눈금',
+  detail: '세부', insufficient: '판정 불가', target: '목표', band: '밴드',
   roic: 'ROIC', wacc: 'WACC', ebitda: 'EBITDA', ebit: 'EBIT', eps: 'EPS', pe: 'PER',
   val: '가치', checks: '항목', outstanding: '발행', expense: '비용', interest: '이자',
   depreciation: '감가상각', amortization: '상각', capital_expenditure: '설비투자',
@@ -529,6 +545,16 @@ const STILTED_PHRASES: Array<[RegExp, string]> = [
   [/그\s*대로\s*제시된다/g, '그대로 나와 있습니다'],
 ];
 
+//: 판정값 low/high 가 한국어 서술에 그대로 섞인다("단 confidence low", "신뢰도가 low").
+//: 인용부호 안은 회사·자료의 원문이므로 건드리지 않는다 — 번역을 병기해 읽게 한다.
+export function localizeJudgementWords(text: string): string {
+  return mapOutsideQuotes(text, chunk => chunk
+    .replace(/\bconfidence\s+is\s+low\b/gi, '신뢰도 낮음')
+    .replace(/\bconfidence\s+is\s+high\b/gi, '신뢰도 높음')
+    .replace(/\blow\b/gi, '낮음')
+    .replace(/\bhigh\b/gi, '높음'));
+}
+
 export function normalizeToPlainKorean(text: string): string {
   return mapOutsideQuotes(text, chunk => {
     let out = chunk;
@@ -588,6 +614,13 @@ export function normalizeTruncatedDecimals(text: string): string {
 //: '배율'은 배수라서 제외한다("이자보상배율 11.78"을 1178%로 바꾸면 안 된다).
 const RATIO_AS_DECIMAL_RE =
   /((?:안전마진|이자부채비율|부채비율|성장률|수익률|증가율|이익률|마진)\s*(?:\([^)]*\))?\s*(?:이|가|은|는)?\s*)(-?0\.\d{1,3})(?![\d%]|\s*(?:배|포인트))/gu;
+
+//: "이자보상배율 206.12" — 둘째 자리는 판단에 아무 영향이 없고, 문장 분리기가
+//: "206." 에서 끊어 "12로 …" 라는 조각을 만들기도 한다(실측). 첫째 자리로 줄인다.
+export function trimRatioPrecision(text: string): string {
+  return text.replace(/((?:배율|비율)\s*)(\d+)\.(\d{2,})/gu, (_full, label: string, whole: string, frac: string) =>
+    `${label}${Number(`${whole}.${frac}`).toFixed(1).replace(/\.0$/u, '')}`);
+}
 
 export function normalizeRatiosWrittenAsDecimals(text: string): string {
   return text.replace(RATIO_AS_DECIMAL_RE, (_full, label: string, value: string) => {
@@ -650,10 +683,10 @@ export function normalizeFinancialDisplayText(text: string) {
     stripLeakedSourceMarkers(stripPromptEcho(rejoinBrokenDecimals(text))),
   )))));
   const worded = humanizeRawFieldNames(stripMismatchedCurrencyPrefix(repairFragmentedPercents(cleaned)));
-  const numbered = dropSelfReferentialParenthetical(groupLargeAmounts(normalizeRatiosWrittenAsDecimals(
+  const numbered = trimRatioPrecision(dropSelfReferentialParenthetical(groupLargeAmounts(normalizeRatiosWrittenAsDecimals(
     normalizeOversizedAmounts(normalizeTruncatedDecimals(worded)),
-  )));
-  const phrased = normalizeToPlainKorean(numbered);
+  ))));
+  const phrased = localizeJudgementWords(normalizeToPlainKorean(numbered));
 
   return normalizeNestedDebtRatioLabels(
     normalizeBrokenKoreanDecimalSeparators(
