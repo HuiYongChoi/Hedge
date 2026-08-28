@@ -302,10 +302,14 @@ class AnalystReportV5StaticTests(unittest.TestCase):
 
     def test_long_first_sentence_gets_clause_heading(self):
         # 90자 초과 첫 문장 카드는 제목이 통째로 사라지지 않고 절 경계(쉼표)에서
-        # 볼드 제목을 확보한다.
+        # 볼드 제목을 확보한다. 연결어미로 끝나는 쉼표 자리는 건너뛰고 다음 후보를
+        # 시도하며(거기서 포기하면 제목 없는 카드가 된다), 그래도 못 찾으면
+        # 앞머리를 잘라 만든다 — 어떤 경우에도 카드는 제목을 갖는다.
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         self.assertIn("function splitLeadClauseHeading(", helpers)
-        self.assertIn(".lastIndexOf(',')", helpers)
+        self.assertIn("candidates.reverse()", helpers)
+        self.assertIn("if (endsWithConnective(heading)) continue;", helpers)
+        self.assertIn("export function deriveFallbackHeading", helpers)
 
     def test_numeric_unit_fragment_filtered(self):
         # "2.0%/d."·"0%/d." 같은 숫자+단위 조각과 "[?" 깨진 마커 조각은 본문/카드로

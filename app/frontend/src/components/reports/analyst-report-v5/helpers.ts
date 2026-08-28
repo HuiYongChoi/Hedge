@@ -1106,7 +1106,12 @@ function buildEvidenceItem(raw: string, index: number): EvidenceItem {
     // 꼬리에 남은 빈 번호("… 연결) 1.")는 다음 항목의 머리만 떨어져 나온 조각이다.
     .replace(/\s+\d+\.\s*$/u, '')
     .trim();
-  const { heading, body } = extractItemHeading(clean);
+  // 첫 줄이 짧고 문장부호로 끝나지 않으면 그건 제목 줄이다(실측: "성장의 질 흔들림",
+  // "단계 플레이북(가치평가법)"). 줄이 합쳐지고 나면 본문과 구분할 단서가 사라진다.
+  const titleLine = extractTitleLine(clean);
+  const { heading, body } = titleLine
+    ? { heading: normalizeFinancialDisplayText(titleLine.title), body: normalizeFinancialDisplayText(titleLine.rest) }
+    : extractItemHeading(clean);
   // 마커와 강조 기호는 톤·제목을 정하는 데 쓰고 나면 역할이 끝난다.
   // 화면에 남으면 "[#+] 마진: …", "**79.7점(최대 100점)**" 처럼 읽기를 방해한다.
   // 반드시 extractItemHeading/classifyItemTone 뒤에 지워야 판정이 망가지지 않는다.
@@ -1346,6 +1351,28 @@ export function dedupePerGapComparisons(sectionTexts: string[]): string[] {
   });
 }
 
+//: 앞 문장을 받아 이어 가는 말. 이런 블록이 따로 카드가 되면 제목을 붙일 수 없고
+//: 읽는 사람은 무엇에 대한 '다만'인지 알 수 없다(실측: "다만 시장의 선행 PER…",
+//: "동시에 2026년에는…"). 앞 카드에 이어 붙이는 것이 원래 뜻에 맞다.
+const CONTINUATION_START_RE =
+  // 한글 뒤 \b 는 성립하지 않으므로 쓰지 않는다. 뒤에 조사·공백이 오는 것만 확인한다.
+  /^(?:다만|동시에|또한|그리고|그러나|하지만|반면|따라서|즉|이는|이러한|이런|한편)(?=[\s,]|$)/u;
+
+export function mergeContinuationBlocks(blocks: string[]): string[] {
+  const merged: string[] = [];
+  for (const block of blocks) {
+    const clean = block.trim();
+    if (!clean) continue;
+    const isContinuation = CONTINUATION_START_RE.test(clean.replace(/^\s*\[#?[+\-~?]\]\s*/u, ''));
+    if (isContinuation && merged.length > 0) {
+      merged[merged.length - 1] = `${merged[merged.length - 1]} ${clean}`;
+      continue;
+    }
+    merged.push(clean);
+  }
+  return merged;
+}
+
 export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
   const normalized = prepareEvidenceLayoutText(sectionText);
   if (!normalized) return [];
@@ -1355,8 +1382,10 @@ export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
     .map(item => item.trim())
     .filter(Boolean);
 
-  const source = (rawBlocks.length > 0 ? mergeOrphanEvidenceHeadings(rawBlocks) : [normalized])
-    .flatMap(splitLongEvidenceBlock);
+  const source = mergeContinuationBlocks(
+    (rawBlocks.length > 0 ? mergeOrphanEvidenceHeadings(rawBlocks) : [normalized])
+      .flatMap(splitLongEvidenceBlock),
+  );
 
   const items = source
     .map(buildEvidenceItem)
@@ -1379,10 +1408,13 @@ const EVIDENCE_TONE_ORDER: Record<ReportTone, number> = { bullish: 0, neutral: 1
 export function isDanglingFragment(item: EvidenceItem): boolean {
   const heading = (item.heading || '').trim();
   const body = (item.body || '').trim();
-  if (!body) return false;                       // 본문이 없으면 제목만으로 판단(별도 규칙)
+  const isComplete = (text: string) => /(?:습니다|입니다|합니다|됩니다)[.。]?$/u.test(text);
+  // 본문이 없으면 제목이 곧 카드 내용이다. 제목이 미완성이면 보여 줄 것이 없다
+  // (실측: 제목 "100.0점으로 표기되지만," / 본문 없음).
+  if (!body) return endsWithConnective(heading);
   if (!endsWithConnective(body)) return false;
   // 본문이 미완성이어도 제목이 스스로 완결된 서술이면 카드를 살린다.
-  return !/(?:습니다|입니다|합니다|됩니다)[.。]?$/u.test(heading);
+  return !isComplete(heading);
 }
 
 
@@ -1433,6 +1465,38 @@ export function splitEvidenceBodyBlocks(body: string): string[] {
       .trim())
     .filter(block => Boolean(block) && !isMarkerOnlyEvidenceText(block) && !isHeadingOnlyEvidenceText(block))
     .flatMap(splitReadableChunk);
+}
+
+/**
+ * 보고서 전체에서 같은 카드가 되풀이되는 것을 막는다.
+ *
+ * 섹션 단위 중복 제거는 지문이 30자를 넘어야 동작한다. 그래서 짧은 카드
+ * ("이행도 점검 = 2 / 전체 = 3 입니다")는 그대로 여러 번 남았다. 카드는
+ * 제목+본문을 합쳐 지문을 만들고 12자만 넘으면 같은 것으로 본다.
+ */
+export function dedupeEvidenceItemsAcrossReport(
+  itemsBySection: EvidenceItem[][],
+): EvidenceItem[][] {
+  const seen = new Set<string>();
+  const headingOnlySeen = new Set<string>();
+  const fingerprint = (item: EvidenceItem) =>
+    `${item.heading ?? ''} ${item.body ?? ''}`
+      .replace(/[\s"'“”‘’.,·:：()]/gu, '')
+      .toLowerCase()
+      .trim();
+  return itemsBySection.map(items => items.filter(item => {
+    const key = fingerprint(item);
+    if (key.length < 12) return true;      // 너무 짧으면 우연히 겹칠 수 있다
+    if (seen.has(key)) return false;
+    const headingKey = (item.heading || '').replace(/[\s"'“”‘’.,·:：()]/gu, '').toLowerCase();
+    // 본문 없이 제목만 있는 카드는, 그 제목이 앞선 카드에 이미 나왔다면 되풀이일 뿐이다.
+    if (!(item.body || '').trim() && headingKey.length >= 12 && headingOnlySeen.has(headingKey)) {
+      return false;
+    }
+    seen.add(key);
+    if (headingKey.length >= 12) headingOnlySeen.add(headingKey);
+    return true;
+  }));
 }
 
 export function sortEvidenceItemsByTone(items: EvidenceItem[]): EvidenceItem[] {
@@ -1489,6 +1553,19 @@ function looksLikeMidSentenceBoldSplit(heading: string, body: string): boolean {
   return false;
 }
 
+/** 첫 줄이 제목 줄인지 본다. 짧고, 문장으로 끝나지 않고, 뒤에 본문이 있어야 한다. */
+export function extractTitleLine(raw: string): { title: string; rest: string } | null {
+  const lines = (raw || '').split(/\r?\n/);
+  if (lines.length < 2) return null;
+  const title = lines[0].trim().replace(/^\s*\[#?[+\-~?]\]\s*/u, '').replace(/\*\*/g, '').trim();
+  const rest = lines.slice(1).join(' ').trim();
+  if (!title || !rest) return null;
+  if (title.length > 44) return null;                    // 길면 제목이 아니라 문장이다
+  if (/[.。!?]\s*$/u.test(title)) return null;            // 문장으로 끝나면 본문이다
+  if (endsWithConnective(title)) return null;            // 미완성 절
+  return { title, rest };
+}
+
 export function extractItemHeading(itemText: string): { heading: string | null; body: string } {
   const normalizedItemText = normalizeFinancialDisplayText(itemText);
   const bold = normalizedItemText.match(/^\*\*([^*]{2,80})\*\*:?\s*(.*)$/su);
@@ -1506,7 +1583,8 @@ export function extractItemHeading(itemText: string): { heading: string | null; 
   // 결론 카드: "→보유·중립 (신뢰도 52%) · 실제 결론…"에서 판정을 볼드 제목으로 올린다.
   // (긴 결론 문단이라 첫 문장 제목화가 안 걸려 제목이 비던 문제)
   const verdict = normalizedItemText.match(
-    /^\s*(?:\[[+\-~?]\]\s*)?[→↑↓]?\s*((?:강력\s*)?(?:매수|매도)|보유(?:\s*·\s*중립)?|중립|관망|비중\s*축소|매수\s*·\s*강세|매도\s*·\s*약세)\s*(\([^)]*\))?\s*·\s+(.+)$/su,
+    // '·' 구분자는 있을 때도 없을 때도 있다. 없다고 제목을 못 잡으면 카드가 제목 없이 나온다.
+    /^\s*(?:\[[+\-~?]\]\s*)?[→↑↓]?\s*((?:강력\s*)?(?:매수|매도)|보유(?:\s*·\s*중립)?|중립|관망|비중\s*축소|매수\s*·\s*강세|매도\s*·\s*약세)\s*(\([^)]*\))?\s*(?:·\s+|\s+)(.+)$/su,
   );
   if (verdict) {
     const heading = `${verdict[1].replace(/\s+/g, ' ').trim()}${verdict[2] ? ` ${verdict[2].trim()}` : ''}`;
@@ -1525,7 +1603,33 @@ export function extractItemHeading(itemText: string): { heading: string | null; 
     return splitLeadSentenceHeading(bodyText);
   }
 
-  return { heading: null, body: normalizedItemText };
+  // 마커·콜론·볼드가 하나도 없다고 제목을 포기하면 안 된다 — 카드가 제목 없이 나온다
+  // (실측: "경영진 종합평가 79.7점…", "상대가치 체크 상대 P/E 비교는…").
+  // 첫 문장(또는 첫 절)을 제목으로 올리는 경로는 이미 있으므로 그리로 보낸다.
+  const derived = splitLeadSentenceHeading(normalizedItemText);
+  if (derived.heading) return derived;
+  // 어떤 규칙으로도 제목이 안 나오면 앞머리를 잘라 만든다. 제목 없는 카드는
+  // 목차에서도 안 보이고 무엇에 대한 이야기인지 알 수 없다.
+  return deriveFallbackHeading(normalizedItemText);
+}
+
+/** 마지막 수단: 낱말 경계에서 16~34자를 잘라 제목으로 쓴다. */
+export function deriveFallbackHeading(text: string): { heading: string | null; body: string } {
+  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (clean.length < 20) return { heading: clean.replace(/[.。]$/u, '') || null, body: '' };
+
+  const words = clean.split(' ');
+  let heading = '';
+  let used = 0;
+  for (const word of words) {
+    if (heading.length >= 16 && !endsWithConnective(heading)) break;
+    if (heading.length + word.length > 34 && heading.length >= 12) break;
+    heading = heading ? `${heading} ${word}` : word;
+    used += 1;
+  }
+  const body = words.slice(used).join(' ').trim();
+  if (!heading || !body) return { heading: null, body: clean };
+  return { heading: heading.replace(/[,，.。]$/u, ''), body };
 }
 
 function isDecimalPoint(text: string, index: number) {
@@ -1577,11 +1681,22 @@ function splitLeadSentenceHeading(bodyText: string): { heading: string | null; b
   }
 
   // 다문장: 첫 문장 = 제목, 나머지 = 본문
-  const heading = stripTail(clean.slice(0, boundary));
-  const body = clean.slice(boundary).trim();
+  let heading = stripTail(clean.slice(0, boundary));
+  let body = clean.slice(boundary).trim();
   if (!heading) return { heading: null, body: clean };
   // 연결어미로 끊긴 제목은 미완성 문장이다("…이어질 수 있는데").
-  if (endsWithConnective(heading)) return { heading: null, body: clean };
+  // 제목을 비우면 카드가 제목 없이 나오므로, 다음 문장 경계까지 넓혀 완성시킨다.
+  if (endsWithConnective(heading)) {
+    const nextBoundary = findSafeHeadingBoundary(body);
+    if (nextBoundary > 0 && nextBoundary < body.length) {
+      heading = stripTail(`${heading} ${body.slice(0, nextBoundary)}`.trim());
+      body = body.slice(nextBoundary).trim();
+    } else {
+      heading = stripTail(clean);
+      body = '';
+    }
+    if (endsWithConnective(heading)) return { heading: null, body: clean };
+  }
   if (heading.length > 90) return splitLeadClauseHeading(clean) ?? { heading: null, body: clean };
   return { heading, body };
 }
@@ -1590,15 +1705,22 @@ function splitLeadSentenceHeading(bodyText: string): { heading: string | null; b
 // 제목/본문을 나눈다 — "…부합하지만, 반대로 …" → 제목 "…부합하지만" + 본문 "반대로 …".
 // 이렇게 해야 긴 문장 카드도 볼드 핵심문구를 갖는다(제목 누락 방지).
 function splitLeadClauseHeading(clean: string): { heading: string; body: string } | null {
-  const commaIdx = clean.slice(0, 91).lastIndexOf(',');
-  if (commaIdx < 16) return null;
-  const heading = clean.slice(0, commaIdx).trim();
-  const body = clean.slice(commaIdx + 1).trim();
-  if (!heading || !body) return null;
-  // 연결어미로 끊으면 제목이 미완성 문장이 된다(실측: "…자본효율이 매우 좋지만").
-  // 뒤 절이 있어야 뜻이 완성되므로 이 자리는 제목 경계로 쓰지 않는다.
-  if (endsWithConnective(heading)) return null;
-  return { heading, body };
+  // 쉼표 후보를 뒤에서부터 훑는다. 연결어미로 끝나는 자리는 제목 경계로 쓸 수 없지만
+  // (실측: "…자본효율이 매우 좋지만"), 거기서 포기하면 카드가 제목 없이 나온다.
+  // 그러니 다음 쉼표를 이어서 시도한다.
+  const window = clean.slice(0, 121);
+  const candidates: number[] = [];
+  for (let i = 0; i < window.length; i += 1) if (window[i] === ',') candidates.push(i);
+
+  for (const commaIdx of candidates.reverse()) {
+    if (commaIdx < 16) break;
+    const heading = clean.slice(0, commaIdx).trim();
+    const body = clean.slice(commaIdx + 1).trim();
+    if (!heading || !body) continue;
+    if (endsWithConnective(heading)) continue;
+    return { heading, body };
+  }
+  return null;
 }
 
 //: 뒤 절을 요구하는 연결어미. 여기서 끊으면 문장이 공중에 뜬다.

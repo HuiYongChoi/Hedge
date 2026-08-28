@@ -46,3 +46,26 @@ class ReportQualityRubricTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RenderWiringTests(unittest.TestCase):
+    """채점기만 통과하고 화면에는 안 붙는 상태를 막는다.
+
+    보고서 전체 중복 제거를 채점기에만 연결해 두었다가 실제 렌더에는 빠져 있던
+    적이 있다. 채점 만점이 곧 화면 품질이려면 같은 함수를 화면도 써야 한다.
+    """
+
+    V5 = ROOT / "app/frontend/src/components/reports/analyst-report-v5"
+
+    def test_report_body_applies_report_wide_dedupe(self):
+        body = (self.V5 / "report-body.tsx").read_text(encoding="utf-8")
+        self.assertIn("dedupeEvidenceItemsAcrossReport(", body)
+        self.assertIn("items={itemsBySection[sectionIndex]}", body)
+
+    def test_section_uses_items_from_parent(self):
+        section = (self.V5 / "report-section.tsx").read_text(encoding="utf-8")
+        self.assertIn("providedItems ?? parseEvidenceItems(sectionText)", section)
+
+    def test_rubric_uses_the_same_dedupe(self):
+        rubric = RUBRIC.read_text(encoding="utf-8")
+        self.assertIn("dedupeEvidenceItemsAcrossReport", rubric)

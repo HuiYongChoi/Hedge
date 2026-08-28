@@ -1,5 +1,6 @@
 import { t } from '@/lib/language-preferences';
 import { extractSensitivityMatrix, parseEvidenceItems, shouldShowSensitivity } from './helpers';
+import type { EvidenceItem as EvidenceItemType } from './types';
 import { EvidenceItem } from './evidence-item';
 import { FilingSourceDisclosure } from './filing-source-disclosure';
 import { SensitivityHeatmap } from './sensitivity-heatmap';
@@ -8,6 +9,8 @@ import type { AgentReport, Citation, ReportLanguage, SectionDef } from './types'
 interface ReportSectionProps {
   section: SectionDef;
   sectionText: string;
+  /** 상위에서 이미 파싱·중복제거한 카드. 없으면 이 섹션 텍스트로 직접 파싱한다. */
+  items?: EvidenceItemType[];
   ticker: string;
   activeReport: AgentReport | null;
   activeAgentKey: string;
@@ -20,6 +23,7 @@ interface ReportSectionProps {
 export function ReportSection({
   section,
   sectionText,
+  items: providedItems,
   ticker,
   activeReport,
   activeAgentKey,
@@ -29,7 +33,7 @@ export function ReportSection({
   onCitationClick,
 }: ReportSectionProps) {
   const title = language === 'ko' ? section.titleKo : section.titleEn;
-  const items = parseEvidenceItems(sectionText);
+  const items = providedItems ?? parseEvidenceItems(sectionText);
   const bullCount = items.filter(item => item.tone === 'bullish').length;
   const bearCount = items.filter(item => item.tone === 'bearish').length;
   const neutralCount = items.length - bullCount - bearCount;

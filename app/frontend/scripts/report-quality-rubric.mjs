@@ -50,6 +50,20 @@ const RUBRIC = [
     bad: /(?:낮음|높음|없음|있음)\s+(?:입니다|이다|임)/g },
   { id: 'doubleend',   w: 6,  label: '종결어미 중첩 ("…했습니다 입니다")',
     bad: /(?:습니다|합니다|됩니다|입니다)\s+입니다/g },
+  { id: 'countany',    w: 12, label: '개수 표기 (라벨이 무엇이든 "= 2 / … = 3")',
+    bad: /(?:점검|항목|checks?)[^=\n]{0,12}=\s*\d+\s*\/\s*[^=\n]{0,16}=\s*\d+/g },
+  { id: 'repeatline',  w: 14, label: '같은 문장이 보고서에서 두 번 이상',
+    test: text => {
+      const seen = new Map();
+      for (const line of text.split('\n')) {
+        const key = line.replace(/[\s"'“”‘’.,·]/gu, '').trim();
+        if (key.length < 12) continue;
+        seen.set(key, (seen.get(key) || 0) + 1);
+      }
+      return [...seen.entries()].filter(([, n]) => n > 1).map(([k, n]) => `${n}회: ${k.slice(0, 50)}`);
+    } },
+  { id: 'noheading',   w: 12, label: '제목 없는 카드',
+    test: () => MISSING_HEADINGS },
   { id: 'dupclaim',    w: 6,  label: '카드 간 같은 주장 반복 (DCF 대비 %, 선행 PER vs TTM)',
     test: text => {
       const hits = [];
@@ -66,12 +80,20 @@ const raw = readFileSync(process.argv[2], 'utf8');
 // 섹션별 중복 제거 → 반복 주장 제거 → 카드 파싱 → 제목/본문 표시.
 const sections = raw.split(/\n\s*\n/).filter(b => b.trim());
 const deduped = H.dedupePerGapComparisons(H.dedupeSentencesAcrossSections(sections));
-const out = deduped
-  .map(section => {
-    const items = H.parseEvidenceItems(section);
+const MISSING_HEADINGS = [];
+const parsedBySection = H.dedupeEvidenceItemsAcrossReport(
+  deduped.map(section => H.parseEvidenceItems(section)),
+);
+const out = parsedBySection
+  .map(items => {
     // 카드가 모두 걸러지면 화면에도 아무것도 안 나온다(빈 섹션 안내만).
     // 원문으로 되돌리면 실제 화면과 달라져 채점이 무의미해진다.
     // 화면은 본문을 읽기 좋은 덩어리로 나눠 문단마다 렌더한다. 채점도 같게 본다.
+    items.forEach(i => {
+      if (!i.heading || !i.heading.trim()) {
+        MISSING_HEADINGS.push((i.body || i.rawText || '').slice(0, 60));
+      }
+    });
     return items
       .map(i => [i.heading, ...H.splitEvidenceBodyBlocks(i.body || '')].filter(Boolean).join('\n'))
       .join('\n');

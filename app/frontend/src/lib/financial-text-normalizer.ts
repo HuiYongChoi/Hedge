@@ -140,7 +140,8 @@ function normalizeKoreanEnglishRedundancy(text: string): string {
     .replace(/없음\s+(?:입니다|이다|임)/gu, '없습니다')
     .replace(/있음\s+(?:입니다|이다|임)/gu, '있습니다')
     // 종결어미가 두 번 겹친다("…못했습니다 입니다"). 앞의 종결로 이미 문장이 끝났다.
-    .replace(/(습니다|합니다|됩니다|입니다)\s+입니다/gu, '$1');
+    .replace(/(습니다|합니다|됩니다|입니다)\s*[.。]?\s+(?:입니다|임|이다)\s*[.。]?/gu, '$1. ')
+    .replace(/\s{2,}/g, ' ');
 }
 
 // 모델이 소수점 뒤에 공백을 끼워 쓴 깨진 숫자("41. 1대비", "4. 9%/d")를 재결합한다.
@@ -220,9 +221,12 @@ export function stripDirectiveSentences(text: string): string {
 // 점검 개수만 적힌 문장은 정보가 아니다(실측: "점검한 항목 수 = 2 / 전체 점검 항목 수 = 3").
 // 어느 항목이 빠졌는지 알 수 없어 독자가 쓸 수 없다. 뜻만 남기고 숫자 나열은 지운다.
 export function rewriteBareCheckCounts(text: string): string {
+  // 라벨이 무엇이든("점검한 항목 수", "이행도 점검", "alignment_checked") 형태는 같다:
+  //   <…점검/항목…> = 2 / <…항목…> = 3
+  // 필드명을 한국어로 옮기면 라벨이 바뀌므로 라벨을 못 박으면 안 된다(실측 회귀).
   return text
     .replace(
-      /점검한?\s*항목\s*수\s*=\s*\d+\s*\/\s*전체\s*점검\s*항목\s*수\s*=\s*\d+\s*(?:입니다|임)?\s*[.。]?/gu,
+      /(?:[^\s.。]+\s+)?[^\s.。]*(?:점검|항목|checks?)[^=\n]{0,16}=\s*\d+\s*\/\s*[^=\n]{0,24}=\s*\d+\s*(?:입니다|임|이다)?\s*[.。]?/gu,
       '일부 항목은 자료가 없어 점검하지 못했습니다.',
     )
     .replace(

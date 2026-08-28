@@ -1,4 +1,12 @@
-import { dedupePerGapComparisons, dedupeSentencesAcrossSections, extractReasoningText, normalizeAgentReport, sanitizeForwardPeNarrative } from './helpers';
+import {
+  dedupeEvidenceItemsAcrossReport,
+  dedupePerGapComparisons,
+  dedupeSentencesAcrossSections,
+  extractReasoningText,
+  normalizeAgentReport,
+  parseEvidenceItems,
+  sanitizeForwardPeNarrative,
+} from './helpers';
 import { ReportSection } from './report-section';
 import type { AgentReport, CanonicalForwardSnapshot, Citation, NormalizedReport, ReportLanguage, SectionDef, SectionId } from './types';
 
@@ -57,6 +65,12 @@ export function ReportBody({
     )),
   ));
 
+  // 카드를 여기서 한 번에 만들고 보고서 전체에서 되풀이되는 것을 걷어낸다.
+  // 섹션마다 따로 파싱하면 같은 카드가 여러 섹션에 남는다(실측: 이행도 점검 카드).
+  const itemsBySection = dedupeEvidenceItemsAcrossReport(
+    dedupedSectionTexts.map(text => parseEvidenceItems(text)),
+  );
+
   return (
     <main className={`min-w-0 flex-1 space-y-6 ${className}`}>
       {sections.map((section, sectionIndex) => (
@@ -64,6 +78,7 @@ export function ReportBody({
           key={section.id}
           section={section}
           sectionText={dedupedSectionTexts[sectionIndex]}
+          items={itemsBySection[sectionIndex]}
           ticker={ticker}
           activeReport={activeReport}
           activeAgentKey={activeAgentKey}
