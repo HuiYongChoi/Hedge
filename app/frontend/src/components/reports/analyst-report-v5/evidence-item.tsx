@@ -5,7 +5,6 @@ import {
   findDataTokenReferences,
   inferCitationLetters,
   splitEvidenceBodyBlocks,
-  splitReadableChunk,
   toneToClasses,
 } from './helpers';
 import { CitationChip, findCitation } from './citation-chip';
