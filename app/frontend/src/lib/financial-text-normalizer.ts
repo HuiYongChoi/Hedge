@@ -133,7 +133,12 @@ function normalizeKoreanEnglishRedundancy(text: string): string {
     .replace(/신뢰도\s+high\b/giu, '신뢰도 높음')
     .replace(/\bforward\s+consensus\s+EPS\b/giu, '선행 컨센서스 EPS')
     .replace(/\bearnings\s*\/\s*operating[\s-]?income\b/giu, '순이익/영업이익')
-    .replace(/(\d)\s*vs\s*(?=[A-Za-z가-힣\d])/gu, '$1 vs ');
+    .replace(/(\d)\s*vs\s*(?=[A-Za-z가-힣\d])/gu, '$1 vs ')
+    // 명사형 뒤에 '입니다'가 따로 붙어 어색하다("신뢰도가 낮음 입니다").
+    .replace(/낮음\s+(?:입니다|이다|임)/gu, '낮습니다')
+    .replace(/높음\s+(?:입니다|이다|임)/gu, '높습니다')
+    .replace(/없음\s+(?:입니다|이다|임)/gu, '없습니다')
+    .replace(/있음\s+(?:입니다|이다|임)/gu, '있습니다');
 }
 
 // 모델이 소수점 뒤에 공백을 끼워 쓴 깨진 숫자("41. 1대비", "4. 9%/d")를 재결합한다.
@@ -189,6 +194,25 @@ export function stripDatasetMetadata(text: string): string {
     // 문장 앞에 남는 고아 구두점/번호("· ) 2) ")
     .replace(/(^|[.。])\s*[·•]\s*[)）]?\s*(?=\d\))/gu, '$1 ')
     .replace(/\s{2,}/g, ' ');
+}
+
+// 카드 전체는 분석인데 그 안에 지시 문장 하나가 끼어 있는 경우가 있다(실측):
+//   "…연동이 있는지 확인하십시오(… 최종 설계는 추가 확인 필요)."
+// 항목 단위 필터로는 못 걸러진다. 문장 단위로, 지시만 있고 단정이 없는 문장을 지운다.
+const DIRECTIVE_SENTENCE_RE =
+  /[^.。!?]*(?:확인하(?:십시오|세요)|점검하(?:십시오|세요)|대조하(?:십시오|세요)|추가\s*확인\s*필요|확인\s*필요)[^.。!?]*[.。!?]?/gu;
+const DECLARATIVE_TAIL_RE = /(?:입니다|합니다|됩니다|습니다)\s*[.。]?\s*$/u;
+
+export function stripDirectiveSentences(text: string): string {
+  return (text || '')
+    .replace(DIRECTIVE_SENTENCE_RE, sentence =>
+      // 같은 문장이 단정으로 끝나면 분석 결과이므로 남긴다.
+      (DECLARATIVE_TAIL_RE.test(sentence.trim()) ? sentence : ' '))
+    // 문장이 빠지며 남는 고아 괄호·구두점
+    .replace(/\(\s*\)/g, '')
+    .replace(/\s+([,.，。])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 // 점검 개수만 적힌 문장은 정보가 아니다(실측: "점검한 항목 수 = 2 / 전체 점검 항목 수 = 3").
@@ -269,6 +293,9 @@ const RAW_FIELD_GLOSSARY: Array<[RegExp, string]> = [
   [/\balignment_total_checks\b/gi, '전체 점검 항목'],
   // 제목에 남는 영어 틀 이름
   [/\bAlignment\b/g, '이행도'],
+  [/\bValue\b/g, '가치'],
+  [/\bStory\b/g, '서사'],
+  [/\bNumbers\b/g, '숫자'],
   [/\bManagement\b/g, '경영진'],
   [/\bmargin\s+of\s+safety\b/gi, '안전마진'],
   [/\s*\(\s*표기\s*원문\s*값\s*\)/g, ''],
@@ -313,6 +340,40 @@ const RAW_FIELD_GLOSSARY: Array<[RegExp, string]> = [
 ];
 
 // "checked 2 / total 3" → "3개 항목 중 2개 점검"
+//: 필드명을 하나씩 사전에 적으면 새 필드가 생길 때마다 샌다(실측: growth_analysis,
+//: revenue_growth_delta). 낱말 단위로 옮겨 조합하면 처음 보는 이름도 읽을 수 있게 된다.
+const FIELD_WORD_KO: Record<string, string> = {
+  revenue: '매출', growth: '성장률', delta: '변화', analysis: '분석', margin: '이익률',
+  income: '이익', operating: '영업', net: '순', gross: '매출총', cash: '현금', flow: '흐름',
+  free: '잉여', debt: '차입금', equity: '자기자본', shares: '주식수', ratio: '비율',
+  value: '가치', intrinsic: '내재', market: '시장', cap: '총액', base: '기준', total: '전체',
+  score: '점수', checked: '점검', per: '주당', share: '주당', price: '가격', rate: '율',
+  cost: '비용', risk: '위험', capital: '자본', invested: '투하', returns: '수익률',
+  reinvestment: '재투자', terminal: '영구', discount: '할인', projection: '추정',
+  years: '기간', assumptions: '가정', details: '세부', confidence: '신뢰도',
+  relative: '상대가치', management: '경영진', assessment: '평가', narrative: '서사',
+  check: '점검', life: '생애', cycle: '주기', stage: '단계', alignment: '이행도',
+  coverage: '충실도', safety: '안전', of: '', and: '', to: '', fcff: 'FCFF', fcf: 'FCF',
+  roic: 'ROIC', wacc: 'WACC', ebitda: 'EBITDA', ebit: 'EBIT', eps: 'EPS', pe: 'PER',
+  val: '가치', checks: '항목', outstanding: '발행', expense: '비용', interest: '이자',
+  depreciation: '감가상각', amortization: '상각', capital_expenditure: '설비투자',
+  shareholders: '자기자본', equivalents: '성', sec: '공시', filing: '공시',
+};
+
+/** snake_case 필드명을 낱말 단위로 옮긴다. 모르는 낱말이 있으면 손대지 않는다. */
+export function humanizeSnakeCaseFields(text: string): string {
+  return text.replace(/\b[a-z]{2,}(?:_[a-z0-9]{1,})+\b/g, raw => {
+    const parts = raw.split('_');
+    const words: string[] = [];
+    for (const part of parts) {
+      const mapped = FIELD_WORD_KO[part];
+      if (mapped === undefined) return raw;      // 모르는 낱말 — 억지 번역하지 않는다
+      if (mapped) words.push(mapped);
+    }
+    return words.length ? words.join(' ') : raw;
+  });
+}
+
 function humanizeCheckedTotals(text: string): string {
   return text.replace(
     /\bchecked\s*(\d+)\s*\/\s*total\s*(\d+)\b/gi,
@@ -374,7 +435,7 @@ function fixParticlesAfterGlossaryTerms(text: string): string {
 }
 
 function humanizeRawFieldNames(text: string): string {
-  let out = humanizeCheckedTotals(text);
+  let out = humanizeSnakeCaseFields(humanizeCheckedTotals(text));
   for (const [pattern, replacement] of RAW_FIELD_GLOSSARY) out = out.replace(pattern, replacement);
   return fixParticlesAfterGlossaryTerms(fixKoreanParticleSpacing(
     out
@@ -575,9 +636,9 @@ export function normalizeFinancialDisplayText(text: string) {
 
   // 순서가 중요하다. 찌꺼기를 먼저 걷어내고(마커·중첩라벨·깨진 숫자),
   // 그 다음 용어를 한국어로 바꾸고, 숫자를 읽기 좋게 만든 뒤, 마지막에 문체를 다듬는다.
-  const cleaned = rewriteBareCheckCounts(stripDatasetMetadata(collapseRepeatedRatioLabels(stripLeftoverMarkers(
+  const cleaned = stripDirectiveSentences(rewriteBareCheckCounts(stripDatasetMetadata(collapseRepeatedRatioLabels(stripLeftoverMarkers(
     stripLeakedSourceMarkers(stripPromptEcho(rejoinBrokenDecimals(text))),
-  ))));
+  )))));
   const worded = humanizeRawFieldNames(stripMismatchedCurrencyPrefix(repairFragmentedPercents(cleaned)));
   const numbered = dropSelfReferentialParenthetical(groupLargeAmounts(normalizeRatiosWrittenAsDecimals(
     normalizeOversizedAmounts(normalizeTruncatedDecimals(worded)),

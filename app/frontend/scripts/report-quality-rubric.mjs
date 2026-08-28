@@ -41,6 +41,13 @@ const RUBRIC = [
     bad: /^\s*\(\s*\w+\s*$|^\s*[A-Za-z]+\s*[,，]\s*$/gmu },
   { id: 'longline',    w: 6,  label: '줄바꿈 없이 250자 넘는 문단',
     test: text => text.split('\n').filter(l => l.trim().length > 250).map(l => l.slice(0, 90) + '…') },
+  { id: 'stubbody',    w: 10, label: '본문이 조각뿐 ("입니다." 만 남음)',
+    test: text => text.split('\n').map(l => l.trim())
+      .filter(l => /^(?:입니다|임|이다|합니다)\s*[.。]?$/u.test(l)) },
+  { id: 'homework',    w: 12, label: '독자에게 남긴 숙제 (확인 필요 / 체크리스트)',
+    bad: /(?:확인\s*필요|위치를?\s*확인|체크리스트|원문\s*대조)\s*[.。]?/g },
+  { id: 'awkward',     w: 6,  label: '어색한 이음말 ("낮음 입니다")',
+    bad: /(?:낮음|높음|없음|있음)\s+(?:입니다|이다|임)/g },
   { id: 'dupclaim',    w: 6,  label: '카드 간 같은 주장 반복 (DCF 대비 %, 선행 PER vs TTM)',
     test: text => {
       const hits = [];

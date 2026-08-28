@@ -142,14 +142,14 @@ class SourceDisclosureTests(unittest.TestCase):
     def test_homework_items_dropped_from_evidence(self):
         """'검토 필요 … 실제 표현 확인.'은 분석 결과가 아니라 작성자에게 남긴 숙제다."""
         self.assertIn("isHomeworkEvidenceText", HELPERS)
-        self.assertIn("HOMEWORK_HEAD_RE", HELPERS)
-        self.assertIn("HOMEWORK_TAIL_RE", HELPERS)
+        # 판별은 '지시 표현이 있는가' + '단정하는 서술이 없는가' 두 가지로 한다.
+        self.assertIn("HOMEWORK_DIRECTIVE_RE", HELPERS)
+        self.assertIn("DECLARATIVE_RE", HELPERS)
 
     def test_homework_head_avoids_korean_word_boundary(self):
         r"""JS 정규식의 \b 는 한글 뒤에서 성립하지 않는다 — 규칙이 조용히 안 걸린다."""
-        head_line = next(l for l in HELPERS.splitlines() if "HOMEWORK_HEAD_RE =" in l)
-        self.assertNotIn("필요\\b", head_line)
-        self.assertIn("필요(?![가-힣])", head_line)
+        directive = HELPERS[HELPERS.index("const HOMEWORK_DIRECTIVE_RE"):][:600]
+        self.assertNotIn("필요\\\\b", directive)
 
     def test_cross_check_guide_is_three_short_lines(self):
         """크로스체크는 '다음에 뭘 볼지'만 짚는다. 길면 본문과 겹친다."""

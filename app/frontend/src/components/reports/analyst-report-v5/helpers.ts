@@ -922,10 +922,6 @@ function buildFallbackCrossCheckGuideFromReport(
 // 본문에 남은 '검토 필요 - … 실제 표현 확인' 류의 체크리스트를 걷어낸다.
 // 이건 분석 결과가 아니라 작성자에게 남긴 숙제다. 원문 확인은 출처 섹션의
 // '공시 원문 펼쳐보기'가 대신하므로, 리스크 근거 자리를 차지할 이유가 없다.
-// 실측 카드: "검토 필요 - 위험관리 … 외환거래 투기 금지, 내부자금 공유 등 실제 표현 확인."
-// 안에 '환율 5%' 같은 숫자가 있어도 그건 확인할 '주제'이지 분석 결과가 아니다.
-// 그래서 수치 유무가 아니라 '지시로 시작해 지시로 끝나는가'로 판별한다.
-// 주의: JS 정규식의 \b 는 한글 뒤에서 성립하지 않는다(‘필요\b’ 는 절대 안 걸린다).
 // 다모다란 분석의 '틀' 이름만 적히고 내용이 없는 카드가 나온다(실측):
 //   "Story → Numbers"
 //   "가치(Value): FCFF DCF + 안전마진 + 상대가치 체크"
@@ -935,7 +931,8 @@ const FRAMEWORK_LABEL_RE = new RegExp(
   '^(?:' +
     'story\\s*(?:→|->|~>|=>)\\s*numbers' +
     '|스토리\\s*(?:→|->)\\s*(?:넘버스|숫자)' +
-    '|가치\\s*\\(\\s*value\\s*\\)' +
+    '|서사\\s*(?:→|->)\\s*숫자' +
+    '|가치\\s*\\(\\s*(?:value|가치)\\s*\\)' +
     '|value\\s*\\(\\s*가치\\s*\\)' +
     '|내러티브\\s*(?:→|->)\\s*숫자' +
   ')\\s*[:：]?\\s*',
@@ -961,12 +958,38 @@ export function isFrameworkLabelOnly(text: string): boolean {
   return !hasSubstance && METHOD_LIST_RE.test(clean) && clean.length <= 60;
 }
 
-const HOMEWORK_HEAD_RE = /^\s*(?:검토|확인|추가\s*확인)\s*필요(?![가-힣])/u;
-const HOMEWORK_TAIL_RE = /(?:실제\s*표현\s*)?확인(?:하십시오|하세요|해야\s*한다|해야\s*합니다|이\s*필요합니다|합니다|한다)?\s*[.。]?\s*$/u;
+// 독자에게 남긴 숙제가 근거 카드로 박힌다(실측 4종):
+//   "검토 필요 항목(원문 대조) … 얼마나 방어되는지 확인 필요."
+//   "[공시 위치 확인 필요] 10-K/사업보고서의 MD&A … 확인 필요."
+//   "🔍 원문 대조 체크리스트 1. 핵심 타겟 데이터: …"
+//   "원문 추적 섹션: … 위치를 확인."
+// 공통점은 '무엇을 확인하라'는 지시라는 것이다. 분석 결과가 아니므로 카드에서 뺀다.
+// 판별은 '지시 표현이 있는가' + '단정하는 서술이 없는가' 두 가지로 한다.
+// 수치가 들어 있어도 그건 확인할 '대상'이지 결론이 아니므로 수치 유무는 보지 않는다.
+const HOMEWORK_DIRECTIVE_RE = new RegExp(
+  '(?:검토|확인|추가\\s*확인)\\s*필요' +
+  '|확인\\s*필요' +
+  '|위치를?\\s*확인' +
+  '|대조\\s*체크리스트' +
+  '|원문\\s*대조' +
+  '|원문\\s*추적\\s*섹션' +
+  '|확인하(?:십시오|세요|여야)' +
+  '|점검하(?:십시오|세요)',
+  'u',
+);
+
+//: 단정하는 서술이 있으면 분석 결과다. 지시 표현이 섞여 있어도 남긴다.
+const DECLARATIVE_RE = /(?:입니다|합니다|됩니다|습니다|이다|한다)\s*[.。]/u;
 
 export function isHomeworkEvidenceText(text: string): boolean {
-  const clean = (text || '').replace(/^\s*\[[+\-~?]\]\s*/u, '').replace(/\s+/g, ' ').trim();
-  return HOMEWORK_HEAD_RE.test(clean) && HOMEWORK_TAIL_RE.test(clean);
+  const clean = (text || '')
+    .replace(/^\s*\[[+\-~?]\]\s*/u, '')
+    .replace(/\*\*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!clean) return false;
+  if (!HOMEWORK_DIRECTIVE_RE.test(clean)) return false;
+  return !DECLARATIVE_RE.test(clean);
 }
 
 export function buildSourceTrackingText(report: AgentReport | null | undefined) {

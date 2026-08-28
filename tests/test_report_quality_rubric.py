@@ -25,7 +25,8 @@ class ReportQualityRubricTests(unittest.TestCase):
         """고정 데이터가 비면 채점이 항상 만점이 되어 의미가 없어진다."""
         text = FIXTURE.read_text(encoding="utf-8")
         for defect in ("[#+]", "period:", "base_fcff", "**", "표기되지만,",
-                       "점검한 항목 수", "Alignment"):
+                       "점검한 항목 수", "Alignment", "확인 필요", "growth_analysis",
+                       "낮음 입니다"):
             self.assertIn(defect, text, f"실측 결함 '{defect}' 이 고정 데이터에 있어야 한다")
 
     @unittest.skipUnless(NODE.exists() and (FRONTEND / "node_modules/typescript").exists(),
@@ -39,7 +40,8 @@ class ReportQualityRubricTests(unittest.TestCase):
             result.returncode, 0,
             f"채점 미달:\n{result.stdout[-2000:]}\n{result.stderr[-800:]}",
         )
-        self.assertIn("100 / 100", result.stdout)
+        # 총점을 못 박지 않는다 — 채점 항목이 늘어도 '만점'이면 통과해야 한다.
+        self.assertIn("★ 만점", result.stdout)
 
 
 if __name__ == "__main__":
