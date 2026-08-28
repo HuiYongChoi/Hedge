@@ -1333,10 +1333,16 @@ export function dedupePerGapComparisons(sectionTexts: string[]): string[] {
   if (candidates.length <= 1) return sectionTexts; // 반복 없음 → 그대로
 
   // 가장 상세한(긴) 블록을 keeper로, 같은 비교의 나머지 블록은 제거
-  const keeper = candidates.reduce((a, c) => (c.len > a.len ? c : a));
-  // 결론은 요지를 되풀이하는 자리이므로 지우지 않는다. 본문 쪽 반복만 걷어낸다.
+  // 결론(섹션 01)이 이미 그 비교를 말했다면 본문에서 되풀이할 이유가 없다.
+  // 결론은 지우지 않으므로, 그 경우 본문 쪽을 전부 걷어낸다.
+  const conclusionStates = candidates.some(c => c.s === 0);
+  const bodyCandidates = candidates.filter(c => c.s !== 0);
+  const keeper = conclusionStates
+    ? null
+    : bodyCandidates.reduce<typeof candidates[number] | null>(
+        (a, c) => (a === null || c.len > a.len ? c : a), null);
   const remove = new Set(
-    candidates.filter(c => c !== keeper && c.s !== 0).map(c => `${c.s}:${c.b}`),
+    bodyCandidates.filter(c => c !== keeper).map(c => `${c.s}:${c.b}`),
   );
   if (remove.size === 0) return sectionTexts;
 
@@ -1474,6 +1480,76 @@ export function splitEvidenceBodyBlocks(body: string): string[] {
  * ("이행도 점검 = 2 / 전체 = 3 입니다")는 그대로 여러 번 남았다. 카드는
  * 제목+본문을 합쳐 지문을 만들고 12자만 넘으면 같은 것으로 본다.
  */
+//: 같은 주장을 문장만 바꿔 되풀이한다(실측):
+//:   "선행 PER는 4.2로 제시되며, TTM PER 29.1 대비 …"
+//:   "선행 PER이 TTM 대비 크게 낮아지는(4.2 vs 29.1) 구조는 …"
+//: 문장을 '무엇에 대한 주장인가 + 어떤 숫자인가'로 줄이면 표현이 달라도 같은 주장임을
+//: 알 수 있다. 카드 단위 중복 제거로는 안 잡힌다(서로 다른 카드에 흩어져 있으므로).
+const CLAIM_TOPICS: Array<[string, RegExp]> = [
+  ['per-gap', /선행\s*P(?:ER|\/?E)[\s\S]{0,90}?TTM|TTM[\s\S]{0,90}?선행\s*P(?:ER|\/?E)/iu],
+  ['dcf-gap', /(?:DCF|내재가치)[\s\S]{0,90}?(?:시장가|시가총액|현재\s*주가)|(?:시장가|시가총액)[\s\S]{0,90}?내재가치/u],
+];
+
+function claimTopic(sentence: string): string | null {
+  const topic = CLAIM_TOPICS.find(([, pattern]) => pattern.test(sentence));
+  return topic ? topic[0] : null;
+}
+
+/** 같은 주제의 문장 중 무엇을 남길지 — 숫자가 많고 긴 쪽이 정보가 많다. */
+function claimRichness(sentence: string): number {
+  const numbers = (sentence.match(/-?\d+(?:[.,]\d+)?/g) || []).length;
+  return numbers * 1000 + sentence.length;
+}
+
+/**
+ * 보고서 전체에서 한 주제의 주장은 한 번만 남긴다.
+ *
+ * 숫자 집합으로 지문을 만들면 "4.2 vs 29.1"과 "4.2 … 29.1 … -85.5%"가 다른 주장으로
+ * 보여 둘 다 남는다(실측). 주제 자체가 한 종목당 하나이므로 주제로 묶고,
+ * 그중 숫자가 많고 자세한 문장 하나만 남긴다.
+ */
+export function dedupeRepeatedClaimSentences(itemsBySection: EvidenceItem[][]): EvidenceItem[][] {
+  const best = new Map<string, number>();
+  const visit = (text: string) => {
+    for (const sentence of text.match(SENTENCE_MATCH_RE) || []) {
+      const topic = claimTopic(sentence);
+      if (!topic) continue;
+      const score = claimRichness(sentence);
+      if (score > (best.get(topic) ?? -1)) best.set(topic, score);
+    }
+  };
+  // 결론(첫 섹션)은 요약이므로 한 번 말하는 것이 정상이다. 후보에서 제외해
+  // 본문 카드끼리의 반복만 다룬다 — 결론 문장을 지우면 요약이 무너진다.
+  itemsBySection.slice(1).forEach(items => items.forEach(item => {
+    visit(item.heading || '');
+    visit(item.body || '');
+  }));
+
+  const used = new Set<string>();
+  const keepBest = (text: string): string => {
+    const sentences = text.match(SENTENCE_MATCH_RE);
+    if (!sentences || sentences.length === 0) return text;
+    return sentences.filter(sentence => {
+      const topic = claimTopic(sentence);
+      if (!topic) return true;
+      if (used.has(topic)) return false;
+      if (claimRichness(sentence) < (best.get(topic) ?? 0)) return false;
+      used.add(topic);
+      return true;
+    }).join('').trim();
+  };
+
+  return itemsBySection.map((items, sectionIndex) => (sectionIndex === 0 ? items : items)
+    .map(item => {
+      if (sectionIndex === 0) return item;          // 결론은 그대로 둔다
+      const heading = item.heading && claimTopic(item.heading)
+        ? (keepBest(item.heading) || item.heading)
+        : item.heading;
+      return { ...item, heading, body: keepBest(item.body || '') };
+    })
+    .filter(item => Boolean((item.heading || '').trim() || (item.body || '').trim())));
+}
+
 export function dedupeEvidenceItemsAcrossReport(
   itemsBySection: EvidenceItem[][],
 ): EvidenceItem[][] {
@@ -1677,7 +1753,7 @@ function splitLeadSentenceHeading(bodyText: string): { heading: string | null; b
   if (boundary <= 0 || boundary >= clean.length) {
     const only = stripTail(clean);
     if (only.length <= 90) return { heading: only, body: '' };
-    return splitLeadClauseHeading(clean) ?? { heading: null, body: clean };
+    return splitLeadClauseHeading(clean) ?? deriveFallbackHeading(clean);
   }
 
   // 다문장: 첫 문장 = 제목, 나머지 = 본문
@@ -1697,7 +1773,7 @@ function splitLeadSentenceHeading(bodyText: string): { heading: string | null; b
     }
     if (endsWithConnective(heading)) return { heading: null, body: clean };
   }
-  if (heading.length > 90) return splitLeadClauseHeading(clean) ?? { heading: null, body: clean };
+  if (heading.length > 90) return splitLeadClauseHeading(clean) ?? deriveFallbackHeading(clean);
   return { heading, body };
 }
 

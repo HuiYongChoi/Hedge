@@ -280,7 +280,10 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         # "저는 Alphabet Inc.2.3" 고아 파편을 만들던 문제 — 약어 가드 공용 정규식 사용.
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         self.assertIn("const SENTENCE_MATCH_RE", helpers)
-        self.assertEqual(helpers.count("SENTENCE_MATCH_RE"), 3)  # 정의 + 두 분리기
+        # 중요한 건 사용처 개수가 아니라 정의가 하나뿐이라는 것 —
+        # 문장 분리 규칙이 갈라지면 곳곳에서 다르게 잘린다.
+        self.assertEqual(helpers.count("const SENTENCE_MATCH_RE ="), 1)
+        self.assertGreaterEqual(helpers.count("SENTENCE_MATCH_RE"), 3)
         self.assertIn("Inc|Corp|Co|Ltd|LLC|plc|PLC|vs|Mr|Ms|Dr|Jr|Sr|St|No|etc", helpers)
 
     def test_leading_decimal_not_stripped_as_enumerator(self):

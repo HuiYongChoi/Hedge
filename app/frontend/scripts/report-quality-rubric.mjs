@@ -22,6 +22,10 @@ const H = await import(toDataUrl(
     .replace(/from ['"]@\/[^'"]+['"]/g, "from 'data:text/javascript,export default {};export const t=(k)=>k;'")
 ));
 
+// 채점 대상 텍스트. 카드 파싱 뒤 채워진다.
+const MISSING_HEADINGS = [];
+let BODY_ONLY = '';
+
 const RUBRIC = [
   { id: 'marker',      w: 12, label: '근거 마커 누출 ([#+], [+], [~])',
     bad: /\[#?[+\-~?]\]/g },
@@ -64,8 +68,10 @@ const RUBRIC = [
     } },
   { id: 'noheading',   w: 12, label: '제목 없는 카드',
     test: () => MISSING_HEADINGS },
-  { id: 'dupclaim',    w: 6,  label: '카드 간 같은 주장 반복 (DCF 대비 %, 선행 PER vs TTM)',
-    test: text => {
+  // 결론(01)은 요약이라 요지를 한 번 되풀이하는 것이 정상이다. 본문끼리의 반복만 센다.
+  { id: 'dupclaim',    w: 6,  label: '본문 카드 간 같은 주장 반복 (DCF 대비 %, 선행 PER vs TTM)',
+    test: () => {
+      const text = BODY_ONLY;
       const hits = [];
       const dcf = text.match(/DCF\s*(?:대비|기준)[^.\n]{0,60}?\d+\s*%/g) || [];
       const per = text.match(/선행\s*PER[^.\n]{0,60}?TTM/g) || [];
@@ -80,11 +86,10 @@ const raw = readFileSync(process.argv[2], 'utf8');
 // 섹션별 중복 제거 → 반복 주장 제거 → 카드 파싱 → 제목/본문 표시.
 const sections = raw.split(/\n\s*\n/).filter(b => b.trim());
 const deduped = H.dedupePerGapComparisons(H.dedupeSentencesAcrossSections(sections));
-const MISSING_HEADINGS = [];
-const parsedBySection = H.dedupeEvidenceItemsAcrossReport(
+const parsedBySection = H.dedupeRepeatedClaimSentences(H.dedupeEvidenceItemsAcrossReport(
   deduped.map(section => H.parseEvidenceItems(section)),
-);
-const out = parsedBySection
+));
+const sectionsOut = parsedBySection
   .map(items => {
     // 카드가 모두 걸러지면 화면에도 아무것도 안 나온다(빈 섹션 안내만).
     // 원문으로 되돌리면 실제 화면과 달라져 채점이 무의미해진다.
@@ -98,9 +103,10 @@ const out = parsedBySection
       .map(i => [i.heading, ...H.splitEvidenceBodyBlocks(i.body || '')].filter(Boolean).join('\n'))
       .join('\n');
   })
-  .filter(Boolean)
-  .join('\n\n');
+  .filter(Boolean);
+BODY_ONLY = sectionsOut.slice(1).join('\n\n');
 
+const out = sectionsOut.join('\n\n');
 let earned = 0, total = 0;
 const failures = [];
 for (const rule of RUBRIC) {

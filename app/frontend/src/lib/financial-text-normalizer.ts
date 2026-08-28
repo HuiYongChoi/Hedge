@@ -135,10 +135,10 @@ function normalizeKoreanEnglishRedundancy(text: string): string {
     .replace(/\bearnings\s*\/\s*operating[\s-]?income\b/giu, '순이익/영업이익')
     .replace(/(\d)\s*vs\s*(?=[A-Za-z가-힣\d])/gu, '$1 vs ')
     // 명사형 뒤에 '입니다'가 따로 붙어 어색하다("신뢰도가 낮음 입니다").
-    .replace(/낮음\s+(?:입니다|이다|임)/gu, '낮습니다')
-    .replace(/높음\s+(?:입니다|이다|임)/gu, '높습니다')
-    .replace(/없음\s+(?:입니다|이다|임)/gu, '없습니다')
-    .replace(/있음\s+(?:입니다|이다|임)/gu, '있습니다')
+    .replace(/낮음\s*(\*\*)?\s*(?:입니다|이다|임)/gu, '낮습니다$1')
+    .replace(/높음\s*(\*\*)?\s*(?:입니다|이다|임)/gu, '높습니다$1')
+    .replace(/없음\s*(\*\*)?\s*(?:입니다|이다|임)/gu, '없습니다$1')
+    .replace(/있음\s*(\*\*)?\s*(?:입니다|이다|임)/gu, '있습니다$1')
     // 종결어미가 두 번 겹친다("…못했습니다 입니다"). 앞의 종결로 이미 문장이 끝났다.
     .replace(/(습니다|합니다|됩니다|입니다)\s*[.。]?\s+(?:입니다|임|이다)\s*[.。]?/gu, '$1. ')
     .replace(/\s{2,}/g, ' ');
@@ -208,6 +208,10 @@ const DECLARATIVE_TAIL_RE = /(?:입니다|합니다|됩니다|습니다)\s*[.。
 
 export function stripDirectiveSentences(text: string): string {
   return (text || '')
+    // "### 🔍 원문 대조 체크리스트" 같은 머리표는 무엇을 하라는 구획 이름이지
+    // 분석 문장이 아니다. 아래 항목은 항목 단위 규칙이 따로 걸러낸다.
+    .replace(/^\s*#{0,4}\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]?\s*(?:원문\s*대조|원문\s*추적)?\s*체크리스트\s*[:：]?\s*(?=\d+[.)]|$)/gmu, '')
+    .replace(/^\s*#{0,4}\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/gmu, '')
     .replace(DIRECTIVE_SENTENCE_RE, sentence =>
       // 같은 문장이 단정으로 끝나면 분석 결과이므로 남긴다.
       (DECLARATIVE_TAIL_RE.test(sentence.trim()) ? sentence : ' '))
