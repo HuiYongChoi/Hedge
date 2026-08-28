@@ -4,6 +4,8 @@ import {
   extractKeyNumbers,
   findDataTokenReferences,
   inferCitationLetters,
+  splitEvidenceBodyBlocks,
+  splitReadableChunk,
   toneToClasses,
 } from './helpers';
 import { CitationChip, findCitation } from './citation-chip';
@@ -39,28 +41,6 @@ const readableTextStyle: CSSProperties = {
   overflowWrap: 'break-word',
 };
 
-function splitReadableChunk(block: string): string[] {
-  if (block.length <= 460) return [block];
-
-  const sentences = block.match(/[^.!?。？！]+[.!?。？！]?/gu) ?? [block];
-  const chunks: string[] = [];
-  let current = '';
-
-  sentences.forEach(sentence => {
-    const clean = sentence.trim();
-    if (!clean) return;
-    const next = current ? `${current} ${clean}` : clean;
-    if (current && next.length > 380) {
-      chunks.push(current);
-      current = clean;
-      return;
-    }
-    current = next;
-  });
-
-  if (current) chunks.push(current);
-  return chunks.length > 0 ? chunks : [block];
-}
 
 function isMarkerOnlyBodyBlock(block: string) {
   const clean = block
@@ -140,26 +120,6 @@ function isHeadingOnlyBodyBlock(block: string) {
     && !/(다|요|임|함|됨|한다|했다|된다|이다|입니다|합니다|있습니다|없습니다|보입니다|낮습니다|높습니다)$/u.test(clean);
 }
 
-function splitEvidenceBodyBlocks(body: string): string[] {
-  return body
-    .replace(/\r\n?/g, '\n')
-    // [?](검증 조건)는 부모 문장의 목록이므로 새 블록으로 쪼개지 않고 '·' 목록으로 이어 붙인다.
-    .replace(/\s*\[\?\]\s*/gu, ' · ')
-    // "- [+] …" 하이픈 불릿 뒤 마커는 하이픈까지 삼켜 분리 (고아 "-" 블록 방지)
-    .replace(/(?:\s+[-*•])?\s+(?=(?:\d+[.)]\s+)?\[[+\-~]\])/gu, '\n\n')
-    .split(/\n{2,}|\n(?=\s*(?:#{2,3}\s+|\d+[.)]|[-*•]\s+|\[[+\-~]\]))/u)
-    .map(block => block
-      // 선두 목록 번호 제거 — "2.0%/d"의 "2."(소수점)는 번호가 아니므로 (?!\d) 가드
-      .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+\.(?!\d)\s*|\d+\)\s*|\[[+\-~?]\]\s*)/u, '')
-      .replace(/^\s*·\s*/u, '')
-      .replace(/\s+/g, ' ')
-      // 완결 문장 뒤에 매달린 목록 번호 조각(" 2." 등, 다음 항목 enumerator 누출) 제거.
-      // 종결부호 뒤 1~2자리 숫자여야만 잡아 실제 수치(예: "목표가 100.")는 보존.
-      .replace(/(?<=[.!?。？！])\s+\d{1,2}[.)]\s*$/u, '')
-      .trim())
-    .filter(block => Boolean(block) && !isMarkerOnlyBodyBlock(block) && !isHeadingOnlyBodyBlock(block))
-    .flatMap(splitReadableChunk);
-}
 
 export function EvidenceItem({
   item,

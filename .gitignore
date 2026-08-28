@@ -66,3 +66,6 @@ tmp/
 
 # Alembic (keep migration files, but ignore generated/cache files)
 app/backend/alembic/versions/__pycache__/
+
+# 테스트 고정 데이터는 추적한다 — 실측 결함 문장이 사라지면 채점이 무의미해진다.
+!tests/fixtures/*.txt

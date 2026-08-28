@@ -287,7 +287,7 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         # "2.0%/d"의 선두 "2."를 목록 번호로 오인해 지워 "0%/d"가 되던 문제 —
         # 모든 선두 번호 제거에 (?!\d) 소수점 가드.
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
-        evidence = (V5_DIR / "evidence-item.tsx").read_text(encoding="utf-8")
+        evidence = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         self.assertIn("\\d+\\.(?!\\d)\\s*|\\d+\\)\\s*", helpers)
         self.assertIn("\\d+\\.(?!\\d)\\s*|\\d+\\)\\s*", evidence)
         # 내용을 지우는 선두 스트립에 가드 없는 \d+[.)] 가 남아 있으면 안 된다
@@ -361,7 +361,7 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         body = (V5_DIR / "report-body.tsx").read_text(encoding="utf-8")
         self.assertIn("export function dedupePerGapComparisons(", helpers)
         self.assertIn("c.len > a.len ? c : a", helpers)  # 가장 상세한(긴) 것 선택
-        self.assertIn("if (s === 0) return", helpers)      # 섹션 01 보존
+        self.assertIn("c.s !== 0", helpers)  # 결론은 제거 대상에서 제외(집계에는 포함)      # 섹션 01 보존
         # report-body가 실제로 이 패스를 적용
         self.assertIn("dedupePerGapComparisons(dedupeSentencesAcrossSections(", body)
 
@@ -416,7 +416,7 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         # "- [+] …" 하이픈 불릿 뒤 마커에서 하이픈이 고아 블록("-")으로 남아
         # 본문이 빈 카드(6,7,9~11번)가 생기던 회귀 방지.
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
-        evidence = (V5_DIR / "evidence-item.tsx").read_text(encoding="utf-8")
+        evidence = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
 
         self.assertIn("(?:\\s+[-*•])?\\s+(?=(?:\\d+[.)]\\s+)?\\[[+\\-~]\\])", helpers)
         self.assertIn("(?:\\s+[-*•])?\\s+(?=(?:\\d+[.)]\\s+)?\\[[+\\-~]\\])", evidence)
@@ -429,7 +429,7 @@ class AnalystReportV5StaticTests(unittest.TestCase):
     def test_trailing_orphan_enumerator_stripped(self):
         # 완결 문장 뒤에 매달린 목록 번호 조각(" 2.")은 다음 항목 enumerator 누출이므로
         # 제거한다. 종결부호 뒤 1~2자리 숫자만 잡아 실제 수치("100.")는 보존.
-        evidence = (V5_DIR / "evidence-item.tsx").read_text(encoding="utf-8")
+        evidence = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         self.assertIn("(?<=[.!?。？！])\\s+\\d{1,2}[.)]\\s*$", evidence)
 
     def test_sentence_terminated_short_block_is_not_heading_only(self):
@@ -442,7 +442,7 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         # [?](검증 조건)는 별도 카드로 쪼개지 않는다 — 20번 "아래 중 하나가 확인돼야"
         # 뒤의 조건 목록이 유실되던 문제의 회귀 방지.
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
-        evidence = (V5_DIR / "evidence-item.tsx").read_text(encoding="utf-8")
+        evidence = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
 
         self.assertIn("(?:\\d+[.)]\\s+)?\\[[+\\-~]\\])/gu", helpers)  # prepare: [?] 제외
         self.assertNotIn("(?:\\d+[.)]\\s+)?\\[[+\\-~?]\\])/gu", helpers)

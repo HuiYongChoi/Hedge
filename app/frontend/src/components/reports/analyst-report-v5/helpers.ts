@@ -1084,14 +1084,28 @@ function buildEvidenceItem(raw: string, index: number): EvidenceItem {
     .replace(/\s+\d+\.\s*$/u, '')
     .trim();
   const { heading, body } = extractItemHeading(clean);
+  // 마커와 강조 기호는 톤·제목을 정하는 데 쓰고 나면 역할이 끝난다.
+  // 화면에 남으면 "[#+] 마진: …", "**79.7점(최대 100점)**" 처럼 읽기를 방해한다.
+  // 반드시 extractItemHeading/classifyItemTone 뒤에 지워야 판정이 망가지지 않는다.
   return {
     id: `evidence-${index + 1}`,
     rawText: clean,
-    heading,
-    body: dedupeRepeatedSentences(body),
+    heading: heading ? stripDisplayMarkers(heading) : heading,
+    body: stripDisplayMarkers(dedupeRepeatedSentences(body)),
     tone: classifyItemTone(clean),
     citationLetters: [],
   };
+}
+
+/** 표시 직전에만 쓰는 정리 — 마커([#+], [+], [~])와 강조(**)를 걷어낸다. */
+export function stripDisplayMarkers(text: string): string {
+  return (text || '')
+    .replace(/\[#?[+\-~?]\]\s*/gu, '')
+    .replace(/\*\*/g, '')
+    // 마커가 빠지며 남는 고아 불릿·연결부호("· - 마진:" → "마진:")
+    .replace(/(^|[.。])\s*[·•]\s*[-–—]?\s*/gu, '$1 ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 function isMarkerOnlyEvidenceText(text: string) {
@@ -1245,6 +1259,9 @@ export function dedupeSentencesAcrossSections(sectionTexts: string[]): string[] 
       }
       let end = block.length;
       while (end > 1 && keys[end - 1].length >= 30 && seen.has(keys[end - 1])) end -= 1;
+      // 꼬리를 자른 결과 앞 문장이 연결어미로 끝나면 뜻이 끊긴다
+      // (실측: "100.0점으로 표기되지만," 만 남았다). 그런 절단은 되돌린다.
+      while (end < block.length && endsWithConnective(block[end - 1])) end += 1;
       keys.forEach(key => { if (key.length >= 30) seen.add(key); });
       kept.push(...block.slice(0, end));
     }
@@ -1261,23 +1278,38 @@ const PER_GAP_FWD = /선행\s*P(?:ER|\/?E)|forward\s*p\/?e|fwd\s*per/i;
 const PER_GAP_TTM = /TTM\s*P(?:ER|\/?E)|trailing\s*p\/?e/i;
 const PER_GAP_BLOCK_SPLIT = /(\n{2,}|\n(?=\s*(?:#{2,3}\s+|\d+[.)]|[-*•]\s+|\[[+\-~]\])))/u;
 
+//: 같은 비교를 여러 카드가 되풀이한다. 종목당 그 비교는 하나뿐이므로
+//: 가장 상세한 블록만 남긴다. 아래 두 가지가 실측된 반복이다.
+const REPEATED_CLAIMS: Array<(block: string) => boolean> = [
+  // 선행 PER vs TTM PER 격차
+  block => PER_GAP_FWD.test(block) && PER_GAP_TTM.test(block),
+  // DCF 내재가치 vs 시장가(시가총액) 괴리
+  block => /DCF|내재가치/.test(block)
+    && /시장가|시가총액|현재\s*주가/.test(block)
+    && /\d+(?:\.\d+)?\s*%/.test(block),
+];
+
 export function dedupePerGapComparisons(sectionTexts: string[]): string[] {
   const isPerGapBlock = (block: string) =>
-    Boolean(block) && PER_GAP_FWD.test(block) && PER_GAP_TTM.test(block);
+    Boolean(block) && REPEATED_CLAIMS.some(matches => matches(block));
 
   const parts = sectionTexts.map(text => (text ? text.split(PER_GAP_BLOCK_SPLIT) : []));
   const candidates: Array<{ s: number; b: number; len: number }> = [];
   parts.forEach((arr, s) => {
-    if (s === 0) return; // 결론 요약(섹션 01)은 보존
     for (let b = 0; b < arr.length; b += 2) { // 짝수 인덱스 = 블록, 홀수 = 구분자
       if (isPerGapBlock(arr[b])) candidates.push({ s, b, len: arr[b].trim().length });
     }
   });
+  // 결론(섹션 01)도 '이미 말한 것'으로 센다. 세지 않으면 결론에서 한 번, 본문에서 한 번
+  // — 딱 두 번 반복될 때 후보가 하나뿐이라 아무것도 지워지지 않는다(실측).
   if (candidates.length <= 1) return sectionTexts; // 반복 없음 → 그대로
 
   // 가장 상세한(긴) 블록을 keeper로, 같은 비교의 나머지 블록은 제거
   const keeper = candidates.reduce((a, c) => (c.len > a.len ? c : a));
-  const remove = new Set(candidates.filter(c => c !== keeper).map(c => `${c.s}:${c.b}`));
+  // 결론은 요지를 되풀이하는 자리이므로 지우지 않는다. 본문 쪽 반복만 걷어낸다.
+  const remove = new Set(
+    candidates.filter(c => c !== keeper && c.s !== 0).map(c => `${c.s}:${c.b}`),
+  );
   if (remove.size === 0) return sectionTexts;
 
   return sectionTexts.map((text, s) => {
@@ -1307,7 +1339,10 @@ export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
     .map(buildEvidenceItem)
     .filter((item): item is EvidenceItem => !isBlankEvidenceItem(item))
     .filter(item => !isHomeworkEvidenceText(item.rawText))
-    .filter(item => !isFrameworkLabelOnly(item.rawText));
+    .filter(item => !isFrameworkLabelOnly(item.rawText))
+    // 연결어미로 끝나 뜻이 완성되지 않은 조각은 정보가 없다(실측: "100.0점으로 표기되지만,").
+    // 뒤 내용을 지어낼 수는 없으므로 보여 주지 않는 편이 정확하다.
+    .filter(item => !isDanglingFragment(item));
 
   return sortEvidenceItemsByTone(items);
 }
@@ -1316,6 +1351,66 @@ export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
 // '결론' 카드는 섹션의 요지이므로 톤과 무관하게 항상 맨 앞에 고정.
 // 같은 톤 안에서는 원문 순서를 보존(안정 정렬).
 const EVIDENCE_TONE_ORDER: Record<ReportTone, number> = { bullish: 0, neutral: 1, bearish: 2 };
+
+/** 제목도 본문도 완성된 문장이 아니면 카드로서 값이 없다. */
+export function isDanglingFragment(item: EvidenceItem): boolean {
+  const heading = (item.heading || '').trim();
+  const body = (item.body || '').trim();
+  if (!body) return false;                       // 본문이 없으면 제목만으로 판단(별도 규칙)
+  if (!endsWithConnective(body)) return false;
+  // 본문이 미완성이어도 제목이 스스로 완결된 서술이면 카드를 살린다.
+  return !/(?:습니다|입니다|합니다|됩니다)[.。]?$/u.test(heading);
+}
+
+
+// ── 근거 본문을 읽기 좋은 덩어리로 나눈다 ───────────────────────────────
+// 화면(evidence-item)과 품질 채점기가 같은 규칙을 써야 하므로 여기에 둔다.
+
+//: 한 문단이 이보다 길면 눈이 줄을 놓친다. 실측 카드가 400자를 넘겨 한 덩어리로 나왔다.
+const READABLE_BLOCK_MAX = 260;
+const READABLE_BLOCK_TARGET = 200;
+
+export function splitReadableChunk(block: string): string[] {
+  if (block.length <= READABLE_BLOCK_MAX) return [block];
+
+  const sentences = block.match(/[^.!?。？！]+[.!?。？！]?/gu) ?? [block];
+  const chunks: string[] = [];
+  let current = '';
+
+  sentences.forEach(sentence => {
+    const clean = sentence.trim();
+    if (!clean) return;
+    const next = current ? `${current} ${clean}` : clean;
+    if (current && next.length > READABLE_BLOCK_TARGET) {
+      chunks.push(current);
+      current = clean;
+      return;
+    }
+    current = next;
+  });
+
+  if (current) chunks.push(current);
+  return chunks.length > 0 ? chunks : [block];
+}
+
+export function splitEvidenceBodyBlocks(body: string): string[] {
+  return (body || '')
+    .replace(/\r\n?/g, '\n')
+    // [?](검증 조건)는 부모 문장의 목록이므로 새 블록으로 쪼개지 않고 '·' 목록으로 이어 붙인다.
+    .replace(/\s*\[\?\]\s*/gu, ' · ')
+    // "- [+] …" 하이픈 불릿 뒤 마커는 하이픈까지 삼켜 분리 (고아 "-" 블록 방지)
+    .replace(/(?:\s+[-*•])?\s+(?=(?:\d+[.)]\s+)?\[[+\-~]\])/gu, '\n\n')
+    .split(/\n{2,}|\n(?=\s*(?:#{2,3}\s+|\d+[.)]|[-*•]\s+|\[[+\-~]\]))/u)
+    .map(block => block
+      .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+\.(?!\d)\s*|\d+\)\s*|\[[+\-~?]\]\s*)/u, '')
+      .replace(/^\s*·\s*/u, '')
+      .replace(/\s+/g, ' ')
+      // 완결 문장 뒤에 매달린 목록 번호 조각(" 2." 등, 다음 항목 enumerator 누출) 제거.
+      .replace(/(?<=[.!?。？！])\s+\d{1,2}[.)]\s*$/u, '')
+      .trim())
+    .filter(block => Boolean(block) && !isMarkerOnlyEvidenceText(block) && !isHeadingOnlyEvidenceText(block))
+    .flatMap(splitReadableChunk);
+}
 
 export function sortEvidenceItemsByTone(items: EvidenceItem[]): EvidenceItem[] {
   const rank = (item: EvidenceItem) =>
@@ -1462,6 +1557,8 @@ function splitLeadSentenceHeading(bodyText: string): { heading: string | null; b
   const heading = stripTail(clean.slice(0, boundary));
   const body = clean.slice(boundary).trim();
   if (!heading) return { heading: null, body: clean };
+  // 연결어미로 끊긴 제목은 미완성 문장이다("…이어질 수 있는데").
+  if (endsWithConnective(heading)) return { heading: null, body: clean };
   if (heading.length > 90) return splitLeadClauseHeading(clean) ?? { heading: null, body: clean };
   return { heading, body };
 }
@@ -1475,7 +1572,22 @@ function splitLeadClauseHeading(clean: string): { heading: string; body: string 
   const heading = clean.slice(0, commaIdx).trim();
   const body = clean.slice(commaIdx + 1).trim();
   if (!heading || !body) return null;
+  // 연결어미로 끊으면 제목이 미완성 문장이 된다(실측: "…자본효율이 매우 좋지만").
+  // 뒤 절이 있어야 뜻이 완성되므로 이 자리는 제목 경계로 쓰지 않는다.
+  if (endsWithConnective(heading)) return null;
   return { heading, body };
+}
+
+//: 뒤 절을 요구하는 연결어미. 여기서 끊으면 문장이 공중에 뜬다.
+const CONNECTIVE_ENDING_RE =
+  /(?:지만|되지만|이지만|하지만|으나|[^\s]나|는데|은데|ㄴ데|어서|아서|므로|면서|고|며|자|거나|든지)$/u;
+
+export function endsWithConnective(text: string): boolean {
+  const clean = (text || '').replace(/[\s,，.。]+$/u, '');
+  if (!clean) return false;
+  // 종결어미로 끝나면 완성된 문장이다(…습니다 / …합니다 / …다).
+  if (/(?:습니다|입니다|합니다|됩니다|았다|었다|이다|한다|된다)$/u.test(clean)) return false;
+  return CONNECTIVE_ENDING_RE.test(clean);
 }
 
 export function getDataTokenPattern() {

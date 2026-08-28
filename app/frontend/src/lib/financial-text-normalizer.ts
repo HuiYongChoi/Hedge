@@ -176,6 +176,35 @@ function stripMismatchedCurrencyPrefix(text: string): string {
   return text.replace(/\bUSD\s+(?=[\d,]+(?:\.\d+)?\s*(?:백만원|억원|조원|만원|원))/g, '');
 }
 
+// 데이터 스키마의 메타 필드가 문장에 섞여 나온다(실측):
+//   "· (period: TTM, report period: 2026-03-31) 2) [#+] 마진: …"
+// 어느 기간 자료인지는 리포트 머리말이 이미 말한다. 문장 안에서는 잡음이다.
+export function stripDatasetMetadata(text: string): string {
+  return text
+    .replace(/[（(]\s*(?:report\s+)?period\s*[:：][^)）]*[)）]/gi, '')
+    // 괄호가 닫히지 않고 줄이 끊긴 경우까지("(period\nTTM, report period: 2026-03-31)")
+    .replace(/[（(]\s*period\s*$/gim, '')
+    .replace(/^\s*(?:report\s+)?period\s*[:：].*$/gim, '')
+    .replace(/\b(?:report\s+)?period\s*[:：]\s*[\w-]+\s*[,，]?\s*/gi, '')
+    // 문장 앞에 남는 고아 구두점/번호("· ) 2) ")
+    .replace(/(^|[.。])\s*[·•]\s*[)）]?\s*(?=\d\))/gu, '$1 ')
+    .replace(/\s{2,}/g, ' ');
+}
+
+// 점검 개수만 적힌 문장은 정보가 아니다(실측: "점검한 항목 수 = 2 / 전체 점검 항목 수 = 3").
+// 어느 항목이 빠졌는지 알 수 없어 독자가 쓸 수 없다. 뜻만 남기고 숫자 나열은 지운다.
+export function rewriteBareCheckCounts(text: string): string {
+  return text
+    .replace(
+      /점검한?\s*항목\s*수\s*=\s*\d+\s*\/\s*전체\s*점검\s*항목\s*수\s*=\s*\d+\s*(?:입니다|임)?\s*[.。]?/gu,
+      '일부 항목은 자료가 없어 점검하지 못했습니다.',
+    )
+    .replace(
+      /\b(?:alignment_)?checked\s*\d+\s*(?:vs|\/)\s*(?:alignment_)?total(?:_checks)?\s*\d+/gi,
+      '일부 항목은 자료가 없어 점검하지 못했습니다',
+    );
+}
+
 // 체크박스·미해결 마커가 본문에 그대로 인쇄된다("검토 필요 - [ ] 위험관리", "[?] 경영진 종합평가").
 function stripLeftoverMarkers(text: string): string {
   return text
@@ -217,6 +246,30 @@ const RAW_FIELD_GLOSSARY: Array<[RegExp, string]> = [
   [/경영진\s*평가\s+overall\b/gi, '경영진 평가 종합 점수'],
   [/\boverall\s+(?=\d)/gi, '종합 점수 '],
   [/\bforward\s*P\/?E\b/gi, '선행 PER'],
+  [/\bbase_fcff\b/gi, '기준 잉여현금흐름'],
+  [/\bgross_margin\b/gi, '매출총이익률'],
+  [/\boperating_margin\b/gi, '영업이익률'],
+  [/\bnet_margin\b/gi, '순이익률'],
+  [/\bterminal_growth\b/gi, '영구 성장률'],
+  [/\bdiscount_rate\b/gi, '할인율'],
+  [/\bbase_growth\b/gi, '기준 성장률'],
+  [/\bprojection_years\b/gi, '추정 기간'],
+  [/\bintrinsic_per_share\b/gi, '주당 내재가치'],
+  [/\bintrinsic_value\b/gi, '내재가치'],
+  [/\bmarket_cap\b/gi, '시가총액'],
+  [/\bcost_of_equity\b/gi, '자기자본비용'],
+  [/\bfree_cash_flow\b/gi, '잉여현금흐름'],
+  [/\boperating_income\b/gi, '영업이익'],
+  [/\bnet_income\b/gi, '순이익'],
+  [/\btotal_debt\b/gi, '총차입금'],
+  [/\bshareholders_equity\b/gi, '자기자본'],
+  [/\boutstanding_shares\b/gi, '주식수'],
+  [/\balignment_score\b/gi, '전략 이행도 점수'],
+  [/\balignment_checked\b/gi, '점검한 항목'],
+  [/\balignment_total_checks\b/gi, '전체 점검 항목'],
+  // 제목에 남는 영어 틀 이름
+  [/\bAlignment\b/g, '이행도'],
+  [/\bManagement\b/g, '경영진'],
   [/\bmargin\s+of\s+safety\b/gi, '안전마진'],
   [/\s*\(\s*표기\s*원문\s*값\s*\)/g, ''],
   [/\s*\(\s*전처리\s*\)/g, ''],
@@ -522,9 +575,9 @@ export function normalizeFinancialDisplayText(text: string) {
 
   // 순서가 중요하다. 찌꺼기를 먼저 걷어내고(마커·중첩라벨·깨진 숫자),
   // 그 다음 용어를 한국어로 바꾸고, 숫자를 읽기 좋게 만든 뒤, 마지막에 문체를 다듬는다.
-  const cleaned = collapseRepeatedRatioLabels(stripLeftoverMarkers(
+  const cleaned = rewriteBareCheckCounts(stripDatasetMetadata(collapseRepeatedRatioLabels(stripLeftoverMarkers(
     stripLeakedSourceMarkers(stripPromptEcho(rejoinBrokenDecimals(text))),
-  ));
+  ))));
   const worded = humanizeRawFieldNames(stripMismatchedCurrencyPrefix(repairFragmentedPercents(cleaned)));
   const numbered = dropSelfReferentialParenthetical(groupLargeAmounts(normalizeRatiosWrittenAsDecimals(
     normalizeOversizedAmounts(normalizeTruncatedDecimals(worded)),

@@ -586,6 +586,9 @@ def generate_damodaran_output(
                 - `life_cycle.playbook.valuation_ko` 에 적힌 '이 단계에 맞는 가치평가법'을
                   제시하고, 지금 쓰고 있는 DCF/상대가치가 그 처방과 맞는지 짚어라.
                   (성숙기 기업에 성장주 배수를 쓰는 식의 불일치가 있으면 명시)
+                - `life_cycle.alignment_notes_ko` 에 무엇을 점검했고 무엇을 못 봤는지 이름으로 적혀 있다.
+                  점검 항목의 "개수"("2 / 3")를 그대로 옮기지 마라 — 어느 항목이 빠졌는지
+                  알 수 없어 독자가 쓸 수 없다. 항목 이름으로 쓰라.
                 - `life_cycle.alignment_score` 는 단계가 요구하는 전략 대비 실제 행동의
                   이행도다. 낮으면 `alignment_notes_ko` 를 인용해 무엇이 어긋났는지 써라.
                   단, `alignment_checked` 가 `alignment_total_checks` 보다 작으면 일부 항목만

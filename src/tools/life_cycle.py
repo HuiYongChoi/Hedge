@@ -341,12 +341,19 @@ def assess_alignment(
     notes: list[str] = []
     score = 100.0
     checked = 0
+    # 무엇을 봤고 무엇을 못 봤는지 이름으로 남긴다. 개수만 적으면("2 / 3")
+    # 읽는 사람이 어느 항목이 빠졌는지 알 수 없어 판단에 쓸 수 없다.
+    seen_items: list[str] = []
+    missing_items: list[str] = []
 
     growth_stages = (STAGE_STARTUP, STAGE_YOUNG, STAGE_HIGH_GROWTH)
     late_stages = (STAGE_MATURE_STABLE, STAGE_DECLINE)
 
-    if reinvest is not None:
+    if reinvest is None:
+        missing_items.append("재투자 강도(설비투자·감가상각 자료 없음)")
+    else:
         checked += 1
+        seen_items.append("재투자 강도")
         if stage in late_stages and reinvest >= 1.5:
             score -= 35
             notes.append(
@@ -362,8 +369,11 @@ def assess_alignment(
         else:
             notes.append(f"재투자 강도(설비투자/감가상각 {reinvest:.1f}배)는 단계와 부합한다.")
 
-    if buyback is not None:
+    if buyback is None:
+        missing_items.append("자본 환원(주식수 시계열 없음)")
+    else:
         checked += 1
+        seen_items.append("자본 환원")
         if stage in late_stages and buyback > 0.02:
             score -= 25
             notes.append(
@@ -379,8 +389,11 @@ def assess_alignment(
                 "성장 투자보다 환원을 앞세운 것은 이르다고 볼 여지가 있다."
             )
 
-    if fcf_margin is not None:
+    if fcf_margin is None:
+        missing_items.append("현금 창출(잉여현금흐름 자료 없음)")
+    else:
         checked += 1
+        seen_items.append("현금 창출")
         if stage in late_stages and fcf_margin < 0:
             score -= 25
             notes.append("성숙·쇠퇴 단계인데 잉여현금흐름이 음수 — 현금 소진이 이어지고 있다.")
@@ -392,10 +405,12 @@ def assess_alignment(
     # 점검하지 못한 항목이 있으면 명시한다. 데이터가 없어 감점 요인을 찾지 못한 것을
     # '완벽히 부합'으로 읽으면 안 된다(실측: 삼성전자는 감가상각 결측으로 재투자 강도를
     # 확인조차 못 했는데 100점이 나왔다).
-    if checked < _ALIGNMENT_TOTAL_CHECKS:
+    if missing_items:
         notes.append(
-            f"※ 전략 이행도는 {_ALIGNMENT_TOTAL_CHECKS}개 항목 중 {checked}개만 확인했다 "
-            "— 나머지는 데이터가 없어 점검하지 못했으므로 '이상 없음'으로 단정할 수 없다."
+            f"점검한 항목은 {', '.join(seen_items)}입니다. "
+            f"{', '.join(missing_items)}은 자료가 없어 보지 못했습니다. "
+            "감점 요인을 못 찾은 게 아니라 볼 자료가 없었던 것이므로, "
+            "이 점수를 '전 항목 이상 없음'으로 읽으면 안 됩니다."
         )
     return max(0.0, min(100.0, score)), notes, checked
 
