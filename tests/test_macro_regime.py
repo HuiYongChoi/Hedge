@@ -128,6 +128,17 @@ class WiringTests(unittest.TestCase):
             self.assertIn('"risk_free_rate"', src)
             self.assertIn('"risk_free_source"', src)
 
+    def test_rate_is_recorded_only_when_actually_injected(self):
+        """이 dict 는 그대로 LLM 프롬프트에 들어간다.
+
+        상수를 쓴 날에도 필드를 넣으면 프롬프트에 'risk_free_source: null' 이
+        실리고, 그 찌꺼기가 본문으로 새어 나온 전례가 있다. 그래서 실시간 금리를
+        실제로 쓴 경우에만 기록한다 — 덕분에 매크로 부재 시 프롬프트가
+        연동 이전과 바이트 단위로 같다.
+        """
+        for src in (DAMO, VAL):
+            self.assertIn("if risk_free_source:", src)
+
     def test_macro_runs_before_analysts(self):
         self.assertIn('graph.add_node("macro_prefetch", macro_prefetch_node)', GRAPH)
         self.assertIn('graph.add_edge("forward_prefetch", "macro_prefetch")', GRAPH)

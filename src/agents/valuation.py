@@ -1091,10 +1091,11 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             "signal": signal,
             "confidence": confidence,
             "reasoning": reasoning,
-            # 저장된 분석을 나중에 열었을 때 "금리 몇 %로 계산했나"를 되짚을 수 있어야 한다.
-            "risk_free_rate": risk_free_rate,
-            "risk_free_source": risk_free_source,
         }
+        # 실시간 금리를 실제로 쓴 경우에만 남긴다(상수면 기록할 것이 없다).
+        if risk_free_source:
+            valuation_analysis[ticker]["risk_free_rate"] = risk_free_rate
+            valuation_analysis[ticker]["risk_free_source"] = risk_free_source
         progress.update_status(agent_id, ticker, "Done", analysis=json.dumps(reasoning, indent=4))
 
     # ---- Emit message (for LLM tool chain) ----

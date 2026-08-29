@@ -430,16 +430,20 @@ def analyze_risk_profile(metrics: list, line_items: list, macro: dict | None = N
     risk_free, risk_free_source = resolve_risk_free_rate(macro, DAMODARAN_RISK_FREE)
     cost_of_equity = estimate_cost_of_equity(beta, risk_free)
 
-    return {
+    result = {
         "score": score,
         "max_score": max_score,
         "details": "; ".join(details),
         "beta": beta,
         "cost_of_equity": cost_of_equity,
-        # 저장된 분석을 나중에 열었을 때 "금리 몇 %로 계산했나"를 되짚을 수 있어야 한다.
-        "risk_free_rate": risk_free,
-        "risk_free_source": risk_free_source,
     }
+    # 실시간 금리를 실제로 쓴 경우에만 남긴다. 상수를 쓴 날에는 기록할 것이 없고,
+    # 이 dict 는 그대로 LLM 프롬프트에 들어가므로 빈 필드를 넣으면
+    # 본문에 'risk_free_source: null' 같은 찌꺼기가 새어 나온다.
+    if risk_free_source:
+        result["risk_free_rate"] = risk_free
+        result["risk_free_source"] = risk_free_source
+    return result
 
 
 def analyze_relative_valuation(metrics: list) -> dict[str, any]:
