@@ -110,8 +110,10 @@ class EnglishQuoteTranslationTests(unittest.TestCase):
 
     AGENT = (ROOT / "src/agents/aswath_damodaran.py").read_text(encoding="utf-8")
 
-    def test_grounding_block_asks_for_translation(self):
-        self.assertIn("한국어 번역을 붙여라", SRC)
+    def test_grounding_block_carries_translation(self):
+        """지시로는 지켜지지 않았다(실측 2회 0건). 번역을 블록에 미리 넣는다."""
+        self.assertIn("with_korean_translation", SRC)
+        self.assertIn("(번역: …)", SRC)
 
     def test_prompt_shows_the_expected_shape(self):
         self.assertIn("영어 발언을 인용하면 한국어 번역을 함께 적어라", self.AGENT)

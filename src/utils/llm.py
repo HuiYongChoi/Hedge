@@ -567,6 +567,42 @@ def attach_sec_grounding_context(prompt: any, state: AgentState | None) -> any:
         return prompt
 
 
+def _build_translation_index_from_prompt(prompt: any) -> dict:
+    """프롬프트에 실린 '영문 + (번역: …)' 쌍을 사전으로 모은다."""
+    try:
+        from src.tools.quote_translation import build_translation_index
+
+        lines: list[str] = []
+        for message in getattr(prompt, "messages", None) or []:
+            content = getattr(message, "content", None)
+            if isinstance(content, str) and "(번역:" in content:
+                lines.extend(content.splitlines())
+        return build_translation_index(lines) if lines else {}
+    except Exception:
+        return {}
+
+
+def _attach_quote_translations(result: any, index: dict) -> any:
+    """모델이 인용한 영어 문장 뒤에 아는 번역을 덧붙인다.
+
+    모델의 문장은 바꾸지 않고 괄호 한 줄만 더한다. 사전에 없는 인용은 그대로 둔다.
+    """
+    if not index:
+        return result
+    try:
+        from src.tools.quote_translation import annotate_quotes_with_translation
+
+        for field in ("reasoning", "summary"):
+            text = getattr(result, field, None)
+            if isinstance(text, str) and text:
+                annotated = annotate_quotes_with_translation(text, index)
+                if annotated != text:
+                    setattr(result, field, annotated)
+    except Exception:
+        pass          # 번역은 부가 기능이다. 실패해도 분석을 막지 않는다.
+    return result
+
+
 def call_llm(
     prompt: any,
     pydantic_model: type[BaseModel],
@@ -623,6 +659,9 @@ def call_llm(
 
     prompt = attach_sec_grounding_context(prompt, state)
     prompt = enforce_korean_output_requirement(prompt)
+    # 근거 블록에 넣어 둔 '(번역: …)' 를 사전으로 만들어, 모델이 영어만 인용해도
+    # 우리가 번역을 붙일 수 있게 한다. 지시로는 지켜지지 않았다(실측 2회 0건).
+    translation_index = _build_translation_index_from_prompt(prompt)
 
     # Call the LLM with retries
     for attempt in range(max_retries):
@@ -634,9 +673,14 @@ def call_llm(
             if model_info and not model_info.has_json_mode():
                 parsed_result = extract_json_from_response(result.content)
                 if parsed_result:
-                    return ensure_korean_default_texts(pydantic_model(**parsed_result))
+                    return _attach_quote_translations(
+                        ensure_korean_default_texts(pydantic_model(**parsed_result)),
+                        translation_index,
+                    )
             else:
-                return ensure_korean_default_texts(result)
+                return _attach_quote_translations(
+                    ensure_korean_default_texts(result), translation_index,
+                )
 
         except Exception as e:
             if agent_name:

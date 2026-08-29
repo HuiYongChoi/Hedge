@@ -250,7 +250,11 @@ def fetch_latest_earnings_call(ticker: str, budget: int = 5000) -> EarningsCall:
         turns = payload.get("transcript") or payload.get("turns") or []
         result.guidance_lines = extract_guidance_lines(turns)
 
-        body = "\n".join(result.guidance_lines)
+        # 번역을 근거 블록에 미리 넣어 둔다. 프롬프트로만 요구했더니 실측 8건 중
+        # 0건만 번역이 붙었다 — 모델 재량을 없애야 매번 붙는다.
+        from src.tools.quote_translation import with_korean_translation
+
+        body = "\n".join(with_korean_translation(result.guidance_lines))
         result.char_count = len(body)
         result.truncated = len(body) > budget
         result.text = body[:budget].strip()
@@ -277,7 +281,7 @@ def build_earnings_call_context(call: EarningsCall) -> str:
         "아래는 경영진이 실적 발표 콘퍼런스콜에서 직접 말한 전망·가이던스 문장이다. "
         "선행 PER 등 '이익이 늘어난다'는 전제를 쓸 때는 이 문장으로 뒷받침하고, "
         "해당 문장이 없으면 `제공된 자료에서 확인 불가` 로 표기하라.\n"
-        "인용할 때는 영어 원문을 그대로 적고, 바로 아랫줄에 괄호로 한국어 번역을 붙여라 "
-        "— 원문은 근거이고 번역은 독자를 위한 것이므로 둘 다 필요하다.\n"
+        "각 영어 문장 아래에 이미 `(번역: …)` 가 붙어 있다. 인용할 때 원문과 번역을 "
+        "둘 다 그대로 옮겨 적어라 — 원문은 근거이고 번역은 독자를 위한 것이다.\n"
         f"\n{call.text}"
     )

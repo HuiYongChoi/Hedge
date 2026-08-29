@@ -248,9 +248,13 @@ def build_earnings_context(release: EarningsRelease) -> str:
     )
     parts = [header]
     if release.quotes:
+        # 원문은 영어다. 번역을 미리 붙여 두면 모델이 영어만 인용해도
+        # 우리가 뒤에서 번역을 이어 붙일 수 있다(quote_translation 사전의 재료).
+        from src.tools.quote_translation import with_korean_translation
+
         parts.append("\n--- 경영진 직접 인용 ---")
-        for quote in release.quotes:
-            parts.append(f'· "{quote.text}" — {quote.speaker}')
+        quoted = [f'· "{quote.text}" — {quote.speaker}' for quote in release.quotes]
+        parts.extend(with_korean_translation(quoted))
     if release.outlook_text:
         parts.append(f"\n--- 전망(Outlook) ---\n{release.outlook_text}")
     return "\n".join(parts)
