@@ -25,6 +25,8 @@ const H = await import(toDataUrl(
 // 채점 대상 텍스트. 카드 파싱 뒤 채워진다.
 const MISSING_HEADINGS = [];
 const HEADINGS = [];
+const EMPTY_SECTIONS = [];
+const BODY_FRAGMENTS = [];
 let BODY_ONLY = '';
 
 const RUBRIC = [
@@ -76,6 +78,11 @@ const RUBRIC = [
     } },
   { id: 'noheading',   w: 12, label: '제목 없는 카드',
     test: () => MISSING_HEADINGS },
+  // 짧은 제목("업사이드")은 정상이다. 본문에 낱말 하나만 남은 경우만 결함으로 본다.
+  { id: 'fragmentline', w: 12, label: '명사가 문장 끝으로 오인돼 토막 남음 ("다음", "수요")',
+    test: () => BODY_FRAGMENTS },
+  { id: 'emptysection', w: 14, label: '섹션이 통째로 비었음',
+    test: () => EMPTY_SECTIONS },
   { id: 'dottedfield', w: 12, label: '점으로 이어진 필드 경로 (life_cycle.key_risk_ko)',
     bad: /[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*|[가-힣]\.[가-힣]/g },
   { id: 'headcut',    w: 12, label: '제목이 기호·여는 괄호로 끝남 ("핵심 판단 - [")',
@@ -87,8 +94,18 @@ const RUBRIC = [
       .map(l => l.slice(0, 80) + '…') },
   { id: 'abbrev',     w: 8,  label: '한국어로 풀 수 있는 약어 (2H, YoY, QoQ)',
     bad: /(?<![A-Za-z])(?:[12]H|H[12]|YoY|QoQ|FY\d{0,2})(?![A-Za-z])/g },
+  // "60,187." 처럼 숫자로 끝나는 문장은 정상이다. 다음 줄이 숫자로 이어질 때만 잘린 것이다.
   { id: 'decimalsplit', w: 12, label: '소수점에서 문장이 잘림 ("206." / "12로 …")',
-    bad: /\d+\.\s*$|^\s*\d{1,3}(?:로|으로|이|가|은|는)\s/gm },
+    test: text => {
+      const lines = text.split('\n');
+      const hits = [];
+      lines.forEach((line, index) => {
+        const next = (lines[index + 1] || '').trim();
+        if (/\d+\.\s*$/u.test(line) && /^\d/u.test(next)) hits.push(`${line.slice(-24)} ⏎ ${next.slice(0, 24)}`);
+        if (/^\s*\d{1,3}(?:로|으로|이|가|은|는)\s/u.test(line)) hits.push(line.slice(0, 40));
+      });
+      return hits;
+    } },
   { id: 'noisyratio', w: 6,  label: '배율의 불필요한 소수 둘째 자리 (206.12)',
     bad: /(?:배율|비율)\s*\d+\.\d{2,}/g },
   { id: 'brokenmark', w: 8,  label: '깨진 마커 ("[!", "- [!")',
@@ -113,6 +130,12 @@ const RUBRIC = [
     } },
 ];
 
+// 결함 카탈로그(report_defects.txt)는 독립된 결함 조각을 모아 둔 파일이지 보고서가 아니다.
+// 섹션 구조를 전제하는 규칙(빈 섹션·반복 문장·주장 중복)은 거기서 뜻이 없으므로 뺀다.
+const IS_CATALOGUE = process.argv.includes('--catalogue')
+  || /report_defects\.txt$/.test(process.argv[2] || '');
+const STRUCTURE_RULES = new Set(['emptysection', 'repeatline', 'dupclaim']);
+
 const raw = readFileSync(process.argv[2], 'utf8');
 // report-body.tsx 와 같은 순서로 돌린다:
 // 섹션별 중복 제거 → 반복 주장 제거 → 카드 파싱 → 제목/본문 표시.
@@ -121,6 +144,15 @@ const deduped = H.dedupePerGapComparisons(H.dedupeSentencesAcrossSections(sectio
 const parsedBySection = H.dedupeRepeatedClaimSentences(H.dedupeEvidenceItemsAcrossReport(
   deduped.map(section => H.parseEvidenceItems(section)),
 ));
+deduped.forEach((text, index) => {
+  // 섹션에 쓸 내용이 있었는데 카드가 하나도 안 남았다면 필터가 과했다는 뜻이다.
+  // 지시문만 있는 구간이 걸러진 것은 의도한 동작이다. 단정 서술이 있었는데
+  // 카드가 0개면 그때가 진짜 결함이다.
+  const hasAnalysis = /(?:입니다|합니다|됩니다|습니다)[.。]/u.test(text);
+  if (hasAnalysis && text.replace(/\s/g, '').length >= 80 && (parsedBySection[index] || []).length === 0) {
+    EMPTY_SECTIONS.push(`섹션 ${index + 1}: 원문 ${text.length}자 → 카드 0개`);
+  }
+});
 const sectionsOut = parsedBySection
   .map(items => {
     // 카드가 모두 걸러지면 화면에도 아무것도 안 나온다(빈 섹션 안내만).
@@ -132,6 +164,12 @@ const sectionsOut = parsedBySection
         MISSING_HEADINGS.push((i.body || i.rawText || '').slice(0, 60));
       }
     });
+    items.forEach(i => {
+      for (const block of H.splitEvidenceBodyBlocks(i.body || '')) {
+        const line = block.trim();
+        if (line.length > 0 && line.length <= 6 && /^[가-힣]+$/u.test(line)) BODY_FRAGMENTS.push(line);
+      }
+    });
     return items
       .map(i => [i.heading, ...H.splitEvidenceBodyBlocks(i.body || '')].filter(Boolean).join('\n'))
       .join('\n');
@@ -140,9 +178,15 @@ const sectionsOut = parsedBySection
 BODY_ONLY = sectionsOut.slice(1).join('\n\n');
 
 const out = sectionsOut.join('\n\n');
+// 진단용: --dump 를 주면 채점 대상 텍스트를 그대로 내보낸다.
+if (process.argv.includes('--dump')) {
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync('/tmp/rubric_out.txt', out, 'utf8');
+}
 let earned = 0, total = 0;
 const failures = [];
 for (const rule of RUBRIC) {
+  if (IS_CATALOGUE && STRUCTURE_RULES.has(rule.id)) continue;
   total += rule.w;
   const hits = rule.test ? rule.test(out) : [...new Set((out.match(rule.bad) || []))];
   if (hits.length === 0) { earned += rule.w; console.log(`  ✓ [${String(rule.w).padStart(2)}점] ${rule.label}`); }

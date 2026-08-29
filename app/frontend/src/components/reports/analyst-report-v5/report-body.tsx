@@ -69,7 +69,11 @@ export function ReportBody({
   // 카드를 여기서 한 번에 만들고 보고서 전체에서 되풀이되는 것을 걷어낸다.
   // 섹션마다 따로 파싱하면 같은 카드가 여러 섹션에 남는다(실측: 이행도 점검 카드).
   const itemsBySection = dedupeRepeatedClaimSentences(dedupeEvidenceItemsAcrossReport(
-    dedupedSectionTexts.map(text => parseEvidenceItems(text)),
+    // 크로스체크 가이드는 '다음에 무엇을 볼지' 안내가 본래 내용이므로
+    // 지시문 필터를 적용하지 않는다. 적용하면 그 섹션이 통째로 비었다(실측).
+    dedupedSectionTexts.map((text, index) => parseEvidenceItems(text, {
+      allowDirectives: sections[index]?.id === 'section-05',
+    })),
   ));
 
   return (

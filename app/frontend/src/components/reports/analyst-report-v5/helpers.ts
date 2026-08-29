@@ -605,8 +605,12 @@ export function pickDefaultAgent(agentResults: Map<string, AgentResult>, activeT
 export function splitSentences(text: string): string[] {
   return text
     .replace(/\r\n?/g, '\n')
-    .split(/(?<=[.!?다요음됨함])\s+/u)
-    .map(sentence => sentence.trim())
+    // 종결어미 '-다'로 끊되, 비교격 조사 '보다'와 명사 '이다/한다' 앞 토막은 제외한다.
+    // "시가총액보다 낮아 안전마진이 음수이고…" 가 '보다'에서 잘려 결론이 토막났다(실측).
+    // 소수점("206.1")과 약어("Inc.") 뒤도 문장 끝이 아니다.
+    // 숫자 뒤 마침표는 문장 끝이 아닐 수 있다("선행 EPS 60187. 로") — 뒤가 조사면 이어진다.
+    .split(/(?<=[.!?])(?![\d)\]])(?!\s*(?:로|으로|이|가|은|는|를|을)\s)\s+|(?<!수요)(?<!필요)(?<!중요)(?<!주요)(?<!개요)(?<!소요)(?<!요요)(?<!다음)(?<!처음)(?<!마음)(?<!모음)(?<!자음)(?<!믿음)(?<=[요음됨함])\s+|(?<!보다)(?<!위하다)(?<=다)\s+/u)
+    .map(sentence => (sentence || '').trim())
     .filter(Boolean);
 }
 
@@ -1257,20 +1261,24 @@ function isBlankEvidenceItem(item: EvidenceItem) {
 // 짧은 수치 병기 문장(<30자)과 마커/헤딩은 보존되고, 문장이 모두 지워져 빈
 // 카드가 되면 기존 isBlankEvidenceItem 필터가 카드째 제거한다.
 export function dedupeSentencesAcrossSections(sectionTexts: string[]): string[] {
-  const seen = new Set<string>();
   // 지문 계산 시 선두 마커([+]/###/번호)와 짧은 헤딩("결론:", "[+] 근거:")을 벗긴다 —
   // 같은 본문이 목차마다 다른 헤딩을 달고 반복되는 패턴을 잡기 위함.
-  const fingerprint = (sentence: string) => sentence
+  const fingerprint = (text: string) => text
     .replace(/^\s*(?:#{2,3}\s+|[-*•]\s+|\d+\.(?!\d)\s*|\d+\)\s*|\[[+\-~?]\]\s*)+/u, '')
     .replace(/^[^:：.!?。]{0,40}[:：]\s*/u, '')
     .replace(/\s+/g, '')
     .trim();
-  // 문장을 블록(근거 카드) 단위로 묶는다. 블록 중간이나 머리의 문장을 지우면 뒤 문장이
-  // 기대던 주어·목적어가 사라져 "극단적으로 낮아 …" 같은 목 잘린 문단이 남는다(실측).
-  // 그래서 지우는 범위를 (1) 블록 전체가 중복일 때 통째로, (2) 아니면 블록 꼬리에서
-  // 이어지는 중복만 — 두 경우로 제한한다. 꼬리 문장은 뒤에 기대는 문장이 없어 안전하다.
+
   const startsNewBlock = (sentence: string) =>
     /^\s*(?:\n|#{2,3}\s+|[-*•]\s+|\d+[.)](?!\d)\s*|\[[+\-~?]\]\s*)/u.test(sentence);
+
+  // 블록(근거 카드) 단위로 비교한다. 예전에는 "블록 안 문장이 전부 앞서 나왔으면
+  // 블록을 통째로 버린다"고 했는데, 뒤 섹션이 앞 섹션의 요지를 풀어 쓰는 정상적인
+  // 서술까지 전멸시켰다(실측: 리스크 715자→10자, 크로스체크 573자→12자).
+  // 이제 블록 전체 지문이 똑같을 때만 버린다 — '같은 본문이 다른 헤딩을 달고
+  // 반복되는' 원래 잡으려던 패턴이 정확히 그것이다.
+  const seenBlocks = new Set<string>();
+  const seenSentences = new Set<string>();
 
   return sectionTexts.map(text => {
     if (!text) return text;
@@ -1285,20 +1293,22 @@ export function dedupeSentencesAcrossSections(sectionTexts: string[]): string[] 
 
     const kept: string[] = [];
     for (const block of blocks) {
-      const keys = block.map(fingerprint);
-      const eligible = keys.filter(key => key.length >= 30);
-      const isWholeBlockDuplicate =
-        eligible.length > 0 && eligible.every(key => seen.has(key));
-      if (isWholeBlockDuplicate) {
-        continue; // 같은 본문이 다른 헤딩을 달고 반복되는 패턴 — 통째로 제거
-      }
-      let end = block.length;
-      while (end > 1 && keys[end - 1].length >= 30 && seen.has(keys[end - 1])) end -= 1;
-      // 꼬리를 자른 결과 앞 문장이 연결어미로 끝나면 뜻이 끊긴다
-      // (실측: "100.0점으로 표기되지만," 만 남았다). 그런 절단은 되돌린다.
-      while (end < block.length && endsWithConnective(block[end - 1])) end += 1;
-      keys.forEach(key => { if (key.length >= 30) seen.add(key); });
-      kept.push(...block.slice(0, end));
+      const blockText = block.join('');
+      const blockKey = fingerprint(blockText);
+      if (blockKey.length >= 40 && seenBlocks.has(blockKey)) continue;   // 통째 중복
+      if (blockKey.length >= 40) seenBlocks.add(blockKey);
+
+      // 블록 안에서는 '완전히 같은 문장'만 걷어낸다. 문장을 골라 빼면 뒤 문장이
+      // 기대던 주어가 사라져 "…시가총액보다" 같은 토막이 남는다(실측).
+      const keptSentences = block.filter((sentence, index) => {
+        const key = fingerprint(sentence);
+        if (key.length < 40) return true;
+        if (index === 0) { seenSentences.add(key); return true; }   // 첫 문장은 보존
+        if (seenSentences.has(key)) return false;
+        seenSentences.add(key);
+        return true;
+      });
+      kept.push(...keptSentences);
     }
     return kept.join('');
   });
@@ -1340,14 +1350,13 @@ export function dedupePerGapComparisons(sectionTexts: string[]): string[] {
   if (candidates.length <= 1) return sectionTexts; // 반복 없음 → 그대로
 
   // 가장 상세한(긴) 블록을 keeper로, 같은 비교의 나머지 블록은 제거
-  // 결론(섹션 01)이 이미 그 비교를 말했다면 본문에서 되풀이할 이유가 없다.
-  // 결론은 지우지 않으므로, 그 경우 본문 쪽을 전부 걷어낸다.
-  const conclusionStates = candidates.some(c => c.s === 0);
+  // 본문 쪽에서 가장 상세한 하나만 남기고 나머지를 걷어낸다.
+  // 예전에는 "결론이 말했으면 본문은 전부 지운다"고 했는데, 한 섹션이 통째로 한 블록인
+  // 경우 그 섹션이 사라졌다(실측: 리스크 715자→10자, 크로스체크 573자→12자).
+  // 결론은 요지만 적고 본문은 근거를 푸는 자리이므로, 본문의 대표 한 개는 반드시 남긴다.
   const bodyCandidates = candidates.filter(c => c.s !== 0);
-  const keeper = conclusionStates
-    ? null
-    : bodyCandidates.reduce<typeof candidates[number] | null>(
-        (a, c) => (a === null || c.len > a.len ? c : a), null);
+  if (bodyCandidates.length <= 1) return sectionTexts;
+  const keeper = bodyCandidates.reduce((a, c) => (c.len > a.len ? c : a));
   const remove = new Set(
     bodyCandidates.filter(c => c !== keeper).map(c => `${c.s}:${c.b}`),
   );
@@ -1355,12 +1364,18 @@ export function dedupePerGapComparisons(sectionTexts: string[]): string[] {
 
   return sectionTexts.map((text, s) => {
     if (!text || s === 0) return text;
-    const arr = parts[s];
+    const arr = [...parts[s]];
     let changed = false;
     for (let b = 0; b < arr.length; b += 2) {
       if (remove.has(`${s}:${b}`)) { arr[b] = ''; changed = true; }
     }
-    return changed ? arr.join('') : text;
+    if (!changed) return text;
+    const pruned = arr.join('');
+    // 중복 제거가 섹션을 비우면 독자는 그 주제를 아예 못 읽는다. 그런 제거는 하지 않는다.
+    const survived = pruned.replace(/\s/g, '').length;
+    const original = text.replace(/\s/g, '').length;
+    if (survived < 40 || survived < original * 0.35) return text;
+    return pruned;
   });
 }
 
@@ -1386,7 +1401,15 @@ export function mergeContinuationBlocks(blocks: string[]): string[] {
   return merged;
 }
 
-export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
+export interface ParseEvidenceOptions {
+  /** 크로스체크 가이드(05)는 '무엇을 확인하라'가 본래 내용이다. 거기서는 지시문을 지우면 안 된다. */
+  allowDirectives?: boolean;
+}
+
+export function parseEvidenceItems(
+  sectionText: string,
+  options: ParseEvidenceOptions = {},
+): EvidenceItem[] {
   const normalized = prepareEvidenceLayoutText(sectionText);
   if (!normalized) return [];
 
@@ -1403,7 +1426,7 @@ export function parseEvidenceItems(sectionText: string): EvidenceItem[] {
   const items = source
     .map(buildEvidenceItem)
     .filter((item): item is EvidenceItem => !isBlankEvidenceItem(item))
-    .filter(item => !isHomeworkEvidenceText(item.rawText))
+    .filter(item => options.allowDirectives || !isHomeworkEvidenceText(item.rawText))
     .filter(item => !isFrameworkLabelOnly(item.rawText))
     // 연결어미로 끝나 뜻이 완성되지 않은 조각은 정보가 없다(실측: "100.0점으로 표기되지만,").
     // 뒤 내용을 지어낼 수는 없으므로 보여 주지 않는 편이 정확하다.
@@ -1435,8 +1458,9 @@ export function isDanglingFragment(item: EvidenceItem): boolean {
 // 화면(evidence-item)과 품질 채점기가 같은 규칙을 써야 하므로 여기에 둔다.
 
 //: 한 문단이 이보다 길면 눈이 줄을 놓친다. 실측 카드가 400자를 넘겨 한 덩어리로 나왔다.
-const READABLE_BLOCK_MAX = 260;
-const READABLE_BLOCK_TARGET = 200;
+// 채점 기준(250자)보다 낮게 잡아야 경계값이 새지 않는다(실측: 255자 블록이 통과했다).
+const READABLE_BLOCK_MAX = 240;
+const READABLE_BLOCK_TARGET = 190;
 
 export function splitReadableChunk(block: string): string[] {
   if (block.length <= READABLE_BLOCK_MAX) return [block];

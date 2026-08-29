@@ -242,9 +242,11 @@ export function rewriteBareCheckCounts(text: string): string {
 // 체크박스·미해결 마커가 본문에 그대로 인쇄된다("검토 필요 - [ ] 위험관리", "[?] 경영진 종합평가").
 function stripLeftoverMarkers(text: string): string {
   return text
-    .replace(/\[\s*[?xX✓]?\s*\]\s*/gu, '')
+    .replace(/\[\s*[?xX✓!]?\s*\]\s*/gu, '')
     // 닫히지 않은 마커 조각("- [! - [! 핵심")도 본문에 그대로 인쇄된다.
-    .replace(/(?:[-–—]\s*)?\[\s*[!?+~\-]?\s*(?=\s|$)/gu, '')
+    // 짝이 맞는 마커는 위에서 이미 지웠다. 여기 남은 여는 대괄호는 깨진 조각이다.
+    // 뒤에 공백을 요구하면 "- [! - [! 핵심" 에서 앞을 지운 뒤 두 번째가 살아남는다(실측).
+    .replace(/(?:[-–—]\s*)?\[\s*[!?+~\-]?\s*/gu, '')
     // 여는 괄호 없이 홀로 남은 닫는 대괄호("… 해석하지 않습니다. ] 근거(수치 인용):")
     .replace(/(?<!\[[^\]]{0,200})\s\]\s*/gu, ' ');
 }
@@ -387,6 +389,8 @@ const FIELD_WORD_KO: Record<string, string> = {
   grade: '등급', playbook: '처방', signals: '신호', driver: '동인', strategy: '전략',
   concerns: '우려', strengths: '강점', axes: '항목', meaning: '해석', scale: '눈금',
   detail: '세부', insufficient: '판정 불가', target: '목표', band: '밴드',
+  yield: '수익률', quick: '당좌', current: '유동', asset: '자산', assets: '자산',
+  turnover: '회전율', inventory: '재고', receivable: '매출채권', payable: '매입채무',
   roic: 'ROIC', wacc: 'WACC', ebitda: 'EBITDA', ebit: 'EBIT', eps: 'EPS', pe: 'PER',
   val: '가치', checks: '항목', outstanding: '발행', expense: '비용', interest: '이자',
   depreciation: '감가상각', amortization: '상각', capital_expenditure: '설비투자',
@@ -685,7 +689,7 @@ export function dropSelfReferentialParenthetical(text: string): string {
 // (종목코드 005930 같은 식별자를 건드리면 안 된다).
 function groupLargeAmounts(text: string): string {
   return text.replace(
-    /((?:[₩$]\s?)|(?:\b(?:EPS|주당순이익|목표가|주가|내재가치|적정가)\s*[:：]?\s*))(\d{5,}(?:\.\d+)?)/gu,
+    /((?:[₩$]\s?)|(?:\b(?:EPS|주당순이익|목표가|주가|내재가치|적정가)\s*[:：(（]?\s*))(\d{5,}(?:\.\d+)?)/gu,
     (_full, label: string, digits: string) => {
       const value = Number(digits);
       if (!Number.isFinite(value)) return _full;

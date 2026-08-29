@@ -235,7 +235,8 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         body = (V5_DIR / "report-body.tsx").read_text(encoding="utf-8")
 
         self.assertIn("export function dedupeSentencesAcrossSections", helpers)
-        self.assertIn("key.length >= 30", helpers)
+        # 지문 길이 문턱은 40자로 올렸다 — 30자에서는 짧은 정상 문장까지 지워졌다.
+        self.assertIn("if (key.length < 40) return true;", helpers)
         # 지문은 마커/헤딩 프리픽스를 벗겨 계산(같은 본문이 다른 헤딩을 달고 반복되는 패턴)
         self.assertIn("[^:：.!?。]{0,40}[:：]", helpers)
         self.assertIn("dedupeSentencesAcrossSections(", body)

@@ -103,9 +103,13 @@ class PipelineWiringTests(unittest.TestCase):
             self.assertIn(fn, entry, f"{fn} 이 정규화 파이프라인에 연결돼야 한다")
 
     def test_dedupe_keeps_block_head(self):
-        """블록 머리 문장을 지우면 뒤 문장이 주어를 잃는다(실측: '극단적으로 낮아 …')."""
-        self.assertIn("isWholeBlockDuplicate", HELPERS_SRC)
+        """블록 첫 문장은 절대 지우지 않는다 — 지우면 뒤 문장이 주어를 잃는다.
 
-
-if __name__ == "__main__":
-    unittest.main()
+        예전에는 '블록 안 문장이 전부 앞서 나왔으면 블록을 통째로 버린다'고 했는데,
+        뒤 섹션이 앞 섹션의 요지를 풀어 쓰는 정상적 서술까지 전멸시켰다
+        (실측: 리스크 715자→10자, 크로스체크 573자→12자). 이제 블록 전체 지문이
+        똑같을 때만 버리고, 블록 안에서는 첫 문장을 보존한다.
+        """
+        helpers = HELPERS.read_text(encoding="utf-8")
+        self.assertIn("if (index === 0) { seenSentences.add(key); return true; }", helpers)
+        self.assertIn("blockKey.length >= 40 && seenBlocks.has(blockKey)", helpers)
