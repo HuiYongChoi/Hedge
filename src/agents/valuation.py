@@ -14,6 +14,13 @@ from langchain_core.messages import HumanMessage
 from src.graph.state import AgentState, show_agent_reasoning
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
+from src.utils.capm import (
+    VALUATION_ERP,
+    VALUATION_RISK_FREE,
+    cost_of_equity as capm_cost_of_equity,
+    macro_from_state,
+    resolve_risk_free_rate,
+)
 from src.tools.api import (
     get_financial_metrics,
     get_market_cap,
@@ -414,6 +421,10 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
     end_date = data["end_date"]
     tickers = data["tickers"]
     api_key = get_api_key_from_state(state, "FINANCIAL_DATASETS_API_KEY")
+    # 무위험이자율은 시장에 하나뿐이므로 티커 루프 밖에서 한 번만 정한다.
+    risk_free_rate, risk_free_source = resolve_risk_free_rate(
+        macro_from_state(state), VALUATION_RISK_FREE,
+    )
     valuation_analysis: dict[str, dict] = {}
 
     for ticker in tickers:
@@ -506,6 +517,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             cash=getattr(li_curr, 'cash_and_equivalents', None),
             interest_coverage=most_recent_metrics.interest_coverage,
             debt_to_equity=most_recent_metrics.debt_to_equity,
+            risk_free_rate=risk_free_rate,
         )
         
         # Prepare FCF history for enhanced DCF
@@ -651,6 +663,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
 
         ke_for_justified = compute_cost_of_equity(
             beta_proxy=most_recent_metrics.beta if most_recent_metrics.beta else 1.0,
+            risk_free_rate=risk_free_rate,
         )
         justified_pbr_breakdown = calculate_justified_pbr_breakdown(
             financial_metrics=financial_metrics,
@@ -1078,6 +1091,9 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             "signal": signal,
             "confidence": confidence,
             "reasoning": reasoning,
+            # 저장된 분석을 나중에 열었을 때 "금리 몇 %로 계산했나"를 되짚을 수 있어야 한다.
+            "risk_free_rate": risk_free_rate,
+            "risk_free_source": risk_free_source,
         }
         progress.update_status(agent_id, ticker, "Done", analysis=json.dumps(reasoning, indent=4))
 
@@ -2107,11 +2123,16 @@ def detect_capex_regime(
 
 def compute_cost_of_equity(
     beta_proxy: float = 1.0,
-    risk_free_rate: float = 0.045,
-    market_risk_premium: float = 0.06,
+    risk_free_rate: float = VALUATION_RISK_FREE,
+    market_risk_premium: float = VALUATION_ERP,
 ) -> float:
-    """CAPM cost of equity shared by WACC and Justified PBR."""
-    ke = risk_free_rate + beta_proxy * market_risk_premium
+    """CAPM cost of equity shared by WACC and Justified PBR.
+
+    무위험이자율은 src.utils.capm 이 정한다 — 다모다란 엔진과 같은 값을 써야
+    한 리포트에 서로 다른 금리로 계산된 적정가 두 개가 뜨지 않는다.
+    ERP 는 엔진마다 다르게 두는 것이 정상이므로 통합하지 않는다.
+    """
+    ke = capm_cost_of_equity(beta_proxy, risk_free_rate, market_risk_premium)
     return max(ke, risk_free_rate + 0.02)
 
 
@@ -2126,8 +2147,8 @@ def calculate_wacc(
     interest_coverage: float | None,
     debt_to_equity: float | None,
     beta_proxy: float = 1.0,
-    risk_free_rate: float = 0.045,
-    market_risk_premium: float = 0.06
+    risk_free_rate: float = VALUATION_RISK_FREE,
+    market_risk_premium: float = VALUATION_ERP
 ) -> float:
     """Calculate WACC using available financial data."""
     

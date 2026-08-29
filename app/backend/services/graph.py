@@ -6,6 +6,7 @@ from langgraph.graph import END, StateGraph
 
 from app.backend.services.agent_service import create_agent_function
 from src.agents.forward_prefetch import forward_prefetch_node
+from src.agents.macro_prefetch import macro_prefetch_node
 from src.agents.portfolio_manager import portfolio_management_agent
 from src.agents.risk_manager import risk_management_agent
 from src.main import start
@@ -69,6 +70,7 @@ def create_graph(graph_nodes: list, graph_edges: list) -> StateGraph:
     graph = StateGraph(AgentState)
     graph.add_node("start_node", start)
     graph.add_node("forward_prefetch", forward_prefetch_node)
+    graph.add_node("macro_prefetch", macro_prefetch_node)
 
     # Get analyst nodes from the configuration
     analyst_nodes = {key: (f"{key}_agent", config["agent_func"]) for key, config in ANALYST_CONFIG.items()}
@@ -79,7 +81,7 @@ def create_graph(graph_nodes: list, graph_edges: list) -> StateGraph:
     
     # Track which nodes are portfolio managers for special handling
     portfolio_manager_nodes = set()
-    execution_node_ids = {"start_node", "forward_prefetch"}
+    execution_node_ids = {"start_node", "forward_prefetch", "macro_prefetch"}
     
     # Add agent nodes
     for unique_agent_id in agent_ids:
@@ -144,13 +146,14 @@ def create_graph(graph_nodes: list, graph_edges: list) -> StateGraph:
                 graph.add_edge(edge.source, edge.target)
     
     graph.add_edge("start_node", "forward_prefetch")
+    graph.add_edge("forward_prefetch", "macro_prefetch")
 
     # Connect the prefetch node to analyst nodes that don't have incoming edges from other agents.
     for agent_id in agent_ids:
         if agent_id not in nodes_with_incoming_edges:
             base_agent_key = extract_base_agent_key(agent_id)
             if base_agent_key in ANALYST_CONFIG and base_agent_key != "portfolio_manager":
-                graph.add_edge("forward_prefetch", agent_id)
+                graph.add_edge("macro_prefetch", agent_id)
     
     # Connect analysts that have direct connections to portfolio managers to their corresponding risk managers
     for analyst_id, portfolio_manager_id in direct_to_portfolio_managers.items():

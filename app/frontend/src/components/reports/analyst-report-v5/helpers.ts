@@ -209,7 +209,9 @@ function isNarrativeAgentKey(key: string) {
   const baseKey = stripSuffix(key);
   return baseKey !== 'risk_management'
     && baseKey !== 'portfolio_manager'
-    && baseKey !== 'forward_prefetch';
+    && baseKey !== 'forward_prefetch'
+    // 데이터 선반입 노드다. 리포트 탭으로 올라오면 본문 없는 빈 카드가 생긴다.
+    && baseKey !== 'macro_prefetch';
 }
 
 export function isJapaneseTicker(ticker: string) {

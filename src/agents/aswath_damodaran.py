@@ -17,6 +17,13 @@ from src.tools.earnings_release import fetch_latest_earnings_release
 from src.tools.filings import fetch_filing_sections
 from src.tools.life_cycle import diagnose as diagnose_life_cycle
 from src.tools.money_ko import describe_valuation_gap
+from src.utils.capm import (
+    DAMODARAN_ERP,
+    DAMODARAN_RISK_FREE,
+    cost_of_equity as capm_cost_of_equity,
+    macro_from_state,
+    resolve_risk_free_rate,
+)
 from src.tools.management_scorecard import assess as assess_management
 from src.tools.narrative_check import check as check_narrative
 from src.tools.proxy_statement import fetch_latest_proxy
@@ -96,7 +103,7 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         growth_analysis = analyze_growth_and_reinvestment(metrics, line_items)
 
         progress.update_status(agent_id, ticker, "Analyzing risk profile")
-        risk_analysis = analyze_risk_profile(metrics, line_items)
+        risk_analysis = analyze_risk_profile(metrics, line_items, macro_from_state(state))
 
         progress.update_status(agent_id, ticker, "Calculating intrinsic value (DCF)")
         intrinsic_val_analysis = calculate_intrinsic_value_dcf(metrics, line_items, risk_analysis)
@@ -361,7 +368,7 @@ def analyze_growth_and_reinvestment(metrics: list, line_items: list) -> dict[str
     }
 
 
-def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
+def analyze_risk_profile(metrics: list, line_items: list, macro: dict | None = None) -> dict[str, any]:
     """
     Risk score (0-3):
       +1  Beta < 1.3
@@ -420,7 +427,8 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
         details.append("Interest coverage N/A")
 
     # Compute cost of equity for later use
-    cost_of_equity = estimate_cost_of_equity(beta)
+    risk_free, risk_free_source = resolve_risk_free_rate(macro, DAMODARAN_RISK_FREE)
+    cost_of_equity = estimate_cost_of_equity(beta, risk_free)
 
     return {
         "score": score,
@@ -428,6 +436,9 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
         "details": "; ".join(details),
         "beta": beta,
         "cost_of_equity": cost_of_equity,
+        # 저장된 분석을 나중에 열었을 때 "금리 몇 %로 계산했나"를 되짚을 수 있어야 한다.
+        "risk_free_rate": risk_free,
+        "risk_free_source": risk_free_source,
     }
 
 
@@ -542,12 +553,19 @@ def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis
     }
 
 
-def estimate_cost_of_equity(beta: float | None) -> float:
-    """CAPM: r_e = r_f + β × ERP (use Damodaran's long-term averages)."""
-    risk_free = 0.04          # 10-yr US Treasury proxy
-    erp = 0.05                # long-run US equity risk premium
-    beta = beta if beta is not None else 1.0
-    return risk_free + beta * erp
+def estimate_cost_of_equity(beta: float | None, risk_free: float | None = None) -> float:
+    """CAPM: r_e = r_f + β × ERP.
+
+    risk_free 를 주면 그 값을, 없으면 장기평균(4%)을 쓴다. 다모다란 본인은
+    장기평균이 아니라 '현재 국채 금리'를 쓰라고 한다 — 주석이 그의 이름을 빌려
+    반대로 하고 있었다.
+
+    ERP 는 고정한다. 실시간으로 구할 수 있는 '이익수익률 갭'은 ERP 가 아니며,
+    그 자리에 넣으면 할인율이 영구성장률 아래로 내려가 적정가가 폭증한다.
+    상세는 tests/test_macro_regime.py 의 회귀 테스트를 보라.
+    """
+    rate = risk_free if risk_free is not None else DAMODARAN_RISK_FREE
+    return capm_cost_of_equity(beta, rate, DAMODARAN_ERP)
 
 
 # ────────────────────────────────────────────────────────────────────────────────
