@@ -141,3 +141,32 @@ class DeployGateTests(unittest.TestCase):
         src = self.DEPLOY.read_text(encoding="utf-8")
         self.assertIn("SKIP_REPORT_QUALITY_GATE", src)
         self.assertIn("건너뜁니다", src)
+
+
+class StandardDocumentTests(unittest.TestCase):
+    """기준을 문서로 못 박아 두고, 채점표가 그 기준을 따르는지 확인한다.
+
+    기준이 머릿속에만 있으면 같은 지적이 되풀이된다. 새 결함을 발견하면
+    문서 → 채점 항목 → 수정 순서로 처리한다.
+    """
+
+    DOC = ROOT / "docs/report/QUALITY_STANDARD.md"
+    RUBRIC_SRC = FRONTEND / "scripts/report-quality-rubric.mjs"
+
+    def test_standard_document_exists(self):
+        self.assertTrue(self.DOC.exists())
+
+    def test_standard_covers_every_family(self):
+        text = self.DOC.read_text(encoding="utf-8")
+        for heading in ("해석을 떠안지 않는다", "기계의 말을 쓰지 않는다",
+                        "문장은 끝맺고", "줄바꿈은", "되풀이하지 않는다",
+                        "원문은 살리고 번역", "숙제를 남기지 않는다"):
+            self.assertIn(heading, text)
+
+    def test_rubric_has_an_item_per_family(self):
+        """기준만 있고 채점 항목이 없으면 검증되지 않는다."""
+        src = self.RUBRIC_SRC.read_text(encoding="utf-8")
+        for rule_id in ("rawfield", "dottedfield", "abbrev", "dangling", "headcut",
+                        "listbreak", "longline", "repeatline", "dupclaim",
+                        "homework", "engquote" if "engquote" in src else "englishword"):
+            self.assertIn(f"id: '{rule_id}'", src, f"채점 항목 '{rule_id}' 이 있어야 한다")

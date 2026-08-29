@@ -1109,17 +1109,24 @@ function buildEvidenceItem(raw: string, index: number): EvidenceItem {
   // 첫 줄이 짧고 문장부호로 끝나지 않으면 그건 제목 줄이다(실측: "성장의 질 흔들림",
   // "단계 플레이북(가치평가법)"). 줄이 합쳐지고 나면 본문과 구분할 단서가 사라진다.
   const titleLine = extractTitleLine(clean);
-  const { heading, body } = titleLine
+  const split = titleLine
     ? { heading: normalizeFinancialDisplayText(titleLine.title), body: normalizeFinancialDisplayText(titleLine.rest) }
     : extractItemHeading(clean);
-  // 마커와 강조 기호는 톤·제목을 정하는 데 쓰고 나면 역할이 끝난다.
-  // 화면에 남으면 "[#+] 마진: …", "**79.7점(최대 100점)**" 처럼 읽기를 방해한다.
-  // 반드시 extractItemHeading/classifyItemTone 뒤에 지워야 판정이 망가지지 않는다.
+  // 마커·강조 기호는 톤과 제목 분기를 정하는 데 쓰고 나면 역할이 끝난다.
+  // 완결성 검사보다 **먼저** 지워야 한다 — "**…명확하지만,**" 은 별표로 끝나 보여
+  // 미완성으로 잡히지 않고, 별표를 뒤에 지우면 미완성 제목이 그대로 화면에 남는다(실측).
+  const cleaned = {
+    heading: split.heading ? stripDisplayMarkers(split.heading) : split.heading,
+    body: stripDisplayMarkers(split.body || ''),
+  };
+  // 기준 4 — 제목에 번호 목록이 들어가면 한 줄이 길어져 눈이 못 따라간다.
+  // 목록이 시작되는 자리부터는 본문으로 내린다. 그다음 제목 완결성을 본다.
+  const { heading, body } = repairIncompleteHeading(moveListOutOfHeading(cleaned));
   return {
     id: `evidence-${index + 1}`,
     rawText: clean,
-    heading: heading ? stripDisplayMarkers(heading) : heading,
-    body: stripDisplayMarkers(dedupeRepeatedSentences(body)),
+    heading,
+    body: dedupeRepeatedSentences(body),
     tone: classifyItemTone(clean),
     citationLetters: [],
   };
@@ -1483,6 +1490,11 @@ export function splitReadableChunk(block: string): string[] {
 
 export function splitEvidenceBodyBlocks(body: string): string[] {
   return (body || '')
+    // 기준 4 — 문단 안 번호 목록은 각각 줄을 바꾼다. 한 줄에 "(1)… (2)… (3)…" 이
+    // 뭉쳐 있으면 눈이 항목을 못 따라간다. 두 개 이상일 때만 나눈다.
+    .replace(/(?=\s\(\d\)\s)/gu, match => match)
+    .replace(/\s+(?=\(\d\)\s)/gu, (_m, offset: number, whole: string) =>
+      ((whole.match(/\(\d\)\s/g) || []).length >= 2 ? '\n\n' : ' '))
     .replace(/\r\n?/g, '\n')
     // [?](검증 조건)는 부모 문장의 목록이므로 새 블록으로 쪼개지 않고 '·' 목록으로 이어 붙인다.
     .replace(/\s*\[\?\]\s*/gu, ' · ')
@@ -1587,6 +1599,21 @@ export function dedupeEvidenceItemsAcrossReport(
       .replace(/[\s"'“”‘’.,·:：()]/gu, '')
       .toLowerCase()
       .trim();
+  // 기준 5 — 카드가 달라도 같은 줄(목록 항목 등)이 되풀이되면 읽는 사람에게는 중복이다.
+  const seenBlocks = new Set<string>();
+  const pruneRepeatedBlocks = (body: string): string => {
+    const blocks = splitEvidenceBodyBlocks(body);
+    if (blocks.length === 0) return body;
+    const kept = blocks.filter(block => {
+      const key = block.replace(/[\s"'“”‘’.,·:：()]/gu, '').toLowerCase();
+      if (key.length < 20) return true;          // 짧은 줄은 우연히 겹칠 수 있다
+      if (seenBlocks.has(key)) return false;
+      seenBlocks.add(key);
+      return true;
+    });
+    return kept.join('\n\n');
+  };
+
   return itemsBySection.map(items => items.filter(item => {
     const key = fingerprint(item);
     if (key.length < 12) return true;      // 너무 짧으면 우연히 겹칠 수 있다
@@ -1599,7 +1626,8 @@ export function dedupeEvidenceItemsAcrossReport(
     seen.add(key);
     if (headingKey.length >= 12) headingOnlySeen.add(headingKey);
     return true;
-  }));
+  }).map(item => ({ ...item, body: pruneRepeatedBlocks(item.body || '') }))
+    .filter(item => Boolean((item.heading || '').trim() || (item.body || '').trim())));
 }
 
 export function sortEvidenceItemsByTone(items: EvidenceItem[]): EvidenceItem[] {
@@ -1657,6 +1685,55 @@ function looksLikeMidSentenceBoldSplit(heading: string, body: string): boolean {
 }
 
 /** 첫 줄이 제목 줄인지 본다. 짧고, 문장으로 끝나지 않고, 뒤에 본문이 있어야 한다. */
+/** 제목이 "(1) …" 목록을 품고 있으면 그 앞까지만 제목으로 남긴다. */
+/**
+ * 제목이 미완성이면 고친다 — 어느 분기에서 왔든 마지막에 한 번 검사한다.
+ *
+ * 볼드·콜론·판정 접두사 분기는 각자 제목을 만들고 완결성을 보지 않았다. 그래서
+ * "**…모멘텀은 명확하지만,**" 같은 강조 문구가 그대로 제목이 됐다(실측).
+ * 규칙을 분기마다 두면 새 분기가 생길 때 또 새어 나가므로 출구에서 한 번만 본다.
+ */
+export function repairIncompleteHeading(
+  split: { heading: string | null; body: string },
+): { heading: string | null; body: string } {
+  const heading = (split.heading || '').trim();
+  if (!heading || !isIncompleteHeading(heading)) return split;
+
+  // 뒤 절을 끌어와 완성해 본다.
+  const boundary = findSafeHeadingBoundary(split.body);
+  if (boundary > 0 && boundary < split.body.length) {
+    const joined = `${heading} ${split.body.slice(0, boundary)}`.replace(/\s+/g, ' ').trim();
+    const merged = joined.replace(/[.!?。]\s*$/u, '');
+    if (!isIncompleteHeading(merged) && merged.length <= 90) {
+      return { heading: merged, body: split.body.slice(boundary).trim() };
+    }
+  }
+  // 그래도 안 되면 앞머리를 잘라 만든다.
+  const whole = `${heading} ${split.body}`.replace(/\s+/g, ' ').trim();
+  const derived = deriveFallbackHeading(whole);
+  if (derived.heading && !isIncompleteHeading(derived.heading)) return derived;
+  return { heading: null, body: whole };
+}
+
+export function moveListOutOfHeading(
+  split: { heading: string | null; body: string },
+): { heading: string | null; body: string } {
+  const heading = split.heading || '';
+  const listStart = heading.search(/\(\s*1\s*\)/u);
+  if (listStart < 12) return split;                 // 제목이 너무 짧아지면 의미가 없다
+  const trimmed = heading.slice(0, listStart).replace(/[\s,，:：-]+$/u, '').trim();
+  if (!trimmed) return split;
+  const rest = `${heading.slice(listStart)} ${split.body}`.trim();
+  // 목록을 떼자 제목이 미완성이 되면(실측: "…명확하지만") 그 자리는 쓸 수 없다.
+  // 앞머리를 잘라 완결된 제목을 만들고, 나머지는 모두 본문으로 보낸다.
+  if (isIncompleteHeading(trimmed)) {
+    const derived = deriveFallbackHeading(trimmed);
+    if (!derived.heading || isIncompleteHeading(derived.heading)) return split;
+    return { heading: derived.heading, body: `${derived.body} ${rest}`.trim() };
+  }
+  return { heading: trimmed, body: rest };
+}
+
 export function extractTitleLine(raw: string): { title: string; rest: string } | null {
   const lines = (raw || '').split(/\r?\n/);
   if (lines.length < 2) return null;
@@ -1789,7 +1866,7 @@ function splitLeadSentenceHeading(bodyText: string): { heading: string | null; b
   if (!heading) return { heading: null, body: clean };
   // 연결어미로 끊긴 제목은 미완성 문장이다("…이어질 수 있는데").
   // 제목을 비우면 카드가 제목 없이 나오므로, 다음 문장 경계까지 넓혀 완성시킨다.
-  if (endsWithConnective(heading)) {
+  if (isIncompleteHeading(heading)) {
     const nextBoundary = findSafeHeadingBoundary(body);
     if (nextBoundary > 0 && nextBoundary < body.length) {
       heading = stripTail(`${heading} ${body.slice(0, nextBoundary)}`.trim());
@@ -1798,7 +1875,7 @@ function splitLeadSentenceHeading(bodyText: string): { heading: string | null; b
       heading = stripTail(clean);
       body = '';
     }
-    if (endsWithConnective(heading)) return { heading: null, body: clean };
+    if (isIncompleteHeading(heading)) return deriveFallbackHeading(clean);
   }
   if (heading.length > 90) return splitLeadClauseHeading(clean) ?? deriveFallbackHeading(clean);
   return { heading, body };
@@ -1820,7 +1897,7 @@ function splitLeadClauseHeading(clean: string): { heading: string; body: string 
     const heading = clean.slice(0, commaIdx).trim();
     const body = clean.slice(commaIdx + 1).trim();
     if (!heading || !body) continue;
-    if (endsWithConnective(heading)) continue;
+    if (isIncompleteHeading(heading)) continue;
     return { heading, body };
   }
   return null;
@@ -1829,6 +1906,17 @@ function splitLeadClauseHeading(clean: string): { heading: string; body: string 
 //: 뒤 절을 요구하는 연결어미. 여기서 끊으면 문장이 공중에 뜬다.
 const CONNECTIVE_ENDING_RE =
   /(?:지만|되지만|이지만|하지만|으나|[^\s]나|는데|은데|ㄴ데|어서|아서|므로|면서|고|며|자|거나|든지)$/u;
+
+//: 기준 3 — 제목이 여는 괄호나 이음 기호로 끝나면 완결된 제목이 아니다
+//: (실측: "핵심 판단 - [" 에서 잘렸다).
+// 콜론은 라벨형 제목의 정상 종결이므로 뺀다("핵심 타겟 데이터:").
+const INCOMPLETE_HEADING_TAIL_RE = /[-–—([{<,、／]\s*$/u;
+
+export function isIncompleteHeading(text: string): boolean {
+  const clean = (text || '').trim();
+  if (!clean) return true;
+  return INCOMPLETE_HEADING_TAIL_RE.test(clean) || endsWithConnective(clean);
+}
 
 export function endsWithConnective(text: string): boolean {
   const clean = (text || '').replace(/[\s,，.。]+$/u, '');

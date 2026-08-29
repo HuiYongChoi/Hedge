@@ -24,6 +24,7 @@ const H = await import(toDataUrl(
 
 // 채점 대상 텍스트. 카드 파싱 뒤 채워진다.
 const MISSING_HEADINGS = [];
+const HEADINGS = [];
 let BODY_ONLY = '';
 
 const RUBRIC = [
@@ -75,6 +76,17 @@ const RUBRIC = [
     } },
   { id: 'noheading',   w: 12, label: '제목 없는 카드',
     test: () => MISSING_HEADINGS },
+  { id: 'dottedfield', w: 12, label: '점으로 이어진 필드 경로 (life_cycle.key_risk_ko)',
+    bad: /[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*|[가-힣]\.[가-힣]/g },
+  { id: 'headcut',    w: 12, label: '제목이 기호·여는 괄호로 끝남 ("핵심 판단 - [")',
+    // 콜론 종결은 라벨형 제목으로 정상이다. 여는 괄호·이음표만 결함으로 본다.
+    test: () => HEADINGS.filter(h => /[-–—([{<,、／]\s*$/u.test(h)) },
+  { id: 'listbreak',  w: 10, label: '번호 목록이 한 줄에 뭉쳐 있음 ("(1)… (2)… (3)…")',
+    test: text => text.split('\n')
+      .filter(l => (l.match(/\(\d\)/g) || []).length >= 2)
+      .map(l => l.slice(0, 80) + '…') },
+  { id: 'abbrev',     w: 8,  label: '한국어로 풀 수 있는 약어 (2H, YoY, QoQ)',
+    bad: /(?<![A-Za-z])(?:[12]H|H[12]|YoY|QoQ|FY\d{0,2})(?![A-Za-z])/g },
   { id: 'decimalsplit', w: 12, label: '소수점에서 문장이 잘림 ("206." / "12로 …")',
     bad: /\d+\.\s*$|^\s*\d{1,3}(?:로|으로|이|가|은|는)\s/gm },
   { id: 'noisyratio', w: 6,  label: '배율의 불필요한 소수 둘째 자리 (206.12)',
@@ -115,6 +127,7 @@ const sectionsOut = parsedBySection
     // 원문으로 되돌리면 실제 화면과 달라져 채점이 무의미해진다.
     // 화면은 본문을 읽기 좋은 덩어리로 나눠 문단마다 렌더한다. 채점도 같게 본다.
     items.forEach(i => {
+      if (i.heading && i.heading.trim()) HEADINGS.push(i.heading.trim());
       if (!i.heading || !i.heading.trim()) {
         MISSING_HEADINGS.push((i.body || i.rawText || '').slice(0, 60));
       }

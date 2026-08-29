@@ -311,7 +311,10 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
         self.assertIn("function splitLeadClauseHeading(", helpers)
         self.assertIn("candidates.reverse()", helpers)
-        self.assertIn("if (endsWithConnective(heading)) continue;", helpers)
+        # 연결어미뿐 아니라 여는 괄호·이음표로 끝나는 제목도 미완성이다.
+        self.assertIn("if (isIncompleteHeading(heading)) continue;", helpers)
+        # 어느 분기에서 왔든 출구에서 한 번 더 검사한다(볼드 분기 누락 재발 방지).
+        self.assertIn("export function repairIncompleteHeading", helpers)
         self.assertIn("export function deriveFallbackHeading", helpers)
 
     def test_numeric_unit_fragment_filtered(self):

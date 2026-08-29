@@ -307,6 +307,13 @@ const RAW_FIELD_GLOSSARY: Array<[RegExp, string]> = [
   [/\bAlignment\b/g, '이행도'],
   [/\bValue\b/g, '가치'],
   [/\bplaybook\b/gi, '처방'],
+  // 기준 2: 한국어로 풀 수 있는 약어는 푼다. 앞뒤가 영문이면 다른 낱말의 일부다.
+  [/(?<![A-Za-z0-9])2H(?![A-Za-z0-9])/g, '하반기'],
+  [/(?<![A-Za-z0-9])1H(?![A-Za-z0-9])/g, '상반기'],
+  [/(?<![A-Za-z0-9])H2(?![A-Za-z0-9])/g, '하반기'],
+  [/(?<![A-Za-z0-9])H1(?![A-Za-z0-9])/g, '상반기'],
+  [/(?<![A-Za-z])YoY(?![A-Za-z])/g, '전년 대비'],
+  [/(?<![A-Za-z])QoQ(?![A-Za-z])/g, '전분기 대비'],
   [/\bterminal\s+growth\b/gi, '영구 성장률'],
   [/\bforward\s+figure\b/gi, '선행 추정치'],
   [/\bfigure\b/gi, '수치'],
@@ -388,16 +395,29 @@ const FIELD_WORD_KO: Record<string, string> = {
 
 /** snake_case 필드명을 낱말 단위로 옮긴다. 모르는 낱말이 있으면 손대지 않는다. */
 export function humanizeSnakeCaseFields(text: string): string {
-  return text.replace(/\b[a-z]{2,}(?:_[a-z0-9]{1,})+\b/g, raw => {
-    const parts = raw.split('_');
+  // 점으로 이어진 경로를 먼저 처리한다. 낱말 단위로만 바꾸면 "생애 주기.처방" 처럼
+  // 점이 남아 문장이 끊겨 보인다(실측).
+  const translateToken = (token: string): string | null => {
     const words: string[] = [];
-    for (const part of parts) {
+    for (const part of token.split('_')) {
       const mapped = FIELD_WORD_KO[part];
-      if (mapped === undefined) return raw;      // 모르는 낱말 — 억지 번역하지 않는다
+      if (mapped === undefined) return null;
       if (mapped) words.push(mapped);
     }
-    return words.length ? words.join(' ') : raw;
-  });
+    return words.join(' ');
+  };
+
+  return text
+    .replace(/\b[a-z]{2,}(?:[_.][a-z0-9]{1,})+\b/g, raw => {
+      if (!raw.includes('.')) return raw;                  // 점 없는 것은 아래에서 처리
+      const parts = raw.split('.').map(translateToken);
+      if (parts.some(part => part === null)) return raw;    // 하나라도 모르면 손대지 않는다
+      return parts.filter(Boolean).join(' ');
+    })
+    .replace(/\b[a-z]{2,}(?:_[a-z0-9]{1,})+\b/g, raw => {
+      const translated = translateToken(raw);
+      return translated ? translated : raw;
+    });
 }
 
 function humanizeCheckedTotals(text: string): string {
