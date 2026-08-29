@@ -1489,12 +1489,15 @@ export function splitReadableChunk(block: string): string[] {
 }
 
 export function splitEvidenceBodyBlocks(body: string): string[] {
-  return (body || '')
-    // 기준 4 — 문단 안 번호 목록은 각각 줄을 바꾼다. 한 줄에 "(1)… (2)… (3)…" 이
-    // 뭉쳐 있으면 눈이 항목을 못 따라간다. 두 개 이상일 때만 나눈다.
-    .replace(/(?=\s\(\d\)\s)/gu, match => match)
-    .replace(/\s+(?=\(\d\)\s)/gu, (_m, offset: number, whole: string) =>
-      ((whole.match(/\(\d\)\s/g) || []).length >= 2 ? '\n\n' : ' '))
+  const source = body || '';
+  // 기준 4 — 문단 안 번호 목록은 각각 줄을 바꾼다. 한 줄에 "(1)… (2)… (3)…" 이
+  // 뭉쳐 있으면 눈이 항목을 못 따라간다. 항목이 둘 이상일 때만 나눈다.
+  const listItems = (source.match(/\(\d\)\s/g) || []).length;
+  const withListBreaks = listItems >= 2
+    ? source.replace(/\s+(?=\(\d\)\s)/gu, '\n\n')
+    : source;
+
+  return withListBreaks
     .replace(/\r\n?/g, '\n')
     // [?](검증 조건)는 부모 문장의 목록이므로 새 블록으로 쪼개지 않고 '·' 목록으로 이어 붙인다.
     .replace(/\s*\[\?\]\s*/gu, ' · ')
