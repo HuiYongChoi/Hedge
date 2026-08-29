@@ -12,6 +12,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import src.tools.macro_regime as macro_regime  # noqa: E402
 from src.tools.macro_regime import fetch_macro_regime  # noqa: E402
 from src.utils.capm import (  # noqa: E402
     DAMODARAN_ERP,
@@ -57,6 +58,50 @@ class FallbackTests(unittest.TestCase):
     def test_macro_from_state_survives_garbage(self):
         for state in (None, {}, {"data": {}}, {"data": {"macro_regime": "x"}}, object()):
             self.assertIsNone(macro_from_state(state))
+
+
+class CacheTests(unittest.TestCase):
+    """실패를 성공만큼 오래 기억하면 두 가지가 깨진다.
+
+    (1) 공급 측이 열려도 최대 6시간 동안 꺼진 채로 남는다. 백엔드는 상주
+        프로세스라 재배포 전에는 캐시가 풀리지 않는다.
+    (2) 일시적인 500 한 번에 매크로가 반나절 죽는다.
+    """
+
+    def setUp(self):
+        macro_regime._cache.clear()
+
+    tearDown = setUp
+
+    def test_failure_is_forgotten_sooner_than_success(self):
+        self.assertLess(macro_regime.FAILURE_CACHE_TTL_SECONDS, macro_regime.CACHE_TTL_SECONDS)
+
+    def test_expired_failure_is_retried(self):
+        key = macro_regime._endpoint()
+        macro_regime._cache[key] = (0.0, None)          # 아주 오래된 실패
+        fresh, _ = macro_regime._cached_value(macro_regime.time.time())
+        self.assertFalse(fresh, "만료된 실패를 계속 쓰면 공급 측 개통을 놓친다")
+
+    def test_fresh_failure_is_not_hammered(self):
+        """반대로 방금 실패한 것을 매번 다시 물으면 분석마다 5초씩 붙는다."""
+        macro_regime._cache[macro_regime._endpoint()] = (macro_regime.time.time(), None)
+        fresh, value = macro_regime._cached_value(macro_regime.time.time())
+        self.assertTrue(fresh)
+        self.assertIsNone(value)
+
+    def test_success_outlives_the_failure_window(self):
+        payload = {"discountInputs": {"riskFreeRate": 4.72}}
+        stale_for_failure = macro_regime.time.time() - macro_regime.FAILURE_CACHE_TTL_SECONDS - 1
+        macro_regime._cache[macro_regime._endpoint()] = (stale_for_failure, payload)
+        fresh, value = macro_regime._cached_value(macro_regime.time.time())
+        self.assertTrue(fresh)
+        self.assertEqual(value, payload)
+
+    def test_single_flight_lock_exists(self):
+        """캐시가 비었을 때 분석 여러 건이 동시에 시작하면 같은 요청이 그 수만큼 나간다."""
+        src = (ROOT / "src/tools/macro_regime.py").read_text(encoding="utf-8")
+        self.assertIn("_fetch_lock", src)
+        self.assertIn("with _fetch_lock:", src)
 
 
 class UnitAndOutlierTests(unittest.TestCase):

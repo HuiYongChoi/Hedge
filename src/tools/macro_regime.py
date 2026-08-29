@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 import urllib.request
 from datetime import date
@@ -29,8 +30,26 @@ DEFAULT_ENDPOINT = "https://hyfin.duckdns.org/proxy.php?action=macro_regime"
 HTTP_TIMEOUT_SECONDS = 5
 #: 시장 레짐은 분 단위로 바뀌지 않는다.
 CACHE_TTL_SECONDS = 6 * 3600
+#: 실패는 짧게만 기억한다.
+#: 성공과 같은 6시간을 적용하면 (1) 공급 측이 열린 뒤에도 최대 6시간 동안 꺼진
+#: 상태가 유지되고 — 백엔드는 상주 프로세스라 재배포 전까지 안 풀린다 —
+#: (2) 일시적인 500 한 번에 매크로가 반나절 죽는다.
+FAILURE_CACHE_TTL_SECONDS = 600
 
 _cache: dict[str, tuple[float, Optional[dict]]] = {}
+#: 캐시가 비었을 때 여러 분석이 동시에 시작하면 같은 요청이 그 수만큼 나간다.
+#: 한 번만 다녀오게 하고 나머지는 그 결과를 쓴다(대기 시간도 1회분으로 끝난다).
+_fetch_lock = threading.Lock()
+
+
+def _cached_value(now: float) -> tuple[bool, Optional[dict]]:
+    """(유효한 캐시가 있는가, 그 값)."""
+    entry = _cache.get(_endpoint())
+    if not entry:
+        return False, None
+    stamp, payload = entry
+    ttl = CACHE_TTL_SECONDS if payload is not None else FAILURE_CACHE_TTL_SECONDS
+    return (now - stamp < ttl), payload
 
 
 def _endpoint() -> str:
@@ -59,11 +78,20 @@ def fetch_macro_regime(end_date: Optional[str] = None) -> Optional[dict]:
     if _is_past(end_date):
         return None            # 과거 분석에 오늘 값을 넣지 않는다
 
-    cache_key = _endpoint()
-    cached = _cache.get(cache_key)
-    if cached and time.time() - cached[0] < CACHE_TTL_SECONDS:
-        return cached[1]
+    fresh, payload = _cached_value(time.time())
+    if fresh:
+        return payload
 
+    with _fetch_lock:
+        # 잠금을 기다리는 동안 다른 스레드가 이미 받아왔을 수 있다.
+        fresh, payload = _cached_value(time.time())
+        if fresh:
+            return payload
+        return _fetch_uncached()
+
+
+def _fetch_uncached() -> Optional[dict]:
+    cache_key = _endpoint()
     payload: Optional[dict] = None
     try:
         request = urllib.request.Request(
