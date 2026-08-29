@@ -239,6 +239,35 @@ export function rewriteBareCheckCounts(text: string): string {
     );
 }
 
+// 모델이 괄호를 열고 닫지 않은 채 문장을 끝낸다(실측: "말기 성장률(영구 성장률 2.").
+// 그대로 두면 아래 단계가 어디서 줄을 바꿔도 괄호가 열린 채로 끊긴다.
+// 닫히지 않은 괄호는 그 안의 조각째 걷어내 문장을 정상으로 되돌린다.
+export function dropUnclosedParenthetical(text: string): string {
+  let out = text || '';
+  for (let guard = 0; guard < 8; guard += 1) {
+    let depth = 0;
+    let openAt = -1;
+    for (let index = 0; index < out.length; index += 1) {
+      const char = out[index];
+      if (char === '(' || char === '（') {
+        if (depth === 0) openAt = index;
+        depth += 1;
+      } else if (char === ')' || char === '）') {
+        depth = Math.max(0, depth - 1);
+      }
+    }
+    if (depth === 0 || openAt < 0) break;
+    // 닫히지 않은 괄호부터 문장 끝(또는 글 끝)까지가 깨진 조각이다.
+    const rest = out.slice(openAt);
+    const stop = rest.search(/[.。!?]/u);
+    out = stop >= 0
+      ? `${out.slice(0, openAt).trimEnd()}${rest.slice(stop)}`
+      : out.slice(0, openAt).trimEnd();
+  }
+  // 여는 괄호 없이 남은 닫는 괄호도 잡음이다.
+  return out.replace(/(?<![(（][^)）]{0,200})\s*[)）]/gu, '').replace(/\s{2,}/g, ' ');
+}
+
 // 체크박스·미해결 마커가 본문에 그대로 인쇄된다("검토 필요 - [ ] 위험관리", "[?] 경영진 종합평가").
 function stripLeftoverMarkers(text: string): string {
   return text
@@ -248,7 +277,13 @@ function stripLeftoverMarkers(text: string): string {
     // 뒤에 공백을 요구하면 "- [! - [! 핵심" 에서 앞을 지운 뒤 두 번째가 살아남는다(실측).
     .replace(/(?:[-–—]\s*)?\[\s*[!?+~\-]?\s*/gu, '')
     // 여는 괄호 없이 홀로 남은 닫는 대괄호("… 해석하지 않습니다. ] 근거(수치 인용):")
-    .replace(/(?<!\[[^\]]{0,200})\s\]\s*/gu, ' ');
+    .replace(/(?<!\[[^\]]{0,200})\s\]\s*/gu, ' ')
+    // 줄 첫머리에 홀로 남은 닫는 괄호("] 먼저 보는 결론 …")도 마커 잔재다.
+    .replace(/^[\s]*[\])）]\s*/gmu, '')
+    // 마커를 걷어내며 남은 꼬리("#+]", ") 2)")도 문장이 아니다.
+    .replace(/(?:^|\s)[#+~-]{1,2}\]\s*/gu, ' ')
+    .replace(/(?:^|[.。])\s*[)）]\s*(?=\d\))/gu, ' ')
+    .replace(/\s{2,}/g, ' ');
 }
 
 export function stripLeakedSourceMarkers(text: string): string {
@@ -703,9 +738,11 @@ export function normalizeFinancialDisplayText(text: string) {
 
   // 순서가 중요하다. 찌꺼기를 먼저 걷어내고(마커·중첩라벨·깨진 숫자),
   // 그 다음 용어를 한국어로 바꾸고, 숫자를 읽기 좋게 만든 뒤, 마지막에 문체를 다듬는다.
-  const cleaned = stripDirectiveSentences(rewriteBareCheckCounts(stripDatasetMetadata(collapseRepeatedRatioLabels(stripLeftoverMarkers(
-    stripLeakedSourceMarkers(stripPromptEcho(rejoinBrokenDecimals(text))),
-  )))));
+  const cleaned = dropUnclosedParenthetical(
+    stripDirectiveSentences(rewriteBareCheckCounts(stripDatasetMetadata(collapseRepeatedRatioLabels(stripLeftoverMarkers(
+      stripLeakedSourceMarkers(stripPromptEcho(rejoinBrokenDecimals(text))),
+    ))))),
+  );
   const worded = humanizeRawFieldNames(stripMismatchedCurrencyPrefix(repairFragmentedPercents(cleaned)));
   const numbered = trimRatioPrecision(dropSelfReferentialParenthetical(groupLargeAmounts(normalizeRatiosWrittenAsDecimals(
     normalizeOversizedAmounts(normalizeTruncatedDecimals(worded)),

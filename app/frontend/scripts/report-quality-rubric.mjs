@@ -88,6 +88,13 @@ const RUBRIC = [
   { id: 'headcut',    w: 12, label: '제목이 기호·여는 괄호로 끝남 ("핵심 판단 - [")',
     // 콜론 종결은 라벨형 제목으로 정상이다. 여는 괄호·이음표만 결함으로 본다.
     test: () => HEADINGS.filter(h => /[-–—([{<,、／]\s*$/u.test(h)) },
+  // 기준 4 — 괄호가 열린 채로 줄이 바뀌면 뒷줄이 ")로 시작해 뜻이 끊긴다.
+  { id: 'openbracket', w: 14, label: '괄호가 열린 채 줄바꿈 ("위험관리 (5." ⏎ "…파생거래) 중")',
+    test: text => text.split('\n').map(l => l.trim()).filter(line => {
+      const open = (line.match(/[(（]/g) || []).length;
+      const close = (line.match(/[)）]/g) || []).length;
+      return open !== close;
+    }).map(l => l.slice(0, 70) + '…') },
   { id: 'listbreak',  w: 10, label: '번호 목록이 한 줄에 뭉쳐 있음 ("(1)… (2)… (3)…")',
     test: text => text.split('\n')
       .filter(l => (l.match(/\(\d\)/g) || []).length >= 2)

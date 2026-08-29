@@ -602,6 +602,30 @@ export function pickDefaultAgent(agentResults: Map<string, AgentResult>, activeT
   return complete[0][0];
 }
 
+//: 기준 4 — 괄호가 열린 채로 줄을 바꾸면 뒷줄이 ")…"로 시작해 뜻이 끊긴다.
+//: 실측: "위험관리 (5." ⏎ "위험관리 및 파생거래) 중 …". 패턴을 하나씩 막는 대신
+//: '괄호가 균형을 이룬 자리에서만 끊는다'는 구조 규칙으로 잡는다.
+export function bracketBalance(text: string): number {
+  const open = (text.match(/[(（[]/gu) || []).length;
+  const close = (text.match(/[)）\]]/gu) || []).length;
+  return open - close;
+}
+
+/** 조각들을 이어 붙이되, 괄호가 닫힐 때까지는 자르지 않는다. */
+export function joinUntilBracketsClose(pieces: string[]): string[] {
+  const merged: string[] = [];
+  let pending = '';
+  for (const piece of pieces) {
+    pending = pending ? `${pending} ${piece}` : piece;
+    if (bracketBalance(pending) <= 0) {
+      merged.push(pending.trim());
+      pending = '';
+    }
+  }
+  if (pending.trim()) merged.push(pending.trim());
+  return merged;
+}
+
 export function splitSentences(text: string): string[] {
   return text
     .replace(/\r\n?/g, '\n')
@@ -611,7 +635,16 @@ export function splitSentences(text: string): string[] {
     // 숫자 뒤 마침표는 문장 끝이 아닐 수 있다("선행 EPS 60187. 로") — 뒤가 조사면 이어진다.
     .split(/(?<=[.!?])(?![\d)\]])(?!\s*(?:로|으로|이|가|은|는|를|을)\s)\s+|(?<!수요)(?<!필요)(?<!중요)(?<!주요)(?<!개요)(?<!소요)(?<!요요)(?<!다음)(?<!처음)(?<!마음)(?<!모음)(?<!자음)(?<!믿음)(?<=[요음됨함])\s+|(?<!보다)(?<!위하다)(?<=다)\s+/u)
     .map(sentence => (sentence || '').trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .reduce<string[]>((acc, sentence) => {
+      const previous = acc[acc.length - 1];
+      if (previous !== undefined && bracketBalance(previous) > 0) {
+        acc[acc.length - 1] = `${previous} ${sentence}`;
+        return acc;
+      }
+      acc.push(sentence);
+      return acc;
+    }, []);
 }
 
 function normalizedEmpty(): NormalizedReport {
@@ -1467,7 +1500,9 @@ export function splitReadableChunk(block: string): string[] {
 
   // 소수점을 문장 끝으로 보면 "…축 점수 26." 에서 잘려 "9점…" 이 다음 덩어리가 된다
   // (실측). 종결부호 뒤에 숫자가 오면 문장 경계가 아니다.
-  const sentences = block.split(/(?<=[.!?。？！])(?!\d)\s+/u).filter(Boolean);
+  const sentences = joinUntilBracketsClose(
+    block.split(/(?<=[.!?。？！])(?!\d)\s+/u).filter(Boolean),
+  );
   const chunks: string[] = [];
   let current = '';
 
@@ -1739,7 +1774,28 @@ export function repairIncompleteHeading(
   const whole = `${heading} ${split.body}`.replace(/\s+/g, ' ').trim();
   const derived = deriveFallbackHeading(whole);
   if (derived.heading && !isIncompleteHeading(derived.heading)) return derived;
+  // 마지막 수단: 짝 없는 괄호만 떼어 낸다. 제목 없는 카드보다는 낫다.
+  const salvaged = dropUnmatchedBrackets(derived.heading || heading);
+  if (salvaged && !isIncompleteHeading(salvaged)) {
+    return { heading: salvaged, body: derived.heading ? derived.body : whole };
+  }
   return { heading: null, body: whole };
+}
+
+/** 짝이 맞지 않는 괄호만 제거한다. 균형 잡힌 괄호는 그대로 둔다. */
+export function dropUnmatchedBrackets(text: string): string {
+  const chars = [...(text || '')];
+  const openStack: number[] = [];
+  const drop = new Set<number>();
+  chars.forEach((char, index) => {
+    if (char === '(' || char === '（') openStack.push(index);
+    else if (char === ')' || char === '）') {
+      if (openStack.length === 0) drop.add(index);
+      else openStack.pop();
+    }
+  });
+  openStack.forEach(index => drop.add(index));
+  return chars.filter((_, index) => !drop.has(index)).join('').replace(/\s{2,}/g, ' ').trim();
 }
 
 export function moveListOutOfHeading(
@@ -1829,8 +1885,13 @@ export function deriveFallbackHeading(text: string): { heading: string | null; b
   let heading = '';
   let used = 0;
   for (const word of words) {
-    if (heading.length >= 16 && !endsWithConnective(heading)) break;
-    if (heading.length + word.length > 34 && heading.length >= 12) break;
+    // 괄호가 열려 있으면 닫힐 때까지 이어 붙인다 — 여기서 끊으면 본문이 ")…"로 시작한다
+    // (실측: 제목 "…시장가 (1,173조" / 본문 "원)가 내재가치 …").
+    const insideBracket = bracketBalance(heading) > 0;
+    if (!insideBracket) {
+      if (heading.length >= 16 && !endsWithConnective(heading)) break;
+      if (heading.length + word.length > 34 && heading.length >= 12) break;
+    }
     heading = heading ? `${heading} ${word}` : word;
     used += 1;
   }
@@ -1942,6 +2003,8 @@ const INCOMPLETE_HEADING_TAIL_RE = /[-–—([{<,、／]\s*$/u;
 export function isIncompleteHeading(text: string): boolean {
   const clean = (text || '').trim();
   if (!clean) return true;
+  // 괄호가 열린 채 끝나면(또는 닫는 괄호만 있으면) 제목이 문장 중간에서 잘린 것이다.
+  if (bracketBalance(clean) !== 0) return true;
   return INCOMPLETE_HEADING_TAIL_RE.test(clean) || endsWithConnective(clean);
 }
 
