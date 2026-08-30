@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,8 +71,24 @@ def test_fundamentals_and_valuation_share_forward_metrics_cache():
 def test_graph_routes_analysts_through_forward_prefetch_node():
     text = _read("app/backend/services/graph.py")
 
+    # 지켜야 할 것은 "애널리스트가 선반입 뒤에 실행된다"이지 특정 노드 이름이 아니다.
+    # 선반입 체인은 늘어날 수 있다(start_node → forward_prefetch → macro_prefetch → 애널리스트).
     assert "from src.agents.forward_prefetch import forward_prefetch_node" in text
     assert 'graph.add_node("forward_prefetch", forward_prefetch_node)' in text
-    assert 'execution_node_ids = {"start_node", "forward_prefetch"}' in text
+    assert '"start_node", "forward_prefetch"' in text          # 실행 노드로 등록
     assert 'graph.add_edge("start_node", "forward_prefetch")' in text
-    assert 'graph.add_edge("forward_prefetch", agent_id)' in text
+
+    # 체인의 마지막 선반입 노드가 애널리스트로 이어져야 한다. 어느 노드가
+    # 마지막인지는 바뀔 수 있으므로 이름을 박지 않고 존재만 확인한다.
+    prefetch_nodes = set(re.findall(r'graph\.add_node\("(\w*prefetch)"', text))
+    assert prefetch_nodes, "선반입 노드가 사라졌다"
+    fan_out = set(re.findall(r'graph\.add_edge\("(\w*prefetch)", agent_id\)', text))
+    assert len(fan_out) == 1, f"애널리스트로 갈라지는 선반입 노드는 정확히 하나여야 한다: {fan_out}"
+    tail = fan_out.pop()
+    assert tail in prefetch_nodes
+
+    # 그 마지막 노드가 forward_prefetch 가 아니라면, forward_prefetch 뒤에 와야 한다.
+    if tail != "forward_prefetch":
+        assert f'graph.add_edge("forward_prefetch", "{tail}")' in text, (
+            f"{tail} 이 forward_prefetch 뒤에 연결되지 않았다 — 선행 지표 없이 애널리스트가 돈다"
+        )
