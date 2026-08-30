@@ -84,9 +84,12 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             "cash_and_equivalents",
         ]
         progress.update_status(agent_id, ticker, "Fetching financial line items (annual)")
+        # 12년치를 받는다. 성장률을 사이클 전체로 정규화하는데, 창이 짧으면
+        # 그 창이 통째로 호황 구간에 들어앉는다(실측: 5개 연도 표본에서 재투자율이
+        # 상한 100% 에 붙었다). 직전 다운사이클까지 들어오도록 늘린다.
         line_items_annual = search_line_items(
             ticker, _li_fields, end_date,
-            period="annual", limit=8, api_key=api_key,
+            period="annual", limit=12, api_key=api_key,
         )
         progress.update_status(agent_id, ticker, "Fetching financial line items (ttm)")
         line_items_ttm = search_line_items(
