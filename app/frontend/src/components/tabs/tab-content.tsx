@@ -392,6 +392,25 @@ const agentScoringGuides: AgentScoringGuide[] = [
     sellSignalsKo: ['FCF가 음수이거나 EBITDA 데이터가 없으면 현금흐름/수익력 모델 비중이 축소됩니다.', 'ROIC가 WACC를 밑돌면 EVA가 가치 파괴로 작동해 약세 근거가 됩니다.', '시가총액이 대부분의 내재가치 추정치보다 15% 이상 높으면 전체 가중 괴리율이 약세로 이동합니다.'],
     sellSignalsEn: ['Negative FCF or missing EBITDA reduces the cash-flow and earnings-power model support.', 'ROIC below WACC turns EVA into a value-destruction signal.', 'When market cap sits 15%+ above most intrinsic-value estimates, the weighted gap moves bearish.'],
   },
+  {
+    nameKo: '반도체 리레이팅 분석가',
+    nameEn: 'Semiconductor Rerating Analyst',
+    category: 'technical',
+    styleKo: '메모리 사이클 리레이팅 확률 × 기대값',
+    styleEn: 'Memory-cycle rerating probability x expected value',
+    summaryKo: '5개 축을 가중해 리레이팅 확률을 구합니다 — 선행 이익 변곡 28%, 사이클 품질 20%, 밸류에이션 브리지 20%, 증권사 검증 17%, 제조 규율 15%. 그 확률로 리레이팅 목표가와 하방 기준가(PBR 중위값)를 가중평균해 기대가격을 만들고, 현재가 대비 기대수익률로 판단합니다. 반도체·메모리가 아닌 종목이면 확률에 0.55를 곱해 영향력을 줄입니다.',
+    summaryEn: 'Blends five axes into a rerating probability - forward earnings inflection 28%, cycle quality 20%, valuation bridge 20%, broker validation 17%, manufacturing discipline 15%. That probability weights a rerating target against a downside anchor (median PBR price) to produce an expected price, judged by expected return against the current price. Non-semiconductor names have the probability scaled by 0.55.',
+    weightsKo: ['선행 이익 변곡: 28%', '사이클 품질: 20%', '밸류에이션 브리지: 20%', '증권사 검증: 17%', '제조 규율: 15%', '비반도체 종목: 확률 × 0.55'],
+    weightsEn: ['Forward earnings inflection: 28%', 'Cycle quality: 20%', 'Valuation bridge: 20%', 'Broker validation: 17%', 'Manufacturing discipline: 15%', 'Non-semiconductor: probability x 0.55'],
+    buyRuleKo: '기대수익률이 +10% 이상이고 리레이팅 확률이 55% 이상이면 강세입니다.',
+    buyRuleEn: 'Expected return at or above +10% together with a rerating probability at or above 55% produces bullish.',
+    sellRuleKo: '기대수익률이 -10% 이하이거나 리레이팅 확률이 35% 이하이면 약세입니다.',
+    sellRuleEn: 'Expected return at or below -10%, or a rerating probability at or below 35%, produces bearish.',
+    buySignalsKo: ['선행 PER이 TTM PER보다 낮으면 컨센서스가 이익 확장을 보고 있다는 뜻이라 변곡 점수가 올라갑니다.', '매출 20%+ / 이익 25%+ 성장, 영업이익률 20%+, ROIC 15%+ 가 사이클 품질 점수를 채웁니다.', '증권사 컨센서스 상승여력 20%+ 와 커버리지 10곳 이상이 검증 축을 끌어올립니다.'],
+    buySignalsEn: ['Forward P/E below trailing P/E means consensus sees earnings expanding, which raises the inflection score.', 'Revenue growth 20%+, earnings growth 25%+, operating margin 20%+, and ROIC 15%+ fill the cycle-quality score.', 'Consensus upside of 20%+ with coverage from 10 or more brokers lifts the validation axis.'],
+    sellSignalsKo: ['선행 PER이 TTM PER보다 높으면 이익 둔화 또는 밸류에이션 부담으로 읽어 변곡 점수를 낮춥니다.', '현재 PBR이 역사적 90분위를 넘고 사이클 품질이 70% 미만이면 밸류에이션 브리지에서 감점합니다.', 'CapEx/매출이 50%를 넘거나 FCF가 음수이면 제조 규율 점수가 비어 확률이 내려갑니다.'],
+    sellSignalsEn: ['Forward P/E above trailing P/E reads as slowing earnings or valuation pressure and lowers the inflection score.', 'A current PBR above the historical 90th percentile with cycle quality under 70% is penalised in the valuation bridge.', 'CapEx above 50% of revenue or negative FCF leaves the manufacturing-discipline score empty and pulls the probability down.'],
+  },
 ];
 
 const CATEGORY_LABELS: Record<string, { ko: string; en: string }> = {

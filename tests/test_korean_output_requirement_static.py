@@ -1,6 +1,8 @@
 from pathlib import Path
 import unittest
 
+from src.utils.llm import KOREAN_OUTPUT_REQUIREMENT
+
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENT = (
@@ -13,7 +15,10 @@ class KoreanOutputRequirementStaticTests(unittest.TestCase):
     def test_call_llm_appends_korean_requirement_before_invocation(self):
         source = (ROOT / "src/utils/llm.py").read_text(encoding="utf-8")
 
-        self.assertIn(REQUIREMENT, source)
+        # 소스 텍스트가 아니라 실제 상수 값을 본다. 원문 문자열을 소스에서 찾으면
+        # 지침이 길어져 줄이 나뉘는 순간 통과하지 못하고, 그러면 이 검사를
+        # 지키느라 지침을 못 고치게 된다.
+        self.assertIn(REQUIREMENT, KOREAN_OUTPUT_REQUIREMENT)
         self.assertIn("def enforce_korean_output_requirement", source)
         self.assertLess(
             source.index("prompt = enforce_korean_output_requirement(prompt)"),

@@ -25,6 +25,35 @@ else
       echo "✗ 보고서 품질 미달 — 배포를 중단합니다. 위 감점 항목을 먼저 고치세요."
       exit 1
     fi
+
+    # 섹션 분류가 '작성자가 붙인 구획'을 실제로 읽는지 — 이게 깨지면 리포트의
+    # 04(리스크)가 통째로 비고, 문장 채점표는 그걸 만점으로 통과시킨다.
+    echo "섹션 분류 점검 중 ..."
+    if ! (cd "$REPO_DIR/app/frontend" && "$NODE_BIN" scripts/check-section-split.mjs); then
+      echo "✗ 섹션 분류 미달 — 배포를 중단합니다."
+      exit 1
+    fi
+
+    # 위 채점은 '문장이 잘 쓰였는가'만 본다. 분석이 통째로 버려져 보고서가 비면
+    # 볼 문장이 없어 오히려 만점이 나온다(2026-08-30 실측). 건전성 채점표는
+    # '보고서가 실제로 나왔는가'를 본다 — 그날의 실패 실행이 여전히 미달로
+    # 잡히는지 확인해, 채점표가 무뎌진 채로 배포되는 것을 막는다.
+    echo "보고서 건전성 채점표 점검 중 ..."
+    if (cd "$REPO_DIR/app/frontend" && "$NODE_BIN" scripts/report-health-scorecard.mjs \
+          ../../tests/fixtures/report_health/broken_run_000660_260830.json > /dev/null 2>&1); then
+      echo "✗ 건전성 채점표가 실패한 보고서에 만점을 줬습니다 — 채점 규칙이 무뎌졌습니다."
+      exit 1
+    fi
+
+    # 새로 만든 실행 결과가 tmp/report_health_rounds 에 있으면 그것도 채점한다.
+    if ls "$REPO_DIR/tmp/report_health_rounds"/*.json >/dev/null 2>&1; then
+      echo "최근 실행 결과 건전성 채점 중 ..."
+      if ! (cd "$REPO_DIR/app/frontend" && "$NODE_BIN" scripts/report-health-scorecard.mjs \
+              "$REPO_DIR"/tmp/report_health_rounds/*.json); then
+        echo "✗ 보고서 건전성 미달 — 배포를 중단합니다."
+        exit 1
+      fi
+    fi
   else
     echo "⚠ node 또는 typescript 가 없어 품질 게이트를 실행하지 못했습니다."
   fi

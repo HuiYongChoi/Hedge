@@ -72,7 +72,7 @@ function fillTemplate(template: string, values: Record<string, string>) {
 
 // 선행 내재가치는 후행 내재가치 '바로 아래'에 온다. 두 값의 폭이 이 화면에서
 // 가장 중요한 정보이므로 떨어뜨려 놓으면 비교가 되지 않는다.
-const ORDERED_PRIMARY_TILE_KEYS = ['targetIntrinsicLabel', 'targetForwardIntrinsicLabel', 'targetMarginLabel'] as const;
+const ORDERED_PRIMARY_TILE_KEYS = ['targetIntrinsicLabel', 'targetForwardIntrinsicLabel', 'targetMarginLabel', 'targetForwardMarginLabel'] as const;
 const PRIMARY_TILE_KEYS = new Set<string>(ORDERED_PRIMARY_TILE_KEYS);
 const SAFETY_MARGIN_DISPLAY_BUFFER = 0.25;
 

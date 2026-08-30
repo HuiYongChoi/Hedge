@@ -383,6 +383,12 @@ def test_ac7_korean_ticker_without_provider_data_returns_clear_low_confidence(mo
         FinancialMetrics(ticker="005930.KS", report_period="2024-06-30", period="quarter", currency="KRW", earnings_per_share=900.0),
     ]
     _patch_trailing_and_prices(monkeypatch, metrics, close=70000.0)
+    # 한국 종목은 DART·yfinance 분기 EPS 를 실제로 더 불러와 합친다. 막지 않으면
+    # 이 테스트가 망을 타고, 검증하려는 폴백 대신 그날의 실제 삼성전자 EPS 를
+    # 채점하게 된다(실측: 4,200 기대 → 5,167).
+    from src.tools import forward_metrics as _fm
+    monkeypatch.setattr(_fm, "_load_dart_quarterly_eps", lambda t, d: [])
+    monkeypatch.setattr(_fm, "_load_yfinance_quarterly_eps", lambda t, d: [])
 
     result = get_forward_metrics(
         "005930.KS",

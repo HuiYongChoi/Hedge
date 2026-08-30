@@ -133,8 +133,14 @@ class AnalystReportV5StaticTests(unittest.TestCase):
         )
         self.assertNotIn("formatMarginTarget(value, metrics.intrinsicValue?.value", helpers)
         self.assertNotIn("formatCurrency(referencePrice, currency)", helpers)
-        self.assertIn("finiteNumber(rawMarginOfSafety)", helpers)
-        self.assertLess(helpers.index("finiteNumber(rawMarginOfSafety)"), helpers.index("safetyMarginPrice - current"))
+        # 안전가 옆 퍼센트는 '화면에 뜬 두 숫자'로 검산돼야 한다.
+        # rawMarginOfSafety 는 내재가치 기준 갭이라 안전가(내재가치 −25%) 옆에
+        # 붙이면 맞지 않는다(실측: 안전가 1,054,214 · 현재가 1,653,000 → 실제
+        # −36.2% 인데 −15.0% 로 표기). 표시된 가격 기준 갭만 쓴다.
+        # (주석에는 남아 있어도 된다 — 다시 넣지 말라는 이유가 거기 적혀 있다.)
+        self.assertNotIn("finiteNumber(rawMarginOfSafety)", helpers)
+        self.assertNotIn("rawMarginOfSafety:", helpers)
+        self.assertIn("(safetyMarginPrice - current) / current", helpers)
         self.assertIn("targetMarginLabel: '안전가'", prefs)
 
     def test_header_does_not_mix_composite_and_agent_direction_badges(self):

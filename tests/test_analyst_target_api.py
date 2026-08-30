@@ -236,7 +236,11 @@ class AnalystTargetApiTests(unittest.TestCase):
 
         result = _fetch_fnguide_consensus("000660.KS")
 
-        self.assertEqual(result["consensus"], 2003200.0)
+        # 컨센서스는 '표시하는 broker 집합의 평균'이다(d093e44). FnGuide 공식
+        # Consensus 행(2,003,200)은 화면에 없는 증권사까지 포함해 계산되므로,
+        # 사이드바 평균과 패널 평균이 서로 다른 숫자가 되어 검산이 되지 않았다.
+        # 여기서는 표시된 3곳의 평균이어야 한다.
+        self.assertEqual(result["consensus"], 2500000.0)
         self.assertEqual(result["high"], 3000000.0)
         self.assertEqual(result["low"], 1850000.0)
         self.assertEqual(result["analyst_count"], 3)
