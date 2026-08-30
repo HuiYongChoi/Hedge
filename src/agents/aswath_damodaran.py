@@ -622,6 +622,65 @@ def _resolve_forward_start_eps(forward_metrics) -> tuple[float | None, str | Non
     return None, None
 
 
+def _sustainable_growth_rate(metrics: list, line_items: list | None = None) -> tuple[float | None, str]:
+    """g = ROE × 유보율. (성장률, 출처 설명) — 못 구하면 (None, "").
+
+    다모다란 본인 방식이다. 성장은 공짜로 오지 않는다 — 벌어들인 것 중 회사에
+    남겨 둔 몫(유보)을 자기자본수익률만큼 굴려야 나온다. 임의의 12% 같은 숫자가
+    아니라 그 기업의 재무에서 나오는 값이라, 종목마다 다르고 근거를 댈 수 있다.
+    """
+    # 최근 ROE 한 개가 아니라 확보된 기간의 중앙값을 쓴다.
+    #
+    # 사이클 업종에서 최근 ROE 는 호황 정점이거나 불황 저점이다. 정점 ROE 를
+    # 10년 성장률로 굴리면, 출발점(선행 컨센서스)도 정점인데 성장률까지 정점이라
+    # 같은 호황을 두 겹으로 깐 셈이 된다. 중앙값은 사이클을 가로질러 정규화한다.
+    # 연도별 손익·자본에서 ROE 를 직접 계산한다.
+    #
+    # metrics 는 시점 스냅샷 한 줄만 오는 경우가 많아(실측: 표본 1개) 그것만 보면
+    # '중앙값'이 사실상 최근값이 되어 정규화가 되지 않는다. line_items 는 연 단위로
+    # 여러 해가 들어오므로 사이클을 실제로 가로지를 수 있다.
+    roes = []
+    for li in (line_items or []):
+        ni = getattr(li, "net_income", None)
+        eq = getattr(li, "shareholders_equity", None)
+        if isinstance(ni, (int, float)) and isinstance(eq, (int, float)) and eq > 0 and ni > 0:
+            roes.append(float(ni) / float(eq))
+    if not roes:
+        roes = [
+            float(getattr(m, "return_on_equity", None))
+            for m in (metrics or [])
+            if isinstance(getattr(m, "return_on_equity", None), (int, float))
+        ]
+    roes = [r for r in roes if r > 0]
+    if not roes:
+        return None, ""
+    roes.sort()
+    mid = len(roes) // 2
+    roe = roes[mid] if len(roes) % 2 else (roes[mid - 1] + roes[mid]) / 2
+
+    payouts = [
+        float(getattr(m, "payout_ratio", None))
+        for m in (metrics or [])
+        if isinstance(getattr(m, "payout_ratio", None), (int, float))
+        and 0.0 <= float(getattr(m, "payout_ratio", None)) <= 1.0
+    ]
+    if payouts:
+        payouts.sort()
+        pmid = len(payouts) // 2
+        payout = payouts[pmid] if len(payouts) % 2 else (payouts[pmid - 1] + payouts[pmid]) / 2
+    else:
+        payout = 0.0
+    retention = 1.0 - payout
+
+    growth = roe * retention
+    if growth <= 0:
+        return None, ""
+    return growth, (
+        f"지속가능 성장률 (ROE 중앙값 {roe:.1%} × 유보율 {retention:.0%}, "
+        f"표본 {len(roes)}개)"
+    )
+
+
 def calculate_forward_intrinsic_value_dcf(
     metrics: list,
     line_items: list,
@@ -662,22 +721,23 @@ def calculate_forward_intrinsic_value_dcf(
     forward_net_income = fwd_eps * shares
     fcff_fwd = forward_net_income * conversion
 
-    # 성장률: 컨센서스가 FY0→FY1 을 함께 주면 그 증가율을, 아니면 기존 DCF 와 같은
-    # 과거 매출 CAGR 을 쓴다. 상한은 두지 않는다(사용자 요청) — 관측된 증가율을
-    # 그대로 쓴다. 대신 그 값을 assumptions 에 실어 화면에서 보이게 한다.
-    growth_source = "과거 매출 CAGR"
-    base_growth = None
-    fy0 = getattr(forward_metrics, "forward_eps_fy0", None)
-    fy1 = getattr(forward_metrics, "forward_eps_fy1", None)
-    if fy0 and fy1 and fy0 > 0:
-        base_growth = fy1 / fy0 - 1
-        growth_source = "컨센서스 FY0→FY1 이익 증가율"
+    # 성장률은 컨센서스 FY0→FY1 증가율을 쓰지 않는다.
+    #
+    # 출발점이 이미 '오른 뒤의 선행 연도'다. 거기에 그 상승을 만들어 낸 증가율을
+    # 10년 더 얹으면 같은 이유를 두 번 세는 것이 된다. 실측(000660.KS): 그렇게
+    # 계산하면 주당 내재가치가 1억 5,912만 원(현재가 165만 원)이 나온다. 12% 상한은
+    # 이 이중 계상을 가려 주던 증상 억제제였고, 상한을 치우자 문제가 드러났다.
+    #
+    # 대신 '그 회사가 재투자해서 실제로 낼 수 있는 성장'만 인정한다.
+    base_growth, growth_source = _sustainable_growth_rate(metrics, line_items)
     if base_growth is None:
         revs = [li.revenue for li in reversed(line_items) if getattr(li, "revenue", None)]
         if len(revs) >= 2 and revs[0] > 0:
             base_growth = (revs[-1] / revs[0]) ** (1 / (len(revs) - 1)) - 1
+            growth_source = "과거 매출 CAGR"
         else:
             base_growth = 0.04
+            growth_source = "기본값 4%"
 
     terminal_growth = 0.025
     years = 10

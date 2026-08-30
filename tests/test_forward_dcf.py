@@ -12,6 +12,7 @@ import pytest
 from types import SimpleNamespace
 
 from src.agents.aswath_damodaran import (
+    _sustainable_growth_rate,
     _discount_fcff_path,
     _historical_fcff_conversion,
     _resolve_share_count,
@@ -90,16 +91,49 @@ def test_forward_dcf_uses_consensus_as_base():
     assert result["assumptions"]["terminal_growth"] == 0.025
 
 
-def test_forward_growth_prefers_consensus_fy0_to_fy1():
+def test_forward_growth_never_reuses_the_consensus_jump():
+    """FY0→FY1 증가율을 성장률로 쓰면 같은 상승을 두 번 센다.
+
+    출발점이 이미 '오른 뒤의 선행 연도'인데 거기에 그 상승률을 10년 더 얹는 셈이다.
+    실측(000660.KS): 그렇게 계산하면 주당 1억 5,912만 원이 나왔다(현재가 165만 원).
+    """
     metrics, items, risk = _sample_inputs()
     result = calculate_forward_intrinsic_value_dcf(
-        metrics, items, risk, _forward(fy0=1.0, fy1=1.08),
+        metrics, items, risk, _forward(fy0=1.0, fy1=5.0),
     )
-    assert result["assumptions"]["growth_source"] == "컨센서스 FY0→FY1 이익 증가율"
-    assert abs(result["assumptions"]["base_growth"] - 0.08) < 1e-9
+    assert "FY0" not in result["assumptions"]["growth_source"]
+    assert result["assumptions"]["base_growth"] < 4.0
 
 
-def test_forward_growth_is_not_capped():
+def test_forward_growth_uses_sustainable_growth_when_roe_is_available():
+    """g = ROE 중앙값 × 유보율. 임의의 상한이 아니라 그 기업 재무에서 나온 값."""
+    metrics, items, risk = _sample_inputs()
+    metrics = [
+        SimpleNamespace(outstanding_shares=1_000, revenue=1_000,
+                        return_on_equity=roe, payout_ratio=0.20)
+        for roe in (0.35, 0.15, 0.04)
+    ]
+    result = calculate_forward_intrinsic_value_dcf(metrics, items, risk, _forward())
+    # 중앙값 15% × 유보율 80% = 12%
+    assert result["assumptions"]["base_growth"] == pytest.approx(0.12)
+    assert "ROE 중앙값" in result["assumptions"]["growth_source"]
+
+
+def test_sustainable_growth_normalizes_across_the_cycle():
+    """최근 ROE 하나만 쓰면 호황 정점이 10년 성장률이 된다."""
+    peak_only = [SimpleNamespace(outstanding_shares=1_000, revenue=1_000,
+                                 return_on_equity=0.35, payout_ratio=0.20)]
+    across_cycle = peak_only + [
+        SimpleNamespace(outstanding_shares=1_000, revenue=1_000,
+                        return_on_equity=roe, payout_ratio=0.20)
+        for roe in (0.15, 0.04)
+    ]
+    peak_g, _ = _sustainable_growth_rate(peak_only)
+    cycle_g, _ = _sustainable_growth_rate(across_cycle)
+    assert cycle_g < peak_g, "사이클을 가로지르면 정점보다 낮아야 한다"
+
+
+def test_forward_growth_has_no_arbitrary_ceiling():
     """관측된 증가율을 그대로 쓴다 — 12% 상한은 제거했다(사용자 요청).
 
     상한이 있으면 사이클 회복 구간의 컨센서스가 잘려 나가 선행 DCF 를 따로 두는
@@ -107,10 +141,11 @@ def test_forward_growth_is_not_capped():
     할인율 ≤ 영구성장률이면 고든 분모가 무너지므로 그때만 미산출로 돌린다.
     """
     metrics, items, risk = _sample_inputs()
-    result = calculate_forward_intrinsic_value_dcf(
-        metrics, items, risk, _forward(fy0=1.0, fy1=5.0),
-    )
-    assert result["assumptions"]["base_growth"] == pytest.approx(4.0)
+    metrics = [SimpleNamespace(outstanding_shares=1_000, revenue=1_000,
+                               return_on_equity=0.40, payout_ratio=0.0)]
+    result = calculate_forward_intrinsic_value_dcf(metrics, items, risk, _forward())
+    # 12% 상한이 남아 있었다면 0.12 로 잘렸을 값.
+    assert result["assumptions"]["base_growth"] == pytest.approx(0.40)
 
 
 def test_forward_dcf_reports_which_forward_eps_it_started_from():
