@@ -8,6 +8,7 @@
   2. 두 경로의 차이는 오직 '출발점'뿐이다 — 할인·감쇠·터미널은 같은 함수를 쓴다.
 """
 
+import pytest
 from types import SimpleNamespace
 
 from src.agents.aswath_damodaran import (
@@ -98,13 +99,38 @@ def test_forward_growth_prefers_consensus_fy0_to_fy1():
     assert abs(result["assumptions"]["base_growth"] - 0.08) < 1e-9
 
 
-def test_forward_growth_is_capped_at_12_percent():
-    """컨센서스가 폭발적 증가를 그려도 영구 성장 가정으로 넘기지 않는다."""
+def test_forward_growth_is_not_capped():
+    """관측된 증가율을 그대로 쓴다 — 12% 상한은 제거했다(사용자 요청).
+
+    상한이 있으면 사이클 회복 구간의 컨센서스가 잘려 나가 선행 DCF 를 따로 두는
+    의미가 줄어든다. 대신 쓰인 증가율을 assumptions 로 내보내 화면에서 보이게 한다.
+    할인율 ≤ 영구성장률이면 고든 분모가 무너지므로 그때만 미산출로 돌린다.
+    """
     metrics, items, risk = _sample_inputs()
     result = calculate_forward_intrinsic_value_dcf(
         metrics, items, risk, _forward(fy0=1.0, fy1=5.0),
     )
-    assert result["assumptions"]["base_growth"] == 0.12
+    assert result["assumptions"]["base_growth"] == pytest.approx(4.0)
+
+
+def test_forward_dcf_reports_which_forward_eps_it_started_from():
+    """화면에 '선행 EPS'가 둘 뜨므로 어느 쪽을 썼는지 밝혀야 대조가 된다."""
+    metrics, items, risk = _sample_inputs()
+    forward = _forward(eps_ttm=0.20)
+    forward.canonical_forward_eps = 0.50   # 증권사 12개월 선행 컨센서스
+    result = calculate_forward_intrinsic_value_dcf(metrics, items, risk, forward)
+    assert result["assumptions"]["forward_eps_source"] == "consensus12m"
+    assert result["assumptions"]["forward_eps_used"] == pytest.approx(0.50)
+
+
+def test_forward_dcf_falls_back_to_the_splice_and_says_so():
+    """진짜 선행치가 없으면 스플라이스를 쓰되, 선행성이 1분기뿐임을 표시한다."""
+    metrics, items, risk = _sample_inputs()
+    result = calculate_forward_intrinsic_value_dcf(
+        metrics, items, risk, _forward(eps_ttm=0.20),
+    )
+    assert result["assumptions"]["forward_eps_source"] == "spliceTtm"
+    assert result["assumptions"]["forward_eps_used"] == pytest.approx(0.20)
 
 
 def test_higher_forward_earnings_raise_intrinsic_value():

@@ -55,6 +55,8 @@ export interface TargetTile {
   labelKey: string;
   sublabelKey: string;
   value: string;
+  /** 값 아래에 붙는 근거 한 줄(예: 어느 선행 EPS 를 출발점으로 썼는지). */
+  note?: string;
   tone: ReportTone;
   sourceAgent?: { key: string; nameKo: string; nameEn: string };
   isFromActiveAgent: boolean;
@@ -109,6 +111,10 @@ export interface CanonicalMetrics {
   intrinsicValue?: CanonicalMetric;
   forwardIntrinsicValue?: CanonicalMetric;   // 선행 컨센서스 기점 FCFF DCF
   forwardMarginOfSafety?: CanonicalMetric;
+  forwardDcfEpsUsed?: CanonicalMetric;       // 선행 DCF 가 출발점으로 쓴 EPS
+  forwardDcfBaseGrowth?: CanonicalMetric;
+  /** 선행 DCF 출발 EPS 의 출처 코드: consensus12m | consensusFy1 | spliceTtm */
+  forwardDcfEpsSource?: string;
   marginOfSafety?: CanonicalMetric;
   interestCoverage?: CanonicalMetric;
   beta?: CanonicalMetric;

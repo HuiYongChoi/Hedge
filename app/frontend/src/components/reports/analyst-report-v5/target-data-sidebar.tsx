@@ -916,6 +916,9 @@ function TargetTileCard({ tile, language }: { tile: TargetTile; language: Report
       <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
         {tile.value}
       </div>
+      {tile.note && (
+        <div className="font-mono text-[10px] text-muted-foreground">{tile.note}</div>
+      )}
       <div className="text-[10px] text-muted-foreground">
         {t(tile.sublabelKey, language)}
       </div>

@@ -316,6 +316,10 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             signal_payload["forward_intrinsic_value_per_share"] = fwd_per_share
             signal_payload["forward_margin_of_safety"] = forward_margin_of_safety
             signal_payload["forward_dcf_assumptions"] = forward_val_analysis.get("assumptions")
+            _fwd_assumptions = forward_val_analysis.get("assumptions") or {}
+            signal_payload["forward_dcf_eps_used"] = _fwd_assumptions.get("forward_eps_used")
+            signal_payload["forward_dcf_eps_source"] = _fwd_assumptions.get("forward_eps_source")
+            signal_payload["forward_dcf_base_growth"] = _fwd_assumptions.get("base_growth")
         elif forward_val_analysis.get("reason"):
             signal_payload["forward_intrinsic_value_note"] = forward_val_analysis["reason"]
 
@@ -592,6 +596,32 @@ def _historical_fcff_conversion(line_items: list) -> tuple[float | None, int]:
     return max(0.3, min(median, 1.5)), len(ratios)
 
 
+#: 선행 DCF 출발점 후보. 앞에 있을수록 '진짜 선행'이다.
+#:
+#: forward_eps_ttm 은 이름과 달리 직전 실제 3분기 + 컨센서스 1분기라, 12개월 창의
+#: 3/4 가 이미 지나간 실적이다. 선행성은 한 분기뿐이다. 그것을 출발점으로 쓰면
+#: '사이클 저점 실적이 영구 성장의 기점이 된다'는 문제가 거의 그대로 남는다.
+#: 그래서 증권사 12개월 선행 컨센서스 → 다음 회계연도 컨센서스 → 스플라이스 순으로 본다.
+FORWARD_START_EPS_CANDIDATES = (
+    ("canonical_forward_eps", "consensus12m"),
+    ("forward_eps_fy1", "consensusFy1"),
+    ("forward_eps_ttm", "spliceTtm"),
+)
+
+
+def _resolve_forward_start_eps(forward_metrics) -> tuple[float | None, str | None]:
+    """(출발 EPS, 출처 코드). 가장 앞선 전망부터 찾는다."""
+    for field, source in FORWARD_START_EPS_CANDIDATES:
+        value = getattr(forward_metrics, field, None)
+        try:
+            value = float(value) if value is not None else None
+        except (TypeError, ValueError):
+            value = None
+        if value and value > 0:
+            return value, source
+    return None, None
+
+
 def calculate_forward_intrinsic_value_dcf(
     metrics: list,
     line_items: list,
@@ -617,7 +647,7 @@ def calculate_forward_intrinsic_value_dcf(
     if forward_metrics is None:
         return {"intrinsic_value": None, "reason": "선행 컨센서스가 없어 선행 DCF 미산출"}
 
-    fwd_eps = getattr(forward_metrics, "forward_eps_ttm", None)
+    fwd_eps, eps_source = _resolve_forward_start_eps(forward_metrics)
     if not fwd_eps or fwd_eps <= 0:
         return {"intrinsic_value": None, "reason": "선행 EPS 가 없거나 적자 전망이라 선행 DCF 미산출"}
 
@@ -633,18 +663,19 @@ def calculate_forward_intrinsic_value_dcf(
     fcff_fwd = forward_net_income * conversion
 
     # 성장률: 컨센서스가 FY0→FY1 을 함께 주면 그 증가율을, 아니면 기존 DCF 와 같은
-    # 과거 매출 CAGR 을 쓴다. 어느 쪽이든 12% 상한은 동일하게 적용한다.
+    # 과거 매출 CAGR 을 쓴다. 상한은 두지 않는다(사용자 요청) — 관측된 증가율을
+    # 그대로 쓴다. 대신 그 값을 assumptions 에 실어 화면에서 보이게 한다.
     growth_source = "과거 매출 CAGR"
     base_growth = None
     fy0 = getattr(forward_metrics, "forward_eps_fy0", None)
     fy1 = getattr(forward_metrics, "forward_eps_fy1", None)
     if fy0 and fy1 and fy0 > 0:
-        base_growth = min(fy1 / fy0 - 1, 0.12)
+        base_growth = fy1 / fy0 - 1
         growth_source = "컨센서스 FY0→FY1 이익 증가율"
     if base_growth is None:
         revs = [li.revenue for li in reversed(line_items) if getattr(li, "revenue", None)]
         if len(revs) >= 2 and revs[0] > 0:
-            base_growth = min((revs[-1] / revs[0]) ** (1 / (len(revs) - 1)) - 1, 0.12)
+            base_growth = (revs[-1] / revs[0]) ** (1 / (len(revs) - 1)) - 1
         else:
             base_growth = 0.04
 
@@ -668,6 +699,11 @@ def calculate_forward_intrinsic_value_dcf(
         "intrinsic_per_share": equity_value / shares,
         "assumptions": {
             "forward_eps_ttm": fwd_eps,
+            # 어떤 선행 EPS 를 출발점으로 삼았는지. 화면에 같은 값이 두 개 뜨는데
+            # (증권사 12M 컨센 vs 3분기 실적+1분기 컨센 스플라이스) 어느 쪽을 썼는지
+            # 안 밝히면 독자가 두 숫자를 대조할 방법이 없다.
+            "forward_eps_used": fwd_eps,
+            "forward_eps_source": eps_source,
             "forward_net_income": forward_net_income,
             "fcff_conversion": conversion,
             "fcff_conversion_samples": sample_n,
@@ -718,7 +754,8 @@ def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis
     if len(revs) < 2:
         revs = [m.revenue for m in reversed(metrics) if hasattr(m, "revenue") and m.revenue]
     if len(revs) >= 2 and revs[0] > 0:
-        base_growth = min((revs[-1] / revs[0]) ** (1 / (len(revs) - 1)) - 1, 0.12)
+        # 12% 상한 제거(사용자 요청) — 관측된 과거 매출 CAGR 을 그대로 쓴다.
+        base_growth = (revs[-1] / revs[0]) ** (1 / (len(revs) - 1)) - 1
     else:
         base_growth = 0.04  # fallback
 
