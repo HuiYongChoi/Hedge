@@ -622,62 +622,113 @@ def _resolve_forward_start_eps(forward_metrics) -> tuple[float | None, str | Non
     return None, None
 
 
-def _sustainable_growth_rate(metrics: list, line_items: list | None = None) -> tuple[float | None, str]:
-    """g = ROE × 유보율. (성장률, 출처 설명) — 못 구하면 (None, "").
+#: 유효세율을 못 구했을 때 쓸 값. 한국 법인세 실효 수준.
+DEFAULT_TAX_RATE = 0.25
 
-    다모다란 본인 방식이다. 성장은 공짜로 오지 않는다 — 벌어들인 것 중 회사에
-    남겨 둔 몫(유보)을 자기자본수익률만큼 굴려야 나온다. 임의의 12% 같은 숫자가
-    아니라 그 기업의 재무에서 나오는 값이라, 종목마다 다르고 근거를 댈 수 있다.
+
+def _effective_tax_rate(li) -> float:
+    """세전이익 대비 실제로 낸 세금 비율. 이상하면 기본값.
+
+    세율을 상수로 박으면 세후영업이익이 실제와 어긋나고, 그 오차가 ROIC 를 통해
+    성장률까지 번진다. 그 해의 손익에서 직접 뽑되, 말이 안 되는 값은 버린다.
     """
-    # 최근 ROE 한 개가 아니라 확보된 기간의 중앙값을 쓴다.
+    ebit = getattr(li, "ebit", None) or getattr(li, "operating_income", None)
+    interest = getattr(li, "interest_expense", None) or 0.0
+    net_income = getattr(li, "net_income", None)
+    if not isinstance(ebit, (int, float)) or not isinstance(net_income, (int, float)):
+        return DEFAULT_TAX_RATE
+    pretax = float(ebit) - float(interest)
+    if pretax <= 0:
+        return DEFAULT_TAX_RATE
+    rate = 1.0 - float(net_income) / pretax
+    return rate if 0.0 <= rate <= 0.45 else DEFAULT_TAX_RATE
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def _sustainable_growth_rate(metrics: list, line_items: list | None = None) -> tuple[float | None, str]:
+    """g = 재투자율 × ROIC. (성장률, 출처 설명) — 못 구하면 (None, "").
+
+    왜 이 식인가
+        다모다란이 FCFF DCF 에 쓰는 식이다. 성장은 공짜로 오지 않는다 — 번 돈을
+        설비·운전자본에 다시 넣고(재투자율), 그 자본이 얼마를 벌어오느냐(ROIC)의
+        곱이 성장이다.
+
+        ROE × 유보율은 같은 논리의 '주주 몫' 판본(FCFE)이다. 지금 모델은 기업 전체
+        현금흐름(FCFF)을 할인하므로 짝이 맞지 않는다. 게다가 배당 자료를 안 받아
+        와 유보율이 99% 로 잡혀(실측) 성장률이 부풀었다.
+
+    사이클 정규화
+        연도별로 각각 구해 중앙값을 쓴다. 정점 한 해만 보면 그 정점이 10년 성장률이
+        된다 — 출발점(선행 컨센서스)도 정점인데 성장률까지 정점이면 같은 호황을
+        두 겹으로 까는 셈이다.
+
+    재투자율을 어디서 구하나
+        정석은 (CapEx − 감가상각 + 운전자본 증감) ÷ 세후영업이익이다. 그런데
+        감가상각이 자료에 아예 없다(실측: DART 8개 연도 전부 None). 그래서
+        투하자본(부채 + 자본 − 현금)의 연도별 증감을 쓴다. 같은 것을 재무상태표
+        쪽에서 본 값이고, 운전자본 증감까지 자동으로 포함된다.
+    """
+    # 연도별 (기간, 투하자본, 세후영업이익).
     #
-    # 사이클 업종에서 최근 ROE 는 호황 정점이거나 불황 저점이다. 정점 ROE 를
-    # 10년 성장률로 굴리면, 출발점(선행 컨센서스)도 정점인데 성장률까지 정점이라
-    # 같은 호황을 두 겹으로 깐 셈이 된다. 중앙값은 사이클을 가로질러 정규화한다.
-    # 연도별 손익·자본에서 ROE 를 직접 계산한다.
-    #
-    # metrics 는 시점 스냅샷 한 줄만 오는 경우가 많아(실측: 표본 1개) 그것만 보면
-    # '중앙값'이 사실상 최근값이 되어 정규화가 되지 않는다. line_items 는 연 단위로
-    # 여러 해가 들어오므로 사이클을 실제로 가로지를 수 있다.
-    roes = []
+    # 손실 연도를 빼면 안 된다. 사이클 업종에서 적자 해는 예외가 아니라 사이클의
+    # 절반이다. 빼고 나면 남는 것은 호황 구간뿐이고, 그 중앙값을 10년 성장률로
+    # 쓰면 출발점(선행 컨센서스)도 정점, 성장률도 정점이 된다.
+    # 실측(000660.KS): 적자 해를 뺐더니 재투자율이 상한 100% 에 붙고 g 24.7% 가 나왔다.
+    rows: list[tuple[str, float, float]] = []
     for li in (line_items or []):
-        ni = getattr(li, "net_income", None)
-        eq = getattr(li, "shareholders_equity", None)
-        if isinstance(ni, (int, float)) and isinstance(eq, (int, float)) and eq > 0 and ni > 0:
-            roes.append(float(ni) / float(eq))
-    if not roes:
-        roes = [
-            float(getattr(m, "return_on_equity", None))
-            for m in (metrics or [])
-            if isinstance(getattr(m, "return_on_equity", None), (int, float))
-        ]
-    roes = [r for r in roes if r > 0]
-    if not roes:
+        ebit = getattr(li, "ebit", None)
+        if not isinstance(ebit, (int, float)):
+            ebit = getattr(li, "operating_income", None)
+        debt = getattr(li, "total_debt", None)
+        equity = getattr(li, "shareholders_equity", None)
+        cash = getattr(li, "cash_and_equivalents", None) or 0.0
+        if not isinstance(ebit, (int, float)):
+            continue
+        if not isinstance(debt, (int, float)) or not isinstance(equity, (int, float)):
+            continue
+        invested = float(debt) + float(equity) - float(cash)
+        if invested <= 0:
+            continue
+        # 적자 해의 세후영업이익은 세금이 붙지 않는다(이월결손). 그대로 음수로 둔다.
+        nopat = float(ebit) * (1.0 - _effective_tax_rate(li)) if ebit > 0 else float(ebit)
+        rows.append((str(getattr(li, "report_period", "") or ""), invested, nopat))
+
+    # 같은 기간이 TTM 과 연간으로 두 번 들어오면 증감이 0 으로 찍힌다. 기간별로 하나만.
+    unique: dict[str, tuple[float, float]] = {}
+    for period, invested, nopat in rows:
+        unique.setdefault(period, (invested, nopat))
+    ordered = [unique[k] for k in sorted(unique, reverse=True)]   # 최신 → 과거
+    if len(ordered) < 2:
         return None, ""
-    roes.sort()
-    mid = len(roes) // 2
-    roe = roes[mid] if len(roes) % 2 else (roes[mid - 1] + roes[mid]) / 2
 
-    payouts = [
-        float(getattr(m, "payout_ratio", None))
-        for m in (metrics or [])
-        if isinstance(getattr(m, "payout_ratio", None), (int, float))
-        and 0.0 <= float(getattr(m, "payout_ratio", None)) <= 1.0
-    ]
-    if payouts:
-        payouts.sort()
-        pmid = len(payouts) // 2
-        payout = payouts[pmid] if len(payouts) % 2 else (payouts[pmid - 1] + payouts[pmid]) / 2
-    else:
-        payout = 0.0
-    retention = 1.0 - payout
+    # 정규화 ROIC: 사이클 전체의 평균 수익 ÷ 평균 투하자본.
+    # 연도별 ROIC 의 중앙값이 아니라 합계 기준이라, 적자 해가 실제 무게만큼 반영된다.
+    mean_nopat = sum(nopat for _, nopat in ordered) / len(ordered)
+    mean_invested = sum(invested for invested, _ in ordered) / len(ordered)
+    if mean_invested <= 0 or mean_nopat <= 0:
+        return None, ""
+    roic = mean_nopat / mean_invested
 
-    growth = roe * retention
+    # 재투자율: 그 기간에 늘린 투하자본 ÷ 그 기간에 번 세후영업이익 합계.
+    total_nopat = sum(nopat for _, nopat in ordered)
+    invested_growth = ordered[0][0] - ordered[-1][0]
+    if total_nopat <= 0:
+        return None, ""
+    reinvestment = max(0.0, min(invested_growth / total_nopat, 1.0))
+
+    growth = reinvestment * roic
     if growth <= 0:
         return None, ""
     return growth, (
-        f"지속가능 성장률 (ROE 중앙값 {roe:.1%} × 유보율 {retention:.0%}, "
-        f"표본 {len(roes)}개)"
+        f"지속가능 성장률 (재투자율 {reinvestment:.0%} × 정규화 ROIC {roic:.1%}, "
+        f"사이클 {len(ordered)}개 연도, 적자 연도 포함)"
     )
 
 
@@ -810,14 +861,24 @@ def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis
         return {"intrinsic_value": None, "details": ["N/A: FCFF 또는 주식 수가 없어 DCF는 보조 지표로만 취급"]}
 
     # Growth assumptions
-    revs = [li.revenue for li in reversed(line_items) if getattr(li, "revenue", None)]
-    if len(revs) < 2:
-        revs = [m.revenue for m in reversed(metrics) if hasattr(m, "revenue") and m.revenue]
-    if len(revs) >= 2 and revs[0] > 0:
-        # 12% 상한 제거(사용자 요청) — 관측된 과거 매출 CAGR 을 그대로 쓴다.
-        base_growth = (revs[-1] / revs[0]) ** (1 / (len(revs) - 1)) - 1
-    else:
-        base_growth = 0.04  # fallback
+    #
+    # 선행 DCF 와 같은 기준을 쓴다(재투자율 × 정규화 ROIC). 두 값은 같은 화면에
+    # 나란히 뜨는데 성장률 기준이 서로 다르면, 둘의 차이가 '출발점 차이'인지
+    # '성장 가정 차이'인지 독자가 구분할 수 없다.
+    #
+    # 과거 매출 CAGR 은 폴백으로 남긴다. 다만 사이클 저점에서 정점까지를 그대로
+    # 연평균으로 만든 값이라, 상한이 없으면 호황을 영구화하기 쉽다.
+    base_growth, growth_source = _sustainable_growth_rate(metrics, line_items)
+    if base_growth is None:
+        revs = [li.revenue for li in reversed(line_items) if getattr(li, "revenue", None)]
+        if len(revs) < 2:
+            revs = [m.revenue for m in reversed(metrics) if hasattr(m, "revenue") and m.revenue]
+        if len(revs) >= 2 and revs[0] > 0:
+            base_growth = (revs[-1] / revs[0]) ** (1 / (len(revs) - 1)) - 1
+            growth_source = "과거 매출 CAGR"
+        else:
+            base_growth = 0.04
+            growth_source = "기본값 4%"
 
     terminal_growth = 0.025
     years = 10
@@ -840,6 +901,7 @@ def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis
         "assumptions": {
             "base_fcff": fcff0,
             "base_growth": base_growth,
+            "growth_source": growth_source,
             "terminal_growth": terminal_growth,
             "discount_rate": discount,
             "projection_years": years,

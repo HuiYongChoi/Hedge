@@ -8,6 +8,7 @@
   2. 두 경로의 차이는 오직 '출발점'뿐이다 — 할인·감쇠·터미널은 같은 함수를 쓴다.
 """
 
+from pathlib import Path
 import pytest
 from types import SimpleNamespace
 
@@ -24,6 +25,9 @@ from src.agents.aswath_damodaran import (
 def _line_item(**kwargs):
     base = dict(
         revenue=None, free_cash_flow=None, net_income=None, outstanding_shares=None,
+        ebit=None, operating_income=None, total_debt=None, shareholders_equity=None,
+        cash_and_equivalents=None, interest_expense=None, report_period=None,
+        capital_expenditure=None, depreciation_and_amortization=None,
     )
     base.update(kwargs)
     return SimpleNamespace(**base)
@@ -105,47 +109,60 @@ def test_forward_growth_never_reuses_the_consensus_jump():
     assert result["assumptions"]["base_growth"] < 4.0
 
 
-def test_forward_growth_uses_sustainable_growth_when_roe_is_available():
-    """g = ROE 중앙값 × 유보율. 임의의 상한이 아니라 그 기업 재무에서 나온 값."""
-    metrics, items, risk = _sample_inputs()
-    metrics = [
-        SimpleNamespace(outstanding_shares=1_000, revenue=1_000,
-                        return_on_equity=roe, payout_ratio=0.20)
-        for roe in (0.35, 0.15, 0.04)
-    ]
-    result = calculate_forward_intrinsic_value_dcf(metrics, items, risk, _forward())
-    # 중앙값 15% × 유보율 80% = 12%
-    assert result["assumptions"]["base_growth"] == pytest.approx(0.12)
-    assert "ROE 중앙값" in result["assumptions"]["growth_source"]
+def _cycle_items(ebits, *, equity=1_000.0, debt=200.0, cash=100.0, growing=True, equity_step=100.0):
+    """사이클 손익 + 연도별 투하자본. 최신이 앞."""
+    items = []
+    for index, ebit in enumerate(ebits):
+        items.append(_line_item(
+            report_period=f"{2025 - index}-12-31",
+            ebit=ebit, operating_income=ebit,
+            net_income=ebit * 0.75, interest_expense=0.0,
+            total_debt=debt,
+            shareholders_equity=equity - (index * equity_step if growing else 0),
+            cash_and_equivalents=cash,
+            revenue=1_000, free_cash_flow=100, outstanding_shares=1_000,
+        ))
+    return items
 
 
-def test_sustainable_growth_normalizes_across_the_cycle():
-    """최근 ROE 하나만 쓰면 호황 정점이 10년 성장률이 된다."""
-    peak_only = [SimpleNamespace(outstanding_shares=1_000, revenue=1_000,
-                                 return_on_equity=0.35, payout_ratio=0.20)]
-    across_cycle = peak_only + [
-        SimpleNamespace(outstanding_shares=1_000, revenue=1_000,
-                        return_on_equity=roe, payout_ratio=0.20)
-        for roe in (0.15, 0.04)
-    ]
-    peak_g, _ = _sustainable_growth_rate(peak_only)
-    cycle_g, _ = _sustainable_growth_rate(across_cycle)
-    assert cycle_g < peak_g, "사이클을 가로지르면 정점보다 낮아야 한다"
+def test_growth_uses_reinvestment_times_roic():
+    """FCFF DCF 의 성장은 재투자율 × ROIC 다 — ROE × 유보율은 주주 몫(FCFE) 판본이다."""
+    items = _cycle_items([200.0, 180.0, 160.0, 140.0])
+    growth, source = _sustainable_growth_rate([], items)
+    assert growth is not None
+    assert "재투자율" in source and "ROIC" in source
+    assert 0 < growth < 1
 
 
-def test_forward_growth_has_no_arbitrary_ceiling():
-    """관측된 증가율을 그대로 쓴다 — 12% 상한은 제거했다(사용자 요청).
+def test_growth_keeps_loss_years_in_the_cycle():
+    """적자 해를 빼면 남는 건 호황뿐이고, 그 호황이 10년 성장률이 된다.
 
-    상한이 있으면 사이클 회복 구간의 컨센서스가 잘려 나가 선행 DCF 를 따로 두는
-    의미가 줄어든다. 대신 쓰인 증가율을 assumptions 로 내보내 화면에서 보이게 한다.
-    할인율 ≤ 영구성장률이면 고든 분모가 무너지므로 그때만 미산출로 돌린다.
+    실측(000660.KS): 적자 해를 뺐더니 재투자율이 상한 100% 에 붙고 g 24.7% 가
+    나왔다. 포함하니 14.8% 로 내려갔다.
     """
-    metrics, items, risk = _sample_inputs()
-    metrics = [SimpleNamespace(outstanding_shares=1_000, revenue=1_000,
-                               return_on_equity=0.40, payout_ratio=0.0)]
-    result = calculate_forward_intrinsic_value_dcf(metrics, items, risk, _forward())
-    # 12% 상한이 남아 있었다면 0.12 로 잘렸을 값.
-    assert result["assumptions"]["base_growth"] == pytest.approx(0.40)
+    with_loss = _sustainable_growth_rate([], _cycle_items([200.0, 180.0, -150.0, 140.0]))[0]
+    boom_only = _sustainable_growth_rate([], _cycle_items([200.0, 180.0, 140.0]))[0]
+    assert with_loss is not None and boom_only is not None
+    assert with_loss < boom_only, "적자 해가 성장률을 끌어내려야 한다"
+
+
+def test_growth_has_no_arbitrary_ceiling():
+    """12% 상한은 없앴다 — 재무가 그렇게 말하면 12% 를 넘어도 된다."""
+    # 번 돈을 전부 재투자하고(재투자율 100%) 그 자본이 20%대를 벌어오는 회사.
+    items = _cycle_items([400.0] * 4, equity=2_000.0, equity_step=400.0)
+    growth, _ = _sustainable_growth_rate([], items)
+    assert growth > 0.12, growth
+
+
+def test_growth_is_none_without_enough_years():
+    """한 해만으로는 투하자본 증감을 볼 수 없다 — 지어내지 않고 폴백에 맡긴다."""
+    assert _sustainable_growth_rate([], _cycle_items([200.0]))[0] is None
+
+
+def test_both_dcf_engines_share_the_same_growth_basis():
+    """같은 화면의 두 적정가가 서로 다른 성장 가정을 쓰면 폭을 읽을 수 없다."""
+    source = (Path(__file__).resolve().parents[1] / "src/agents/aswath_damodaran.py").read_text(encoding="utf-8")
+    assert source.count("_sustainable_growth_rate(metrics, line_items)") == 2
 
 
 def test_forward_dcf_reports_which_forward_eps_it_started_from():
