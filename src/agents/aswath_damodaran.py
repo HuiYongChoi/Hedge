@@ -116,6 +116,11 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         trailing_pe = getattr(metrics[0], "price_to_earnings_ratio", None) if metrics else None
         forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
 
+        progress.update_status(agent_id, ticker, "Calculating forward intrinsic value")
+        forward_val_analysis = calculate_forward_intrinsic_value_dcf(
+            metrics, line_items, risk_analysis, forward_metrics
+        )
+
         # ─── Score & margin of safety ──────────────────────────────────────────
         _components = [growth_analysis, risk_analysis, relative_val_analysis]
         _agg = aggregate_scores(_components)
@@ -142,6 +147,13 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         else:
             signal = "neutral"
 
+        # 선행 DCF 의 안전마진. 기존 안전마진과 같은 식이되 출발 실적만 다르다.
+        forward_intrinsic = forward_val_analysis.get("intrinsic_value")
+        forward_margin_of_safety = (
+            (forward_intrinsic - market_cap) / market_cap
+            if forward_intrinsic and market_cap else None
+        )
+
         # 내재가치만 던지면 독자가 시가총액을 찾아 직접 나눠 봐야 한다.
         # '얼마 vs 얼마 → 그래서 싼가 비싼가'를 여기서 문장으로 만들어 둔다.
         gap_text = describe_valuation_gap(intrinsic_value, market_cap, margin_of_safety)
@@ -159,6 +171,14 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             "data_coverage": _coverage,
             "raw_max_score": _raw_max,
             "margin_of_safety": margin_of_safety,
+            # 안전마진 숫자만 보면 어디서 나온 값인지 알 수 없다. 화면이 숫자 뒤에
+            # 근거를 붙일 수 있도록 분자·분모를 그대로 실어 보낸다.
+            "margin_of_safety_basis": {
+                "intrinsic_value": intrinsic_value,
+                "market_cap": market_cap,
+            } if intrinsic_value and market_cap else None,
+            "forward_margin_of_safety": forward_margin_of_safety,
+            "forward_val_analysis": forward_val_analysis,
             "growth_analysis": growth_analysis,
             "risk_analysis": risk_analysis,
             "relative_val_analysis": relative_val_analysis,
@@ -287,6 +307,26 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         per_share_iv = intrinsic_val_analysis.get("intrinsic_per_share")
         if per_share_iv is not None:
             signal_payload["intrinsic_value_per_share"] = per_share_iv
+
+        # 선행 DCF 도 같은 이유로 구조화해서 내보낸다 — 서술에서 긁어오면 문구가
+        # 바뀔 때마다 값이 사라진다. 미산출이면 사유를 함께 실어, 화면이
+        # "왜 비어 있는지"를 말할 수 있게 한다.
+        fwd_per_share = forward_val_analysis.get("intrinsic_per_share")
+        if fwd_per_share is not None:
+            signal_payload["forward_intrinsic_value_per_share"] = fwd_per_share
+            signal_payload["forward_margin_of_safety"] = forward_margin_of_safety
+            signal_payload["forward_dcf_assumptions"] = forward_val_analysis.get("assumptions")
+        elif forward_val_analysis.get("reason"):
+            signal_payload["forward_intrinsic_value_note"] = forward_val_analysis["reason"]
+
+        # 안전마진은 화면에서 숫자 하나로만 보인다. 어떤 두 수를 나눈 결과인지
+        # 함께 보내, 독자가 -178% 같은 값을 만났을 때 근거를 되짚을 수 있게 한다.
+        if margin_of_safety is not None:
+            signal_payload["margin_of_safety"] = margin_of_safety
+        basis = analysis_data[ticker].get("margin_of_safety_basis")
+        if basis:
+            signal_payload["margin_of_safety_basis"] = basis
+
         signal_payload["valuation_confidence"] = valuation_confidence
         damodaran_signals[ticker] = signal_payload
 
@@ -477,6 +517,175 @@ def analyze_relative_valuation(metrics: list) -> dict[str, any]:
 # ────────────────────────────────────────────────────────────────────────────────
 # Intrinsic value via FCFF DCF (Damodaran style)
 # ────────────────────────────────────────────────────────────────────────────────
+def _resolve_share_count(metrics: list, line_items: list) -> float | None:
+    """시가총액과 같은 주식 수 기준을 쓴다.
+
+    TTM 라인아이템의 outstanding_shares 는 분기 합(약 4배)으로 들어오는 경우가 있어
+    주당 가치를 그만큼 눌러 버린다(MU: 4.54B 합계 vs 실제 1.13B → $18.87 vs $75.88).
+    metrics[0] 쪽이 시점 스냅샷이라 시가총액과 정합적이다.
+    """
+    shares = getattr(metrics[0], "outstanding_shares", None) if metrics else None
+    if shares and shares > 0:
+        return shares
+    latest = line_items[0] if line_items else None
+    shares = getattr(latest, "outstanding_shares", None) if latest else None
+    return shares if shares and shares > 0 else None
+
+
+def _discount_fcff_path(
+    fcff0: float,
+    base_growth: float,
+    discount: float,
+    years: int,
+    terminal_growth: float,
+) -> tuple[float, float] | None:
+    """FCFF 를 years 년 투영·할인하고 고든 터미널을 붙인다. (현재가치합, 터미널현재가치).
+
+    기존 DCF 와 선행 DCF 가 '출발점'만 다르고 나머지는 같아야 하므로,
+    투영·감쇠·터미널 계산은 여기 한 벌만 둔다. 두 벌로 나뉘면 한쪽만 고쳐져
+    같은 리포트에 서로 다른 규칙으로 계산된 두 적정가가 나란히 뜬다.
+    """
+    if discount <= terminal_growth:
+        return None  # 고든 분모가 0 이하 → 적정가가 무한대로 발산한다
+
+    pv_sum = 0.0
+    fcff_t = fcff0
+    g = base_growth
+    g_step = (terminal_growth - base_growth) / (years - 1)
+    for yr in range(1, years + 1):
+        fcff_t *= (1 + g)
+        pv_sum += fcff_t / (1 + discount) ** yr
+        g += g_step
+
+    tv = (
+        fcff_t
+        * (1 + terminal_growth)
+        / (discount - terminal_growth)
+        / (1 + discount) ** years
+    )
+    return pv_sum, tv
+
+
+def _historical_fcff_conversion(line_items: list) -> tuple[float | None, int]:
+    """과거 'FCFF ÷ 순이익' 중앙값과 표본 수.
+
+    선행 컨센서스는 EPS(이익)로만 온다. DCF 는 현금흐름을 받는다.
+    그 사이를 잇는 유일한 가정이 이 전환율이므로, 상수로 박지 않고
+    그 기업의 실제 이력에서 뽑아 쓰고 assumptions 에 그대로 노출한다.
+    """
+    ratios = []
+    for li in line_items:
+        fcf = getattr(li, "free_cash_flow", None)
+        ni = getattr(li, "net_income", None)
+        if not fcf or not ni or ni <= 0:
+            continue
+        r = fcf / ni
+        # 일회성 항목이 낀 해는 전환율이 튄다. 극단값은 중앙값 계산에서 뺀다.
+        if 0.0 < r < 3.0:
+            ratios.append(r)
+    if not ratios:
+        return None, 0
+    ratios.sort()
+    mid = len(ratios) // 2
+    median = ratios[mid] if len(ratios) % 2 else (ratios[mid - 1] + ratios[mid]) / 2
+    # 전환율이 1을 크게 넘으면 감가상각이 큰 해를 영구화하는 셈이 된다. 상한을 둔다.
+    return max(0.3, min(median, 1.5)), len(ratios)
+
+
+def calculate_forward_intrinsic_value_dcf(
+    metrics: list,
+    line_items: list,
+    risk_analysis: dict,
+    forward_metrics,
+) -> dict[str, any]:
+    """선행 컨센서스 이익을 출발점으로 삼는 FCFF DCF.
+
+    왜 따로 두는가
+        기존 DCF 의 base FCFF 는 '지나간 실적'이다. 사이클 업종에서는 저점 현금흐름이
+        영구 성장의 출발점이 되어 내재가치가 구조적으로 눌린다(반대로 정점 실적이
+        출발점이면 부풀려진다). 같은 화면에 선행 PER 4.2 와 후행 PER 29.3 이 함께
+        떠 있는데 DCF 만 후행을 보고 있으면, 독자는 두 숫자가 왜 다른지 알 수 없다.
+
+    무엇을 바꾸고 무엇을 그대로 두는가
+        · 출발점만 선행 컨센서스로 교체한다.
+        · 할인율·감쇠·터미널·투영기간은 기존 DCF 와 완전히 동일하게 쓴다.
+          둘의 차이가 오직 '어느 실적을 출발점으로 봤는가'가 되도록 하기 위함이다.
+
+    기존 DCF 를 대체하지 않는다. 컨센서스는 상향 편향이 있고 컨센서스가 틀리면
+    이 값도 함께 틀린다. 두 값을 나란히 놓고 폭을 보는 것이 이 함수의 목적이다.
+    """
+    if forward_metrics is None:
+        return {"intrinsic_value": None, "reason": "선행 컨센서스가 없어 선행 DCF 미산출"}
+
+    fwd_eps = getattr(forward_metrics, "forward_eps_ttm", None)
+    if not fwd_eps or fwd_eps <= 0:
+        return {"intrinsic_value": None, "reason": "선행 EPS 가 없거나 적자 전망이라 선행 DCF 미산출"}
+
+    shares = _resolve_share_count(metrics, line_items)
+    if not shares:
+        return {"intrinsic_value": None, "reason": "주식 수를 확인하지 못해 선행 DCF 미산출"}
+
+    conversion, sample_n = _historical_fcff_conversion(line_items)
+    if conversion is None:
+        return {"intrinsic_value": None, "reason": "과거 현금전환율 표본이 없어 이익→현금흐름 환산 불가"}
+
+    forward_net_income = fwd_eps * shares
+    fcff_fwd = forward_net_income * conversion
+
+    # 성장률: 컨센서스가 FY0→FY1 을 함께 주면 그 증가율을, 아니면 기존 DCF 와 같은
+    # 과거 매출 CAGR 을 쓴다. 어느 쪽이든 12% 상한은 동일하게 적용한다.
+    growth_source = "과거 매출 CAGR"
+    base_growth = None
+    fy0 = getattr(forward_metrics, "forward_eps_fy0", None)
+    fy1 = getattr(forward_metrics, "forward_eps_fy1", None)
+    if fy0 and fy1 and fy0 > 0:
+        base_growth = min(fy1 / fy0 - 1, 0.12)
+        growth_source = "컨센서스 FY0→FY1 이익 증가율"
+    if base_growth is None:
+        revs = [li.revenue for li in reversed(line_items) if getattr(li, "revenue", None)]
+        if len(revs) >= 2 and revs[0] > 0:
+            base_growth = min((revs[-1] / revs[0]) ** (1 / (len(revs) - 1)) - 1, 0.12)
+        else:
+            base_growth = 0.04
+
+    terminal_growth = 0.025
+    years = 10
+    discount = risk_analysis.get("cost_of_equity") or 0.09
+
+    # 컨센서스 증가율이 영구성장률보다 낮게 나오면 감쇠 방향이 뒤집힌다.
+    # 그 경우 감쇠 없이 영구성장률로 평탄하게 간다.
+    base_growth = max(base_growth, terminal_growth)
+
+    projected = _discount_fcff_path(fcff_fwd, base_growth, discount, years, terminal_growth)
+    if projected is None:
+        return {"intrinsic_value": None, "reason": "할인율이 영구성장률 이하라 선행 DCF 미산출"}
+
+    pv_sum, tv = projected
+    equity_value = pv_sum + tv
+
+    return {
+        "intrinsic_value": equity_value,
+        "intrinsic_per_share": equity_value / shares,
+        "assumptions": {
+            "forward_eps_ttm": fwd_eps,
+            "forward_net_income": forward_net_income,
+            "fcff_conversion": conversion,
+            "fcff_conversion_samples": sample_n,
+            "base_fcff": fcff_fwd,
+            "base_growth": base_growth,
+            "growth_source": growth_source,
+            "terminal_growth": terminal_growth,
+            "discount_rate": discount,
+            "projection_years": years,
+            "confidence": getattr(forward_metrics, "confidence", None),
+        },
+        "details": [
+            f"선행 FCFF DCF 산출 완료 — 출발 현금흐름은 선행 EPS×주식수×현금전환율 "
+            f"{conversion:.2f}(과거 {sample_n}개 표본 중앙값), 성장률 출처는 {growth_source}"
+        ],
+    }
+
+
 def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis: dict) -> dict[str, any]:
     """
     FCFF DCF with:
@@ -519,26 +728,11 @@ def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis
     # Discount rate
     discount = risk_analysis.get("cost_of_equity") or 0.09
 
-    # Project FCFF and discount. FCFF compounds year over year while the growth
-    # rate fades linearly from base_growth to terminal_growth, so the final year
-    # reflects the full cumulative growth rather than a flat multiple of fcff0.
-    pv_sum = 0.0
-    fcff_t = fcff0
-    g = base_growth
-    g_step = (terminal_growth - base_growth) / (years - 1)
-    for yr in range(1, years + 1):
-        fcff_t *= (1 + g)
-        pv_sum += fcff_t / (1 + discount) ** yr
-        g += g_step
-
-    # Terminal value (Gordon growth) anchored to the final projected year's FCFF,
-    # grown one more period at the terminal rate, then discounted back.
-    tv = (
-        fcff_t
-        * (1 + terminal_growth)
-        / (discount - terminal_growth)
-        / (1 + discount) ** years
-    )
+    # 투영·감쇠·터미널은 선행 DCF 와 같은 함수를 쓴다. 두 벌로 두면 한쪽만 고쳐진다.
+    projected = _discount_fcff_path(fcff0, base_growth, discount, years, terminal_growth)
+    if projected is None:
+        return {"intrinsic_value": None, "details": ["N/A: 할인율이 영구성장률 이하라 DCF 발산"]}
+    pv_sum, tv = projected
 
     equity_value = pv_sum + tv
     intrinsic_per_share = equity_value / shares

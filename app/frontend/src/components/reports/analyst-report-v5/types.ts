@@ -107,6 +107,8 @@ export interface CanonicalMetrics {
   forwardEpsFy1?: CanonicalMetric;      // ▣ FY+N EPS
   forwardEpsTtm?: CanonicalMetric;
   intrinsicValue?: CanonicalMetric;
+  forwardIntrinsicValue?: CanonicalMetric;   // 선행 컨센서스 기점 FCFF DCF
+  forwardMarginOfSafety?: CanonicalMetric;
   marginOfSafety?: CanonicalMetric;
   interestCoverage?: CanonicalMetric;
   beta?: CanonicalMetric;

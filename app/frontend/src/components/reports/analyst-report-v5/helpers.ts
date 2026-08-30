@@ -419,9 +419,16 @@ export function computePbrTrend(
   };
 }
 
+// LLM 이 "-178%%" 처럼 단위를 두 번 찍는 경우가 있다(실측). 값 자체는 맞는데
+// 표기만 깨지므로, 서술을 읽어 들이는 입구에서 한 번만 정리한다.
+// 숫자 뒤에 붙은 연속 %만 접고, "100%% 확실" 같은 문맥도 동일하게 처리된다.
+function collapseDuplicateUnits(text: string): string {
+  return text.replace(/(\d)\s*%\s*%+/g, '$1%');
+}
+
 export function extractReasoningText(reasoning: unknown): string {
   if (!reasoning) return '';
-  if (typeof reasoning === 'string') return reasoning;
+  if (typeof reasoning === 'string') return collapseDuplicateUnits(reasoning);
   if (Array.isArray(reasoning)) return reasoning.map(extractReasoningText).filter(Boolean).join('\n\n');
   if (typeof reasoning === 'object') {
     const record = reasoning as Record<string, any>;
@@ -2575,6 +2582,8 @@ export function buildCanonicalMetrics(
     forwardEpsFy1: metricFromCandidates(reports, activeAgentKey, activeFirst, ['forward_eps_fy1']),
     forwardEpsTtm: metricFromCandidates(reports, activeAgentKey, activeFirst, ['forward_eps_ttm', 'forward_eps']),
     intrinsicValue: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'valuation_analyst', 'aswath_damodaran'], ['intrinsic_value', 'fair_value', 'dcf_value']),
+    forwardIntrinsicValue: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'aswath_damodaran', 'valuation_analyst'], ['forward_intrinsic_value_per_share']),
+    forwardMarginOfSafety: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'aswath_damodaran', 'valuation_analyst'], ['forward_margin_of_safety']),
     marginOfSafety: metricFromCandidates(reports, activeAgentKey, activeFirst, ['margin_of_safety']),
     interestCoverage: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'fundamentals_analyst'], ['interest_coverage', 'interest_coverage_ratio']),
     beta: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'fundamentals_analyst', 'charlie_munger', 'nassim_taleb'], ['beta']),
@@ -3086,7 +3095,8 @@ export function extractTargetTiles(
   const safetyMarginPrice = buildSafetyMarginPrice(metrics);
   const candidates: Array<{ labelKey: string; sublabelKey: string; metric?: CanonicalMetric; tone: ReportTone; formatter?: (value: number) => string }> = [
     { labelKey: 'targetIntrinsicLabel', sublabelKey: 'targetIntrinsicSubtitle', metric: metrics.intrinsicValue, tone: intrinsicTone(metrics.intrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatCurrency(value, currency) },
-    { labelKey: 'targetMarginLabel', sublabelKey: 'targetMarginSubtitle', metric: safetyMarginPrice, tone: marginTone(metrics.marginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, metrics.marginOfSafety?.value ?? null, currency) },
+    { labelKey: 'targetForwardIntrinsicLabel', sublabelKey: 'targetForwardIntrinsicSubtitle', metric: metrics.forwardIntrinsicValue, tone: intrinsicTone(metrics.forwardIntrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatForwardIntrinsic(value, metrics.currentPrice?.value ?? null, currency) },
+    { labelKey: 'targetMarginLabel', sublabelKey: 'targetMarginSubtitle', metric: safetyMarginPrice, tone: marginTone(metrics.marginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, currency) },
     { labelKey: 'targetEpsLabel', sublabelKey: 'targetEpsSubtitle', metric: metrics.forwardEpsTtm || metrics.forwardEpsFy0, tone: 'neutral', formatter: formatPlain },
     { labelKey: 'targetCoverageLabel', sublabelKey: 'targetCoverageSubtitle', metric: metrics.interestCoverage, tone: coverageTone(metrics.interestCoverage?.value ?? null), formatter: formatMultiple },
     { labelKey: 'targetBetaLabel', sublabelKey: 'targetBetaSubtitle', metric: metrics.beta, tone: 'neutral', formatter: formatPlain },
@@ -3170,25 +3180,33 @@ function formatCurrency(value: number, currency = 'USD') {
 function formatMarginTarget(
   safetyMarginPrice: number,
   currentPrice: number | null | undefined,
-  rawMarginOfSafety: number | null | undefined,
   currency: string,
 ) {
-  return formatSafetyMarginTarget(safetyMarginPrice, currentPrice, rawMarginOfSafety, currency);
+  return formatSafetyMarginTarget(safetyMarginPrice, currentPrice, currency);
 }
 
 function formatSafetyMarginTarget(
   safetyMarginPrice: number,
   currentPrice: number | null | undefined,
-  rawMarginOfSafety: number | null | undefined,
   currency: string,
 ) {
   const current = finiteNumber(currentPrice);
-  const relativeToCurrent = finiteNumber(rawMarginOfSafety)
-    ?? (current !== null && current > 0 ? (safetyMarginPrice - current) / current : null);
+  // 표시된 가격(안전가)과 현재가의 실제 갭만 쓴다. rawMarginOfSafety 는 내재가치
+  // 기준 갭이라 여기 붙이면 화면의 두 숫자로 검산이 되지 않는다.
+  const relativeToCurrent = current !== null && current > 0
+    ? (safetyMarginPrice - current) / current
+    : null;
   const pct = relativeToCurrent !== null
     ? ` (${relativeToCurrent > 0 ? '+' : ''}${(relativeToCurrent * 100).toFixed(1)}%)`
     : '';
   return `${formatCurrency(safetyMarginPrice, currency)}${pct}`;
+}
+
+function formatForwardIntrinsic(value: number, currentPrice: number | null | undefined, currency: string) {
+  const current = finiteNumber(currentPrice);
+  const gap = current !== null && current > 0 ? (value - current) / current : null;
+  const pct = gap !== null ? ` (${gap > 0 ? '+' : ''}${(gap * 100).toFixed(1)}%)` : '';
+  return `${formatCurrency(value, currency)}${pct}`;
 }
 
 function formatPercentSmart(value: number) {

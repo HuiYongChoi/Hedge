@@ -15,6 +15,8 @@ interface StickyAnalysisHeaderProps {
   verdictLabelOverride?: string | null;
   verdictConfidence: number | null;
   marginOfSafetyPct: number | null;
+  /** 안전마진의 분자. 숫자 뒤에 "무엇 대비 무엇"인지를 붙이기 위해 받는다. */
+  intrinsicValuePerShare?: number | null;
   wacc: number | null;
   trailingPe?: number | null;
   trailingEps?: number | null;
@@ -99,6 +101,7 @@ export function StickyAnalysisHeader({
   verdictLabelOverride,
   verdictConfidence,
   marginOfSafetyPct,
+  intrinsicValuePerShare,
   wacc,
   trailingPe,
   trailingEps,
@@ -123,6 +126,20 @@ export function StickyAnalysisHeader({
   const primaryTickerLabel = companyName || ticker;
   const secondaryTickerLabel = companyName ? ticker : null;
   const targetMarginLabel = t('targetMarginPctLabel', language);
+
+  // 안전마진은 화면에 퍼센트 하나로만 뜬다. -178% 같은 값을 만나면 독자는 그것이
+  // 계산 오류인지 실제 결과인지 판단할 수 없다. 분자(내재가치)와 분모(현재가)를
+  // 숫자 뒤에 그대로 붙여, 화면 위에서 바로 검산되게 한다.
+  const marginBasisText = (() => {
+    const iv = intrinsicValuePerShare;
+    if (iv === null || iv === undefined || !Number.isFinite(iv)) return null;
+    if (currentPrice === null || !Number.isFinite(currentPrice) || currentPrice <= 0) return null;
+    const ivText = formatCurrency(iv, currency, language);
+    const priceText = formatCurrency(currentPrice, currency, language);
+    return language === 'ko'
+      ? `내재가치 ${ivText} vs 현재가 ${priceText}`
+      : `IV ${ivText} vs price ${priceText}`;
+  })();
 
   return (
     <div
@@ -175,6 +192,9 @@ export function StickyAnalysisHeader({
         ) : (
           <span className="whitespace-nowrap">
             {targetMarginLabel} <span className="font-mono text-foreground">{formatPercent(marginOfSafetyPct, true)}</span>
+            {marginBasisText && (
+              <span className="ml-1 font-mono text-[10px] text-muted-foreground">({marginBasisText})</span>
+            )}
           </span>
         )}
         <span className="hidden text-border sm:inline">·</span>

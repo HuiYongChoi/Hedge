@@ -483,6 +483,7 @@ export function ReportLayout({
       verdictLabelOverride={headlineVerdict.label}
       verdictConfidence={stickyConfidence}
       marginOfSafetyPct={effectiveMarginOfSafety}
+      intrinsicValuePerShare={effectiveMetrics.intrinsicValue?.value ?? null}
       wacc={effectiveMetrics.wacc?.value ?? null}
       trailingPe={liveTarget?.trailing_pe ?? canonicalForwardSnapshot.ttmPer ?? null}
       trailingEps={liveTarget?.trailing_eps ?? null}
