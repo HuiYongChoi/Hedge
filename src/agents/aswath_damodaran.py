@@ -136,6 +136,14 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         forward_val_analysis = calculate_forward_intrinsic_value_dcf(
             metrics, line_items, risk_analysis, forward_metrics, cycle_items=cycle_items,
         )
+        # 사이클 정점을 언제로 보느냐에 따라 값이 4배 갈린다. 가정을 하나 박지 않고
+        # 나란히 낸다(2027/2028/2029 정점).
+        cycle_peak_analysis = calculate_cycle_peak_scenarios(
+            metrics, line_items, risk_analysis, forward_metrics, cycle_items,
+            current_price=(market_cap / metrics[0].outstanding_shares)
+            if metrics and getattr(metrics[0], "outstanding_shares", None) and market_cap else None,
+        )
+
         _quarter_eps = getattr(forward_metrics, "forward_eps_ttm", None) if forward_metrics else None
         forward_quarter_analysis = calculate_forward_intrinsic_value_dcf(
             metrics, line_items, risk_analysis, forward_metrics,
@@ -364,6 +372,13 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
                 _implied = _fwd_eps_used * market_cap / _fwd_value
                 signal_payload["market_implied_eps"] = _implied
                 signal_payload["market_implied_eps_vs_forward"] = _implied / _fwd_eps_used
+
+        if cycle_peak_analysis.get("scenarios"):
+            signal_payload["cycle_peak_scenarios"] = cycle_peak_analysis["scenarios"]
+            signal_payload["cycle_normalization_ratio"] = cycle_peak_analysis.get("normalization_ratio")
+            signal_payload["cycle_normalization_note"] = cycle_peak_analysis.get("normalization_note")
+        elif cycle_peak_analysis.get("reason"):
+            signal_payload["cycle_peak_note"] = cycle_peak_analysis["reason"]
 
         # 분기 기준(3분기 실적 + 1분기 컨센)도 같은 규칙으로 내보낸다.
         _q_per_share = forward_quarter_analysis.get("intrinsic_per_share")
@@ -863,6 +878,115 @@ def _forward_period_label(forward_metrics, eps_source: str | None) -> str | None
     if eps_source == "consensusFy1":
         return f"차기 회계연도 컨센서스 ({as_of.year + 1})"
     return f"{start}~{end} (12개월)"
+
+
+#: 정점 이후 몇 해에 걸쳐 정상 수준까지 내려오는가. 메모리 다운사이클의 길이.
+CYCLE_DECLINE_YEARS = 3
+#: 화면에 나란히 놓을 정점 시나리오(지금부터 몇 해 뒤).
+CYCLE_PEAK_HORIZONS = (1, 2, 3)
+
+
+def _cycle_normalization_ratio(cycle_items: list | None) -> tuple[float | None, str]:
+    """(정상 이익 ÷ 정점 이익, 근거 설명). 그 회사의 실제 사이클 진폭.
+
+    상수로 박으면 종목마다 다른 진폭을 하나로 뭉갠다. 자기 이력에서 뽑으면
+    '이 회사의 좋은 해와 보통 해가 얼마나 차이 나는가'가 그대로 들어온다.
+    """
+    earnings = [
+        float(getattr(li, "net_income"))
+        for li in (cycle_items or [])
+        if isinstance(getattr(li, "net_income", None), (int, float))
+    ]
+    if len(earnings) < 3:
+        return None, ""
+    peak = max(earnings)
+    if peak <= 0:
+        return None, ""
+    ratio = (sum(earnings) / len(earnings)) / peak
+    if not (0.0 < ratio < 1.0):
+        return None, ""
+    return ratio, f"정상/정점 {ratio:.0%} ({len(earnings)}개 연도 평균 ÷ 정점)"
+
+
+def _discount_cycle_path(
+    fcff0: float,
+    growth: float,
+    years_to_peak: int,
+    normalization_ratio: float,
+    discount: float,
+    terminal_growth: float,
+    projection_years: int = 10,
+) -> float | None:
+    """정점까지 오르고, 정상 수준까지 내려온 뒤, 영구성장으로 가는 경로의 현재가치.
+
+    기존 경로(_discount_fcff_path)는 정점 개념이 없다 — 출발점에서 10년간 단조
+    증가만 한다. 사이클 업종에서는 그것이 '정점 이익이 영원히 이어진다'는 가정과
+    같아진다. 실측(000660.KS): 정점 없이 5,972,181 원, 2028년 정점을 넣으면
+    1,457,525 원. 같은 입력에 대해 4배 차이가 난다.
+    """
+    if discount <= terminal_growth or years_to_peak < 1:
+        return None
+    path: list[float] = []
+    level = fcff0
+    for _ in range(years_to_peak):
+        level *= (1 + growth)
+        path.append(level)
+    peak = level
+    target = peak * normalization_ratio
+    for step in range(1, CYCLE_DECLINE_YEARS + 1):
+        path.append(peak + (target - peak) * step / CYCLE_DECLINE_YEARS)
+    while len(path) < projection_years:
+        path.append(path[-1] * (1 + terminal_growth))
+    path = path[:projection_years]
+
+    pv = sum(value / (1 + discount) ** (index + 1) for index, value in enumerate(path))
+    tv = path[-1] * (1 + terminal_growth) / (discount - terminal_growth) / (1 + discount) ** projection_years
+    return pv + tv
+
+
+def calculate_cycle_peak_scenarios(
+    metrics: list,
+    line_items: list,
+    risk_analysis: dict,
+    forward_metrics,
+    cycle_items: list | None,
+    current_price: float | None,
+) -> dict[str, any]:
+    """'정점이 몇 년 뒤냐'에 따른 주당 가치 표.
+
+    왜 표로 내는가
+        정점 연도를 알려 주는 자료는 없다. 하나를 골라 박으면 그 가정이 숫자
+        뒤에 숨는다. 나란히 놓으면 독자가 자기 가정을 고를 수 있고, 지금 가격이
+        어느 시나리오에 앉아 있는지도 함께 보인다.
+    """
+    fwd_eps, _ = _resolve_forward_start_eps(forward_metrics)
+    shares = _resolve_share_count(metrics, line_items)
+    conversion, _ = _historical_fcff_conversion(line_items)
+    ratio, ratio_note = _cycle_normalization_ratio(cycle_items)
+    growth, _ = _sustainable_growth_rate(metrics, cycle_items or line_items)
+    if not (fwd_eps and shares and conversion and ratio and growth):
+        return {"scenarios": [], "reason": "선행 이익·주식 수·사이클 이력 중 하나가 없어 정점 시나리오 미산출"}
+
+    discount = risk_analysis.get("cost_of_equity") or 0.09
+    fcff0 = fwd_eps * shares * conversion
+    scenarios = []
+    for horizon in CYCLE_PEAK_HORIZONS:
+        value = _discount_cycle_path(fcff0, growth, horizon, ratio, discount, 0.025)
+        if value is None:
+            continue
+        per_share = value / shares
+        scenarios.append({
+            "years_to_peak": horizon,
+            "intrinsic_per_share": per_share,
+            "gap_to_price": (per_share - current_price) / current_price if current_price else None,
+        })
+    return {
+        "scenarios": scenarios,
+        "normalization_ratio": ratio,
+        "normalization_note": ratio_note,
+        "decline_years": CYCLE_DECLINE_YEARS,
+        "growth_to_peak": growth,
+    }
 
 
 def calculate_forward_intrinsic_value_dcf(

@@ -62,6 +62,12 @@ export interface TargetTile {
   isFromActiveAgent: boolean;
 }
 
+export interface CyclePeakScenario {
+  yearsToPeak: number;
+  perShare: number;
+  gapToPrice: number | null;
+}
+
 export interface OtherAgent {
   key: string;
   displayNameKo: string;

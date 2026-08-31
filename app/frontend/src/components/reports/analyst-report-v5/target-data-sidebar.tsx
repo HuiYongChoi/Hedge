@@ -399,6 +399,64 @@ function PbrBandCard({
   );
 }
 
+/** 사이클 정점을 언제로 보느냐에 따른 주당 가치.
+ *
+ * 기존 DCF 는 정점 개념이 없어 '지금 이익이 영원히 이어진다'로 계산한다. 사이클
+ * 업종에서는 그것만으로 4배가 갈린다(실측 000660.KS: 정점 없이 597만, 2년 뒤
+ * 정점이면 158만). 정점 연도를 알려 주는 자료는 없으므로 하나를 박지 않고
+ * 나란히 놓아, 지금 가격이 어느 시나리오에 앉아 있는지를 보이게 한다.
+ */
+function CyclePeakCard({
+  report, currency, language,
+}: {
+  report?: Record<string, any> | null;
+  currency: string;
+  language: ReportLanguage;
+}) {
+  const rows = Array.isArray(report?.cycle_peak_scenarios) ? report!.cycle_peak_scenarios : [];
+  if (rows.length === 0) return null;
+  const note = typeof report?.cycle_normalization_note === 'string' ? report!.cycle_normalization_note : '';
+  const isKo = language === 'ko';
+
+  return (
+    <div className="mt-2 rounded-lg border border-border/60 bg-muted/10 p-3">
+      <div className="text-[11px] font-semibold text-foreground">
+        {isKo ? '사이클 정점 시나리오' : 'Cycle peak scenarios'}
+      </div>
+      <div className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+        {isKo
+          ? '정점 이후 정상 수준까지 내려오는 경로를 반영한 주당 가치입니다. 위쪽 선행 내재가치는 정점 없이 계산한 값입니다.'
+          : 'Per-share value along a peak-then-normalise path. The forward intrinsic tiles above assume no peak.'}
+      </div>
+      <dl className="mt-2 space-y-1">
+        {rows.map((row: any) => {
+          const perShare = Number(row?.intrinsic_per_share);
+          const gap = Number(row?.gap_to_price);
+          const years = Number(row?.years_to_peak);
+          if (!Number.isFinite(perShare) || !Number.isFinite(years)) return null;
+          // 현재가에 가장 가까운 시나리오가 '시장이 보고 있는 정점'이다.
+          const nearest = Number.isFinite(gap) && Math.abs(gap) <= 0.15;
+          return (
+            <div key={years} className="flex items-baseline justify-between gap-2 text-[11px]">
+              <dt className={nearest ? 'font-semibold text-foreground' : 'text-muted-foreground'}>
+                {isKo ? `정점 ${years}년 뒤` : `Peak in ${years}y`}
+                {nearest && <span className="ml-1 text-[9px] font-normal">{isKo ? '· 현재가 수준' : '· near price'}</span>}
+              </dt>
+              <dd className={`font-mono ${nearest ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>
+                {formatCurrency(perShare, currency)}
+                {Number.isFinite(gap) && (
+                  <span className="ml-1 text-[10px]">({gap > 0 ? '+' : ''}{(gap * 100).toFixed(0)}%)</span>
+                )}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+      {note && <div className="mt-1.5 font-mono text-[9px] text-muted-foreground">{note}</div>}
+    </div>
+  );
+}
+
 function ValuationGapNotice({
   dive,
   brokerConsensus,
@@ -1182,6 +1240,7 @@ export function TargetDataSidebar({
             {primaryTiles.length > 0 && (
               <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
                 {primaryTiles.map(tile => <TargetTileCard key={tile.labelKey} tile={tile} language={language} />)}
+                <CyclePeakCard report={report} currency={currency} language={language} />
               </div>
             )}
             {valuationDeepDive && (

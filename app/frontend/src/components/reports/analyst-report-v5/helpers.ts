@@ -22,6 +22,7 @@ import type {
   SentenceClassification,
   TargetTile,
   CashFlowInsight,
+  CyclePeakScenario,
   ValuationDeepDive,
   ValuationModel,
 } from './types';
@@ -3199,6 +3200,29 @@ export function buildValuationDeepDive(
     models,
     cashFlow,
   };
+}
+
+/** 사이클 정점 시나리오 표. 정점 연도를 알려 주는 자료는 없으므로 나란히 낸다. */
+export function extractCyclePeakScenarios(
+  reports: Record<string, AgentReport | null>,
+  activeAgentKey: string,
+): { scenarios: CyclePeakScenario[]; note?: string } {
+  for (const key of [activeAgentKey, 'aswath_damodaran']) {
+    const raw = (reports[key] as Record<string, any> | null)?.cycle_peak_scenarios;
+    if (!Array.isArray(raw) || raw.length === 0) continue;
+    const note = (reports[key] as Record<string, any> | null)?.cycle_normalization_note;
+    return {
+      scenarios: raw
+        .map(row => ({
+          yearsToPeak: Number(row?.years_to_peak),
+          perShare: Number(row?.intrinsic_per_share),
+          gapToPrice: Number.isFinite(Number(row?.gap_to_price)) ? Number(row.gap_to_price) : null,
+        }))
+        .filter(row => Number.isFinite(row.yearsToPeak) && Number.isFinite(row.perShare)),
+      note: typeof note === 'string' ? note : undefined,
+    };
+  }
+  return { scenarios: [] };
 }
 
 export function extractTargetTiles(

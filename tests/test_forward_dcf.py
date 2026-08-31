@@ -164,7 +164,8 @@ def test_growth_is_none_without_enough_years():
 def test_both_dcf_engines_share_the_same_growth_basis():
     """같은 화면의 두 적정가가 서로 다른 성장 가정을 쓰면 폭을 읽을 수 없다."""
     source = (Path(__file__).resolve().parents[1] / "src/agents/aswath_damodaran.py").read_text(encoding="utf-8")
-    assert source.count("_sustainable_growth_rate(metrics, cycle_items or line_items)") == 2
+    # 두 DCF 엔진 + 사이클 정점 시나리오까지 같은 성장률 기준을 쓴다.
+    assert source.count("_sustainable_growth_rate(metrics, cycle_items or line_items)") == 3
 
 
 def test_forward_dcf_reports_which_forward_eps_it_started_from():
@@ -259,3 +260,44 @@ def test_market_implied_eps_is_wired_from_the_forward_dcf():
     assert 'signal_payload["market_implied_eps_vs_forward"]' in source
     # 비례식이어야 한다 — 반복 탐색이 들어오면 위 선형성 테스트가 무의미해진다.
     assert "_fwd_eps_used * market_cap / _fwd_value" in source
+
+
+# ── 사이클 정점 ──────────────────────────────────────────────────────────────
+def test_cycle_path_is_worth_less_than_endless_growth():
+    """정점을 넣으면 값이 내려가야 한다.
+
+    기존 경로는 정점 개념이 없어 '지금 이익이 영원히 이어진다'로 계산한다.
+    사이클 업종에서는 그것만으로 4배가 갈린다(실측 000660.KS: 정점 없이 597만,
+    2년 뒤 정점이면 158만).
+    """
+    from src.agents.aswath_damodaran import _discount_cycle_path, _discount_fcff_path
+
+    endless = _discount_fcff_path(100.0, 0.13, 0.105, 10, 0.025)
+    peaked = _discount_cycle_path(100.0, 0.13, 2, 0.22, 0.105, 0.025)
+    assert peaked is not None and endless is not None
+    assert peaked < sum(endless)
+
+
+def test_later_peak_is_worth_more():
+    """정점이 뒤로 갈수록 좋은 해가 길어지므로 값이 커진다."""
+    from src.agents.aswath_damodaran import _discount_cycle_path
+
+    values = [_discount_cycle_path(100.0, 0.13, k, 0.22, 0.105, 0.025) for k in (1, 2, 3)]
+    assert all(v is not None for v in values)
+    assert values[0] < values[1] < values[2]
+
+
+def test_normalization_ratio_comes_from_the_company_history():
+    """상수로 박으면 종목마다 다른 사이클 진폭을 하나로 뭉갠다."""
+    from src.agents.aswath_damodaran import _cycle_normalization_ratio
+
+    items = [_line_item(net_income=n) for n in (100.0, 50.0, -20.0, 10.0, 40.0)]
+    ratio, note = _cycle_normalization_ratio(items)
+    assert ratio == pytest.approx((100 + 50 - 20 + 10 + 40) / 5 / 100)
+    assert "정상/정점" in note
+
+
+def test_normalization_needs_enough_years():
+    from src.agents.aswath_damodaran import _cycle_normalization_ratio
+
+    assert _cycle_normalization_ratio([_line_item(net_income=100.0)])[0] is None
