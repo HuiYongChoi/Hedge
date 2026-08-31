@@ -140,10 +140,12 @@ def test_growth_keeps_loss_years_in_the_cycle():
     실측(000660.KS): 적자 해를 뺐더니 재투자율이 상한 100% 에 붙고 g 24.7% 가
     나왔다. 포함하니 14.8% 로 내려갔다.
     """
+    # 같은 자본 궤적에 적자 해를 하나 끼워 넣는다. 연도 수가 달라지면 비교가
+    # 성립하지 않으므로, 그 해의 이익만 음수로 바꾼다.
     with_loss = _sustainable_growth_rate([], _cycle_items([200.0, 180.0, -150.0, 140.0]))[0]
-    boom_only = _sustainable_growth_rate([], _cycle_items([200.0, 180.0, 140.0]))[0]
+    boom_only = _sustainable_growth_rate([], _cycle_items([200.0, 180.0, 160.0, 140.0]))[0]
     assert with_loss is not None and boom_only is not None
-    assert with_loss < boom_only, "적자 해가 성장률을 끌어내려야 한다"
+    assert with_loss < boom_only, f"적자 해가 성장률을 끌어내려야 한다 ({with_loss} vs {boom_only})"
 
 
 def test_growth_has_no_arbitrary_ceiling():
@@ -162,7 +164,7 @@ def test_growth_is_none_without_enough_years():
 def test_both_dcf_engines_share_the_same_growth_basis():
     """같은 화면의 두 적정가가 서로 다른 성장 가정을 쓰면 폭을 읽을 수 없다."""
     source = (Path(__file__).resolve().parents[1] / "src/agents/aswath_damodaran.py").read_text(encoding="utf-8")
-    assert source.count("_sustainable_growth_rate(metrics, line_items)") == 2
+    assert source.count("_sustainable_growth_rate(metrics, cycle_items or line_items)") == 2
 
 
 def test_forward_dcf_reports_which_forward_eps_it_started_from():

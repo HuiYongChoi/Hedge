@@ -97,6 +97,10 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             period="ttm", limit=1, api_key=api_key,
         )
         line_items = (line_items_ttm or []) + (line_items_annual or [])
+        # 성장률 정규화에는 연간 자료만 쓴다. TTM 은 회계연도가 아니라 최근
+        # 12개월이라 사이클 표본에 넣으면 가장 최근 구간(지금은 정점)이 한 번 더
+        # 들어가 성장률이 올라간다(실측: 12.9% → 16.5%).
+        cycle_items = line_items_annual or line_items
 
         progress.update_status(agent_id, ticker, "Getting market cap")
         market_cap = get_market_cap(ticker, end_date, api_key=api_key)
@@ -109,7 +113,7 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         risk_analysis = analyze_risk_profile(metrics, line_items, macro_from_state(state))
 
         progress.update_status(agent_id, ticker, "Calculating intrinsic value (DCF)")
-        intrinsic_val_analysis = calculate_intrinsic_value_dcf(metrics, line_items, risk_analysis)
+        intrinsic_val_analysis = calculate_intrinsic_value_dcf(metrics, line_items, risk_analysis, cycle_items=cycle_items)
 
         progress.update_status(agent_id, ticker, "Assessing relative valuation")
         relative_val_analysis = analyze_relative_valuation(metrics)
@@ -130,12 +134,12 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         # 어느 하나가 정답이 아니라 둘의 폭이 정보다. 하나만 내면 독자는 그 값이
         # 얼마나 앞을 본 것인지 알 수 없다.
         forward_val_analysis = calculate_forward_intrinsic_value_dcf(
-            metrics, line_items, risk_analysis, forward_metrics
+            metrics, line_items, risk_analysis, forward_metrics, cycle_items=cycle_items,
         )
         _quarter_eps = getattr(forward_metrics, "forward_eps_ttm", None) if forward_metrics else None
         forward_quarter_analysis = calculate_forward_intrinsic_value_dcf(
             metrics, line_items, risk_analysis, forward_metrics,
-            start_eps=_quarter_eps, start_source="spliceTtm",
+            start_eps=_quarter_eps, start_source="spliceTtm", cycle_items=cycle_items,
         ) if _quarter_eps else {"intrinsic_value": None, "reason": "분기 선행 EPS 없음"}
 
         # ─── Score & margin of safety ──────────────────────────────────────────
@@ -712,24 +716,48 @@ def _sustainable_growth_rate(metrics: list, line_items: list | None = None) -> t
     # 절반이다. 빼고 나면 남는 것은 호황 구간뿐이고, 그 중앙값을 10년 성장률로
     # 쓰면 출발점(선행 컨센서스)도 정점, 성장률도 정점이 된다.
     # 실측(000660.KS): 적자 해를 뺐더니 재투자율이 상한 100% 에 붙고 g 24.7% 가 나왔다.
-    rows: list[tuple[str, float, float]] = []
+    # 투하자본 정의를 연도마다 바꾸면 안 된다.
+    #
+    # 차입금(total_debt)은 오래된 해에 자주 빈다(실측 000660.KS: 11개 연도 중
+    # 2015·2016·2019·2020·2021 결측 — DART 가 사채를 별도 줄로 두어 총차입금이
+    # 안 잡히고, yfinance 폴백은 최근 4년 정도만 덮는다). 있는 해만 부채를 더하면
+    # 연도별 투하자본이 서로 다른 정의로 계산되어, 그 증감이 실제 재투자가 아니라
+    # '정의가 바뀐 자국'을 재게 된다.
+    #
+    # 그래서 창 전체가 차입금을 갖출 때만 부채를 포함하고, 한 해라도 비면 전 연도를
+    # 자본 − 현금으로 통일한다. 절대 수준은 낮아지지만 g = 재투자율 × ROIC 는
+    # 결국 투하자본의 증가율이라, 정의를 일관되게만 유지하면 규모 편향은 대부분 상쇄된다.
+    candidates = []
     for li in (line_items or []):
         ebit = getattr(li, "ebit", None)
         if not isinstance(ebit, (int, float)):
             ebit = getattr(li, "operating_income", None)
-        debt = getattr(li, "total_debt", None)
         equity = getattr(li, "shareholders_equity", None)
+        if not isinstance(ebit, (int, float)) or not isinstance(equity, (int, float)):
+            continue
         cash = getattr(li, "cash_and_equivalents", None) or 0.0
-        if not isinstance(ebit, (int, float)):
-            continue
-        if not isinstance(debt, (int, float)) or not isinstance(equity, (int, float)):
-            continue
-        invested = float(debt) + float(equity) - float(cash)
+        debt = getattr(li, "total_debt", None)
+        candidates.append((
+            str(getattr(li, "report_period", "") or ""),
+            float(equity) - float(cash),
+            float(debt) if isinstance(debt, (int, float)) else None,
+            li,
+            float(ebit),
+        ))
+    if not candidates:
+        return None, ""
+
+    include_debt = all(debt is not None for _, _, debt, _, _ in candidates)
+    capital_basis = "부채 + 자본 − 현금" if include_debt else "자본 − 현금(차입금 결측)"
+
+    rows: list[tuple[str, float, float]] = []
+    for period, equity_less_cash, debt, li, ebit in candidates:
+        invested = equity_less_cash + (debt or 0.0) if include_debt else equity_less_cash
         if invested <= 0:
             continue
         # 적자 해의 세후영업이익은 세금이 붙지 않는다(이월결손). 그대로 음수로 둔다.
-        nopat = float(ebit) * (1.0 - _effective_tax_rate(li)) if ebit > 0 else float(ebit)
-        rows.append((str(getattr(li, "report_period", "") or ""), invested, nopat))
+        nopat = ebit * (1.0 - _effective_tax_rate(li)) if ebit > 0 else ebit
+        rows.append((period, invested, nopat))
 
     # 같은 기간이 TTM 과 연간으로 두 번 들어오면 증감이 0 으로 찍힌다. 기간별로 하나만.
     unique: dict[str, tuple[float, float]] = {}
@@ -739,27 +767,38 @@ def _sustainable_growth_rate(metrics: list, line_items: list | None = None) -> t
     if len(ordered) < 2:
         return None, ""
 
-    # 정규화 ROIC: 사이클 전체의 평균 수익 ÷ 평균 투하자본.
-    # 연도별 ROIC 의 중앙값이 아니라 합계 기준이라, 적자 해가 실제 무게만큼 반영된다.
-    mean_nopat = sum(nopat for _, nopat in ordered) / len(ordered)
-    mean_invested = sum(invested for invested, _ in ordered) / len(ordered)
-    if mean_invested <= 0 or mean_nopat <= 0:
-        return None, ""
-    roic = mean_nopat / mean_invested
+    # 연도별 비율을 각각 구해 중앙값을 쓴다.
+    #
+    # 합계끼리 곱하면 안 된다: (ΔIC/ΣNOPAT) × (ΣNOPAT/ΣIC) = ΔIC/ΣIC 로 NOPAT 이
+    # 약분돼, '재투자율 × ROIC' 라는 이름만 남고 실제로는 투하자본 증가율을 재게
+    # 된다. 그러면 수익성이 아무리 나빠도 자본만 늘리면 성장률이 올라간다.
+    reinvestment_rates: list[float] = []
+    roics: list[float] = []
+    for newer, older in zip(ordered, ordered[1:]):
+        invested_now, nopat_now = newer
+        invested_prev, _ = older
+        if invested_prev <= 0:
+            continue
+        # ROIC 의 분모는 그 해 초의 자본이다 — 연말 자본으로 나누면 그 해에 새로
+        # 넣은 돈이 이미 벌었다고 치는 셈이 된다.
+        roics.append(nopat_now / invested_prev)
+        if nopat_now > 0:
+            rate = (invested_now - invested_prev) / nopat_now
+            # 1을 넘으면 번 것보다 더 넣은 해다. 있을 수 있지만 영구화하면 안 되므로
+            # 0~1 로 자른다(자본을 줄인 해는 성장에 기여하지 않으므로 0).
+            reinvestment_rates.append(max(0.0, min(rate, 1.0)))
 
-    # 재투자율: 그 기간에 늘린 투하자본 ÷ 그 기간에 번 세후영업이익 합계.
-    total_nopat = sum(nopat for _, nopat in ordered)
-    invested_growth = ordered[0][0] - ordered[-1][0]
-    if total_nopat <= 0:
+    reinvestment = _median(reinvestment_rates)
+    roic = _median(roics)
+    if reinvestment is None or roic is None or roic <= 0:
         return None, ""
-    reinvestment = max(0.0, min(invested_growth / total_nopat, 1.0))
 
     growth = reinvestment * roic
     if growth <= 0:
         return None, ""
     return growth, (
-        f"지속가능 성장률 (재투자율 {reinvestment:.0%} × 정규화 ROIC {roic:.1%}, "
-        f"사이클 {len(ordered)}개 연도, 적자 연도 포함)"
+        f"지속가능 성장률 (재투자율 중앙값 {reinvestment:.0%} × ROIC 중앙값 {roic:.1%}, "
+        f"사이클 {len(ordered)}개 연도, 적자 연도 포함, 투하자본 {capital_basis})"
     )
 
 
@@ -770,6 +809,7 @@ def calculate_forward_intrinsic_value_dcf(
     forward_metrics,
     start_eps: float | None = None,
     start_source: str | None = None,
+    cycle_items: list | None = None,
 ) -> dict[str, any]:
     """선행 컨센서스 이익을 출발점으로 삼는 FCFF DCF.
 
@@ -816,7 +856,7 @@ def calculate_forward_intrinsic_value_dcf(
     # 이 이중 계상을 가려 주던 증상 억제제였고, 상한을 치우자 문제가 드러났다.
     #
     # 대신 '그 회사가 재투자해서 실제로 낼 수 있는 성장'만 인정한다.
-    base_growth, growth_source = _sustainable_growth_rate(metrics, line_items)
+    base_growth, growth_source = _sustainable_growth_rate(metrics, cycle_items or line_items)
     if base_growth is None:
         revs = [li.revenue for li in reversed(line_items) if getattr(li, "revenue", None)]
         if len(revs) >= 2 and revs[0] > 0:
@@ -869,7 +909,7 @@ def calculate_forward_intrinsic_value_dcf(
     }
 
 
-def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis: dict) -> dict[str, any]:
+def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis: dict, cycle_items: list | None = None) -> dict[str, any]:
     """
     FCFF DCF with:
       • Base FCFF = latest free cash flow
@@ -904,7 +944,7 @@ def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis
     #
     # 과거 매출 CAGR 은 폴백으로 남긴다. 다만 사이클 저점에서 정점까지를 그대로
     # 연평균으로 만든 값이라, 상한이 없으면 호황을 영구화하기 쉽다.
-    base_growth, growth_source = _sustainable_growth_rate(metrics, line_items)
+    base_growth, growth_source = _sustainable_growth_rate(metrics, cycle_items or line_items)
     if base_growth is None:
         revs = [li.revenue for li in reversed(line_items) if getattr(li, "revenue", None)]
         if len(revs) < 2:
