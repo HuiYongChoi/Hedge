@@ -103,8 +103,9 @@ def test_target_sidebar_orders_consensus_forward_pbr_bridge_before_valuation_mod
     # 안전가도 같은 짝으로 이어져야 '어느 기준의 안전가인지'가 헷갈리지 않는다.
     # 내재가치 3종(후행 · 선행연 · 선행분기) 다음에 같은 순서의 안전가 3종.
     for key in ("targetIntrinsicLabel", "targetForwardIntrinsicLabel",
-                "targetForwardQuarterIntrinsicLabel", "targetMarginLabel",
-                "targetForwardMarginLabel", "targetForwardQuarterMarginLabel"):
+                "targetForwardQuarterIntrinsicLabel", "targetTrailingTtmIntrinsicLabel",
+                "targetMarginLabel", "targetForwardMarginLabel",
+                "targetForwardQuarterMarginLabel", "targetTrailingTtmMarginLabel"):
         assert key in sidebar, key
     assert (sidebar.index("'targetForwardQuarterIntrinsicLabel'")
             < sidebar.index("'targetMarginLabel'")), "안전가는 내재가치 뒤에 온다"

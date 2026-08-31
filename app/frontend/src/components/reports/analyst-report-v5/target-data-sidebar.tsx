@@ -75,8 +75,11 @@ function fillTemplate(template: string, values: Record<string, string>) {
 // 내재가치 3종을 먼저 나란히, 그 아래 같은 순서로 안전가 3종.
 // 짝을 맞춰 두지 않으면 '어느 기준의 안전가인지'가 화면에서 헷갈린다.
 const ORDERED_PRIMARY_TILE_KEYS = [
-  'targetIntrinsicLabel', 'targetForwardIntrinsicLabel', 'targetForwardQuarterIntrinsicLabel',
-  'targetMarginLabel', 'targetForwardMarginLabel', 'targetForwardQuarterMarginLabel',
+  'targetIntrinsicLabel', 'targetForwardIntrinsicLabel',
+  // 컨센서스 분기가 없으면 같은 자리에 '후행 TTM' 이름으로 뜬다.
+  'targetForwardQuarterIntrinsicLabel', 'targetTrailingTtmIntrinsicLabel',
+  'targetMarginLabel', 'targetForwardMarginLabel',
+  'targetForwardQuarterMarginLabel', 'targetTrailingTtmMarginLabel',
 ] as const;
 const PRIMARY_TILE_KEYS = new Set<string>(ORDERED_PRIMARY_TILE_KEYS);
 const SAFETY_MARGIN_DISPLAY_BUFFER = 0.25;

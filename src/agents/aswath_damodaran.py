@@ -357,6 +357,12 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             _q_assumptions = forward_quarter_analysis.get("assumptions") or {}
             signal_payload["forward_quarter_dcf_eps_used"] = _q_assumptions.get("forward_eps_used")
             signal_payload["forward_quarter_dcf_period"] = _q_assumptions.get("period_label")
+            # 컨센서스 분기를 못 찾으면 실제 4개 분기로 폴백한다. 그때도 '선행'
+            # 이라고 부르면 거짓말이 된다 — 화면이 이름을 바꿀 수 있게 알린다.
+            _composition = getattr(forward_metrics, "composition", None) or []
+            signal_payload["forward_quarter_has_consensus"] = any(
+                str(getattr(q, "source", "")).lower() == "consensus" for q in _composition
+            )
         elif forward_quarter_analysis.get("reason"):
             signal_payload["forward_quarter_intrinsic_value_note"] = forward_quarter_analysis["reason"]
         elif forward_val_analysis.get("reason"):
@@ -818,6 +824,7 @@ def _forward_period_label(forward_metrics, eps_source: str | None) -> str | None
     if eps_source == "spliceTtm":
         # 실제로 이어 붙인 분기들의 처음과 끝을 그대로 쓴다.
         composition = getattr(forward_metrics, "composition", None) or []
+
         labels = [str(getattr(q, "period", "") or "") for q in composition]
         labels = [label for label in labels if label]
         if len(labels) >= 2:

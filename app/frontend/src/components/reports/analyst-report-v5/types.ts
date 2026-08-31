@@ -122,6 +122,8 @@ export interface CanonicalMetrics {
   trailingDcfPeriod?: string;
   forwardDcfPeriod?: string;
   forwardQuarterDcfPeriod?: string;
+  /** 분기 스플라이스가 실제로 컨센서스 분기를 품고 있는가. 아니면 이름이 거짓말이 된다. */
+  forwardQuarterHasConsensus?: boolean;
   marginOfSafety?: CanonicalMetric;
   interestCoverage?: CanonicalMetric;
   beta?: CanonicalMetric;
