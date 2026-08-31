@@ -160,12 +160,18 @@ def test_pbr_band_card_uses_defensive_price_identity_and_reader_labels():
     assert "marketCurrentPrice?: number | null" in sidebar
     assert "displayCurrentPrice / pbr.currentPbr" in sidebar
     assert "pbrFairP90" in sidebar
-    assert "역사적 PBR 중위값 기준 주가" in sidebar
+    # 라벨을 '중위값 기준 주가 (50%)' 로 줄였다 — 같은 문구가 아래 '목표가 검산'
+    # 카드에도 있어 한 화면에 두 번 나왔고, 어느 쪽이 기준인지 흐려졌다.
+    assert "중위값 기준 주가 (50%)" in sidebar
     assert "50% 기준 주가" not in sidebar
     assert "중위 PBR 대비" in sidebar
     assert "현재 PBR" in sidebar
-    assert "상단 시나리오" in sidebar
-    assert "Historical median PBR price" in sidebar
+    assert "상단 시나리오 (90%)" in sidebar
+    assert "Median price (50%)" in sidebar
+    # 세 줄 모두 그 가격의 PBR 배수를 함께 적는다 — 가격만 있으면 위 눈금과
+    # 눈으로 맞춰야 한다.
+    for percentile in ("p10", "p50", "p90"):
+        assert f"PBR {{formatPbrMultiple(pbr.percentiles.{percentile})}}" in sidebar, percentile
     assert "formatPbrMultiple" in sidebar
     assert "역사적 PBR 중위값 기준 주가는 과거 PBR의 중앙값" in language
 

@@ -349,24 +349,42 @@ function PbrBandCard({
         <div className="font-mono text-sm font-semibold text-amber-300">{assumptionPriceText}</div>
         <div className="font-mono text-[10px] text-muted-foreground">{assumptionGapText}</div>
       </div>
-      <div className="mt-1 flex justify-between text-[10px] font-mono text-muted-foreground">
-        <span>{language === 'ko' ? '10%' : '10%'} {formatPbrMultiple(pbr.percentiles.p10)}</span>
-        <span>50% {formatPbrMultiple(pbr.percentiles.p50)}</span>
-        <span>{language === 'ko' ? '90%' : '90%'} {formatPbrMultiple(pbr.percentiles.p90)}</span>
+      {/* 중위값은 이 카드의 기준점이다 — 나머지 눈금과 같은 크기로 두면
+          '무엇과 비교하는 중인지'가 눈에 안 들어온다. */}
+      <div className="mt-1 flex items-baseline justify-between font-mono text-[10px] text-muted-foreground">
+        <span>10% {formatPbrMultiple(pbr.percentiles.p10)}</span>
+        <span className="text-xs font-semibold text-foreground">
+          {language === 'ko' ? '중위' : 'median'} {formatPbrMultiple(pbr.percentiles.p50)}
+        </span>
+        <span>90% {formatPbrMultiple(pbr.percentiles.p90)}</span>
       </div>
       <div className="mt-1 text-[10px] text-muted-foreground">
         {language === 'ko' ? '계산 기준 BPS' : 'BPS basis'} {formatCurrency(bpsBasis, currency)}
       </div>
 
       <dl className="mt-3 space-y-1 border-t border-border/50 pt-2 text-[10px]">
-        <Row label={language === 'ko' ? '하단 방어가' : 'Lower band'}>
-          <span className="font-mono">{formatCurrency(fairP10, currency)}</span>
+        {/* 가격만 있으면 '이게 몇 배짜리 가격인지'를 위 눈금과 눈으로 맞춰야 한다.
+            줄마다 배수를 같이 적어 그 자리에서 검산되게 한다. */}
+        <Row label={language === 'ko' ? '하단 방어가 (10%)' : 'Lower band (10%)'}
+             tip={t('pbrLowerBandTip', language)}>
+          <span className="font-mono">
+            {formatCurrency(fairP10, currency)}
+            <span className="ml-1 text-[9px] text-muted-foreground">PBR {formatPbrMultiple(pbr.percentiles.p10)}</span>
+          </span>
         </Row>
-        <Row label={language === 'ko' ? '역사적 PBR 중위값 기준 주가' : 'Historical median PBR price'}>
-          <span className="font-mono font-semibold text-foreground">{formatCurrency(fairP50, currency)}</span>
+        <Row label={language === 'ko' ? '중위값 기준 주가 (50%)' : 'Median price (50%)'}
+             tip={t('pbrMedianPriceTip', language)}>
+          <span className="font-mono text-xs font-semibold text-foreground">
+            {formatCurrency(fairP50, currency)}
+            <span className="ml-1 text-[9px] font-normal text-muted-foreground">PBR {formatPbrMultiple(pbr.percentiles.p50)}</span>
+          </span>
         </Row>
-        <Row label={language === 'ko' ? '상단 시나리오' : 'Upper case'}>
-          <span className="font-mono">{formatCurrency(pbrFairP90, currency)}</span>
+        <Row label={language === 'ko' ? '상단 시나리오 (90%)' : 'Upper case (90%)'}
+             tip={t('pbrUpperBandTip', language)}>
+          <span className="font-mono">
+            {formatCurrency(pbrFairP90, currency)}
+            <span className="ml-1 text-[9px] text-muted-foreground">PBR {formatPbrMultiple(pbr.percentiles.p90)}</span>
+          </span>
         </Row>
         <Row label={t('pbrRowPosition', language)} tip={t('pbrRowPositionTip', language)}>
           <span className={`font-semibold ${classes.text}`}>{position}</span>
@@ -540,6 +558,29 @@ function ValuationGapNotice({
   );
 }
 
+/** 모델 이름 → 설명. 이름만으로는 무엇을 재는 값인지 알 수 없다.
+ *
+ * 화면에 DCF·Owner Earnings·EV/EBITDA·EV/EBIT·EBITDA 정규화·ROIC−WACC EVA·RIM 이
+ * 한꺼번에 뜨는데, 각각이 무엇을 보는 값인지 모르면 숫자 일곱 개가 그냥 흩어진
+ * 값으로 읽힌다. 이름에 걸리는 낱말로 설명을 붙인다(라벨 문구가 조금 바뀌어도
+ * 계속 걸리도록 넓게 잡는다).
+ */
+const VALUATION_MODEL_GLOSSARY: Array<{ match: RegExp; key: string }> = [
+  { match: /owner|오너/i, key: 'valuationModelGlossaryOwner' },
+  { match: /ev\s*\/?\s*ebitda/i, key: 'valuationModelGlossaryEvEbitda' },
+  { match: /ev\s*\/?\s*ebit\b/i, key: 'valuationModelGlossaryEvEbit' },
+  { match: /ebitda/i, key: 'valuationModelGlossaryEbitda' },
+  { match: /eva|roic/i, key: 'valuationModelGlossaryEva' },
+  { match: /rim|잔여이익/i, key: 'valuationModelGlossaryRim' },
+  { match: /pbr/i, key: 'valuationModelGlossaryPbr' },
+  { match: /dcf|현금흐름/i, key: 'valuationModelGlossaryDcf' },
+];
+
+function valuationModelTip(label: string, language: ReportLanguage): string | undefined {
+  const hit = VALUATION_MODEL_GLOSSARY.find(entry => entry.match.test(label));
+  return hit ? t(hit.key, language) : undefined;
+}
+
 function ValuationModelsSummary({
   dive,
   currency,
@@ -561,8 +602,11 @@ function ValuationModelsSummary({
   ];
   return (
     <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-      <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        {t('valuationModelsSummaryTitle', language)}
+      <div className="mb-1.5 flex items-start justify-between gap-2">
+        <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {t('valuationModelsSummaryTitle', language)}
+        </div>
+        <InfoDot title={t('valuationModelsHowToRead', language)} />
       </div>
       <dl className="space-y-0.5 text-[10px]">
         {rows.map(model => {
@@ -573,7 +617,9 @@ function ValuationModelsSummary({
               className={`flex items-center justify-between gap-2${model.isOutlier ? ' opacity-60' : ''}`}
             >
               <dt className="flex min-w-0 items-center gap-1 truncate text-muted-foreground">
-                <span className="truncate">{model.labelKey}</span>
+                <span className="truncate" title={valuationModelTip(model.labelKey, language)}>
+                  {model.labelKey}
+                </span>
                 {model.isOutlier && (
                   <span
                     title={model.outlierNote ?? undefined}
@@ -884,6 +930,7 @@ function ValuationSidebarPanel({
             <span className="truncate">{language === 'ko' ? 'RIM 평가' : 'RIM Valuation'}</span>
             {isOutlier && <ModelLowConfidenceBadge note={rimModel?.outlierNote} language={language} />}
           </div>
+          <InfoDot title={t('valuationModelGlossaryRim', language)} />
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(rimGap)}</div>
         </div>
         <div className={`mt-1 font-mono text-lg font-semibold ${isOutlier ? 'text-muted-foreground line-through decoration-1' : classes.text}`}>
@@ -1112,7 +1159,6 @@ function ConsensusBridgeTile({
   const gapToP90 = fairP90 ? (consensus - fairP90) / fairP90 : null;
   const displayCurrentPrice = currentPrice ?? pbr.currentPrice;
   const upsideToCurrent = displayCurrentPrice ? (consensus - displayCurrentPrice) / displayCurrentPrice : null;
-  const rimValue = dive?.rim?.intrinsicPerShare ?? null;
   const perText = (value: number | null) => value === null ? '—' : `${value.toFixed(1)}`;
   const p90Text = gapToP90 === null
     ? '—'
@@ -1135,19 +1181,10 @@ function ConsensusBridgeTile({
       <div className="text-[10px] text-muted-foreground">
         {t('fwdPerTargetLabel', language)} {perText(impliedFwdPer)} · PBR {formatPbrMultiple(impliedPbr)}
       </div>
-      <dl className="mt-2 space-y-0.5 text-[10px]">
-        <Row label={language === 'ko' ? '역사적 PBR 중위값 기준 주가' : 'Historical median PBR price'}>
-          <span className="font-mono">{formatCurrency(fairP50, currency)}</span>
-        </Row>
-        <Row label={language === 'ko' ? '90% 상단 시나리오' : '90% upper case'}>
-          <span className="font-mono">{formatCurrency(fairP90, currency)}</span>
-        </Row>
-        {rimValue !== null && (
-          <Row label={language === 'ko' ? 'RIM' : 'RIM'}>
-            <span className="font-mono">{formatCurrency(rimValue, currency)}</span>
-          </Row>
-        )}
-      </dl>
+      {/* 중위값·상단 시나리오는 바로 위 PBR 밴드 카드에 이미 있고, RIM 은 아래
+          '보수 모델 괴리 확인' 카드에 또 있었다. 같은 숫자가 한 화면에 세 번
+          나오면 어느 것이 기준인지 흐려진다. 여기서는 '목표가가 그 기준들에서
+          얼마나 떨어져 있는가'만 남긴다 — 그게 이 카드의 일이다. */}
       <div className="mt-2 text-[10px] leading-4 text-muted-foreground">
         {p90Text}
         {upsideToCurrent !== null && (
