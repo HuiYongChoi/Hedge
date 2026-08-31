@@ -328,6 +328,9 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         per_share_iv = intrinsic_val_analysis.get("intrinsic_per_share")
         if per_share_iv is not None:
             signal_payload["intrinsic_value_per_share"] = per_share_iv
+            signal_payload["trailing_dcf_period"] = (
+                (intrinsic_val_analysis.get("assumptions") or {}).get("base_period")
+            )
 
         # 선행 DCF 도 같은 이유로 구조화해서 내보낸다 — 서술에서 긁어오면 문구가
         # 바뀔 때마다 값이 사라진다. 미산출이면 사유를 함께 실어, 화면이
@@ -341,6 +344,7 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             signal_payload["forward_dcf_eps_used"] = _fwd_assumptions.get("forward_eps_used")
             signal_payload["forward_dcf_eps_source"] = _fwd_assumptions.get("forward_eps_source")
             signal_payload["forward_dcf_base_growth"] = _fwd_assumptions.get("base_growth")
+            signal_payload["forward_dcf_period"] = _fwd_assumptions.get("period_label")
 
         # 분기 기준(3분기 실적 + 1분기 컨센)도 같은 규칙으로 내보낸다.
         _q_per_share = forward_quarter_analysis.get("intrinsic_per_share")
@@ -350,9 +354,9 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             signal_payload["forward_quarter_margin_of_safety"] = (
                 (_q_value - market_cap) / market_cap if _q_value and market_cap else None
             )
-            signal_payload["forward_quarter_dcf_eps_used"] = (
-                (forward_quarter_analysis.get("assumptions") or {}).get("forward_eps_used")
-            )
+            _q_assumptions = forward_quarter_analysis.get("assumptions") or {}
+            signal_payload["forward_quarter_dcf_eps_used"] = _q_assumptions.get("forward_eps_used")
+            signal_payload["forward_quarter_dcf_period"] = _q_assumptions.get("period_label")
         elif forward_quarter_analysis.get("reason"):
             signal_payload["forward_quarter_intrinsic_value_note"] = forward_quarter_analysis["reason"]
         elif forward_val_analysis.get("reason"):
@@ -802,6 +806,39 @@ def _sustainable_growth_rate(metrics: list, line_items: list | None = None) -> t
     )
 
 
+def _forward_period_label(forward_metrics, eps_source: str | None) -> str | None:
+    """그 선행 EPS 가 '언제부터 언제까지'를 담고 있는지.
+
+    '선행(연)' / '선행(분기)' 만으로는 어느 구간의 실적인지 알 수 없다. 같은
+    화면에 세 값이 나란히 뜨는데 기간이 안 붙으면, 차이가 기간 때문인지 가정
+    때문인지 독자가 구분할 방법이 없다.
+    """
+    if forward_metrics is None:
+        return None
+    if eps_source == "spliceTtm":
+        # 실제로 이어 붙인 분기들의 처음과 끝을 그대로 쓴다.
+        composition = getattr(forward_metrics, "composition", None) or []
+        labels = [str(getattr(q, "period", "") or "") for q in composition]
+        labels = [label for label in labels if label]
+        if len(labels) >= 2:
+            return f"{labels[0]}~{labels[-1]}"
+        if labels:
+            return labels[0]
+        return None
+    as_of = getattr(forward_metrics, "as_of_date", None)
+    if as_of is None:
+        return None
+    try:
+        start = as_of.strftime("%Y.%m")
+        end_year, end_month = as_of.year + 1, as_of.month
+        end = f"{end_year}.{end_month:02d}"
+    except Exception:
+        return None
+    if eps_source == "consensusFy1":
+        return f"차기 회계연도 컨센서스 ({as_of.year + 1})"
+    return f"{start}~{end} (12개월)"
+
+
 def calculate_forward_intrinsic_value_dcf(
     metrics: list,
     line_items: list,
@@ -886,6 +923,7 @@ def calculate_forward_intrinsic_value_dcf(
         "intrinsic_per_share": equity_value / shares,
         "assumptions": {
             "forward_eps_ttm": fwd_eps,
+            "period_label": _forward_period_label(forward_metrics, eps_source),
             # 어떤 선행 EPS 를 출발점으로 삼았는지. 화면에 같은 값이 두 개 뜨는데
             # (증권사 12M 컨센 vs 3분기 실적+1분기 컨센 스플라이스) 어느 쪽을 썼는지
             # 안 밝히면 독자가 두 숫자를 대조할 방법이 없다.
@@ -976,6 +1014,7 @@ def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis
         "intrinsic_per_share": intrinsic_per_share,
         "assumptions": {
             "base_fcff": fcff0,
+            "base_period": str(getattr(latest_li, "report_period", "") or "") or None,
             "base_growth": base_growth,
             "growth_source": growth_source,
             "terminal_growth": terminal_growth,

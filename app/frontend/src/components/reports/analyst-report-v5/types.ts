@@ -118,6 +118,10 @@ export interface CanonicalMetrics {
   forwardDcfBaseGrowth?: CanonicalMetric;
   /** 선행 DCF 출발 EPS 의 출처 코드: consensus12m | consensusFy1 | spliceTtm */
   forwardDcfEpsSource?: string;
+  /** 각 값이 담고 있는 기간. '선행(연)'만으로는 어느 구간인지 알 수 없다. */
+  trailingDcfPeriod?: string;
+  forwardDcfPeriod?: string;
+  forwardQuarterDcfPeriod?: string;
   marginOfSafety?: CanonicalMetric;
   interestCoverage?: CanonicalMetric;
   beta?: CanonicalMetric;

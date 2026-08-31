@@ -2652,6 +2652,9 @@ export function buildCanonicalMetrics(
     forwardQuarterDcfEpsUsed: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'aswath_damodaran'], ['forward_quarter_dcf_eps_used']),
     forwardDcfBaseGrowth: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'aswath_damodaran'], ['forward_dcf_base_growth']),
     forwardDcfEpsSource: rawFromReports(reports, [activeAgentKey, 'aswath_damodaran'], 'forward_dcf_eps_source'),
+    trailingDcfPeriod: rawFromReports(reports, [activeAgentKey, 'aswath_damodaran'], 'trailing_dcf_period'),
+    forwardDcfPeriod: rawFromReports(reports, [activeAgentKey, 'aswath_damodaran'], 'forward_dcf_period'),
+    forwardQuarterDcfPeriod: rawFromReports(reports, [activeAgentKey, 'aswath_damodaran'], 'forward_quarter_dcf_period'),
     marginOfSafety: metricFromCandidates(reports, activeAgentKey, activeFirst, ['margin_of_safety']),
     interestCoverage: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'fundamentals_analyst'], ['interest_coverage', 'interest_coverage_ratio']),
     beta: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'fundamentals_analyst', 'charlie_munger', 'nassim_taleb'], ['beta']),
@@ -3164,13 +3167,23 @@ export function extractTargetTiles(
   // 화면에는 '선행 EPS'라는 이름의 숫자가 둘 뜬다 — 증권사 12개월 컨센서스와,
   // 직전 3분기 실적에 컨센서스 1분기를 이어 붙인 값(선행성은 한 분기뿐)이다.
   // 선행 DCF 가 그중 어느 쪽에서 출발했는지 밝히지 않으면 두 숫자를 대조할 수 없다.
+  // 기간을 앞에 세운다. '선행(연)' 같은 이름만으로는 어느 구간의 실적인지
+  // 알 수 없고, 세 값이 나란히 뜰 때 차이가 기간 때문인지 가정 때문인지
+  // 구분되지 않는다.
+  const joinNote = (...parts: Array<string | undefined | null>) =>
+    parts.filter(Boolean).join(' · ') || undefined;
+
   const forwardBasisNote = (() => {
     const eps = finiteNumber(metrics.forwardDcfEpsUsed?.value);
     const source = metrics.forwardDcfEpsSource;
-    if (eps === null || !source) return undefined;
-    const sourceLabel = t(`forwardEpsSource_${source}`, language);
-    return `${sourceLabel} ${formatCurrency(eps, currency)}`;
+    const epsPart = (eps !== null && source)
+      ? `${t(`forwardEpsSource_${source}`, language)} ${formatCurrency(eps, currency)}`
+      : undefined;
+    return joinNote(metrics.forwardDcfPeriod, epsPart);
   })();
+  const trailingBasisNote = metrics.trailingDcfPeriod
+    ? `${t('periodBasisTrailing', language)} ${metrics.trailingDcfPeriod}`
+    : undefined;
   // 안전마진도 선행 실적 기준이 따로 있어야 한다. 후행 안전가 하나만 두면
   // 선행 내재가치 타일 옆에서 '그래서 얼마에 사면 되는가'가 후행 기준으로만
   // 남아, 같은 화면의 두 내재가치가 서로 다른 잣대로 읽힌다.
@@ -3178,16 +3191,17 @@ export function extractTargetTiles(
   const forwardQuarterSafetyMarginPrice = buildSafetyMarginPriceFrom(metrics.forwardQuarterIntrinsicValue);
   const forwardQuarterBasisNote = (() => {
     const eps = finiteNumber(metrics.forwardQuarterDcfEpsUsed?.value);
-    return eps === null ? undefined
+    const epsPart = eps === null ? undefined
       : `${t('forwardEpsSource_spliceTtm', language)} ${formatCurrency(eps, currency)}`;
+    return joinNote(metrics.forwardQuarterDcfPeriod, epsPart);
   })();
   const candidates: Array<{ labelKey: string; sublabelKey: string; metric?: CanonicalMetric; tone: ReportTone; formatter?: (value: number) => string; note?: string }> = [
-    { labelKey: 'targetIntrinsicLabel', sublabelKey: 'targetIntrinsicSubtitle', metric: metrics.intrinsicValue, tone: intrinsicTone(metrics.intrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatCurrency(value, currency) },
+    { labelKey: 'targetIntrinsicLabel', sublabelKey: 'targetIntrinsicSubtitle', metric: metrics.intrinsicValue, tone: intrinsicTone(metrics.intrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatCurrency(value, currency), note: trailingBasisNote },
     { labelKey: 'targetForwardIntrinsicLabel', sublabelKey: 'targetForwardIntrinsicSubtitle', metric: metrics.forwardIntrinsicValue, tone: intrinsicTone(metrics.forwardIntrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatForwardIntrinsic(value, metrics.currentPrice?.value ?? null, currency), note: forwardBasisNote },
     { labelKey: 'targetForwardQuarterIntrinsicLabel', sublabelKey: 'targetForwardQuarterIntrinsicSubtitle', metric: metrics.forwardQuarterIntrinsicValue, tone: intrinsicTone(metrics.forwardQuarterIntrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatForwardIntrinsic(value, metrics.currentPrice?.value ?? null, currency), note: forwardQuarterBasisNote },
-    { labelKey: 'targetMarginLabel', sublabelKey: 'targetMarginSubtitle', metric: safetyMarginPrice, tone: marginTone(metrics.marginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, currency) },
-    { labelKey: 'targetForwardMarginLabel', sublabelKey: 'targetForwardMarginSubtitle', metric: forwardSafetyMarginPrice, tone: marginTone(metrics.forwardMarginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, currency) },
-    { labelKey: 'targetForwardQuarterMarginLabel', sublabelKey: 'targetForwardQuarterMarginSubtitle', metric: forwardQuarterSafetyMarginPrice, tone: marginTone(metrics.forwardQuarterMarginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, currency) },
+    { labelKey: 'targetMarginLabel', sublabelKey: 'targetMarginSubtitle', metric: safetyMarginPrice, tone: marginTone(metrics.marginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, currency), note: trailingBasisNote },
+    { labelKey: 'targetForwardMarginLabel', sublabelKey: 'targetForwardMarginSubtitle', metric: forwardSafetyMarginPrice, tone: marginTone(metrics.forwardMarginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, currency), note: metrics.forwardDcfPeriod },
+    { labelKey: 'targetForwardQuarterMarginLabel', sublabelKey: 'targetForwardQuarterMarginSubtitle', metric: forwardQuarterSafetyMarginPrice, tone: marginTone(metrics.forwardQuarterMarginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, currency), note: metrics.forwardQuarterDcfPeriod },
     { labelKey: 'targetEpsLabel', sublabelKey: 'targetEpsSubtitle', metric: metrics.forwardEpsTtm || metrics.forwardEpsFy0, tone: 'neutral', formatter: formatPlain },
     { labelKey: 'targetCoverageLabel', sublabelKey: 'targetCoverageSubtitle', metric: metrics.interestCoverage, tone: coverageTone(metrics.interestCoverage?.value ?? null), formatter: formatMultiple },
     { labelKey: 'targetBetaLabel', sublabelKey: 'targetBetaSubtitle', metric: metrics.beta, tone: 'neutral', formatter: formatPlain },
