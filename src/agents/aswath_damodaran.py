@@ -884,6 +884,15 @@ def _forward_period_label(forward_metrics, eps_source: str | None) -> str | None
 CYCLE_DECLINE_YEARS = 3
 #: 화면에 나란히 놓을 정점 시나리오(지금부터 몇 해 뒤).
 CYCLE_PEAK_HORIZONS = (1, 2, 3)
+#: 이 정도는 출렁여야 '사이클'이라 부를 수 있다 — 평균이 정점의 70% 이하,
+#: 즉 좋은 해가 보통 해의 1.4배는 되는 경우.
+#:
+#: 왜 문턱이 필요한가
+#:     정점 경로는 정점 이후 성장을 멈춘다. 그래서 사이클이 거의 없는 기업에도
+#:     적용하면 진폭 때문이 아니라 '성장을 끊는다'는 이유만으로 값이 깎인다
+#:     (실측: 정상/정점 98% 인 평탄한 손익에도 −26%). 그건 사이클 분석이 아니라
+#:     그냥 다른 성장 가정이다. 정점이 실재하는 종목에서만 이 틀을 쓴다.
+CYCLE_AMPLITUDE_THRESHOLD = 0.70
 
 
 def _cycle_normalization_ratio(cycle_items: list | None) -> tuple[float | None, str]:
@@ -905,6 +914,9 @@ def _cycle_normalization_ratio(cycle_items: list | None) -> tuple[float | None, 
     ratio = (sum(earnings) / len(earnings)) / peak
     if not (0.0 < ratio < 1.0):
         return None, ""
+    if ratio > CYCLE_AMPLITUDE_THRESHOLD:
+        # 사이클이라 부를 만큼 출렁이지 않는다. 정점 틀을 씌우지 않는다.
+        return None, f"사이클 진폭이 작아 정점 시나리오 미적용 (정상/정점 {ratio:.0%})"
     return ratio, f"정상/정점 {ratio:.0%} ({len(earnings)}개 연도 평균 ÷ 정점)"
 
 
@@ -964,6 +976,8 @@ def calculate_cycle_peak_scenarios(
     conversion, _ = _historical_fcff_conversion(line_items)
     ratio, ratio_note = _cycle_normalization_ratio(cycle_items)
     growth, _ = _sustainable_growth_rate(metrics, cycle_items or line_items)
+    if ratio is None and ratio_note:
+        return {"scenarios": [], "reason": ratio_note}
     if not (fwd_eps and shares and conversion and ratio and growth):
         return {"scenarios": [], "reason": "선행 이익·주식 수·사이클 이력 중 하나가 없어 정점 시나리오 미산출"}
 

@@ -301,3 +301,22 @@ def test_normalization_needs_enough_years():
     from src.agents.aswath_damodaran import _cycle_normalization_ratio
 
     assert _cycle_normalization_ratio([_line_item(net_income=100.0)])[0] is None
+
+
+def test_cycle_card_is_skipped_when_there_is_no_real_cycle():
+    """정점 경로는 정점 이후 성장을 멈춘다.
+
+    그래서 사이클이 거의 없는 기업에 적용하면 진폭 때문이 아니라 '성장을 끊는다'는
+    이유만으로 값이 깎인다(실측: 정상/정점 98% 인 평탄한 손익에도 −26%).
+    그건 사이클 분석이 아니라 그냥 다른 성장 가정이므로, 정점이 실재하는 종목에서만
+    이 틀을 쓴다.
+    """
+    from src.agents.aswath_damodaran import _cycle_normalization_ratio
+
+    flat = [_line_item(net_income=n) for n in (100.0, 101.0, 99.0, 100.0, 102.0)]
+    ratio, note = _cycle_normalization_ratio(flat)
+    assert ratio is None
+    assert "진폭이 작아" in note, "왜 안 나오는지 사유가 남아야 한다"
+
+    cyclical = [_line_item(net_income=n) for n in (100.0, 60.0, 20.0, 45.0, 90.0)]
+    assert _cycle_normalization_ratio(cyclical)[0] is not None
