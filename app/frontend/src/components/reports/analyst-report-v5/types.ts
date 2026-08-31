@@ -124,6 +124,9 @@ export interface CanonicalMetrics {
   forwardQuarterDcfPeriod?: string;
   /** 분기 스플라이스가 실제로 컨센서스 분기를 품고 있는가. 아니면 이름이 거짓말이 된다. */
   forwardQuarterHasConsensus?: boolean;
+  /** 현재가가 정당화되려면 필요한 영구 기점 이익(역산). */
+  marketImpliedEps?: CanonicalMetric;
+  marketImpliedEpsVsForward?: CanonicalMetric;
   marginOfSafety?: CanonicalMetric;
   interestCoverage?: CanonicalMetric;
   beta?: CanonicalMetric;

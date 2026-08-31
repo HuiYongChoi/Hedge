@@ -346,6 +346,25 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             signal_payload["forward_dcf_base_growth"] = _fwd_assumptions.get("base_growth")
             signal_payload["forward_dcf_period"] = _fwd_assumptions.get("period_label")
 
+            # 역산: 현재가가 정당화되려면 영구 기점 이익이 얼마여야 하는가.
+            #
+            # 왜 필요한가
+            #     선행 DCF 가 시가총액의 3.6배를 말할 때, 화면만 보면 '시장이 크게
+            #     저평가했다'로 읽힌다. 그런데 실측(000660.KS)으로는 성장률을 0%
+            #     까지 깎아도 시장가에 닿지 않는다 — 이견은 성장 가정이 아니라
+            #     '어느 이익이 지속되는가'에 있다. 그 이익을 숫자로 꺼내 놓으면
+            #     '싸다/비싸다'가 아니라 '나는 어느 쪽 이익을 믿는가'의 문제가 된다.
+            #
+            # 어떻게 푸나
+            #     DCF 는 출발 현금흐름에 정비례한다(할인율·감쇠·터미널이 모두 이익과
+            #     무관). 따라서 반복 탐색 없이 비례식으로 정확히 나온다.
+            _fwd_value = forward_val_analysis.get("intrinsic_value")
+            _fwd_eps_used = _fwd_assumptions.get("forward_eps_used")
+            if _fwd_value and _fwd_eps_used and market_cap:
+                _implied = _fwd_eps_used * market_cap / _fwd_value
+                signal_payload["market_implied_eps"] = _implied
+                signal_payload["market_implied_eps_vs_forward"] = _implied / _fwd_eps_used
+
         # 분기 기준(3분기 실적 + 1분기 컨센)도 같은 규칙으로 내보낸다.
         _q_per_share = forward_quarter_analysis.get("intrinsic_per_share")
         if _q_per_share is not None:

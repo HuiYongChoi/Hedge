@@ -878,16 +878,36 @@ export function normalizeAgentReport(
 
   const structured = mapStructuredView(report);
   if (structured) {
-  const reasoningText = normalizeFinancialDisplayText(extractReasoningText(report.reasoning || report)).trim();
+    const reasoningText = normalizeFinancialDisplayText(extractReasoningText(report.reasoning || report)).trim();
+    // 구조화된 뷰가 비워 둔 구획은 본문 헤딩으로 메운다.
+    //
+    // 이 경로는 헤딩을 아예 보지 않았다. 그래서 모델이 "### 6) 리스크와 반대
+    // 근거" 를 또박또박 써 보내도 04 가 빈 채로 나갔다(실측 3회 중 1회).
+    // 채워진 곳은 건드리지 않으므로, 메우기만 하고 덮어쓰지 않는다.
+    const headedFill = splitByMarkdownHeadings(extractReasoningText(report.reasoning || report));
+    const filled = headedFill ? {
+      valuationDcf: structured.valuationDcf || normalizeFinancialDisplayText(headedFill.valuationDcf).trim(),
+      multiples: structured.multiples || normalizeFinancialDisplayText(headedFill.multiples).trim(),
+      risks: structured.risks || normalizeFinancialDisplayText(headedFill.risks).trim(),
+      crossCheck: structured.crossCheck || normalizeFinancialDisplayText(headedFill.crossCheck).trim(),
+    } : {};
     return {
       ...structured,
+      ...filled,
       conclusion: buildConciseConclusion(report, structured, reasoningText, language)
         || stripMarkdownNoise(structured.conclusion),
       sources: structured.sources || buildSourceTrackingText(report),
     };
   }
 
-  const reasoning = normalizeFinancialDisplayText(extractReasoningText(report.reasoning || report)).trim();
+  // 구획 나누기는 정규화 '전' 원문으로 한다.
+  //
+  // 정규화기는 "### 핵심 판단\n[+] …" 의 줄바꿈을 없앤다. 그러면 제목과 본문이
+  // 한 줄이 되어, 줄 전체가 제목으로 잡히고 본문은 빈 것으로 읽힌다 — 구획이
+  // 하나도 안 잡혀 문장 키워드 추측으로 떨어지고, 04(리스크)가 통째로 빈다
+  // (실측 3회 중 1회). 원문에는 줄바꿈이 살아 있으므로 거기서 나눈다.
+  const rawReasoning = extractReasoningText(report.reasoning || report);
+  const reasoning = normalizeFinancialDisplayText(rawReasoning).trim();
   if (!reasoning) return normalizedEmpty();
   if (reasoning.length < 60) {
     return { ...normalizedEmpty(), conclusion: stripMarkdownNoise(reasoning), sources: buildSourceTrackingText(report) };
@@ -897,7 +917,15 @@ export function normalizeAgentReport(
   // 다만 헤딩만으로는 구획이 성기다 — 모델이 붙이지 않은 섹션은 통째로 빈다.
   // 그래서 둘을 합친다: 헤딩이 잡은 곳은 헤딩을 쓰고, 나머지는 문장 분류로 채운다.
   // (한쪽만 쓰면 실측에서 매번 어딘가가 비었다 — 헤딩만 쓰면 02, 문장만 쓰면 04.)
-  const headed = splitByMarkdownHeadings(reasoning);
+  const headedRaw = splitByMarkdownHeadings(rawReasoning);
+  const headed = headedRaw ? {
+    ...headedRaw,
+    conclusion: normalizeFinancialDisplayText(headedRaw.conclusion).trim(),
+    valuationDcf: normalizeFinancialDisplayText(headedRaw.valuationDcf).trim(),
+    multiples: normalizeFinancialDisplayText(headedRaw.multiples).trim(),
+    risks: normalizeFinancialDisplayText(headedRaw.risks).trim(),
+    crossCheck: normalizeFinancialDisplayText(headedRaw.crossCheck).trim(),
+  } : null;
 
   const sentences = splitSentences(reasoning);
   const classified: SentenceClassification[] = [];
@@ -2663,6 +2691,8 @@ export function buildCanonicalMetrics(
     forwardQuarterIntrinsicValue: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'aswath_damodaran'], ['forward_quarter_intrinsic_value_per_share']),
     forwardQuarterMarginOfSafety: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'aswath_damodaran'], ['forward_quarter_margin_of_safety']),
     forwardQuarterDcfEpsUsed: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'aswath_damodaran'], ['forward_quarter_dcf_eps_used']),
+    marketImpliedEps: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'aswath_damodaran'], ['market_implied_eps']),
+    marketImpliedEpsVsForward: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'aswath_damodaran'], ['market_implied_eps_vs_forward']),
     forwardDcfBaseGrowth: metricFromCandidates(reports, activeAgentKey, [activeAgentKey, 'aswath_damodaran'], ['forward_dcf_base_growth']),
     forwardDcfEpsSource: rawFromReports(reports, [activeAgentKey, 'aswath_damodaran'], 'forward_dcf_eps_source'),
     trailingDcfPeriod: rawFromReports(reports, [activeAgentKey, 'aswath_damodaran'], 'trailing_dcf_period'),
@@ -3211,6 +3241,15 @@ export function extractTargetTiles(
     ? 'targetForwardQuarterIntrinsicLabel' : 'targetTrailingTtmIntrinsicLabel';
   const quarterMarginLabelKey = quarterIsForward
     ? 'targetForwardQuarterMarginLabel' : 'targetTrailingTtmMarginLabel';
+  // 시장이 암묵적으로 쓰는 이익. 선행 컨센 대비 몇 %인지를 함께 보여야
+  // '얼마나 다르게 보고 있는지'가 한눈에 들어온다.
+  const marketImpliedNote = (() => {
+    const ratio = finiteNumber(metrics.marketImpliedEpsVsForward?.value);
+    const forwardEps = finiteNumber(metrics.forwardDcfEpsUsed?.value);
+    if (ratio === null) return undefined;
+    const base = forwardEps !== null ? ` (${formatCurrency(forwardEps, currency)})` : '';
+    return `${t('marketImpliedEpsRatio', language)} ${(ratio * 100).toFixed(0)}%${base}`;
+  })();
   const forwardQuarterBasisNote = (() => {
     const eps = finiteNumber(metrics.forwardQuarterDcfEpsUsed?.value);
     const epsPart = eps === null ? undefined
@@ -3221,6 +3260,7 @@ export function extractTargetTiles(
     { labelKey: 'targetIntrinsicLabel', sublabelKey: 'targetIntrinsicSubtitle', metric: metrics.intrinsicValue, tone: intrinsicTone(metrics.intrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatCurrency(value, currency), note: trailingBasisNote },
     { labelKey: 'targetForwardIntrinsicLabel', sublabelKey: 'targetForwardIntrinsicSubtitle', metric: metrics.forwardIntrinsicValue, tone: intrinsicTone(metrics.forwardIntrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatForwardIntrinsic(value, metrics.currentPrice?.value ?? null, currency), note: forwardBasisNote },
     { labelKey: quarterIntrinsicLabelKey, sublabelKey: 'targetForwardQuarterIntrinsicSubtitle', metric: metrics.forwardQuarterIntrinsicValue, tone: intrinsicTone(metrics.forwardQuarterIntrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatForwardIntrinsic(value, metrics.currentPrice?.value ?? null, currency), note: forwardQuarterBasisNote },
+    { labelKey: 'targetMarketImpliedEpsLabel', sublabelKey: 'targetMarketImpliedEpsSubtitle', metric: metrics.marketImpliedEps, tone: 'neutral', formatter: value => formatCurrency(value, currency), note: marketImpliedNote },
     { labelKey: 'targetMarginLabel', sublabelKey: 'targetMarginSubtitle', metric: safetyMarginPrice, tone: marginTone(metrics.marginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, currency), note: trailingBasisNote },
     { labelKey: 'targetForwardMarginLabel', sublabelKey: 'targetForwardMarginSubtitle', metric: forwardSafetyMarginPrice, tone: marginTone(metrics.forwardMarginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, currency), note: metrics.forwardDcfPeriod },
     { labelKey: quarterMarginLabelKey, sublabelKey: 'targetForwardQuarterMarginSubtitle', metric: forwardQuarterSafetyMarginPrice, tone: marginTone(metrics.forwardQuarterMarginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, currency), note: metrics.forwardQuarterDcfPeriod },
@@ -3232,9 +3272,9 @@ export function extractTargetTiles(
 
   return candidates
     .filter(candidate => candidate.metric)
-    // 후보가 10개다(내재가치 3 · 안전가 3 · EPS · 이자보상 · 베타 · WACC).
+    // 후보가 11개다(내재가치 3 · 시장 암묵 이익 · 안전가 3 · EPS · 이자보상 · 베타 · WACC).
     // 상한이 후보 수보다 작으면 맨 뒤 항목이 조용히 잘려 나간다.
-    .slice(0, 10)
+    .slice(0, 11)
     .map(candidate => {
       const metric = candidate.metric as CanonicalMetric;
       return {

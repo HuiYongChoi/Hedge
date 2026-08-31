@@ -236,3 +236,26 @@ def test_forward_dcf_refuses_when_discount_too_low():
         metrics, items, {"cost_of_equity": 0.01}, _forward(),
     )
     assert result["intrinsic_value"] is None
+
+
+# ── 역산: 시장이 암묵적으로 쓰는 이익 ────────────────────────────────────────
+def test_dcf_is_linear_in_the_starting_cash_flow():
+    """역산이 비례식으로 성립하려면 이 성질이 참이어야 한다.
+
+    할인율·감쇠·터미널은 이익과 무관하므로 출발 현금흐름을 k 배 하면 가치도
+    정확히 k 배가 된다. 이 성질이 깨지면 '시장 암묵 이익'을 비례식으로 구할 수
+    없고, 반복 탐색으로 바꿔야 한다.
+    """
+    metrics, items, risk = _sample_inputs()
+    one = calculate_forward_intrinsic_value_dcf(metrics, items, risk, _forward(eps_ttm=0.10))
+    two = calculate_forward_intrinsic_value_dcf(metrics, items, risk, _forward(eps_ttm=0.30))
+    assert two["intrinsic_value"] == pytest.approx(one["intrinsic_value"] * 3.0, rel=1e-9)
+
+
+def test_market_implied_eps_is_wired_from_the_forward_dcf():
+    """화면이 '우리가 보는 이익' 옆에 '시장이 보는 이익'을 놓을 수 있어야 한다."""
+    source = (Path(__file__).resolve().parents[1] / "src/agents/aswath_damodaran.py").read_text(encoding="utf-8")
+    assert 'signal_payload["market_implied_eps"]' in source
+    assert 'signal_payload["market_implied_eps_vs_forward"]' in source
+    # 비례식이어야 한다 — 반복 탐색이 들어오면 위 선형성 테스트가 무의미해진다.
+    assert "_fwd_eps_used * market_cap / _fwd_value" in source

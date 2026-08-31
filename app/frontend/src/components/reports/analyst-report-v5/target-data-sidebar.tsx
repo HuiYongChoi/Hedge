@@ -78,6 +78,8 @@ const ORDERED_PRIMARY_TILE_KEYS = [
   'targetIntrinsicLabel', 'targetForwardIntrinsicLabel',
   // 컨센서스 분기가 없으면 같은 자리에 '후행 TTM' 이름으로 뜬다.
   'targetForwardQuarterIntrinsicLabel', 'targetTrailingTtmIntrinsicLabel',
+  // 내재가치 바로 다음에 둔다 — '우리가 보는 이익' 옆에 '시장이 보는 이익'.
+  'targetMarketImpliedEpsLabel',
   'targetMarginLabel', 'targetForwardMarginLabel',
   'targetForwardQuarterMarginLabel', 'targetTrailingTtmMarginLabel',
 ] as const;
