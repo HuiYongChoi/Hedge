@@ -112,6 +112,9 @@ export interface CanonicalMetrics {
   forwardIntrinsicValue?: CanonicalMetric;   // 선행 컨센서스 기점 FCFF DCF
   forwardMarginOfSafety?: CanonicalMetric;
   forwardDcfEpsUsed?: CanonicalMetric;       // 선행 DCF 가 출발점으로 쓴 EPS
+  forwardQuarterIntrinsicValue?: CanonicalMetric;   // 분기 선행(3분기 실적+1분기 컨센) 기점 DCF
+  forwardQuarterMarginOfSafety?: CanonicalMetric;
+  forwardQuarterDcfEpsUsed?: CanonicalMetric;
   forwardDcfBaseGrowth?: CanonicalMetric;
   /** 선행 DCF 출발 EPS 의 출처 코드: consensus12m | consensusFy1 | spliceTtm */
   forwardDcfEpsSource?: string;

@@ -72,7 +72,12 @@ function fillTemplate(template: string, values: Record<string, string>) {
 
 // 선행 내재가치는 후행 내재가치 '바로 아래'에 온다. 두 값의 폭이 이 화면에서
 // 가장 중요한 정보이므로 떨어뜨려 놓으면 비교가 되지 않는다.
-const ORDERED_PRIMARY_TILE_KEYS = ['targetIntrinsicLabel', 'targetForwardIntrinsicLabel', 'targetMarginLabel', 'targetForwardMarginLabel'] as const;
+// 내재가치 3종을 먼저 나란히, 그 아래 같은 순서로 안전가 3종.
+// 짝을 맞춰 두지 않으면 '어느 기준의 안전가인지'가 화면에서 헷갈린다.
+const ORDERED_PRIMARY_TILE_KEYS = [
+  'targetIntrinsicLabel', 'targetForwardIntrinsicLabel', 'targetForwardQuarterIntrinsicLabel',
+  'targetMarginLabel', 'targetForwardMarginLabel', 'targetForwardQuarterMarginLabel',
+] as const;
 const PRIMARY_TILE_KEYS = new Set<string>(ORDERED_PRIMARY_TILE_KEYS);
 const SAFETY_MARGIN_DISPLAY_BUFFER = 0.25;
 
@@ -447,10 +452,14 @@ function ValuationGapNotice({
             </span>
           </Row>
         )}
+        {/* 위 타일의 '안전가'와 이름이 겹치면 안 된다 — 여기 값은 가치평가
+            분석가의 보수 DCF(후행 FCF · 대형주 성장률 10% 상한 · 변동성 보정)에서
+            나온 별개의 숫자다. 같은 이름의 다른 값이 둘 뜨면 독자는 어느 쪽이
+            틀린 줄 안다. */}
         {safetyPrice !== null && (
           <Row label={language === 'ko'
-            ? `DCF 안전가 (적정가 −${Math.round(SAFETY_MARGIN_DISPLAY_BUFFER * 100)}%)`
-            : `DCF safety (fair −${Math.round(SAFETY_MARGIN_DISPLAY_BUFFER * 100)}%)`}>
+            ? `보수 DCF 안전가 (가치평가 분석가 · 적정가 −${Math.round(SAFETY_MARGIN_DISPLAY_BUFFER * 100)}%)`
+            : `Conservative DCF safety (Valuation Analyst, fair −${Math.round(SAFETY_MARGIN_DISPLAY_BUFFER * 100)}%)`}>
             <span className="font-mono">
               {formatCurrency(safetyPrice, currency)} {safetyGap !== null ? `(${formatPercent(safetyGap)})` : ''}
             </span>

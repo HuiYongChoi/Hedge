@@ -120,9 +120,23 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         forward_outlook = build_forward_outlook_block(forward_metrics, trailing_pe=trailing_pe)
 
         progress.update_status(agent_id, ticker, "Calculating forward intrinsic value")
+        # 선행 실적을 두 가지 기준으로 각각 계산해 나란히 낸다.
+        #
+        #   · 연  기준 — 증권사 12개월 선행 컨센서스. 온전히 앞을 본 값이지만
+        #                컨센서스 상향 편향을 그대로 받는다.
+        #   · 분기 기준 — 직전 실제 3분기 + 컨센서스 1분기. 12개월 창의 3/4 가
+        #                이미 확정된 실적이라 보수적이지만, 선행성은 한 분기뿐이다.
+        #
+        # 어느 하나가 정답이 아니라 둘의 폭이 정보다. 하나만 내면 독자는 그 값이
+        # 얼마나 앞을 본 것인지 알 수 없다.
         forward_val_analysis = calculate_forward_intrinsic_value_dcf(
             metrics, line_items, risk_analysis, forward_metrics
         )
+        _quarter_eps = getattr(forward_metrics, "forward_eps_ttm", None) if forward_metrics else None
+        forward_quarter_analysis = calculate_forward_intrinsic_value_dcf(
+            metrics, line_items, risk_analysis, forward_metrics,
+            start_eps=_quarter_eps, start_source="spliceTtm",
+        ) if _quarter_eps else {"intrinsic_value": None, "reason": "분기 선행 EPS 없음"}
 
         # ─── Score & margin of safety ──────────────────────────────────────────
         _components = [growth_analysis, risk_analysis, relative_val_analysis]
@@ -323,6 +337,20 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             signal_payload["forward_dcf_eps_used"] = _fwd_assumptions.get("forward_eps_used")
             signal_payload["forward_dcf_eps_source"] = _fwd_assumptions.get("forward_eps_source")
             signal_payload["forward_dcf_base_growth"] = _fwd_assumptions.get("base_growth")
+
+        # 분기 기준(3분기 실적 + 1분기 컨센)도 같은 규칙으로 내보낸다.
+        _q_per_share = forward_quarter_analysis.get("intrinsic_per_share")
+        if _q_per_share is not None:
+            signal_payload["forward_quarter_intrinsic_value_per_share"] = _q_per_share
+            _q_value = forward_quarter_analysis.get("intrinsic_value")
+            signal_payload["forward_quarter_margin_of_safety"] = (
+                (_q_value - market_cap) / market_cap if _q_value and market_cap else None
+            )
+            signal_payload["forward_quarter_dcf_eps_used"] = (
+                (forward_quarter_analysis.get("assumptions") or {}).get("forward_eps_used")
+            )
+        elif forward_quarter_analysis.get("reason"):
+            signal_payload["forward_quarter_intrinsic_value_note"] = forward_quarter_analysis["reason"]
         elif forward_val_analysis.get("reason"):
             signal_payload["forward_intrinsic_value_note"] = forward_val_analysis["reason"]
 
@@ -740,6 +768,8 @@ def calculate_forward_intrinsic_value_dcf(
     line_items: list,
     risk_analysis: dict,
     forward_metrics,
+    start_eps: float | None = None,
+    start_source: str | None = None,
 ) -> dict[str, any]:
     """선행 컨센서스 이익을 출발점으로 삼는 FCFF DCF.
 
@@ -760,7 +790,10 @@ def calculate_forward_intrinsic_value_dcf(
     if forward_metrics is None:
         return {"intrinsic_value": None, "reason": "선행 컨센서스가 없어 선행 DCF 미산출"}
 
-    fwd_eps, eps_source = _resolve_forward_start_eps(forward_metrics)
+    if start_eps is not None:
+        fwd_eps, eps_source = start_eps, (start_source or "")
+    else:
+        fwd_eps, eps_source = _resolve_forward_start_eps(forward_metrics)
     if not fwd_eps or fwd_eps <= 0:
         return {"intrinsic_value": None, "reason": "선행 EPS 가 없거나 적자 전망이라 선행 DCF 미산출"}
 
