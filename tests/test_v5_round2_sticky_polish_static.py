@@ -111,10 +111,12 @@ def test_target_sidebar_orders_consensus_forward_pbr_bridge_before_valuation_mod
             < sidebar.index("'targetMarginLabel'")), "안전가는 내재가치 뒤에 온다"
     assert "secondaryTilesForBottom" in sidebar
 
+    # 목표가 검산은 검산 대상(증권사 평균 목표가) 바로 밑에 온다 — PBR 밴드 뒤에
+    # 두면 '무엇을 검산하는 중인지'가 화면에서 끊긴다.
     assert sidebar.index("<BrokerConsensusTile") < sidebar.index("<ForwardConsensusTile")
-    assert sidebar.index("<ForwardConsensusTile") < sidebar.index('mode="pbrOnly"')
-    assert sidebar.index('mode="pbrOnly"') < sidebar.index("<ConsensusBridgeTile")
-    assert sidebar.index("<ConsensusBridgeTile") < sidebar.index("primaryTiles.map")
+    assert sidebar.index("<ForwardConsensusTile") < sidebar.index("<ConsensusBridgeTile")
+    assert sidebar.index("<ConsensusBridgeTile") < sidebar.index('mode="pbrOnly"')
+    assert sidebar.index('mode="pbrOnly"') < sidebar.index("primaryTiles.map")
     assert sidebar.index("primaryTiles.map") < sidebar.index('mode="afterPbr"')
 
     assert "brokerConsensus={" in layout

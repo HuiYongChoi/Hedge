@@ -1254,16 +1254,8 @@ export function TargetDataSidebar({
                 />
               </div>
             )}
-            {valuationDeepDive && (
-              <ValuationSidebarPanel
-                dive={valuationDeepDive}
-                currency={currency}
-                language={language}
-                currentPrice={currentPrice}
-                brokerConsensus={brokerConsensus}
-                mode="pbrOnly"
-              />
-            )}
+            {/* 목표가 검산은 검산 대상(증권사 평균 목표가) 바로 밑에 온다.
+                PBR 밴드 뒤에 두면 '무엇을 검산하는 중인지'가 화면에서 끊긴다. */}
             {hasConsensusBridge && (
               <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
                 <ConsensusBridgeTile
@@ -1274,6 +1266,16 @@ export function TargetDataSidebar({
                   currentPrice={currentPrice}
                 />
               </div>
+            )}
+            {valuationDeepDive && (
+              <ValuationSidebarPanel
+                dive={valuationDeepDive}
+                currency={currency}
+                language={language}
+                currentPrice={currentPrice}
+                brokerConsensus={brokerConsensus}
+                mode="pbrOnly"
+              />
             )}
             {primaryTiles.length > 0 && (
               <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
