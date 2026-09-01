@@ -160,7 +160,9 @@ export function StickyAnalysisHeader({
           )}
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
-          <span className="font-mono text-sm font-semibold text-foreground">
+          {/* 현재가는 화면의 모든 값이 견주는 기준점이다. 다른 칩과 같은 크기로
+              두면 그 기준이 눈에 안 들어온다. */}
+          <span className="font-mono text-lg font-bold leading-none text-foreground sm:text-xl">
             {formatCurrency(currentPrice, currency, language)}
           </span>
           {priceChangePct !== null && priceChangePct !== undefined && Number.isFinite(priceChangePct) && (

@@ -165,3 +165,21 @@ def test_gap_notice_states_the_gap_not_the_numbers_again():
     # 대신 괴리(%)는 남는다 — 그게 이 카드의 일이다.
     for gap in ("safetyGap", "rimGap", "consensusGap"):
         assert f"formatPercent({gap})" in notice, gap
+
+
+def test_market_implied_eps_shows_the_multiple_not_just_the_number():
+    """EPS 하나만 있으면 비싼지 싼지 알 수 없다 — 현재가 기준 PER 로도 보여준다."""
+    helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+    language = LANG_PREFS.read_text(encoding="utf-8")
+
+    assert "(price / impliedEps).toFixed(1)" in helpers
+    assert "marketImpliedPerLabel" in helpers
+    assert "marketImpliedPerLabel: '현재가 기준 PER'" in language
+
+
+def test_sticky_header_price_is_the_largest_chip():
+    """현재가는 화면의 모든 값이 견주는 기준점이다."""
+    header = (V5_DIR / "sticky-analysis-header.tsx").read_text(encoding="utf-8")
+    price_block = header[header.index("formatCurrency(currentPrice, currency, language)") - 300:]
+    assert "text-lg font-bold" in price_block
+    assert "text-sm font-semibold text-foreground\">\n            {formatCurrency(currentPrice" not in header

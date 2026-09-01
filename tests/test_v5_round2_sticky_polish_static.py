@@ -107,8 +107,17 @@ def test_target_sidebar_orders_consensus_forward_pbr_bridge_before_valuation_mod
                 "targetMarginLabel", "targetForwardMarginLabel",
                 "targetForwardQuarterMarginLabel", "targetTrailingTtmMarginLabel"):
         assert key in sidebar, key
-    assert (sidebar.index("'targetForwardQuarterIntrinsicLabel'")
-            < sidebar.index("'targetMarginLabel'")), "안전가는 내재가치 뒤에 온다"
+    # 내재가치와 그 안전가를 짝지어 두고, 후행 → 선행(분기) → 선행(연) 순으로
+    # 시점이 앞으로 나아간다. 시장 암묵 이익은 맨 위 — 모델 값을 읽기 전에
+    # '시장은 얼마로 보고 있는가'가 먼저 와야 기준이 선다.
+    order = [
+        "'targetMarketImpliedEpsLabel'",
+        "'targetIntrinsicLabel'", "'targetMarginLabel'",
+        "'targetForwardQuarterIntrinsicLabel'", "'targetForwardQuarterMarginLabel'",
+        "'targetForwardIntrinsicLabel'", "'targetForwardMarginLabel'",
+    ]
+    positions = [sidebar.index(key) for key in order]
+    assert positions == sorted(positions), f"타일 순서가 어긋남: {order}"
     assert "secondaryTilesForBottom" in sidebar
 
     # 목표가 검산은 검산 대상(증권사 평균 목표가) 바로 밑에 온다 — PBR 밴드 뒤에

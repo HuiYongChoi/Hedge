@@ -3270,9 +3270,19 @@ export function extractTargetTiles(
   const marketImpliedNote = (() => {
     const ratio = finiteNumber(metrics.marketImpliedEpsVsForward?.value);
     const forwardEps = finiteNumber(metrics.forwardDcfEpsUsed?.value);
-    if (ratio === null) return undefined;
-    const base = forwardEps !== null ? ` (${formatCurrency(forwardEps, currency)})` : '';
-    return `${t('marketImpliedEpsRatio', language)} ${(ratio * 100).toFixed(0)}%${base}`;
+    const impliedEps = finiteNumber(metrics.marketImpliedEps?.value);
+    const price = finiteNumber(metrics.currentPrice?.value);
+    const parts: string[] = [];
+    // 이 이익을 현재가에 대면 몇 배인가 — EPS 하나만 있으면 그게 비싼지 싼지
+    // 알 수 없다. PER 로 바꿔 놔야 다른 배수와 견줄 수 있다.
+    if (impliedEps !== null && impliedEps > 0 && price !== null && price > 0) {
+      parts.push(`${t('marketImpliedPerLabel', language)} ${(price / impliedEps).toFixed(1)}`);
+    }
+    if (ratio !== null) {
+      const base = forwardEps !== null ? ` (${formatCurrency(forwardEps, currency)})` : '';
+      parts.push(`${t('marketImpliedEpsRatio', language)} ${(ratio * 100).toFixed(0)}%${base}`);
+    }
+    return parts.length ? parts.join(' · ') : undefined;
   })();
   const forwardQuarterBasisNote = (() => {
     const eps = finiteNumber(metrics.forwardQuarterDcfEpsUsed?.value);

@@ -74,14 +74,19 @@ function fillTemplate(template: string, values: Record<string, string>) {
 // 가장 중요한 정보이므로 떨어뜨려 놓으면 비교가 되지 않는다.
 // 내재가치 3종을 먼저 나란히, 그 아래 같은 순서로 안전가 3종.
 // 짝을 맞춰 두지 않으면 '어느 기준의 안전가인지'가 화면에서 헷갈린다.
+// 내재가치와 그 안전가를 짝지어 놓고, 후행 → 선행(분기) → 선행(연) 순으로
+// 시점이 앞으로 나아가게 둔다. 내재가치 셋을 몰아 놓고 안전가 셋을 몰아 놓으면
+// '이 안전가가 어느 내재가치에서 나온 것인지'를 매번 되짚어야 한다.
+//
+// 시장 암묵 이익은 맨 위다 — 나머지 값이 전부 '우리 모델이 보는 이익'인데,
+// 그것들을 읽기 전에 '시장은 얼마로 보고 있는가'가 먼저 와야 기준이 선다.
 const ORDERED_PRIMARY_TILE_KEYS = [
-  'targetIntrinsicLabel', 'targetForwardIntrinsicLabel',
+  'targetMarketImpliedEpsLabel',
+  'targetIntrinsicLabel', 'targetMarginLabel',
   // 컨센서스 분기가 없으면 같은 자리에 '후행 TTM' 이름으로 뜬다.
   'targetForwardQuarterIntrinsicLabel', 'targetTrailingTtmIntrinsicLabel',
-  // 내재가치 바로 다음에 둔다 — '우리가 보는 이익' 옆에 '시장이 보는 이익'.
-  'targetMarketImpliedEpsLabel',
-  'targetMarginLabel', 'targetForwardMarginLabel',
   'targetForwardQuarterMarginLabel', 'targetTrailingTtmMarginLabel',
+  'targetForwardIntrinsicLabel', 'targetForwardMarginLabel',
 ] as const;
 const PRIMARY_TILE_KEYS = new Set<string>(ORDERED_PRIMARY_TILE_KEYS);
 const SAFETY_MARGIN_DISPLAY_BUFFER = 0.25;
