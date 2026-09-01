@@ -182,9 +182,11 @@ def test_pbr_band_card_supports_current_and_assumption_markers():
     layout = read(V5_DIR / "report-layout.tsx")
 
     assert "assumptionPbrInput" in sidebar
-    assert "useState(() => formatPbrMultiple(pbr.currentPbr))" in sidebar
-    assert "setAssumptionPbrInput(formatPbrMultiple(pbr.currentPbr))" in sidebar
-    assert "[pbr.currentPbr]" in sidebar
+    # 입력칸 초기값은 '—' 가 되면 안 된다 — Number('—') = NaN 이라 계산이 죽는다.
+    assert "useState(() => defaultPbrText)" in sidebar
+    assert "const defaultPbrText = Number.isFinite(pbr.currentPbr)" in sidebar
+    assert "setAssumptionPbrInput(defaultPbrText)" in sidebar
+    assert "[defaultPbrText]" in sidebar
     assert "assumptionPbr" in sidebar
     assert "scenarioPct" in sidebar
     assert "showScenarioMarker" in sidebar

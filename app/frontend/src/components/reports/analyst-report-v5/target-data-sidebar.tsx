@@ -239,16 +239,28 @@ function PbrBandCard({
   )
     ? marketCurrentPrice
     : pbr.currentPrice;
-  const [assumptionPbrInput, setAssumptionPbrInput] = useState(() => formatPbrMultiple(pbr.currentPbr));
+  // 입력칸의 기본값. formatPbrMultiple 은 값이 없을 때 '—' 를 돌려주는데,
+  // 그게 그대로 입력칸에 들어가면 Number('—') = NaN 이라 계산이 안 된다.
+  const defaultPbrText = Number.isFinite(pbr.currentPbr) && pbr.currentPbr > 0
+    ? formatPbrMultiple(pbr.currentPbr)
+    : '';
+  const [assumptionPbrInput, setAssumptionPbrInput] = useState(() => defaultPbrText);
   useEffect(() => {
-    setAssumptionPbrInput(formatPbrMultiple(pbr.currentPbr));
-  }, [pbr.currentPbr]);
+    setAssumptionPbrInput(defaultPbrText);
+  }, [defaultPbrText]);
   const trend = computePbrTrend(pbr.history, language);
   const railPct = ratioToBandPct(pbr.currentPbr, pbr.percentiles.p10, pbr.percentiles.p90);
+  // 입력이 비어 있으면 화면에 뜬 placeholder(= 현재 PBR)로 계산한다.
+  //
+  // 예전에는 여기서 null 을 돌려 "입력 필요" 를 띄웠는데, 상자에는 placeholder 로
+  // 3.5 가 보이고 있었다. 보이는 값과 계산이 어긋나 '3.5 를 넣었는데 왜 계산이
+  // 안 되나' 로 읽힌다. 지우면 기본값으로 돌아가는 편이 화면과 일치한다.
   const assumptionPbr = useMemo(() => {
-    const parsed = Number(assumptionPbrInput.replace(',', '.'));
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-  }, [assumptionPbrInput]);
+    const typed = Number(assumptionPbrInput.replace(',', '.'));
+    if (Number.isFinite(typed) && typed > 0) return typed;
+    if (assumptionPbrInput.trim() !== '') return null;   // 숫자가 아닌 걸 입력한 경우
+    return Number.isFinite(pbr.currentPbr) && pbr.currentPbr > 0 ? pbr.currentPbr : null;
+  }, [assumptionPbrInput, pbr.currentPbr]);
   const scenarioPct = assumptionPbr === null
     ? null
     : ratioToBandPct(assumptionPbr, pbr.percentiles.p10, pbr.percentiles.p90);
@@ -265,12 +277,12 @@ function PbrBandCard({
     : null;
   const assumptionPriceText = assumptionPrice !== null
     ? formatCurrency(assumptionPrice, currency)
-    : (language === 'ko' ? '입력 필요' : 'Enter PBR');
+    : (language === 'ko' ? '숫자를 입력하세요' : 'Enter a number');
   const assumptionGapText = assumptionGap !== null
     ? (language === 'ko'
         ? `현재가 대비 ${formatPercent(assumptionGap)}`
         : `${formatPercent(assumptionGap)} vs current`)
-    : (language === 'ko' ? 'PBR을 입력하면 계산됩니다' : 'Enter a PBR to calculate');
+    : (language === 'ko' ? '현재 PBR 기준으로 계산됩니다' : 'Calculated at the current PBR');
   const vsMedian = pbr.percentiles.p50 ? (pbr.currentPbr - pbr.percentiles.p50) / pbr.percentiles.p50 : null;
   const vsP90 = pbr.percentiles.p90 ? (pbr.currentPbr - pbr.percentiles.p90) / pbr.percentiles.p90 : null;
   const position = pbrPositionText(pbr.positionLabel, language);
@@ -475,17 +487,16 @@ function CyclePeakCard({
   );
 }
 
+// 값을 다시 적지 않으므로 통화 포맷이 필요 없다 — 여긴 괴리(%)만 말한다.
 function ValuationGapNotice({
   dive,
   brokerConsensus,
   currentPrice,
-  currency,
   language,
 }: {
   dive: ValuationDeepDive;
   brokerConsensus?: BrokerConsensusSnapshot | null;
   currentPrice?: number | null;
-  currency: string;
   language: ReportLanguage;
 }) {
   const dcfModel = dive.models.find(model => model.key === 'dcf');
@@ -522,35 +533,27 @@ function ValuationGapNotice({
       <div className="mt-1 text-[10px] leading-4 text-muted-foreground">
         {t('valuationGapNoticeBody', language)}
       </div>
+      {/* 값을 다시 적지 않는다.
+          현재가는 상단 헤더에, 증권사 평균은 '목표가 검산' 카드에, RIM 과 보수
+          DCF 는 '밸류에이션 모델 요약'에 이미 각각 한 번씩 있다. 여기서 또 적으면
+          같은 숫자가 한 화면에 세 번 나오고, 어느 것이 기준인지 흐려진다.
+          이 카드의 일은 '얼마나 벌어져 있으니 무엇을 확인하라'는 해석 한 줄이다. */}
       <dl className="mt-2 space-y-1 text-[10px]">
-        <Row label={language === 'ko' ? '현재가' : 'Current'}>
-          <span className="font-mono text-foreground">{formatCurrency(livePrice, currency)}</span>
-        </Row>
-        {consensus !== null && (
-          <Row label={language === 'ko' ? '증권사 평균' : 'Broker avg'}>
-            <span className="font-mono text-foreground">
-              {formatCurrency(consensus, currency)} {consensusGap !== null ? `(${formatPercent(consensusGap)})` : ''}
-            </span>
+        {safetyGap !== null && (
+          <Row label={language === 'ko' ? '보수 DCF 안전가 · 현재가 대비' : 'Conservative DCF safety vs price'}
+               tip={t('conservativeDcfTip', language)}>
+            <span className="font-mono text-foreground">{formatPercent(safetyGap)}</span>
           </Row>
         )}
-        {/* 위 타일의 '안전가'와 이름이 겹치면 안 된다 — 여기 값은 가치평가
-            분석가의 보수 DCF(후행 FCF · 대형주 성장률 10% 상한 · 변동성 보정)에서
-            나온 별개의 숫자다. 같은 이름의 다른 값이 둘 뜨면 독자는 어느 쪽이
-            틀린 줄 안다. */}
-        {safetyPrice !== null && (
-          <Row label={language === 'ko'
-            ? `보수 DCF 안전가 (가치평가 분석가 · 적정가 −${Math.round(SAFETY_MARGIN_DISPLAY_BUFFER * 100)}%)`
-            : `Conservative DCF safety (Valuation Analyst, fair −${Math.round(SAFETY_MARGIN_DISPLAY_BUFFER * 100)}%)`}>
-            <span className="font-mono">
-              {formatCurrency(safetyPrice, currency)} {safetyGap !== null ? `(${formatPercent(safetyGap)})` : ''}
-            </span>
+        {rimGap !== null && (
+          <Row label={language === 'ko' ? 'RIM · 현재가 대비' : 'RIM vs price'}
+               tip={t('valuationModelGlossaryRim', language)}>
+            <span className="font-mono text-foreground">{formatPercent(rimGap)}</span>
           </Row>
         )}
-        {rimValue !== null && (
-          <Row label={language === 'ko' ? 'RIM' : 'RIM'}>
-            <span className="font-mono">
-              {formatCurrency(rimValue, currency)} {rimGap !== null ? `(${formatPercent(rimGap)})` : ''}
-            </span>
+        {consensusGap !== null && (
+          <Row label={language === 'ko' ? '증권사 평균 · 현재가 대비' : 'Broker avg vs price'}>
+            <span className="font-mono text-foreground">{formatPercent(consensusGap)}</span>
           </Row>
         )}
       </dl>
@@ -945,7 +948,6 @@ function ValuationSidebarPanel({
     );
   })();
   const primaryPbrCard = pbrCard;
-  const secondaryRimCard = rimCard;
   const cashFlowCard = dive.cashFlow && (
     <CashFlowInsightCard cashFlow={dive.cashFlow} currency={currency} language={language} />
   );
@@ -954,7 +956,6 @@ function ValuationSidebarPanel({
       dive={dive}
       brokerConsensus={brokerConsensus}
       currentPrice={currentPrice}
-      currency={currency}
       language={language}
     />
   );
@@ -969,12 +970,12 @@ function ValuationSidebarPanel({
         {dive.regimeNote && (
           <p className="rounded-md border border-border/60 bg-muted/10 px-2.5 py-2 text-[10px] leading-4 text-muted-foreground">{dive.regimeNote}</p>
         )}
+        {/* 모델 값은 요약 리스트 한 곳에만 둔다.
+            여기에 EV/EBITDA·EV/EBIT·EBITDA 정규화·ROIC−WACC EVA·RIM 카드를 각각
+            또 그리고 있었다 — 바로 위 요약에 이미 같은 값이 줄로 들어 있어서,
+            같은 숫자가 연달아 두 번 나왔다. 카드가 더 갖고 있던 설명은 요약 줄의
+            호버로 옮겼다. */}
         <ValuationModelsSummary dive={dive} currency={currency} language={language} />
-        {evCard}
-        {evEbitCard}
-        {ebitdaCard}
-        {evaCard}
-        {secondaryRimCard}
         {cashFlowCard}
         {gapNotice}
       </div>
