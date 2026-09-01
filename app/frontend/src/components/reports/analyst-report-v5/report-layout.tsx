@@ -580,6 +580,7 @@ export function ReportLayout({
           currency={effectiveCurrency}
           brokerConsensus={brokerConsensus}
           currentPrice={effectiveCurrentPrice}
+          wacc={effectiveMetrics.wacc?.value ?? null}
         />
       </div>
 

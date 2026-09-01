@@ -410,6 +410,22 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         if basis:
             signal_payload["margin_of_safety_basis"] = basis
 
+        # 할인율을 화면에 밝힌다.
+        #
+        # 사이드바에는 가치평가 분석가의 WACC 만 떠 있었는데, 다모다란 DCF 는
+        # 자기자본비용으로 할인한다. 지금 종목처럼 두 값이 우연히 같으면 문제가
+        # 없지만, 갈리는 날에는 화면의 할인율과 실제로 쓰인 할인율이 어긋난다.
+        # 어느 값이 어느 엔진의 것인지 함께 내보낸다.
+        _discount = risk_analysis.get("cost_of_equity") if isinstance(risk_analysis, dict) else None
+        if isinstance(_discount, (int, float)):
+            signal_payload["damodaran_cost_of_equity"] = _discount
+            _beta = risk_analysis.get("beta") if isinstance(risk_analysis, dict) else None
+            if isinstance(_beta, (int, float)):
+                signal_payload["damodaran_beta"] = _beta
+            _rf_source = risk_analysis.get("risk_free_source") if isinstance(risk_analysis, dict) else None
+            if _rf_source:
+                signal_payload["damodaran_risk_free_source"] = _rf_source
+
         signal_payload["valuation_confidence"] = valuation_confidence
         damodaran_signals[ticker] = signal_payload
 

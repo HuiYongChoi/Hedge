@@ -17,6 +17,8 @@ interface TargetDataSidebarProps {
   currency?: string;
   brokerConsensus?: BrokerConsensusSnapshot | null;
   currentPrice?: number | null;
+  /** 가치평가 분석가의 WACC. 다모다란 자기자본비용과 나란히 보여 주기 위해 받는다. */
+  wacc?: number | null;
 }
 
 interface BrokerConsensusSnapshot {
@@ -460,6 +462,61 @@ function PbrBandCard({
  * 정점이면 158만). 정점 연도를 알려 주는 자료는 없으므로 하나를 박지 않고
  * 나란히 놓아, 지금 가격이 어느 시나리오에 앉아 있는지를 보이게 한다.
  */
+/** 내재가치를 만든 할인율. 어느 값이 어느 엔진의 것인지 함께 밝힌다.
+ *
+ * 사이드바에는 가치평가 분석가의 WACC 만 떠 있었는데, 다모다란 DCF 는 자기자본
+ * 비용으로 할인한다. 실측(000660.KS): WACC 10.5% vs 자기자본비용 9.0% — 화면의
+ * 할인율과 위 타일들을 실제로 만든 할인율이 서로 달랐다. 할인율은 성장률과 함께
+ * 결과를 가장 크게 좌우하는 두 축이라, 어긋난 채로 두면 적정가가 어떤 전제 위에
+ * 선 건지 알 수 없다.
+ */
+function DiscountRateCard({
+  report, wacc, language,
+}: {
+  report?: Record<string, any> | null;
+  wacc?: number | null;
+  language: ReportLanguage;
+}) {
+  const costOfEquity = Number(report?.damodaran_cost_of_equity);
+  const beta = Number(report?.damodaran_beta);
+  const rfSource = typeof report?.damodaran_risk_free_source === 'string'
+    ? report!.damodaran_risk_free_source : null;
+  const hasWacc = Number.isFinite(Number(wacc)) && Number(wacc) > 0;
+  const hasCoe = Number.isFinite(costOfEquity) && costOfEquity > 0;
+  if (!hasWacc && !hasCoe) return null;
+  const isKo = language === 'ko';
+  const asPct = (value: number) => `${(value * (Math.abs(value) <= 1 ? 100 : 1)).toFixed(1)}%`;
+
+  return (
+    <div className="mt-2 rounded-lg border border-border/60 bg-muted/10 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {isKo ? '내재가치 할인율' : 'Discount rates'}
+        </div>
+        <HelpTip text={t('discountRateCardTip', language)} />
+      </div>
+      <dl className="mt-2 space-y-1 text-[10px]">
+        {hasCoe && (
+          <Row label={isKo ? '다모다란 DCF · 자기자본비용' : 'Damodaran DCF - cost of equity'}>
+            <span className="font-mono text-xs font-semibold text-foreground">{asPct(costOfEquity)}</span>
+          </Row>
+        )}
+        {hasWacc && (
+          <Row label={isKo ? '가치평가 분석가 · WACC' : 'Valuation Analyst - WACC'}>
+            <span className="font-mono text-xs font-semibold text-foreground">{asPct(Number(wacc))}</span>
+          </Row>
+        )}
+      </dl>
+      <div className="mt-1.5 text-[9px] leading-snug text-muted-foreground">
+        {Number.isFinite(beta) && beta > 0
+          ? (isKo ? `베타 ${beta.toFixed(2)} 기준` : `Beta ${beta.toFixed(2)}`)
+          : (isKo ? '베타 자료가 없어 1.0으로 가정했습니다' : 'Beta unavailable - assumed 1.0')}
+        {rfSource ? ` · ${rfSource}` : ''}
+      </div>
+    </div>
+  );
+}
+
 function CyclePeakCard({
   report, currency, language, currentPrice,
 }: {
@@ -1283,6 +1340,7 @@ export function TargetDataSidebar({
   currency = 'USD',
   brokerConsensus,
   currentPrice,
+  wacc,
 }: TargetDataSidebarProps) {
   const primaryTiles = ORDERED_PRIMARY_TILE_KEYS
     .map(key => tiles.find(tile => tile.labelKey === key))
@@ -1354,6 +1412,7 @@ export function TargetDataSidebar({
               <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
                 {primaryTiles.map(tile => <TargetTileCard key={tile.labelKey} tile={tile} language={language} />)}
                 <CyclePeakCard report={report} currency={currency} language={language} currentPrice={currentPrice} />
+                <DiscountRateCard report={report} wacc={wacc} language={language} />
               </div>
             )}
             {valuationDeepDive && (

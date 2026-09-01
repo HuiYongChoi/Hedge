@@ -3301,14 +3301,16 @@ export function extractTargetTiles(
     { labelKey: 'targetEpsLabel', sublabelKey: 'targetEpsSubtitle', metric: metrics.forwardEpsTtm || metrics.forwardEpsFy0, tone: 'neutral', formatter: formatPlain },
     { labelKey: 'targetCoverageLabel', sublabelKey: 'targetCoverageSubtitle', metric: metrics.interestCoverage, tone: coverageTone(metrics.interestCoverage?.value ?? null), formatter: formatMultiple },
     { labelKey: 'targetBetaLabel', sublabelKey: 'targetBetaSubtitle', metric: metrics.beta, tone: 'neutral', formatter: formatPlain },
-    { labelKey: 'targetWaccLabel', sublabelKey: 'targetWaccSubtitle', metric: metrics.wacc, tone: 'neutral', formatter: formatPercentSmart, tip: t('targetWaccTip', language) },
+    // WACC 타일은 뺐다 — 사이드바 하단 '내재가치 할인율' 카드에 다모다란
+    // 자기자본비용과 나란히 들어간다. 한쪽만 보여 주면 화면의 할인율과 위 타일을
+    // 실제로 만든 할인율이 어긋난다(실측: WACC 10.5% vs 자기자본비용 9.0%).
   ];
 
   return candidates
     .filter(candidate => candidate.metric)
-    // 후보가 11개다(내재가치 3 · 시장 암묵 이익 · 안전가 3 · EPS · 이자보상 · 베타 · WACC).
+    // 후보가 10개다(내재가치 3 · 시장 암묵 이익 · 안전가 3 · EPS · 이자보상 · 베타).
     // 상한이 후보 수보다 작으면 맨 뒤 항목이 조용히 잘려 나간다.
-    .slice(0, 11)
+    .slice(0, 10)
     .map(candidate => {
       const metric = candidate.metric as CanonicalMetric;
       return {
@@ -3414,11 +3416,6 @@ function formatForwardIntrinsic(value: number, currentPrice: number | null | und
   const gap = current !== null && current > 0 ? (value - current) / current : null;
   const pct = gap !== null ? ` (${gap > 0 ? '+' : ''}${(gap * 100).toFixed(1)}%)` : '';
   return `${formatCurrency(value, currency)}${pct}`;
-}
-
-function formatPercentSmart(value: number) {
-  const pct = Math.abs(value) <= 1 ? value * 100 : value;
-  return `${pct.toFixed(2)}%`;
 }
 
 function formatMultiple(value: number) {

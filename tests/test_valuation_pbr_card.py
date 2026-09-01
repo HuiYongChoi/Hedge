@@ -225,3 +225,27 @@ def test_cycle_card_draws_the_scenarios():
     assert "currentPrice" in card, "현재가 기준선을 그리려면 현재가가 필요하다"
     assert "bg-emerald-500/60" in card and "bg-rose-500/60" in card, "현재가 위/아래를 색으로 가른다"
     assert "style={{ width: pct(value) }}" in card
+
+
+def test_both_discount_rates_are_shown_with_their_engine():
+    """화면의 할인율과 타일을 실제로 만든 할인율이 어긋나 있었다.
+
+    실측(000660.KS): 사이드바에는 가치평가 분석가의 WACC 10.5% 만 떠 있었는데,
+    위 내재가치 타일들을 만든 다모다란 DCF 는 자기자본비용 9.0% 로 할인한다.
+    할인율은 성장률과 함께 결과를 가장 크게 좌우하는 두 축이라, 어느 값이 어느
+    엔진의 것인지 함께 밝혀야 한다.
+    """
+    sidebar = SIDEBAR.read_text(encoding="utf-8")
+    helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
+    language = LANG_PREFS.read_text(encoding="utf-8")
+    agent = (REPO_ROOT / "src/agents/aswath_damodaran.py").read_text(encoding="utf-8")
+
+    assert 'signal_payload["damodaran_cost_of_equity"]' in agent
+    assert "function DiscountRateCard" in sidebar
+    assert "다모다란 DCF · 자기자본비용" in sidebar
+    assert "가치평가 분석가 · WACC" in sidebar
+    assert "discountRateCardTip:" in language
+    # 베타 자료가 없으면 1.0 을 가정한다는 사실도 숨기지 않는다.
+    assert "베타 자료가 없어 1.0으로 가정했습니다" in sidebar
+    # 단독 WACC 타일은 이 카드와 중복이라 뺐다.
+    assert "'targetWaccLabel'" not in helpers
