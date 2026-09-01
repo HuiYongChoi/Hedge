@@ -19,13 +19,15 @@ def test_pbr_trend_helper_is_exported_and_guarded():
     assert "하락국면" in helpers
 
 
-def test_pbr_card_uses_native_tooltips_and_no_chart_library():
+def test_pbr_card_uses_lightweight_tooltips_and_no_chart_library():
     sidebar = (V5_DIR / "target-data-sidebar.tsx").read_text(encoding="utf-8")
 
     assert "function PbrBandCard" in sidebar
     assert "function PbrMiniRail" in sidebar
     assert "function InfoDot" in sidebar
-    assert 'title={title}' in sidebar
+    # native title 은 1초 넘게 기다려야 떠서 group-hover 로 바꿨다.
+    # 차트도 라이브러리 없이 div 로 그린다 — 번들을 늘리지 않는다.
+    assert "function HelpTip" in sidebar
     assert "role=\"tooltip\"" in sidebar
     assert "from 'recharts'" not in sidebar
     assert "from 'chart.js'" not in sidebar
@@ -94,7 +96,7 @@ def test_valuation_cards_do_not_repeat_the_same_number():
     assert "90% 상단 시나리오" not in bridge, "상단 시나리오도 PBR 밴드 카드에만 둔다"
     assert "formatCurrency(rimValue" not in bridge, "RIM 은 아래 카드에만 둔다"
     # 대신 '얼마나 떨어져 있는가'는 남아야 한다 — 그게 이 카드의 일이다.
-    assert "gapToP90" in bridge and "upsideToCurrent" in bridge
+    assert "upsideToCurrent" in bridge
     # 목표가가 몇 배짜리인지도 그 자리에서 검산되어야 한다.
     assert "fwdPerTargetLabel" in bridge and "PBR {formatPbrMultiple(impliedPbr)}" in bridge
 
@@ -183,3 +185,43 @@ def test_sticky_header_price_is_the_largest_chip():
     price_block = header[header.index("formatCurrency(currentPrice, currency, language)") - 300:]
     assert "text-lg font-bold" in price_block
     assert "text-sm font-semibold text-foreground\">\n            {formatCurrency(currentPrice" not in header
+
+
+def test_tooltips_do_not_use_the_slow_browser_default():
+    """title 속성은 마우스를 올리고 1초 넘게 기다려야 뜬다.
+
+    설명이 필요해서 올린 손이 그 사이에 지나가 버리면 없는 것과 같다.
+    group-hover 로 지연 없이 뜨게 한다.
+    """
+    sidebar = SIDEBAR.read_text(encoding="utf-8")
+
+    assert "function HelpTip" in sidebar
+    assert "group-hover/tip:block" in sidebar
+    # InfoDot 이 native title 로 되돌아가면 안 된다.
+    info_dot = sidebar[sidebar.index("function InfoDot"):]
+    assert "title={title}" not in info_dot[:400]
+    # 모델 이름 호버도 같은 경로를 쓴다.
+    assert "title={valuationModelTip(" not in sidebar
+
+
+def test_target_check_card_drops_the_unreadable_band_fragments():
+    """'90% 대비 +82.7% · 50% +179.1%' — 무엇의 90%/50% 인지 이 카드에선 알 수 없다."""
+    sidebar = SIDEBAR.read_text(encoding="utf-8")
+    start = sidebar.index("function ConsensusBridgeTile")
+    next_decl = sidebar.find("\nfunction ", start + 1)
+    bridge = sidebar[start:next_decl if next_decl != -1 else len(sidebar)]
+
+    assert "p90Text" not in bridge
+    assert "gapToP50" not in bridge
+    assert "현재가 대비" in bridge, "현재가 대비는 남는다"
+
+
+def test_cycle_card_draws_the_scenarios():
+    """세 값의 간격과 현재가 위치는 표만으로는 머릿속에서 그려야 한다."""
+    sidebar = SIDEBAR.read_text(encoding="utf-8")
+    start = sidebar.index("function CyclePeakCard")
+    card = sidebar[start:sidebar.index("\nfunction ", start + 1)]
+
+    assert "currentPrice" in card, "현재가 기준선을 그리려면 현재가가 필요하다"
+    assert "bg-emerald-500/60" in card and "bg-rose-500/60" in card, "현재가 위/아래를 색으로 가른다"
+    assert "style={{ width: pct(value) }}" in card

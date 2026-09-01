@@ -57,6 +57,8 @@ export interface TargetTile {
   value: string;
   /** 값 아래에 붙는 근거 한 줄(예: 어느 선행 EPS 를 출발점으로 썼는지). */
   note?: string;
+  /** 제목 옆 물음표에 붙는 설명. '이 값이 왜 여기 있는가'를 답한다. */
+  tip?: string;
   tone: ReportTone;
   sourceAgent?: { key: string; nameKo: string; nameEn: string };
   isFromActiveAgent: boolean;

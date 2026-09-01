@@ -150,17 +150,36 @@ function pbrSignalText(signalTone: ReportTone, language: ReportLanguage) {
   return language === 'ko' ? '중립' : 'Neutral';
 }
 
-function InfoDot({ title }: { title: string }) {
+/** 즉시 뜨는 설명 풍선.
+ *
+ * 브라우저 기본 title 속성은 마우스를 올리고 1초 넘게 기다려야 뜬다. 설명이
+ * 필요해서 올린 손이 그 사이에 지나가 버리면 없는 것과 같다. group-hover 로
+ * 바꿔 지연 없이 뜨게 하고, 글자도 읽을 만한 크기로 키운다.
+ */
+function HelpTip({ text, children, className }: { text: string; children?: ReactNode; className?: string }) {
   return (
-    <span
-      role="tooltip"
-      title={title}
-      className="inline-flex h-3 w-3 cursor-help items-center justify-center rounded-full border border-border/60 text-[8px] text-muted-foreground"
-      aria-label={title}
-    >
-      ?
+    <span className={`group/tip relative inline-flex items-center ${className ?? ''}`}>
+      {children ?? (
+        <span
+          aria-hidden
+          className="inline-flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full border border-border/70 text-[9px] font-semibold text-muted-foreground transition-colors group-hover/tip:border-amber-400/70 group-hover/tip:text-amber-300"
+        >
+          ?
+        </span>
+      )}
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full right-0 z-50 mb-1.5 hidden w-64 whitespace-normal rounded-md border border-border bg-popover px-2.5 py-2 text-left text-[11px] font-normal normal-case leading-relaxed tracking-normal text-popover-foreground shadow-xl group-hover/tip:block"
+      >
+        {text}
+      </span>
+      <span className="sr-only">{text}</span>
     </span>
   );
+}
+
+function InfoDot({ title }: { title: string }) {
+  return <HelpTip text={title} />;
 }
 
 function Row({ label, tip, children }: { label: string; tip?: string; children: ReactNode }) {
@@ -442,11 +461,12 @@ function PbrBandCard({
  * 나란히 놓아, 지금 가격이 어느 시나리오에 앉아 있는지를 보이게 한다.
  */
 function CyclePeakCard({
-  report, currency, language,
+  report, currency, language, currentPrice,
 }: {
   report?: Record<string, any> | null;
   currency: string;
   language: ReportLanguage;
+  currentPrice?: number | null;
 }) {
   const rows = Array.isArray(report?.cycle_peak_scenarios) ? report!.cycle_peak_scenarios : [];
   if (rows.length === 0) return null;
@@ -463,6 +483,56 @@ function CyclePeakCard({
           ? '정점 이후 정상 수준까지 내려오는 경로를 반영한 주당 가치입니다. 위쪽 선행 내재가치는 정점 없이 계산한 값입니다.'
           : 'Per-share value along a peak-then-normalise path. The forward intrinsic tiles above assume no peak.'}
       </div>
+      {/* 표만 있으면 세 값의 간격과 현재가의 위치가 머릿속에서 그려져야 한다.
+          막대 하나에 현재가 선을 얹으면 '지금 가격이 어느 시나리오에 앉아 있는지'가
+          한눈에 들어온다. */}
+      {(() => {
+        const values = rows
+          .map((row: any) => Number(row?.intrinsic_per_share))
+          .filter((value: number) => Number.isFinite(value) && value > 0);
+        const price = Number.isFinite(Number(currentPrice)) ? Number(currentPrice) : null;
+        if (values.length === 0) return null;
+        const max = Math.max(...values, price ?? 0) * 1.1;
+        if (!(max > 0)) return null;
+        const pct = (value: number) => `${Math.max(2, Math.min(100, (value / max) * 100))}%`;
+        return (
+          <div className="mt-2 space-y-1.5">
+            {rows.map((row: any) => {
+              const value = Number(row?.intrinsic_per_share);
+              const years = Number(row?.years_to_peak);
+              if (!Number.isFinite(value) || !Number.isFinite(years)) return null;
+              const above = price !== null && value >= price;
+              return (
+                <div key={`bar-${years}`} className="relative h-3 rounded-sm bg-muted/30">
+                  <div
+                    className={`h-3 rounded-sm ${above ? 'bg-emerald-500/60' : 'bg-rose-500/60'}`}
+                    style={{ width: pct(value) }}
+                  />
+                  <span className="absolute inset-y-0 left-1 flex items-center text-[8px] font-semibold text-foreground/80">
+                    {isKo ? `+${years}년` : `+${years}y`}
+                  </span>
+                </div>
+              );
+            })}
+            {price !== null && (
+              <div className="relative h-3">
+                {/* 현재가 기준선 — 막대들이 이 선을 넘었는지가 판단의 전부다. */}
+                <div
+                  className="absolute inset-y-0 w-px bg-foreground/70"
+                  style={{ left: pct(price) }}
+                  aria-hidden
+                />
+                <span
+                  className="absolute -top-0.5 text-[8px] font-semibold text-foreground/80"
+                  style={{ left: `calc(${pct(price)} + 3px)` }}
+                >
+                  {isKo ? '현재가' : 'price'}
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      })()}
       <dl className="mt-2 space-y-1">
         {rows.map((row: any) => {
           const perShare = Number(row?.intrinsic_per_share);
@@ -625,9 +695,12 @@ function ValuationModelsSummary({
               className={`flex items-center justify-between gap-2${model.isOutlier ? ' opacity-60' : ''}`}
             >
               <dt className="flex min-w-0 items-center gap-1 truncate text-muted-foreground">
-                <span className="truncate" title={valuationModelTip(model.labelKey, language)}>
-                  {model.labelKey}
-                </span>
+                {(() => {
+                  const tip = valuationModelTip(model.labelKey, language);
+                  return tip
+                    ? <HelpTip text={tip}><span className="truncate border-b border-dotted border-border/70 cursor-help">{model.labelKey}</span></HelpTip>
+                    : <span className="truncate">{model.labelKey}</span>;
+                })()}
                 {model.isOutlier && (
                   <span
                     title={model.outlierNote ?? undefined}
@@ -1035,10 +1108,15 @@ function TargetTileCard({ tile, language }: { tile: TargetTile; language: Report
           {sourceName.slice(0, 1)}
         </span>
       )}
-      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        {t(tile.labelKey, language)}
+      <div className="flex items-start justify-between gap-1.5">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {t(tile.labelKey, language)}
+        </div>
+        {tile.tip && <HelpTip text={tile.tip} className="shrink-0" />}
       </div>
-      <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+      {/* 값은 이 카드의 주인공이다. 라벨·근거줄과 무게 차이가 확실해야 훑을 때
+          숫자가 먼저 들어온다. */}
+      <div className={`mt-1 font-mono text-xl font-bold tracking-tight ${classes.text}`}>
         {tile.value}
       </div>
       {tile.note && (
@@ -1159,18 +1237,9 @@ function ConsensusBridgeTile({
   const impliedPbr = pbrBasis !== null && pbrBasis > 0
     ? consensus / pbrBasis
     : null;
-  const fairP50 = derivePbrFairPrice(pbr, pbr.percentiles.p50, pbr.fairPriceP50, currentPrice);
-  const fairP90 = derivePbrFairPrice(pbr, pbr.percentiles.p90, pbr.fairPriceP90, currentPrice);
-  const gapToP50 = fairP50 ? (consensus - fairP50) / fairP50 : null;
-  const gapToP90 = fairP90 ? (consensus - fairP90) / fairP90 : null;
   const displayCurrentPrice = currentPrice ?? pbr.currentPrice;
   const upsideToCurrent = displayCurrentPrice ? (consensus - displayCurrentPrice) / displayCurrentPrice : null;
   const perText = (value: number | null) => value === null ? '—' : `${value.toFixed(1)}`;
-  const p90Text = gapToP90 === null
-    ? '—'
-    : (language === 'ko'
-        ? `90% 대비 ${formatPercent(gapToP90)}`
-        : `${formatPercent(gapToP90)} vs 90%`);
 
   return (
     <div className="relative rounded-lg border border-border/60 bg-muted/10 p-3">
@@ -1191,13 +1260,12 @@ function ConsensusBridgeTile({
           '보수 모델 괴리 확인' 카드에 또 있었다. 같은 숫자가 한 화면에 세 번
           나오면 어느 것이 기준인지 흐려진다. 여기서는 '목표가가 그 기준들에서
           얼마나 떨어져 있는가'만 남긴다 — 그게 이 카드의 일이다. */}
+      {/* '90% 대비 +82.7% · 50% +179.1%' 를 함께 적고 있었다. 무엇의 90%/50% 인지
+          여기서는 알 수 없고(위 PBR 밴드 분위수 얘기다), 목표가가 밴드 대비 얼마나
+          위인지는 이 카드가 답할 질문도 아니다. 현재가 대비만 남긴다. */}
       <div className="mt-2 text-[10px] leading-4 text-muted-foreground">
-        {p90Text}
         {upsideToCurrent !== null && (
-          <span> · {language === 'ko' ? '현재가 대비' : 'vs current'} {formatPercent(upsideToCurrent)}</span>
-        )}
-        {gapToP50 !== null && (
-          <span> · 50% {formatPercent(gapToP50)}</span>
+          <span>{language === 'ko' ? '현재가 대비' : 'vs current'} {formatPercent(upsideToCurrent)}</span>
         )}
       </div>
     </div>
@@ -1285,7 +1353,7 @@ export function TargetDataSidebar({
             {primaryTiles.length > 0 && (
               <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
                 {primaryTiles.map(tile => <TargetTileCard key={tile.labelKey} tile={tile} language={language} />)}
-                <CyclePeakCard report={report} currency={currency} language={language} />
+                <CyclePeakCard report={report} currency={currency} language={language} currentPrice={currentPrice} />
               </div>
             )}
             {valuationDeepDive && (

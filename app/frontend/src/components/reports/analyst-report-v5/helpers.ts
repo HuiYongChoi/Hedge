@@ -3290,18 +3290,18 @@ export function extractTargetTiles(
       : `${t('forwardEpsSource_spliceTtm', language)} ${formatCurrency(eps, currency)}`;
     return joinNote(metrics.forwardQuarterDcfPeriod, epsPart);
   })();
-  const candidates: Array<{ labelKey: string; sublabelKey: string; metric?: CanonicalMetric; tone: ReportTone; formatter?: (value: number) => string; note?: string }> = [
-    { labelKey: 'targetIntrinsicLabel', sublabelKey: 'targetIntrinsicSubtitle', metric: metrics.intrinsicValue, tone: intrinsicTone(metrics.intrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatCurrency(value, currency), note: trailingBasisNote },
+  const candidates: Array<{ labelKey: string; sublabelKey: string; metric?: CanonicalMetric; tone: ReportTone; formatter?: (value: number) => string; note?: string; tip?: string }> = [
+    { labelKey: 'targetIntrinsicLabel', sublabelKey: 'targetIntrinsicSubtitle', tip: t('targetIntrinsicTip', language), metric: metrics.intrinsicValue, tone: intrinsicTone(metrics.intrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatCurrency(value, currency), note: trailingBasisNote },
     { labelKey: 'targetForwardIntrinsicLabel', sublabelKey: 'targetForwardIntrinsicSubtitle', metric: metrics.forwardIntrinsicValue, tone: intrinsicTone(metrics.forwardIntrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatForwardIntrinsic(value, metrics.currentPrice?.value ?? null, currency), note: forwardBasisNote },
     { labelKey: quarterIntrinsicLabelKey, sublabelKey: 'targetForwardQuarterIntrinsicSubtitle', metric: metrics.forwardQuarterIntrinsicValue, tone: intrinsicTone(metrics.forwardQuarterIntrinsicValue?.value ?? null, metrics.currentPrice?.value ?? null), formatter: value => formatForwardIntrinsic(value, metrics.currentPrice?.value ?? null, currency), note: forwardQuarterBasisNote },
-    { labelKey: 'targetMarketImpliedEpsLabel', sublabelKey: 'targetMarketImpliedEpsSubtitle', metric: metrics.marketImpliedEps, tone: 'neutral', formatter: value => formatCurrency(value, currency), note: marketImpliedNote },
-    { labelKey: 'targetMarginLabel', sublabelKey: 'targetMarginSubtitle', metric: safetyMarginPrice, tone: marginTone(metrics.marginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, currency), note: trailingBasisNote },
+    { labelKey: 'targetMarketImpliedEpsLabel', sublabelKey: 'targetMarketImpliedEpsSubtitle', metric: metrics.marketImpliedEps, tone: 'neutral', formatter: value => formatCurrency(value, currency), note: marketImpliedNote, tip: t('targetMarketImpliedEpsTip', language) },
+    { labelKey: 'targetMarginLabel', sublabelKey: 'targetMarginSubtitle', tip: t('targetMarginTip', language), metric: safetyMarginPrice, tone: marginTone(metrics.marginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, currency), note: trailingBasisNote },
     { labelKey: 'targetForwardMarginLabel', sublabelKey: 'targetForwardMarginSubtitle', metric: forwardSafetyMarginPrice, tone: marginTone(metrics.forwardMarginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, currency), note: metrics.forwardDcfPeriod },
     { labelKey: quarterMarginLabelKey, sublabelKey: 'targetForwardQuarterMarginSubtitle', metric: forwardQuarterSafetyMarginPrice, tone: marginTone(metrics.forwardQuarterMarginOfSafety?.value ?? null), formatter: value => formatMarginTarget(value, metrics.currentPrice?.value ?? null, currency), note: metrics.forwardQuarterDcfPeriod },
     { labelKey: 'targetEpsLabel', sublabelKey: 'targetEpsSubtitle', metric: metrics.forwardEpsTtm || metrics.forwardEpsFy0, tone: 'neutral', formatter: formatPlain },
     { labelKey: 'targetCoverageLabel', sublabelKey: 'targetCoverageSubtitle', metric: metrics.interestCoverage, tone: coverageTone(metrics.interestCoverage?.value ?? null), formatter: formatMultiple },
     { labelKey: 'targetBetaLabel', sublabelKey: 'targetBetaSubtitle', metric: metrics.beta, tone: 'neutral', formatter: formatPlain },
-    { labelKey: 'targetWaccLabel', sublabelKey: 'targetWaccSubtitle', metric: metrics.wacc, tone: 'neutral', formatter: formatPercentSmart },
+    { labelKey: 'targetWaccLabel', sublabelKey: 'targetWaccSubtitle', metric: metrics.wacc, tone: 'neutral', formatter: formatPercentSmart, tip: t('targetWaccTip', language) },
   ];
 
   return candidates
@@ -3315,6 +3315,7 @@ export function extractTargetTiles(
         labelKey: candidate.labelKey,
         sublabelKey: candidate.sublabelKey,
         note: candidate.note,
+        tip: candidate.tip,
         value: candidate.formatter ? candidate.formatter(metric.value) : formatPlain(metric.value),
         tone: candidate.tone,
         sourceAgent: {
