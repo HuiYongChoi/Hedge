@@ -484,7 +484,11 @@ export function ReportLayout({
       verdictConfidence={stickyConfidence}
       marginOfSafetyPct={effectiveMarginOfSafety}
       intrinsicValuePerShare={effectiveMetrics.intrinsicValue?.value ?? null}
-      wacc={effectiveMetrics.wacc?.value ?? null}
+      discountRate={
+        typeof (displayReport as Record<string, any> | null)?.damodaran_cost_of_equity === 'number'
+          ? (displayReport as Record<string, any>).damodaran_cost_of_equity
+          : (effectiveMetrics.wacc?.value ?? null)
+      }
       trailingPe={liveTarget?.trailing_pe ?? canonicalForwardSnapshot.ttmPer ?? null}
       trailingEps={liveTarget?.trailing_eps ?? null}
       forwardPe={canonicalForwardSnapshot.fwdPer ?? liveTarget?.forward_pe ?? null}

@@ -249,3 +249,23 @@ def test_both_discount_rates_are_shown_with_their_engine():
     assert "베타 자료가 없어 1.0으로 가정했습니다" in sidebar
     # 단독 WACC 타일은 이 카드와 중복이라 뺐다.
     assert "'targetWaccLabel'" not in helpers
+
+
+def test_cost_of_capital_card_pairs_the_hurdle_with_the_return():
+    """조달 비용만 있으면 반쪽이다 — 그 돈으로 얼마를 벌었는지가 짝이어야 한다.
+
+    본문은 '세후 ROIC 약 7.3% vs 자본비용 9.0%' 를 이미 말하고 있는데 화면에는
+    그 숫자가 없었다. 초과수익이 음수면 재투자할수록 주주 가치가 깎인다는 뜻이라,
+    할인율 옆에 나란히 놓여야 판단이 된다.
+    """
+    sidebar = SIDEBAR.read_text(encoding="utf-8")
+    scorecard = (REPO_ROOT / "src/tools/management_scorecard.py").read_text(encoding="utf-8")
+    agent = (REPO_ROOT / "src/agents/aswath_damodaran.py").read_text(encoding="utf-8")
+
+    assert 'metrics_out["roic_after_tax"]' in scorecard
+    assert 'signal_payload[f"damodaran_{_key}"]' in agent
+    assert "세후 ROIC (번 수익률)" in sidebar
+    assert "초과수익 (ROIC − 자본비용)" in sidebar
+    # 초과수익 부호에 따라 해석이 달라진다.
+    assert "재투자를 늘릴수록 주주 가치가 깎입니다" in sidebar
+    assert "재투자할수록 주주 몫이 늘어나는 구간입니다" in sidebar

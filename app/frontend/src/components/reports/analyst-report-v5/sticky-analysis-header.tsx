@@ -17,7 +17,10 @@ interface StickyAnalysisHeaderProps {
   marginOfSafetyPct: number | null;
   /** 안전마진의 분자. 숫자 뒤에 "무엇 대비 무엇"인지를 붙이기 위해 받는다. */
   intrinsicValuePerShare?: number | null;
-  wacc: number | null;
+  /** 위 적정가를 실제로 만든 할인율(다모다란 자기자본비용). 없으면 WACC 로 떨어진다.
+   *  WACC 자체는 헤더에서 뺐다 — 우측 '자본비용 · 자본수익성' 카드가 두 값을
+   *  어느 엔진의 것인지와 함께 보여 준다. */
+  discountRate?: number | null;
   trailingPe?: number | null;
   trailingEps?: number | null;
   forwardPe?: number | null;
@@ -102,7 +105,7 @@ export function StickyAnalysisHeader({
   verdictConfidence,
   marginOfSafetyPct,
   intrinsicValuePerShare,
-  wacc,
+  discountRate,
   trailingPe,
   trailingEps,
   forwardPe,
@@ -199,10 +202,19 @@ export function StickyAnalysisHeader({
             )}
           </span>
         )}
-        <span className="hidden text-border sm:inline">·</span>
-        <span className="hidden whitespace-nowrap sm:inline">
-          {t('targetWaccLabel', language)} <span className="font-mono text-foreground">{formatPercent(wacc)}</span>
-        </span>
+        {/* 헤더의 내재가치·안전마진은 다모다란 엔진이 자기자본비용으로 할인해
+            만든 값이다. 여기에 가치평가 분석가의 WACC 를 적어 두면, 독자가 그
+            할인율로 위 적정가를 검산하다 맞지 않는 답을 얻는다(실측: WACC 10.5%
+            vs 실제 사용 9.0%). 실제로 쓰인 할인율을 그 이름으로 적는다. */}
+        {discountRate !== null && discountRate !== undefined && Number.isFinite(discountRate) && (
+          <>
+            <span className="hidden text-border sm:inline">·</span>
+            <span className="hidden whitespace-nowrap sm:inline">
+              {t('stickyDiscountRateLabel', language)}{' '}
+              <span className="font-mono text-foreground">{formatPercent(discountRate)}</span>
+            </span>
+          </>
+        )}
         {perText && (
           <>
             <span className="text-border">·</span>

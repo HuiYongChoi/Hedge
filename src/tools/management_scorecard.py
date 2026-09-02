@@ -69,6 +69,9 @@ class ManagementAssessment:
     strengths_ko: list[str] = field(default_factory=list)
     concerns_ko: list[str] = field(default_factory=list)
     insufficient: bool = False
+    #: 화면이 할인율 옆에 나란히 놓을 수 있게 남기는 원값(세후 ROIC, 자본비용, 초과수익).
+    #: 서술에서 정규식으로 긁으면 문구가 바뀔 때 값이 사라진다.
+    metrics: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -83,6 +86,7 @@ class ManagementAssessment:
             "strengths_ko": self.strengths_ko,
             "concerns_ko": self.concerns_ko,
             "insufficient": self.insufficient,
+            "metrics": self.metrics,
         }
 
 
@@ -129,6 +133,8 @@ def assess(
     strengths: list[str] = []
     concerns: list[str] = []
 
+    metrics_out: dict = {}
+
     # ── 1. 재투자 수익성 (ROIC vs WACC) ──────────────────────────────────────
     roic = None
     if op_income and equity and debt:
@@ -153,6 +159,11 @@ def assess(
                        "주주 가치가 깎입니다 — 배당·자사주로 돌려주는 편이 나은 국면입니다.")
         axes.append(ScoreAxis("roic_spread", "재투자 수익성", round(score, 1), detail, meaning,
             "0~100점. 50점이 수익률과 자본비용이 딱 맞는 본전 지점이고, 초과수익 1%p마다 5점씩 움직입니다."))
+        # 화면이 할인율 옆에 나란히 놓을 수 있게 원값을 남긴다. 서술에서 정규식으로
+        # 긁으면 문구가 바뀔 때 값이 사라진다.
+        metrics_out["roic_after_tax"] = roic
+        metrics_out["roic_hurdle"] = hurdle
+        metrics_out["roic_spread"] = spread
         if spread > 0.03:
             strengths.append(f"투하자본이 자본비용을 {spread:.1%}p 웃도는 수익을 내고 있다.")
         elif spread < -0.01:
@@ -319,4 +330,5 @@ def assess(
         axes=axes,
         strengths_ko=strengths,
         concerns_ko=concerns,
+        metrics=metrics_out,
     )

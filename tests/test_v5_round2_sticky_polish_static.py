@@ -19,7 +19,10 @@ def test_sticky_analysis_header_component_exists_and_uses_core_metrics():
     assert "export function StickyAnalysisHeader" in src
     assert "sticky top-0" in src
     assert "targetMarginLabel" in src
-    assert "targetWaccLabel" in src
+    # WACC 가 아니라 '위 적정가를 실제로 만든 할인율'을 적는다(실측: 헤더 10.5% vs
+    # 그 적정가를 만든 자기자본비용 9.0%). WACC 는 우측 카드가 두 값을 함께 낸다.
+    assert "stickyDiscountRateLabel" in src
+    assert "targetWaccLabel" not in src
     assert "stickyConfidenceLabel" in src
     assert "formatCurrency" in src
     assert "formatPercent" in src

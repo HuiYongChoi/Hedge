@@ -426,6 +426,14 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             if _rf_source:
                 signal_payload["damodaran_risk_free_source"] = _rf_source
 
+        # 세후 ROIC 는 할인율과 짝이다 — '얼마에 조달해 얼마를 벌었나'가 한 쌍으로
+        # 읽혀야 재투자가 가치를 만드는지 깎는지 알 수 있다. 본문에는 그 문장이
+        # 이미 있는데 화면에는 숫자가 없었다.
+        _mgmt_metrics = (management.to_dict().get("metrics") or {}) if management else {}
+        for _key in ("roic_after_tax", "roic_hurdle", "roic_spread"):
+            if isinstance(_mgmt_metrics.get(_key), (int, float)):
+                signal_payload[f"damodaran_{_key}"] = _mgmt_metrics[_key]
+
         signal_payload["valuation_confidence"] = valuation_confidence
         damodaran_signals[ticker] = signal_payload
 

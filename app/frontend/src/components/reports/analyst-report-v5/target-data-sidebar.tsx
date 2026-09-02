@@ -481,9 +481,13 @@ function DiscountRateCard({
   const beta = Number(report?.damodaran_beta);
   const rfSource = typeof report?.damodaran_risk_free_source === 'string'
     ? report!.damodaran_risk_free_source : null;
+  const roic = Number(report?.damodaran_roic_after_tax);
+  const spread = Number(report?.damodaran_roic_spread);
   const hasWacc = Number.isFinite(Number(wacc)) && Number(wacc) > 0;
   const hasCoe = Number.isFinite(costOfEquity) && costOfEquity > 0;
-  if (!hasWacc && !hasCoe) return null;
+  const hasRoic = Number.isFinite(roic);
+  const hasSpread = Number.isFinite(spread);
+  if (!hasWacc && !hasCoe && !hasRoic) return null;
   const isKo = language === 'ko';
   const asPct = (value: number) => `${(value * (Math.abs(value) <= 1 ? 100 : 1)).toFixed(1)}%`;
 
@@ -491,7 +495,7 @@ function DiscountRateCard({
     <div className="mt-2 rounded-lg border border-border/60 bg-muted/10 p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-          {isKo ? '내재가치 할인율' : 'Discount rates'}
+          {isKo ? '자본비용 · 자본수익성' : 'Cost of capital vs return'}
         </div>
         <HelpTip text={t('discountRateCardTip', language)} />
       </div>
@@ -506,7 +510,31 @@ function DiscountRateCard({
             <span className="font-mono text-xs font-semibold text-foreground">{asPct(Number(wacc))}</span>
           </Row>
         )}
+        {/* 조달 비용만 있으면 반쪽이다 — 그 돈으로 얼마를 벌었는지가 짝이어야
+            재투자가 가치를 만드는지 깎는지 알 수 있다. */}
+        {hasRoic && (
+          <Row label={isKo ? '세후 ROIC (번 수익률)' : 'After-tax ROIC'}
+               tip={t('roicSpreadTip', language)}>
+            <span className="font-mono text-xs font-semibold text-foreground">{asPct(roic)}</span>
+          </Row>
+        )}
+        {hasSpread && (
+          <Row label={isKo ? '초과수익 (ROIC − 자본비용)' : 'Excess return (ROIC - hurdle)'}>
+            <span className={`font-mono text-xs font-bold ${spread >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {spread >= 0 ? '+' : ''}{(spread * 100).toFixed(1)}%p
+            </span>
+          </Row>
+        )}
       </dl>
+      {hasSpread && (
+        <div className={`mt-1.5 rounded-md px-2 py-1.5 text-[10px] leading-snug ${spread >= 0 ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}>
+          {spread >= 0
+            ? (isKo ? '번 수익률이 조달 비용을 웃돕니다 — 재투자할수록 주주 몫이 늘어나는 구간입니다.'
+                    : 'Returns exceed the cost of capital - reinvestment adds value.')
+            : (isKo ? '번 수익률이 조달 비용에 못 미칩니다 — 지금 조건이 이어지면 재투자를 늘릴수록 주주 가치가 깎입니다.'
+                    : 'Returns fall short of the cost of capital - reinvestment destroys value if this persists.')}
+        </div>
+      )}
       <div className="mt-1.5 text-[9px] leading-snug text-muted-foreground">
         {Number.isFinite(beta) && beta > 0
           ? (isKo ? `베타 ${beta.toFixed(2)} 기준` : `Beta ${beta.toFixed(2)}`)
