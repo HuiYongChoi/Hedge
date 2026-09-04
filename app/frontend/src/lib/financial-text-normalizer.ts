@@ -296,6 +296,120 @@ export function stripLeakedSourceMarkers(text: string): string {
 }
 
 //: 모델이 분석 데이터의 키 이름을 그대로 옮겨 적는다. 독자에게는 암호다.
+// ── 남은 원시 필드명 일괄 처리 ────────────────────────────────────────────────
+//
+// 지금까지는 필드명을 하나씩 목록에 적어 왔다. 그래서 에이전트가 새 지표를 하나
+// 내보낼 때마다 그 이름이 그대로 화면에 샜다(실측 2026-09-04: revenue_growth_latest,
+// return_on_invested_capital, roic_spread, incremental_roic, cash_conversion,
+// share_discipline — 여섯 개가 한 보고서에 동시에). 목록을 늘리는 방식으로는
+// 같은 일이 계속 반복된다.
+//
+// 그래서 두 단계로 바꾼다.
+//   1. 아는 지표는 한국어 이름으로.
+//   2. 모르는 snake_case 는 남기지 않는다 — 뒤에 값이 붙어 있으면 이름을 지우고
+//      (문장이 이미 그 값을 말하고 있다), 아니면 밑줄을 띄어쓰기로 풀어 읽히게 한다.
+const METRIC_NAME_GLOSSARY: Array<[RegExp, string]> = [
+  [/\breturn_on_invested_capital\b/gi, 'ROIC'],
+  [/\breturn_on_equity\b/gi, 'ROE'],
+  [/\breturn_on_assets\b/gi, 'ROA'],
+  [/\bincremental_roic\b/gi, '증분 ROIC'],
+  [/\broic_spread\b/gi, 'ROIC 초과수익'],
+  [/\brevenue_growth(?:_latest)?\b/gi, '매출 성장률'],
+  [/\bearnings_growth\b/gi, '이익 성장률'],
+  [/\boperating_margin\b/gi, '영업이익률'],
+  [/\bnet_margin\b/gi, '순이익률'],
+  [/\bgross_margin\b/gi, '매출총이익률'],
+  [/\bfree_cash_flow\b/gi, '잉여현금흐름'],
+  [/\bfcf_margin\b/gi, 'FCF 마진'],
+  [/\bcash_conversion\b/gi, '현금 전환'],
+  [/\bshare_discipline\b/gi, '지분 관리'],
+  [/\bdebt_to_equity\b/gi, '이자부채비율'],
+  [/\binterest_coverage\b/gi, '이자보상배율'],
+  [/\bpayout_ratio\b/gi, '배당성향'],
+  [/\boutstanding_shares\b/gi, '주식 수'],
+  [/\bmarket_cap\b/gi, '시가총액'],
+  [/\bbook_value_per_share\b/gi, '주당순자산'],
+  [/\bcost_of_equity\b/gi, '자기자본비용'],
+  [/\bterminal_growth\b/gi, '영구성장률'],
+  [/\bbase_growth\b/gi, '기준 성장률'],
+  [/\bdiscount_rate\b/gi, '할인율'],
+  // 밑줄이 없어 catch-all 에 안 걸리는 코드 낱말들
+  [/\bleverage\b/gi, '재무 규율'],
+  [/\boverall\b/gi, '종합'],
+  [/\bbeta\b(?=\s*[)\]])/gi, '베타'],
+];
+
+/** 아는 이름은 한국어로, 모르는 snake_case 는 화면에서 지운다. */
+function normalizeRawFieldNames(text: string): string {
+  let out = text;
+  for (const [pattern, korean] of METRIC_NAME_GLOSSARY) out = out.replace(pattern, korean);
+  // 남은 것들: "foo_bar 12.3%" 처럼 값이 따라오면 이름만 지운다 — 문장이 이미
+  // 그 값을 말하고 있으므로 이름이 없어도 뜻이 유지된다.
+  out = out.replace(
+    /\b[a-z][a-z0-9]{2,}(?:_[a-z0-9]{2,})+\b\s*(?=[-+]?\d)/gi,
+    '',
+  );
+  // 값이 안 따라오는 경우: 밑줄을 띄어쓰기로 풀어 최소한 읽히게 둔다.
+  out = out.replace(
+    /\b([a-z][a-z0-9]{2,}(?:_[a-z0-9]{2,})+)\b/gi,
+    (_full, token: string) => token.replace(/_/g, ' '),
+  );
+  return out;
+}
+
+// ── 같은 수를 두 번 적지 않는다 ───────────────────────────────────────────────
+//
+// "43%(약 42.75%)", "0.13(약 13.00%)" 처럼 반올림한 값과 원값을 나란히 찍는다.
+// 읽는 쪽에는 둘 중 하나면 충분하고, 둘이 있으면 어느 쪽이 맞는지부터 생각하게 된다.
+function collapseDuplicateNumbers(text: string): string {
+  return text
+    // "43%(약 42.75%)" → "43%"  (괄호 안이 앞 숫자를 반올림한 값일 때만)
+    .replace(
+      /(\d+(?:\.\d+)?)\s*%\s*\(\s*약?\s*(\d+(?:\.\d+)?)\s*%\s*[가-힣]{0,4}\s*\)/g,
+      (full, shown: string, detail: string) =>
+        Math.round(Number(detail)) === Math.round(Number(shown)) ? `${shown}%` : full,
+    )
+    // "0.13(약 13.00%)" → "13%"  (소수와 퍼센트를 함께 적은 경우 퍼센트만)
+    .replace(
+      /\b0?\.(\d+)\s*\(\s*약?\s*(\d+(?:\.\d+)?)\s*%\s*\)/g,
+      (_full, _dec: string, pct: string) => `${Number(pct) % 1 === 0 ? Number(pct) : Number(pct).toFixed(1)}%`,
+    )
+    // "(약 42.75%)" 만 홀로 남은 경우의 잉여 소수점 정리
+    .replace(/\(\s*약\s*(\d+)\.\d+\s*%\s*\)/g, '(약 $1%)');
+}
+
+// ── 문장이 붙거나 겹쳐 나오는 자국 정리 ──────────────────────────────────────
+//
+// 모델이 조각을 이어 붙이면서 생기는 자국들이다. 하나하나는 사소해 보이지만
+// 읽는 흐름을 매번 끊는다(실측 2026-09-04 한 보고서에서 전부 관측).
+function tidyKoreanProse(text: string): string {
+  return text
+    // "가능.다만" — 마침표 뒤 공백 없이 다음 문장이 붙는다.
+    .replace(/([가-힣])\.(?=[가-힣])/gu, '$1. ')
+    .replace(/(\d)\.(?=[가-힣])/gu, '$1. ')
+    // "근거 근거는", "판정 판정이" — 같은 낱말이 연달아 찍힌다.
+    .replace(/([가-힣]{2,4})\s+\1(?=[은는이가을를의로])/gu, '$1')
+    // 조사가 받침에 맞지 않는다: "판정가" → "판정이", "위험로" → "위험으로".
+    .replace(/(판정|점검|근거|결론|위험|수준|비율|구간)가(?=[\s,.“"'])/gu, '$1이')
+    .replace(/([가-힣]{2,8})로(?=\s*(?:명시|제시|판정))/gu, (full: string, word: string) => {
+      const last = word.charCodeAt(word.length - 1);
+      const hasBatchim = last >= 0xac00 && last <= 0xd7a3 && (last - 0xac00) % 28 !== 0;
+      const endsWithRieul = hasBatchim && (last - 0xac00) % 28 === 8;
+      return hasBatchim && !endsWithRieul ? `${word}으로` : full;
+    })
+    // "62,656.6 KRW" / "62,656.6 K" — 통화 코드를 원화 기호로, 소수점은 버린다.
+    .replace(/\b(\d{1,3}(?:,\d{3})*)(?:\.\d+)?\s*(?:KRW|K)\b/g, '₩$1')
+    // "선행 PER(선행 P/E)" — 괄호가 앞말을 영어로 되풀이할 뿐이다.
+    .replace(/(선행\s*PER)\s*\(\s*선행\s*P\/?E\s*\)/gi, '$1')
+    .replace(/(선행\s*12M\s*컨센\s*EPS)\s*\([^)]*선행\s*컨센서스\s*EPS\s*\)/gi, '$1')
+    // 남은 영어 낱말
+    .replace(/\blong[-\s]?run\b/gi, '장기')
+    .replace(/\bstep[-\s]?up\b/gi, '단계 상승')
+    .replace(/\bconsensus\s+implies\s+earnings\s+expansion\b/gi, '컨센서스가 이익 확장을 시사')
+    // 중복 공백 정리
+    .replace(/[ \t]{2,}/g, ' ');
+}
+
 const RAW_FIELD_GLOSSARY: Array<[RegExp, string]> = [
   // 두 키가 붙어 나오는 형태를 먼저 처리한다("life_cycle. evidence_ko에 따르면").
   [/\blife_cycle\s*\.\s*evidence_ko\b/gi, '생애주기 진단 근거'],
@@ -522,6 +636,8 @@ function fixParticlesAfterGlossaryTerms(text: string): string {
 function humanizeRawFieldNames(text: string): string {
   let out = humanizeSnakeCaseFields(humanizeCheckedTotals(text));
   for (const [pattern, replacement] of RAW_FIELD_GLOSSARY) out = out.replace(pattern, replacement);
+  // 목록에 없는 필드명까지 여기서 정리한다 — 목록만으로는 새 지표가 나올 때마다 샌다.
+  out = tidyKoreanProse(collapseDuplicateNumbers(normalizeRawFieldNames(out)));
   return fixParticlesAfterGlossaryTerms(fixKoreanParticleSpacing(
     out
       // 치환 결과로 생기는 "안전마진(안전마진)" 같은 자기중복 괄호를 접는다.

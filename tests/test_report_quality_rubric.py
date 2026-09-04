@@ -170,3 +170,34 @@ class StandardDocumentTests(unittest.TestCase):
                         "listbreak", "longline", "repeatline", "dupclaim",
                         "homework", "engquote" if "engquote" in src else "englishword"):
             self.assertIn(f"id: '{rule_id}'", src, f"채점 항목 '{rule_id}' 이 있어야 한다")
+
+
+class KoreanProseTests(unittest.TestCase):
+    """본문에 영어·원시 필드명·중복 숫자가 남지 않는지.
+
+    거듭 지적받은 결함이다. 그동안 필드명을 사전에 하나씩 적어 왔고, 그래서
+    에이전트가 새 지표를 내보낼 때마다 그 이름이 화면에 샜다(실측 2026-09-04:
+    한 보고서에 여섯 개 동시). 목록이 아니라 일반 규칙으로 막고 여기서 못 박는다.
+    """
+
+    CHECK = FRONTEND / "scripts/check-korean-prose.mjs"
+
+    def test_check_exists(self):
+        self.assertTrue(self.CHECK.exists())
+
+    @unittest.skipUnless(NODE.exists() and (FRONTEND / "node_modules/typescript").exists(),
+                         "node 런타임 또는 typescript 가 없는 환경")
+    def test_prose_is_clean(self):
+        result = subprocess.run(
+            [str(NODE), "scripts/check-korean-prose.mjs"],
+            cwd=FRONTEND, capture_output=True, text=True, timeout=180,
+        )
+        self.assertEqual(result.returncode, 0,
+                         f"본문 한국어 점검 실패:\n{result.stdout}\n{result.stderr}")
+
+    def test_unknown_field_names_are_handled_by_rule_not_by_list(self):
+        """사전에 없는 필드명도 화면에 남으면 안 된다 — 목록 방식이 반복의 원인이었다."""
+        source = (ROOT / "app/frontend/src/lib/financial-text-normalizer.ts").read_text(encoding="utf-8")
+        self.assertIn("function normalizeRawFieldNames", source)
+        self.assertIn("function collapseDuplicateNumbers", source)
+        self.assertIn("function tidyKoreanProse", source)
