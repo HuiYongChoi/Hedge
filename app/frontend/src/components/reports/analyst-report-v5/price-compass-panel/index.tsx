@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { t } from '@/lib/language-preferences';
 import { analystTargetService } from '@/services/analyst-target-service';
-import type { AnalystTarget, ForwardEv } from '@/services/analyst-target-service';
+import type { AnalystTarget, BrokerTarget, ForwardEv } from '@/services/analyst-target-service';
+import { brokerReportService, normalizeBrokerKey } from '@/services/broker-report-service';
+import type { BrokerReportIndex, BrokerReportSummary } from '@/services/broker-report-service';
 import type { CanonicalMetrics, ReportLanguage } from '../types';
 import { BrokerTargetBar } from './broker-target-bar';
 import { BrokerCalloutsRow } from './broker-callouts-row';
+import { BrokerReportDialog } from './broker-report-dialog';
 import { BetaVolatilityFrame } from './beta-volatility-frame';
 import { OpinionDistribution } from './opinion-distribution';
 import type { SigmaMark } from './types';
@@ -154,6 +157,8 @@ export function PriceCompassPanel({
 }: PriceCompassPanelProps) {
   const [target, setTarget] = useState<AnalystTarget | null>(null);
   const [hoveredBroker, setHoveredBroker] = useState<string | null>(null);
+  const [reportIndex, setReportIndex] = useState<BrokerReportIndex | null>(null);
+  const [selectedBroker, setSelectedBroker] = useState<BrokerTarget | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -162,6 +167,35 @@ export function PriceCompassPanel({
     });
     return () => { cancelled = true; };
   }, [ticker]);
+
+  // 증권사 카드 클릭 시 열 리포트 목록 — 종목당 한 번만 받아 온다.
+  useEffect(() => {
+    let cancelled = false;
+    setReportIndex(null);
+    setSelectedBroker(null);
+    brokerReportService.fetchIndex(ticker).then(r => {
+      if (!cancelled) setReportIndex(r);
+    });
+    return () => { cancelled = true; };
+  }, [ticker]);
+
+  // 증권사(정규화 키) → 해당 증권사 리포트 목록(최신순)
+  const reportsByBroker = useMemo(() => {
+    const map = new Map<string, BrokerReportSummary[]>();
+    (reportIndex?.reports ?? []).forEach(report => {
+      const key = report.broker_key || normalizeBrokerKey(report.broker);
+      const bucket = map.get(key);
+      if (bucket) bucket.push(report);
+      else map.set(key, [report]);
+    });
+    return map;
+  }, [reportIndex]);
+
+  const reportCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    reportsByBroker.forEach((list, key) => counts.set(key, list.length));
+    return counts;
+  }, [reportsByBroker]);
 
   // ── Resolved values: agent > API ──────────────────────────────────────────
   const currentPrice =
@@ -323,9 +357,23 @@ export function PriceCompassPanel({
           currentPrice={currentPrice}
           hoveredBroker={hoveredBroker}
           currency={currency}
+          reportCounts={reportCounts}
+          reportHint={t('pcpReportOpenHint', language)}
           onHoverChange={setHoveredBroker}
+          onBrokerSelect={setSelectedBroker}
         />
       )}
+
+      {/* ── 증권사 리포트 모달 ── */}
+      <BrokerReportDialog
+        ticker={ticker}
+        broker={selectedBroker}
+        reports={selectedBroker ? (reportsByBroker.get(normalizeBrokerKey(selectedBroker.name)) ?? []) : []}
+        currentPrice={currentPrice}
+        currency={currency}
+        language={language}
+        onClose={() => setSelectedBroker(null)}
+      />
 
       {/* ── Detail panels (beta + opinion) ── */}
       {/* 증권사별 목표가·상승여력·신호는 위 Price Compass 콜아웃에 이미 표시되므로

@@ -675,6 +675,16 @@ export const translations = {
     pcpSignalNeutral: '중립',
     pcpSignalSell: '매도',
     pcpNoBrokers: '증권사 목표가 데이터 없음 — 컨센서스만 표시',
+    pcpReportOpenHint: '클릭하면 이 증권사의 분석 리포트를 볼 수 있습니다',
+    pcpReportDialogSubtitle: '{ticker} 종목분석 리포트 {n}건 · 네이버 금융 리서치',
+    pcpReportLoading: '리포트 본문을 불러오는 중…',
+    pcpReportLoadFailed: '리포트 본문을 불러오지 못했습니다.',
+    pcpReportNoBody: '요약 본문이 제공되지 않는 리포트입니다. 원문 PDF를 확인하세요.',
+    pcpReportTargetPrice: '목표가',
+    pcpReportOpinion: '투자의견',
+    pcpReportOpenPdf: '원문 PDF',
+    pcpReportOpenSource: '원문 페이지',
+    pcpReportSourceNaver: '출처: 네이버 금융 리서치',
   },
   en: {
     // Settings Navigation
@@ -1316,6 +1326,16 @@ export const translations = {
     pcpSignalNeutral: 'Neutral',
     pcpSignalSell: 'Sell',
     pcpNoBrokers: 'No broker data — showing consensus only',
+    pcpReportOpenHint: 'Click to read this broker\'s research report',
+    pcpReportDialogSubtitle: '{n} research report(s) on {ticker} · Naver Finance Research',
+    pcpReportLoading: 'Loading report…',
+    pcpReportLoadFailed: 'Could not load the report body.',
+    pcpReportNoBody: 'This report has no summary text. Open the original PDF instead.',
+    pcpReportTargetPrice: 'Target',
+    pcpReportOpinion: 'Rating',
+    pcpReportOpenPdf: 'Original PDF',
+    pcpReportOpenSource: 'Source page',
+    pcpReportSourceNaver: 'Source: Naver Finance Research',
   }
 };
 
