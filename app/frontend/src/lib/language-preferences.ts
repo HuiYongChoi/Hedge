@@ -685,6 +685,15 @@ export const translations = {
     pcpReportOpenPdf: '원문 PDF',
     pcpReportOpenSource: '원문 페이지',
     pcpReportSourceNaver: '출처: 네이버 금융 리서치',
+    filingsMenuTitle: '사업보고서',
+    filingsAnnualTitle: '연간 보고서',
+    filingsAnnualCopy: '최근 1년 사업보고서(연차보고서)를 최신 공시 순으로 정리했습니다.',
+    filingsAnnualEmpty: '최근 1년 사업보고서를 찾지 못했습니다.',
+    filingsQuarterlyTitle: '분기·반기 보고서',
+    filingsQuarterlyCopy: '반기보고서를 포함해 최신 공시 순으로 정리했습니다.',
+    filingsQuarterlyEmpty: '최근 1년 분기·반기보고서를 찾지 못했습니다.',
+    filingsSourceDart: '출처: DART 전자공시 · 누르면 원문이 새 창에서 열립니다',
+    filingsSourceSec: '출처: SEC EDGAR · 누르면 원문이 새 창에서 열립니다',
   },
   en: {
     // Settings Navigation
@@ -1336,6 +1345,15 @@ export const translations = {
     pcpReportOpenPdf: 'Original PDF',
     pcpReportOpenSource: 'Source page',
     pcpReportSourceNaver: 'Source: Naver Finance Research',
+    filingsMenuTitle: 'Filings',
+    filingsAnnualTitle: 'Annual report',
+    filingsAnnualCopy: 'Annual reports filed in the last 12 months, newest first.',
+    filingsAnnualEmpty: 'No annual report in the last 12 months.',
+    filingsQuarterlyTitle: 'Quarterly report',
+    filingsQuarterlyCopy: 'Quarterly and semiannual reports, newest first.',
+    filingsQuarterlyEmpty: 'No quarterly report in the last 12 months.',
+    filingsSourceDart: 'Source: DART · opens the original filing in a new tab',
+    filingsSourceSec: 'Source: SEC EDGAR · opens the original filing in a new tab',
   }
 };
 

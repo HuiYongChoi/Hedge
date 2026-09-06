@@ -1,10 +1,13 @@
 import { t } from '@/lib/language-preferences';
+import { PeriodicFilingsPanel } from './periodic-filings-panel';
 import type { Citation, ReportLanguage, SectionDef } from './types';
 
 interface ReportTocSidebarProps {
   sections: SectionDef[];
   activeSectionId: string;
   citations: Citation[];
+  /** 사업보고서 메뉴가 최근 1년 정기공시를 받아올 종목 */
+  ticker: string;
   language: ReportLanguage;
   activeCitationLetter?: string | null;
   onCitationUnavailable?: (message: string, toastId: string) => void;
@@ -81,6 +84,7 @@ export function ReportTocSidebar({
   sections,
   activeSectionId,
   citations,
+  ticker,
   language,
   activeCitationLetter,
   onCitationUnavailable,
@@ -135,6 +139,8 @@ export function ReportTocSidebar({
           {t('citationAutoNote', language)}
         </p>
       </div>
+
+      <PeriodicFilingsPanel ticker={ticker} language={language} className="mt-3" />
     </aside>
   );
 }
@@ -143,6 +149,7 @@ export function MobileToc({
   sections,
   activeSectionId,
   citations,
+  ticker,
   language,
   activeCitationLetter,
   onCitationUnavailable,
@@ -202,6 +209,8 @@ export function MobileToc({
           </div>
         )}
       </div>
+
+      <PeriodicFilingsPanel ticker={ticker} language={language} className="mt-3" />
     </div>
   );
 }

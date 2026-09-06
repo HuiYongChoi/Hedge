@@ -547,6 +547,7 @@ export function ReportLayout({
           sections={SECTION_DEFS}
           activeSectionId={activeSectionId}
           citations={citations}
+          ticker={activeTicker}
           language={language}
           activeCitationLetter={activeCitationLetter}
           onCitationUnavailable={handleCitationUnavailable}
@@ -557,6 +558,7 @@ export function ReportLayout({
             sections={SECTION_DEFS}
             activeSectionId={activeSectionId}
             citations={citations}
+            ticker={activeTicker}
             language={language}
             activeCitationLetter={activeCitationLetter}
             onCitationUnavailable={handleCitationUnavailable}

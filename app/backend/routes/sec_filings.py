@@ -6,6 +6,7 @@
 from fastapi import APIRouter, Query
 
 from src.tools.filings import detect_market, fetch_filing_sections, is_japan_enabled
+from src.tools.periodic_filings import list_periodic_filings
 
 router = APIRouter(prefix="/sec-filings", tags=["sec-filings"])
 
@@ -35,3 +36,35 @@ def get_filing_sections(
     # 일본은 구독키가 있을 때만 지원 대상으로 표시한다.
     payload["supported"] = market != "JP" or is_japan_enabled()
     return payload
+
+
+@router.get("/{ticker}/periodic")
+def get_periodic_filings(
+    ticker: str,
+    months: int = Query(12, ge=1, le=60),
+    refresh: bool = False,
+) -> dict:
+    """최근 N개월의 연간·분기 정기공시 목록 (사이드바 '사업보고서' 메뉴).
+
+    원문 본문을 받지 않고 목록만 만든다. 여기도 실패를 200 + error 로 알린다.
+    """
+    listing = list_periodic_filings(ticker, months=months, force_refresh=refresh)
+    return {
+        "ticker": listing.ticker,
+        "market": listing.market,
+        "supported": listing.supported,
+        "months": months,
+        "source": listing.source,
+        "error": listing.error,
+        "filings": [
+            {
+                "id": f.id,
+                "title": f.title,
+                "date": f.date,
+                "kind": f.kind,
+                "form": f.form,
+                "url": f.url,
+            }
+            for f in listing.filings
+        ],
+    }
