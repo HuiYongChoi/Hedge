@@ -1064,7 +1064,10 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             "fy1_fiscal_year": fy1_est.fiscal_year if fy1_est else None,
         }
 
-        base_growth = most_recent_metrics.revenue_growth
+        # 축은 매출성장률이 아니라 모델이 실제로 쓰는 1~3년차 성장률로 잡는다.
+        # 매출성장률을 그대로 쓰면 상한을 이미 넘은 종목에서 다섯 칸이 전부
+        # 상한으로 눌려 표가 평평해지고, 라벨은 모델이 쓰지 않은 숫자가 된다.
+        base_growth = resolve_high_growth(most_recent_metrics.revenue_growth, market_cap)
         sensitivity_matrix = _build_sensitivity_matrix(
             lambda wacc, growth: calculate_enhanced_dcf_value(
                 fcf_history=fcf_history,
@@ -1075,7 +1078,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                 },
                 wacc=wacc,
                 market_cap=market_cap,
-                revenue_growth=growth,
+                resolved_high_growth=growth,
             ),
             base_wacc=wacc,
             base_growth=base_growth,
@@ -2197,14 +2200,33 @@ def calculate_fcf_volatility(fcf_history: list[float]) -> float:
         return 0.5
 
 
+def resolve_high_growth(revenue_growth: float | None, market_cap: float) -> float:
+    """1~3년차에 실제로 쓰는 성장률. 상한은 여기 한 곳에서만 건다.
+
+    민감도 격자도 이 값을 기준으로 잡는다. 매출성장률을 그대로 축으로 쓰면
+    이미 상한을 넘은 종목(예: 46.8%)에서는 격자 다섯 칸이 모두 상한으로
+    눌려 표가 평평해지고, 축 라벨도 모델이 쓰지 않은 숫자를 가리킨다.
+    """
+    high_growth = min(revenue_growth or 0.05, 0.25) if revenue_growth else 0.05
+    if market_cap > 50_000_000_000:  # Large cap
+        high_growth = min(high_growth, 0.10)
+    return high_growth
+
+
 def calculate_enhanced_dcf_value(
     fcf_history: list[float],
     growth_metrics: dict,
     wacc: float,
     market_cap: float,
-    revenue_growth: float | None = None
+    revenue_growth: float | None = None,
+    resolved_high_growth: float | None = None,
 ) -> float:
-    """Enhanced DCF with multi-stage growth."""
+    """Enhanced DCF with multi-stage growth.
+
+    resolved_high_growth 를 주면 상한을 다시 걸지 않고 그 값을 그대로 쓴다.
+    민감도 격자가 상한 근처를 위아래로 흔들어 보기 위한 통로다 — 상한을
+    다시 걸면 상한 위쪽 칸이 전부 같은 값으로 접힌다.
+    """
     
     if not fcf_history or fcf_history[0] <= 0:
         return 0
@@ -2215,10 +2237,12 @@ def calculate_enhanced_dcf_value(
     fcf_volatility = calculate_fcf_volatility(fcf_history)
     
     # Stage 1: High Growth (Years 1-3)
-    # Use revenue growth but cap based on business maturity
-    high_growth = min(revenue_growth or 0.05, 0.25) if revenue_growth else 0.05
-    if market_cap > 50_000_000_000:  # Large cap
-        high_growth = min(high_growth, 0.10)
+    # 기본은 매출성장률에 상한을 건 값. 민감도 격자만 이미 해소된 값을 직접 준다.
+    high_growth = (
+        resolved_high_growth
+        if resolved_high_growth is not None
+        else resolve_high_growth(revenue_growth, market_cap)
+    )
     
     # Stage 2: Transition (Years 4-7)
     transition_growth = (high_growth + 0.03) / 2
