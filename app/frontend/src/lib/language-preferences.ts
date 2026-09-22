@@ -439,6 +439,10 @@ export const translations = {
     citationAutoNote: '자동 분류 — 원문 대조로 정확성을 확인하세요.',
     sensitivityTitle: 'WACC × 성장률 — 안전마진 민감도',
     sensitivityCurrentAssumption: '현재 가정',
+    sensitivityIntro: '할인율(WACC)과 성장률(g) 가정을 조금씩 바꿔 적정가를 다시 계산한 표입니다. 칸의 숫자는 그 가정에서 나온 적정가가 지금 주가보다 얼마나 높은지(+) 낮은지(−)를 뜻합니다.',
+    sensitivityAxisHint: '아래로 내려갈수록 할인율을 높게(=깐깐하게), 오른쪽으로 갈수록 성장률을 높게 잡은 경우입니다.',
+    sensitivityLegendLabel: '색 읽는 법',
+    sensitivityCurrentCellLabel: '지금 위치(노란 테두리)',
     mobileTocLabel: '섹션',
     // Report v5 - Header
     reportSubtitleMeta: '{period} · {dateRange} · {model}',
@@ -1042,6 +1046,10 @@ export const translations = {
     citationAutoNote: 'Auto-classified — verify with original source.',
     sensitivityTitle: 'WACC × Growth — Margin-of-Safety Sensitivity',
     sensitivityCurrentAssumption: 'Current assumption',
+    sensitivityIntro: 'Fair value recalculated as the discount rate (WACC) and growth (g) assumptions shift. Each cell shows how far that fair value sits above (+) or below (−) today\'s price.',
+    sensitivityAxisHint: 'Rows going down raise the discount rate (stricter); columns going right raise the growth assumption.',
+    sensitivityLegendLabel: 'Reading the colors',
+    sensitivityCurrentCellLabel: 'Current position (yellow outline)',
     mobileTocLabel: 'Sections',
     // Report v5 - Header
     reportSubtitleMeta: '{period} · {dateRange} · {model}',
