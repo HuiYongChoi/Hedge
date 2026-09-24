@@ -2,7 +2,8 @@ import { Button } from '@/components/ui/button';
 import { t } from '@/lib/language-preferences';
 import { krwEquivalentText, useKrwRate } from '@/hooks/use-krw-equivalent';
 import { ChevronRight } from 'lucide-react';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useScrollAreaHeight } from '@/hooks/use-scroll-area-height';
 import { computePbrTrend, toneToClasses } from './helpers';
 import type { CashFlowInsight, OtherAgent, PbrBand, ReportLanguage, ReportTone, TargetTile, ValuationDeepDive } from './types';
 
@@ -1389,9 +1390,19 @@ export function TargetDataSidebar({
   ));
   const hasConsensusBridge = Boolean(hasBrokerConsensus && valuationDeepDive?.pbr);
   const hasAnyContent = tiles.length > 0 || Boolean(valuationDeepDive) || hasBrokerConsensus || hasForwardConsensus;
+  const asideRef = useRef<HTMLElement>(null);
+  // 컨테이너 패딩 16px + sticky top-4 16px + 아래 숨 쉴 틈 16px.
+  const maxHeight = useScrollAreaHeight(asideRef, 48);
 
   return (
-    <aside className={`w-full flex-shrink-0 lg:sticky lg:top-4 lg:w-[280px] lg:self-start lg:overflow-y-auto lg:max-h-[calc(100vh-6rem)] ${className}`}>
+    <aside
+      ref={asideRef}
+      // sticky·자체 스크롤은 lg 이상에서만 켜진다. 잰 높이도 CSS 변수로만 넘겨 lg 클래스가
+      // 쓰게 한다 — 인라인 max-height 로 박으면 사이드바가 본문 아래로 쌓이는 좁은 화면에서
+      // 내용이 잘린다.
+      style={maxHeight != null ? ({ '--sidebar-max-h': `${maxHeight}px` } as CSSProperties) : undefined}
+      className={`w-full flex-shrink-0 lg:sticky lg:top-4 lg:w-[280px] lg:self-start lg:overflow-y-auto lg:max-h-[var(--sidebar-max-h,calc(100vh-6rem))] ${className}`}
+    >
       <div className="rounded-xl border border-border/60 bg-background p-3 shadow-sm">
         <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {t('targetDataTitle', language)}
