@@ -2220,12 +2220,17 @@ def calculate_enhanced_dcf_value(
     market_cap: float,
     revenue_growth: float | None = None,
     resolved_high_growth: float | None = None,
+    terminal_growth_adj: float = 1.0,
 ) -> float:
     """Enhanced DCF with multi-stage growth.
 
     resolved_high_growth 를 주면 상한을 다시 걸지 않고 그 값을 그대로 쓴다.
     민감도 격자가 상한 근처를 위아래로 흔들어 보기 위한 통로다 — 상한을
     다시 걸면 상한 위쪽 칸이 전부 같은 값으로 접힌다.
+
+    terminal_growth_adj 는 영구성장률을 시나리오별로 조이거나 푼다. 3% 천장은
+    그대로라 어떤 값을 넣어도 영구성장률이 3%를 넘지 못한다 — 할인율에
+    가까워질수록 적정가가 폭증하는 자리라서 천장은 건드리지 않는다.
     """
     
     if not fcf_history or fcf_history[0] <= 0:
@@ -2248,7 +2253,7 @@ def calculate_enhanced_dcf_value(
     transition_growth = (high_growth + 0.03) / 2
     
     # Stage 3: Terminal (steady state)
-    terminal_growth = min(0.03, high_growth * 0.6)
+    terminal_growth = min(0.03, high_growth * 0.6 * terminal_growth_adj)
     
     # Project FCF with stages
     pv = 0
@@ -2331,29 +2336,42 @@ def calculate_dcf_scenarios(
     market_cap: float,
     revenue_growth: float | None = None
 ) -> dict:
-    """Calculate DCF under multiple scenarios."""
-    
+    """Calculate DCF under multiple scenarios.
+
+    성장률 조정은 매출성장률이 아니라 모델이 실제로 쓰는 1~3년차 성장률에 건다.
+    매출성장률에 걸면 상한이 조정분을 먹어버려서, 고성장 대형주는 세 시나리오의
+    성장률이 모두 상한으로 같아지고 bear/bull 차이가 할인율에서만 나온다.
+
+    조정은 곱이 아니라 크기 기준의 부호 있는 가감이다. 곱으로 하면 역성장
+    종목에서 방향이 뒤집힌다 — −5%에 1.5를 곱하면 −7.5%가 되어 'bull' 이
+    bear 보다 나쁜 값을 내놓는다.
+    """
+
     scenarios = {
         'bear': {'growth_adj': 0.5, 'wacc_adj': 1.2, 'terminal_adj': 0.8},
         'base': {'growth_adj': 1.0, 'wacc_adj': 1.0, 'terminal_adj': 1.0},
         'bull': {'growth_adj': 1.5, 'wacc_adj': 0.9, 'terminal_adj': 1.2}
     }
-    
+
     results = {}
-    base_revenue_growth = revenue_growth or 0.05
-    
+    base_high_growth = resolve_high_growth(revenue_growth, market_cap)
+
     for scenario, adjustments in scenarios.items():
-        adjusted_revenue_growth = base_revenue_growth * adjustments['growth_adj']
+        # 양수 성장률에서는 곱셈과 결과가 같고(0.5g / g / 1.5g), 음수에서는
+        # bear 가 더 낮고 bull 이 더 높도록 방향이 유지된다.
+        growth_shift = (adjustments['growth_adj'] - 1.0) * abs(base_high_growth)
+        adjusted_high_growth = base_high_growth + growth_shift
         adjusted_wacc = wacc * adjustments['wacc_adj']
-        
+
         results[scenario] = calculate_enhanced_dcf_value(
             fcf_history=fcf_history,
             growth_metrics=growth_metrics,
             wacc=adjusted_wacc,
             market_cap=market_cap,
-            revenue_growth=adjusted_revenue_growth
+            resolved_high_growth=adjusted_high_growth,
+            terminal_growth_adj=adjustments['terminal_adj'],
         )
-    
+
     # Probability-weighted average
     expected_value = (
         results['bear'] * 0.2 + 
