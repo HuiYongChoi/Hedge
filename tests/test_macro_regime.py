@@ -6,6 +6,8 @@
 """
 
 from pathlib import Path
+from unittest import mock
+import os
 import sys
 import unittest
 
@@ -47,9 +49,26 @@ class FallbackTests(unittest.TestCase):
                     {"discountInputs": {"riskFreeRate": "4.72"}}):
             self.assertEqual(resolve_risk_free_rate(bad, 0.04)[0], 0.04, bad)
 
-    def test_endpoint_absent_today_returns_none(self):
-        """공급 측은 아직 열리지 않았다(Unknown proxy action). None 은 정상 경로다."""
-        self.assertIsNone(fetch_macro_regime("2999-01-01"))
+    def test_unreachable_endpoint_returns_none(self):
+        """공급 측이 죽어도 예외 없이 None. None 은 오류가 아니라 정상 경로다.
+
+        예전에는 '엔드포인트가 아직 안 열렸다'는 사실 자체를 검사했는데, 저쪽이
+        열리자 이 검사가 빨개졌다. 세상의 상태가 아니라 우리 쪽 폴백을 검사한다.
+        (그리고 테스트가 실제 망을 타면 안 된다.)
+        """
+        macro_regime._cache.clear()
+        with mock.patch.dict(
+            os.environ, {"MACRO_REGIME_URL": "http://127.0.0.1:9/never-listening"}
+        ):
+            self.assertIsNone(fetch_macro_regime())
+        macro_regime._cache.clear()
+
+    def test_disabled_by_env_returns_none(self):
+        """일괄 실행 때 매크로를 끌 수 있어야 한다 — 끄면 망을 타지 않는다."""
+        macro_regime._cache.clear()
+        with mock.patch.dict(os.environ, {"MACRO_REGIME_ENABLED": "0"}):
+            self.assertIsNone(fetch_macro_regime())
+        macro_regime._cache.clear()
 
     def test_backtest_does_not_fetch_today_rate(self):
         """과거 분석에 오늘 금리를 넣으면 그 자체로 미래 정보 유입이다."""

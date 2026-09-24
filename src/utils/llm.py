@@ -2,14 +2,29 @@
 
 import json
 import re
-from pydantic import BaseModel
+import typing
+from typing import Literal
+from pydantic import BaseModel, ValidationError
 from src.llm.models import get_model, get_model_info
 from src.utils.progress import progress
 from src.graph.state import AgentState
 from src.utils.financial_formatting import normalize_financial_language
 
 
-KOREAN_OUTPUT_REQUIREMENT = "CRITICAL REQUIREMENT: You MUST write your entire analysis, reasoning, and summary exclusively in Korean (한국어). Do NOT output any English sentences."
+KOREAN_OUTPUT_REQUIREMENT = (
+    "CRITICAL REQUIREMENT: You MUST write your entire analysis, reasoning, "
+    "and summary exclusively in Korean (한국어). Do NOT output any English sentences."
+    # 열거형 값까지 한국어로 옮겨 오면 스키마 검증이 깨지고, 그러면 잘 쓴 분석
+    # 전체가 fallback 으로 버려진다(실측: signal="중립" → 리포트 전 섹션 공백).
+    " EXCEPTION — SCHEMA ENUM VALUES: JSON fields whose value is restricted to a fixed"
+    " list (signal, sentiment, action) MUST keep the exact English token defined by the"
+    " schema — signal is exactly one of bullish/bearish/neutral, sentiment is exactly one"
+    " of positive/negative/neutral, action is exactly one of buy/sell/short/cover/hold."
+    " Never translate, capitalize, or annotate those tokens. Korean belongs in the prose"
+    " fields (reasoning and the like), not in enum values."
+)
+#: KOREAN_OUTPUT_REQUIREMENT 의 중복 주입 검사용 표식.
+KOREAN_OUTPUT_MARKER = "CRITICAL REQUIREMENT:"
 DATA_GAP_HANDLING_REQUIREMENT = (
     "DATA GAP HANDLING REQUIREMENT: Continue the investment analysis even when exact metrics are N/A. "
     "Do NOT write phrases like 'insufficient data', 'data not available', 'cannot analyze', 'unable to evaluate', "
@@ -254,7 +269,9 @@ def _append_korean_requirement_to_text(text: str) -> str:
         requirements.append(REPORT_QUALITY_REQUIREMENT)
     if "스키마 호환 지시사항:" not in text:
         requirements.append(SCHEMA_COMPATIBILITY_REQUIREMENT)
-    if KOREAN_OUTPUT_REQUIREMENT not in text:
+    # 전체 문자열이 아니라 마커로 본다 — 지침 본문이 길어질수록 한 글자 차이로
+    # 중복 주입이 일어나고, 그때마다 프롬프트가 부풀어 오른다.
+    if KOREAN_OUTPUT_MARKER not in text:
         requirements.append(KOREAN_OUTPUT_REQUIREMENT)
     if not requirements:
         return text
@@ -647,9 +664,13 @@ def call_llm(
 
         # For non-JSON support models, we can use structured output
         if not (model_info and not model_info.has_json_mode()):
+            # include_raw=True 여야 검증이 실패해도 모델이 실제로 뭐라고 답했는지
+            # 손에 남는다. 그것이 없으면 열거형 한 단어가 어긋났을 때 분석 본문까지
+            # 함께 사라진다(실측: signal="중립" → 리포트 전 섹션 공백).
             llm = llm.with_structured_output(
                 pydantic_model,
                 method="json_mode",
+                include_raw=True,
             )
     except Exception as e:
         if agent_name:
@@ -673,13 +694,22 @@ def call_llm(
             if model_info and not model_info.has_json_mode():
                 parsed_result = extract_json_from_response(result.content)
                 if parsed_result:
-                    return _attach_quote_translations(
-                        ensure_korean_default_texts(pydantic_model(**parsed_result)),
-                        translation_index,
-                    )
+                    salvaged = build_model_with_salvage(pydantic_model, parsed_result)
+                    if salvaged is not None:
+                        return _attach_quote_translations(
+                            ensure_korean_default_texts(salvaged), translation_index,
+                        )
             else:
-                return _attach_quote_translations(
-                    ensure_korean_default_texts(result), translation_index,
+                salvaged = salvage_structured_result(result, pydantic_model)
+                if salvaged is not None:
+                    return _attach_quote_translations(
+                        ensure_korean_default_texts(salvaged), translation_index,
+                    )
+                # 여기까지 왔다면 응답은 왔지만 쓸 수 있는 형태가 아니다.
+                # 다음 시도로 넘어가되, 마지막 시도였다면 아래 fallback 으로 간다.
+                parsing_error = result.get("parsing_error") if isinstance(result, dict) else None
+                raise ValueError(
+                    f"structured output unusable for {pydantic_model.__name__}: {parsing_error}"
                 )
 
         except Exception as e:
@@ -687,12 +717,192 @@ def call_llm(
                 progress.update_status(agent_name, None, f"Error - retry {attempt + 1}/{max_retries}")
 
             if attempt == max_retries - 1:
-                print(f"Error in LLM call after {max_retries} attempts: {e}")
+                print(
+                    f"Error in LLM call after {max_retries} attempts "
+                    f"(agent={agent_name}, model={model_provider}/{model_name}): {e}"
+                )
                 return create_fallback_response(pydantic_model, default_factory)
 
     # This should never be reached due to the retry logic above
     return create_fallback_response(pydantic_model, default_factory)
 
+
+# ────────────────────────────────────────────────────────────────────────────────
+# 스키마 값 복구 — 잘 쓴 분석을 열거형 한 단어 때문에 통째로 버리지 않는다
+# ────────────────────────────────────────────────────────────────────────────────
+#: 스키마가 값 목록(Literal)으로 못 박은 필드에 대한 표기 변형 대응표.
+#:
+#: "전부 한국어로 쓰라"는 지시는 서술만 겨냥한 것인데, 모델이 열거형 값까지 옮겨
+#: 오는 일이 있다. 실측(2026-08-30, 000660.KS): signal="중립" 하나 때문에
+#: AswathDamodaranSignal 검증이 3회 모두 실패했고, 그 결과 이미 완성돼 있던
+#: 수천 자 분량의 분석이 통째로 버려져 리포트 전 섹션이 "데이터가 없습니다"로
+#: 나갔다. 값 하나는 되돌릴 수 있는 문제이고, 분석 본문은 되돌릴 수 없다.
+#: 판단이 실패했을 때 고를 값. 앞에 있는 것부터 찾는다.
+#: 실패는 "모르겠다"이지 "사라"가 아니다.
+SAFE_DEFAULT_ENUM_VALUES = ("neutral", "hold", "cover")
+ENUM_VALUE_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "bullish": ("강세", "매수", "긍정", "긍정적", "낙관", "낙관적", "상승", "buy", "positive", "long", "overweight"),
+    "bearish": ("약세", "매도", "부정", "부정적", "비관", "비관적", "하락", "sell", "negative", "short", "underweight"),
+    "neutral": ("중립", "중립적", "관망", "보유", "중간", "hold", "neutral", "mixed"),
+    "positive": ("긍정", "긍정적", "호재", "우호적", "good"),
+    "negative": ("부정", "부정적", "악재", "비우호적", "bad"),
+    "buy": ("매수", "매입", "사기", "bullish", "long"),
+    "sell": ("매도", "매각", "팔기", "bearish"),
+    "hold": ("보유", "관망", "유지", "중립", "중립적", "neutral"),
+    "short": ("공매도", "숏", "매도포지션"),
+    "cover": ("환매", "숏청산", "커버", "숏커버"),
+}
+
+#: 값 비교 전에 떼어 낼 장식 문자. "중립 (관망)" / "**neutral**" 같은 표기를 흡수한다.
+_ENUM_NOISE = re.compile(r"[\s()\[\]{}<>\"'`*·,.:;/\\-]+")
+
+
+def _normalize_enum_token(value: str) -> str:
+    return _ENUM_NOISE.sub("", value).lower()
+
+
+def _literal_options(annotation) -> tuple[str, ...] | None:
+    """필드 주석이 문자열 Literal 이면 허용값을, 아니면 None.
+
+    Optional[Literal[...]] 처럼 Union 으로 감싸인 경우도 안쪽까지 본다.
+    """
+    origin = typing.get_origin(annotation)
+    if origin is Literal:
+        args = typing.get_args(annotation)
+        if args and all(isinstance(arg, str) for arg in args):
+            return args
+        return None
+    if origin is not None:
+        for arg in typing.get_args(annotation):
+            found = _literal_options(arg)
+            if found:
+                return found
+    return None
+
+
+def match_literal_option(value: str, options: tuple[str, ...]) -> str | None:
+    """모델이 준 값을 스키마가 허용하는 값 하나로 되돌린다. 애매하면 None.
+
+    같은 한국어가 두 값에 걸릴 수 있다("중립" → neutral 이자 hold). 그래서 대응은
+    항상 *그 필드가 허용하는 값 안에서만* 찾고, 후보가 둘 이상이면 고르지 않는다.
+    잘못 고른 신호는 없는 신호보다 나쁘다.
+    """
+    if not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if raw in options:
+        return raw
+    lowered = raw.lower()
+    for option in options:
+        if option.lower() == lowered:
+            return option
+
+    # "중립 (관망)" 처럼 괄호 앞뒤로 나뉘어 오는 경우까지 후보로 본다.
+    candidates = {raw}
+    if "(" in raw:
+        candidates.add(raw.split("(", 1)[0])
+    tokens = {_normalize_enum_token(c) for c in candidates if c.strip()}
+    tokens.discard("")
+    if not tokens:
+        return None
+
+    matched = []
+    for option in options:
+        known = {_normalize_enum_token(option)}
+        known.update(_normalize_enum_token(s) for s in ENUM_VALUE_SYNONYMS.get(option, ()))
+        if tokens & known:
+            matched.append(option)
+    return matched[0] if len(matched) == 1 else None
+
+
+def coerce_enum_fields(data: dict, model_class: type[BaseModel]) -> dict:
+    """Literal 필드에 들어온 번역·장식된 값을 스키마 값으로 되돌린다."""
+    if not isinstance(data, dict):
+        return data
+    for field_name, field in model_class.model_fields.items():
+        options = _literal_options(field.annotation)
+        if not options or field_name not in data:
+            continue
+        canonical = match_literal_option(data[field_name], options)
+        if canonical is not None and canonical != data[field_name]:
+            print(
+                f"Repaired enum field {model_class.__name__}.{field_name}: "
+                f"{data[field_name]!r} -> {canonical!r}"
+            )
+            data[field_name] = canonical
+    return data
+
+
+def build_model_with_salvage(model_class: type[BaseModel], data: dict) -> BaseModel | None:
+    """검증에 걸린 필드만 기본값으로 갈아 끼우고 나머지는 살려서 모델을 만든다.
+
+    전부-아니면-전무로 처리하면 필드 하나 때문에 분석 본문까지 사라진다. 여기서는
+    깨진 필드만 도려내고, 살아 있는 서술은 그대로 화면까지 보낸다. 되살릴 수 없는
+    경우에만 None 을 돌려 호출부가 기존 fallback 을 쓰게 한다.
+    """
+    if not isinstance(data, dict):
+        return None
+    payload = coerce_enum_fields(dict(data), model_class)
+    for _ in range(len(model_class.model_fields) + 1):
+        try:
+            return model_class(**payload)
+        except ValidationError as exc:
+            dropped = False
+            for error in exc.errors():
+                loc = error.get("loc") or ()
+                if loc and isinstance(loc[0], str) and loc[0] in payload:
+                    print(
+                        f"Dropping unusable field {model_class.__name__}.{loc[0]}: "
+                        f"{error.get('msg')}"
+                    )
+                    payload.pop(loc[0])
+                    dropped = True
+            if not dropped:
+                return None
+            defaults = create_default_response(model_class)
+            for field_name in model_class.model_fields:
+                if field_name not in payload:
+                    payload[field_name] = getattr(defaults, field_name)
+        except Exception:
+            return None
+    return None
+
+
+def _raw_content_of(message: any) -> str | None:
+    content = getattr(message, "content", None)
+    if isinstance(content, bytes):
+        return content.decode("utf-8", errors="replace")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        # 일부 제공자는 content 를 블록 리스트로 준다. 텍스트 블록만 이어 붙인다.
+        parts = [
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        ]
+        joined = "".join(parts)
+        return joined or None
+    return None
+
+
+def salvage_structured_result(result: any, model_class: type[BaseModel]) -> BaseModel | None:
+    """with_structured_output(include_raw=True) 의 결과에서 쓸 수 있는 모델을 꺼낸다."""
+    if isinstance(result, model_class):
+        return result
+    if not isinstance(result, dict):
+        return None
+    parsed = result.get("parsed")
+    if isinstance(parsed, model_class):
+        return parsed
+    if isinstance(parsed, dict):
+        salvaged = build_model_with_salvage(model_class, parsed)
+        if salvaged is not None:
+            return salvaged
+    raw_json = extract_json_from_response(_raw_content_of(result.get("raw")) or "")
+    if raw_json is None:
+        return None
+    return build_model_with_salvage(model_class, raw_json)
 
 def create_default_response(model_class: type[BaseModel]) -> BaseModel:
     """Creates a safe default response based on the model's fields."""
@@ -707,8 +917,17 @@ def create_default_response(model_class: type[BaseModel]) -> BaseModel:
         elif hasattr(field.annotation, "__origin__") and field.annotation.__origin__ == dict:
             default_values[field_name] = {}
         else:
-            # For other types (like Literal), try to use the first allowed value
-            if hasattr(field.annotation, "__args__"):
+            # For other types (like Literal), pick the safest allowed value.
+            options = _literal_options(field.annotation)
+            if options:
+                # 첫 값을 그대로 쓰면 signal 은 Literal["bullish", ...] 라서
+                # '분석 실패'가 화면에 '매수'로 나간다(실측: 신뢰도 0% 매수).
+                # 실패했을 때 기본값은 언제나 관망 쪽이어야 한다.
+                default_values[field_name] = next(
+                    (safe for safe in SAFE_DEFAULT_ENUM_VALUES if safe in options),
+                    options[0],
+                )
+            elif hasattr(field.annotation, "__args__"):
                 default_values[field_name] = field.annotation.__args__[0]
             else:
                 default_values[field_name] = None

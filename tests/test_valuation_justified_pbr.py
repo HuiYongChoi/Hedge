@@ -140,37 +140,28 @@ def test_compute_cost_of_equity_matches_wacc_existing_capm_path():
     ) == pytest.approx(0.105)
 
 
-def test_frontend_wires_justified_pbr_without_touching_primary_tiles():
+def test_justified_pbr_card_stays_out_of_the_frontend():
+    """목표 PBR 카드는 화면에서 뺐다(f5c1537). 백엔드 계산은 남아 있다.
+
+    뺀 이유: 입력인 ROE 가 사이클로 심하게 왜곡돼 카드가 엉뚱한 목표가를 말했다.
+    이 테스트는 '없어야 한다'를 지킨다 — 예전에는 '있어야 한다'를 검사하고 있어
+    3개월 내내 빨간 상태였고, 그 빨간불 속에 진짜 회귀가 묻혔다.
+    """
     valuation = VALUATION.read_text(encoding="utf-8")
     types = (V5_DIR / "types.ts").read_text(encoding="utf-8")
     helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
     sidebar = (V5_DIR / "target-data-sidebar.tsx").read_text(encoding="utf-8")
-    i18n = LANG_PREFS.read_text(encoding="utf-8")
 
     assert "forward_eps_fy2" not in valuation
     assert "forward_eps_fy3" not in valuation
     assert "eps_cagr_3y" not in valuation
     assert "eps_cagr_4y" not in valuation
 
-    assert "export interface JustifiedPbrBreakdown" in types
-    assert "justifiedPbr: JustifiedPbrBreakdown | null" in types
+    # 백엔드는 계속 계산하고 내보낸다 — 되살릴 때 다시 만들 필요가 없게.
+    assert "def calculate_justified_pbr_breakdown" in valuation
+    assert '"justified_pbr_analysis"' in valuation
 
-    assert "function parseJustifiedPbrBreakdown" in helpers
-    assert "justified_pbr_analysis" in helpers
-    assert "eps_growth_1y" in helpers
-
-    assert "function JustifiedPbrCard" in sidebar
-    assert "const justifiedCard = dive.justifiedPbr &&" in sidebar
-    assert "{pbrCard}" in sidebar and "{justifiedCard}" in sidebar and "{rimCard}" in sidebar
-    assert sidebar.index("ORDERED_PRIMARY_TILE_KEYS = ['targetIntrinsicLabel', 'targetMarginLabel']") > 0
-    assert sidebar.index("{topTiles.map") < sidebar.index("{valuationDeepDive &&")
-
-    for key in [
-        "justifiedPbrLabel",
-        "justifiedPbrTitleTip",
-        "justifiedPbrInputsTip",
-        "justifiedPbrRoeTip",
-        "justifiedPbrKeGTip",
-        "justifiedPbrGrowthTip",
-    ]:
-        assert f"{key}:" in i18n
+    # 화면에는 붙어 있지 않다.
+    assert "JustifiedPbrBreakdown" not in types
+    assert "parseJustifiedPbrBreakdown" not in helpers
+    assert "function JustifiedPbrCard" not in sidebar

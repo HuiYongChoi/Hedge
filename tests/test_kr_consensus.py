@@ -209,3 +209,49 @@ class TestHankyungMetaProvider:
         provider = HankyungMetaProvider()
         # Should not raise for any ticker
         assert provider.fetch_quarterly_eps_estimates("AAPL", as_of_date=date(2026, 1, 31)) == []
+
+
+# ── 네이버 기업실적분석 표: 머리글 두 줄 + 연간/분기 혼재 ────────────────────
+_NAVER_TWO_ROW_HEADER = """
+<div class="section cop_analysis"><table>
+  <tr><th rowspan="3">주요재무정보</th><th colspan="4">최근 연간 실적</th><th colspan="6">최근 분기 실적</th></tr>
+  <tr><th>2023.12</th><th>2024.12</th><th>2025.12</th><th>2026.12(E)</th>
+      <th>2025.06</th><th>2025.09</th><th>2025.12</th><th>2026.03</th><th>2026.06</th><th>2026.09(E)</th></tr>
+  <tr><th>IFRS연결</th><th>IFRS연결</th><th>IFRS연결</th><th>IFRS연결</th>
+      <th>IFRS연결</th><th>IFRS연결</th><th>IFRS연결</th><th>IFRS연결</th><th>IFRS연결</th><th>IFRS연결</th></tr>
+  <tr><td>EPS(원)</td><td>-12,517</td><td>27,182</td><td>58,955</td><td>349,566</td>
+      <td>9,612</td><td>17,301</td><td>20,906</td><td>56,066</td><td>131,640</td><td>80,325</td></tr>
+</table></div>
+"""
+
+
+def test_naver_parses_two_row_header():
+    """머리글이 두 줄이라 첫 줄만 보면 날짜를 하나도 못 찾는다(실측: 0건)."""
+    from datetime import date
+    from src.tools.kr_consensus.naver_finance import _parse_consensus_estimates
+
+    result = _parse_consensus_estimates(_NAVER_TWO_ROW_HEADER, date(2026, 9, 1), 4)
+    assert result, "미래 분기 추정을 찾아야 한다"
+
+
+def test_naver_does_not_read_the_annual_column_as_a_quarter():
+    """같은 머리글 줄에 연간 열이 섞여 있다.
+
+    2026.12(E) = 349,566 은 한 해 이익인데, 이걸 분기로 읽으면 선행 EPS 가
+    통째로 부풀어 오른다(실측: 분기 추정에 349,566 이 섞여 들어왔다).
+    """
+    from datetime import date
+    from src.tools.kr_consensus.naver_finance import _parse_consensus_estimates
+
+    result = _parse_consensus_estimates(_NAVER_TWO_ROW_HEADER, date(2026, 9, 1), 4)
+    assert [round(q.eps) for q in result] == [80325]
+    assert all(q.fiscal_period_end.month != 12 or q.fiscal_period_end.year != 2026
+               for q in result), "연간 열(2026.12)이 분기로 들어오면 안 된다"
+
+
+def test_naver_annual_parser_reads_only_the_annual_group():
+    from datetime import date
+    from src.tools.kr_consensus.naver_finance import _parse_annual_estimates
+
+    result = _parse_annual_estimates(_NAVER_TWO_ROW_HEADER, date(2026, 9, 1), 2)
+    assert [round(a.eps) for a in result] == [349566]

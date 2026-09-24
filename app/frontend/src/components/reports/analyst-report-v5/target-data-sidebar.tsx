@@ -17,6 +17,8 @@ interface TargetDataSidebarProps {
   currency?: string;
   brokerConsensus?: BrokerConsensusSnapshot | null;
   currentPrice?: number | null;
+  /** 가치평가 분석가의 WACC. 다모다란 자기자본비용과 나란히 보여 주기 위해 받는다. */
+  wacc?: number | null;
 }
 
 interface BrokerConsensusSnapshot {
@@ -70,7 +72,24 @@ function fillTemplate(template: string, values: Record<string, string>) {
   );
 }
 
-const ORDERED_PRIMARY_TILE_KEYS = ['targetIntrinsicLabel', 'targetMarginLabel'] as const;
+// 선행 내재가치는 후행 내재가치 '바로 아래'에 온다. 두 값의 폭이 이 화면에서
+// 가장 중요한 정보이므로 떨어뜨려 놓으면 비교가 되지 않는다.
+// 내재가치 3종을 먼저 나란히, 그 아래 같은 순서로 안전가 3종.
+// 짝을 맞춰 두지 않으면 '어느 기준의 안전가인지'가 화면에서 헷갈린다.
+// 내재가치와 그 안전가를 짝지어 놓고, 후행 → 선행(분기) → 선행(연) 순으로
+// 시점이 앞으로 나아가게 둔다. 내재가치 셋을 몰아 놓고 안전가 셋을 몰아 놓으면
+// '이 안전가가 어느 내재가치에서 나온 것인지'를 매번 되짚어야 한다.
+//
+// 시장 암묵 이익은 맨 위다 — 나머지 값이 전부 '우리 모델이 보는 이익'인데,
+// 그것들을 읽기 전에 '시장은 얼마로 보고 있는가'가 먼저 와야 기준이 선다.
+const ORDERED_PRIMARY_TILE_KEYS = [
+  'targetMarketImpliedEpsLabel',
+  'targetIntrinsicLabel', 'targetMarginLabel',
+  // 컨센서스 분기가 없으면 같은 자리에 '후행 TTM' 이름으로 뜬다.
+  'targetForwardQuarterIntrinsicLabel', 'targetTrailingTtmIntrinsicLabel',
+  'targetForwardQuarterMarginLabel', 'targetTrailingTtmMarginLabel',
+  'targetForwardIntrinsicLabel', 'targetForwardMarginLabel',
+] as const;
 const PRIMARY_TILE_KEYS = new Set<string>(ORDERED_PRIMARY_TILE_KEYS);
 const SAFETY_MARGIN_DISPLAY_BUFFER = 0.25;
 
@@ -133,17 +152,36 @@ function pbrSignalText(signalTone: ReportTone, language: ReportLanguage) {
   return language === 'ko' ? '중립' : 'Neutral';
 }
 
-function InfoDot({ title }: { title: string }) {
+/** 즉시 뜨는 설명 풍선.
+ *
+ * 브라우저 기본 title 속성은 마우스를 올리고 1초 넘게 기다려야 뜬다. 설명이
+ * 필요해서 올린 손이 그 사이에 지나가 버리면 없는 것과 같다. group-hover 로
+ * 바꿔 지연 없이 뜨게 하고, 글자도 읽을 만한 크기로 키운다.
+ */
+function HelpTip({ text, children, className }: { text: string; children?: ReactNode; className?: string }) {
   return (
-    <span
-      role="tooltip"
-      title={title}
-      className="inline-flex h-3 w-3 cursor-help items-center justify-center rounded-full border border-border/60 text-[8px] text-muted-foreground"
-      aria-label={title}
-    >
-      ?
+    <span className={`group/tip relative inline-flex items-center ${className ?? ''}`}>
+      {children ?? (
+        <span
+          aria-hidden
+          className="inline-flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full border border-border/70 text-[9px] font-semibold text-muted-foreground transition-colors group-hover/tip:border-amber-400/70 group-hover/tip:text-amber-300"
+        >
+          ?
+        </span>
+      )}
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full right-0 z-50 mb-1.5 hidden w-64 whitespace-normal rounded-md border border-border bg-popover px-2.5 py-2 text-left text-[11px] font-normal normal-case leading-relaxed tracking-normal text-popover-foreground shadow-xl group-hover/tip:block"
+      >
+        {text}
+      </span>
+      <span className="sr-only">{text}</span>
     </span>
   );
+}
+
+function InfoDot({ title }: { title: string }) {
+  return <HelpTip text={title} />;
 }
 
 function Row({ label, tip, children }: { label: string; tip?: string; children: ReactNode }) {
@@ -227,16 +265,28 @@ function PbrBandCard({
   )
     ? marketCurrentPrice
     : pbr.currentPrice;
-  const [assumptionPbrInput, setAssumptionPbrInput] = useState(() => formatPbrMultiple(pbr.currentPbr));
+  // 입력칸의 기본값. formatPbrMultiple 은 값이 없을 때 '—' 를 돌려주는데,
+  // 그게 그대로 입력칸에 들어가면 Number('—') = NaN 이라 계산이 안 된다.
+  const defaultPbrText = Number.isFinite(pbr.currentPbr) && pbr.currentPbr > 0
+    ? formatPbrMultiple(pbr.currentPbr)
+    : '';
+  const [assumptionPbrInput, setAssumptionPbrInput] = useState(() => defaultPbrText);
   useEffect(() => {
-    setAssumptionPbrInput(formatPbrMultiple(pbr.currentPbr));
-  }, [pbr.currentPbr]);
+    setAssumptionPbrInput(defaultPbrText);
+  }, [defaultPbrText]);
   const trend = computePbrTrend(pbr.history, language);
   const railPct = ratioToBandPct(pbr.currentPbr, pbr.percentiles.p10, pbr.percentiles.p90);
+  // 입력이 비어 있으면 화면에 뜬 placeholder(= 현재 PBR)로 계산한다.
+  //
+  // 예전에는 여기서 null 을 돌려 "입력 필요" 를 띄웠는데, 상자에는 placeholder 로
+  // 3.5 가 보이고 있었다. 보이는 값과 계산이 어긋나 '3.5 를 넣었는데 왜 계산이
+  // 안 되나' 로 읽힌다. 지우면 기본값으로 돌아가는 편이 화면과 일치한다.
   const assumptionPbr = useMemo(() => {
-    const parsed = Number(assumptionPbrInput.replace(',', '.'));
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-  }, [assumptionPbrInput]);
+    const typed = Number(assumptionPbrInput.replace(',', '.'));
+    if (Number.isFinite(typed) && typed > 0) return typed;
+    if (assumptionPbrInput.trim() !== '') return null;   // 숫자가 아닌 걸 입력한 경우
+    return Number.isFinite(pbr.currentPbr) && pbr.currentPbr > 0 ? pbr.currentPbr : null;
+  }, [assumptionPbrInput, pbr.currentPbr]);
   const scenarioPct = assumptionPbr === null
     ? null
     : ratioToBandPct(assumptionPbr, pbr.percentiles.p10, pbr.percentiles.p90);
@@ -253,12 +303,12 @@ function PbrBandCard({
     : null;
   const assumptionPriceText = assumptionPrice !== null
     ? formatCurrency(assumptionPrice, currency)
-    : (language === 'ko' ? '입력 필요' : 'Enter PBR');
+    : (language === 'ko' ? '숫자를 입력하세요' : 'Enter a number');
   const assumptionGapText = assumptionGap !== null
     ? (language === 'ko'
         ? `현재가 대비 ${formatPercent(assumptionGap)}`
         : `${formatPercent(assumptionGap)} vs current`)
-    : (language === 'ko' ? 'PBR을 입력하면 계산됩니다' : 'Enter a PBR to calculate');
+    : (language === 'ko' ? '현재 PBR 기준으로 계산됩니다' : 'Calculated at the current PBR');
   const vsMedian = pbr.percentiles.p50 ? (pbr.currentPbr - pbr.percentiles.p50) / pbr.percentiles.p50 : null;
   const vsP90 = pbr.percentiles.p90 ? (pbr.currentPbr - pbr.percentiles.p90) / pbr.percentiles.p90 : null;
   const position = pbrPositionText(pbr.positionLabel, language);
@@ -337,24 +387,42 @@ function PbrBandCard({
         <div className="font-mono text-sm font-semibold text-amber-300">{assumptionPriceText}</div>
         <div className="font-mono text-[10px] text-muted-foreground">{assumptionGapText}</div>
       </div>
-      <div className="mt-1 flex justify-between text-[10px] font-mono text-muted-foreground">
-        <span>{language === 'ko' ? '10%' : '10%'} {formatPbrMultiple(pbr.percentiles.p10)}</span>
-        <span>50% {formatPbrMultiple(pbr.percentiles.p50)}</span>
-        <span>{language === 'ko' ? '90%' : '90%'} {formatPbrMultiple(pbr.percentiles.p90)}</span>
+      {/* 중위값은 이 카드의 기준점이다 — 나머지 눈금과 같은 크기로 두면
+          '무엇과 비교하는 중인지'가 눈에 안 들어온다. */}
+      <div className="mt-1 flex items-baseline justify-between font-mono text-[10px] text-muted-foreground">
+        <span>10% {formatPbrMultiple(pbr.percentiles.p10)}</span>
+        <span className="text-xs font-semibold text-foreground">
+          {language === 'ko' ? '중위' : 'median'} {formatPbrMultiple(pbr.percentiles.p50)}
+        </span>
+        <span>90% {formatPbrMultiple(pbr.percentiles.p90)}</span>
       </div>
       <div className="mt-1 text-[10px] text-muted-foreground">
         {language === 'ko' ? '계산 기준 BPS' : 'BPS basis'} {formatCurrency(bpsBasis, currency)}
       </div>
 
       <dl className="mt-3 space-y-1 border-t border-border/50 pt-2 text-[10px]">
-        <Row label={language === 'ko' ? '하단 방어가' : 'Lower band'}>
-          <span className="font-mono">{formatCurrency(fairP10, currency)}</span>
+        {/* 가격만 있으면 '이게 몇 배짜리 가격인지'를 위 눈금과 눈으로 맞춰야 한다.
+            줄마다 배수를 같이 적어 그 자리에서 검산되게 한다. */}
+        <Row label={language === 'ko' ? '하단 방어가 (10%)' : 'Lower band (10%)'}
+             tip={t('pbrLowerBandTip', language)}>
+          <span className="font-mono">
+            {formatCurrency(fairP10, currency)}
+            <span className="ml-1 text-[9px] text-muted-foreground">PBR {formatPbrMultiple(pbr.percentiles.p10)}</span>
+          </span>
         </Row>
-        <Row label={language === 'ko' ? '역사적 PBR 중위값 기준 주가' : 'Historical median PBR price'}>
-          <span className="font-mono font-semibold text-foreground">{formatCurrency(fairP50, currency)}</span>
+        <Row label={language === 'ko' ? '중위값 기준 주가 (50%)' : 'Median price (50%)'}
+             tip={t('pbrMedianPriceTip', language)}>
+          <span className="font-mono text-xs font-semibold text-foreground">
+            {formatCurrency(fairP50, currency)}
+            <span className="ml-1 text-[9px] font-normal text-muted-foreground">PBR {formatPbrMultiple(pbr.percentiles.p50)}</span>
+          </span>
         </Row>
-        <Row label={language === 'ko' ? '상단 시나리오' : 'Upper case'}>
-          <span className="font-mono">{formatCurrency(pbrFairP90, currency)}</span>
+        <Row label={language === 'ko' ? '상단 시나리오 (90%)' : 'Upper case (90%)'}
+             tip={t('pbrUpperBandTip', language)}>
+          <span className="font-mono">
+            {formatCurrency(pbrFairP90, currency)}
+            <span className="ml-1 text-[9px] text-muted-foreground">PBR {formatPbrMultiple(pbr.percentiles.p90)}</span>
+          </span>
         </Row>
         <Row label={t('pbrRowPosition', language)} tip={t('pbrRowPositionTip', language)}>
           <span className={`font-semibold ${classes.text}`}>{position}</span>
@@ -387,17 +455,208 @@ function PbrBandCard({
   );
 }
 
+/** 사이클 정점을 언제로 보느냐에 따른 주당 가치.
+ *
+ * 기존 DCF 는 정점 개념이 없어 '지금 이익이 영원히 이어진다'로 계산한다. 사이클
+ * 업종에서는 그것만으로 4배가 갈린다(실측 000660.KS: 정점 없이 597만, 2년 뒤
+ * 정점이면 158만). 정점 연도를 알려 주는 자료는 없으므로 하나를 박지 않고
+ * 나란히 놓아, 지금 가격이 어느 시나리오에 앉아 있는지를 보이게 한다.
+ */
+/** 내재가치를 만든 할인율. 어느 값이 어느 엔진의 것인지 함께 밝힌다.
+ *
+ * 사이드바에는 가치평가 분석가의 WACC 만 떠 있었는데, 다모다란 DCF 는 자기자본
+ * 비용으로 할인한다. 실측(000660.KS): WACC 10.5% vs 자기자본비용 9.0% — 화면의
+ * 할인율과 위 타일들을 실제로 만든 할인율이 서로 달랐다. 할인율은 성장률과 함께
+ * 결과를 가장 크게 좌우하는 두 축이라, 어긋난 채로 두면 적정가가 어떤 전제 위에
+ * 선 건지 알 수 없다.
+ */
+function DiscountRateCard({
+  report, wacc, language,
+}: {
+  report?: Record<string, any> | null;
+  wacc?: number | null;
+  language: ReportLanguage;
+}) {
+  const costOfEquity = Number(report?.damodaran_cost_of_equity);
+  const beta = Number(report?.damodaran_beta);
+  const rfSource = typeof report?.damodaran_risk_free_source === 'string'
+    ? report!.damodaran_risk_free_source : null;
+  const roic = Number(report?.damodaran_roic_after_tax);
+  const spread = Number(report?.damodaran_roic_spread);
+  const hasWacc = Number.isFinite(Number(wacc)) && Number(wacc) > 0;
+  const hasCoe = Number.isFinite(costOfEquity) && costOfEquity > 0;
+  const hasRoic = Number.isFinite(roic);
+  const hasSpread = Number.isFinite(spread);
+  if (!hasWacc && !hasCoe && !hasRoic) return null;
+  const isKo = language === 'ko';
+  const asPct = (value: number) => `${(value * (Math.abs(value) <= 1 ? 100 : 1)).toFixed(1)}%`;
+
+  return (
+    <div className="mt-2 rounded-lg border border-border/60 bg-muted/10 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {isKo ? '자본비용 · 자본수익성' : 'Cost of capital vs return'}
+        </div>
+        <HelpTip text={t('discountRateCardTip', language)} />
+      </div>
+      <dl className="mt-2 space-y-1 text-[10px]">
+        {hasCoe && (
+          <Row label={isKo ? '다모다란 DCF · 자기자본비용' : 'Damodaran DCF - cost of equity'}>
+            <span className="font-mono text-xs font-semibold text-foreground">{asPct(costOfEquity)}</span>
+          </Row>
+        )}
+        {hasWacc && (
+          <Row label={isKo ? '가치평가 분석가 · WACC' : 'Valuation Analyst - WACC'}>
+            <span className="font-mono text-xs font-semibold text-foreground">{asPct(Number(wacc))}</span>
+          </Row>
+        )}
+        {/* 조달 비용만 있으면 반쪽이다 — 그 돈으로 얼마를 벌었는지가 짝이어야
+            재투자가 가치를 만드는지 깎는지 알 수 있다. */}
+        {hasRoic && (
+          <Row label={isKo ? '세후 ROIC (번 수익률)' : 'After-tax ROIC'}
+               tip={t('roicSpreadTip', language)}>
+            <span className="font-mono text-xs font-semibold text-foreground">{asPct(roic)}</span>
+          </Row>
+        )}
+        {hasSpread && (
+          <Row label={isKo ? '초과수익 (ROIC − 자본비용)' : 'Excess return (ROIC - hurdle)'}>
+            <span className={`font-mono text-xs font-bold ${spread >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {spread >= 0 ? '+' : ''}{(spread * 100).toFixed(1)}%p
+            </span>
+          </Row>
+        )}
+      </dl>
+      {hasSpread && (
+        <div className={`mt-1.5 rounded-md px-2 py-1.5 text-[10px] leading-snug ${spread >= 0 ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}>
+          {spread >= 0
+            ? (isKo ? '번 수익률이 조달 비용을 웃돕니다 — 재투자할수록 주주 몫이 늘어나는 구간입니다.'
+                    : 'Returns exceed the cost of capital - reinvestment adds value.')
+            : (isKo ? '번 수익률이 조달 비용에 못 미칩니다 — 지금 조건이 이어지면 재투자를 늘릴수록 주주 가치가 깎입니다.'
+                    : 'Returns fall short of the cost of capital - reinvestment destroys value if this persists.')}
+        </div>
+      )}
+      <div className="mt-1.5 text-[9px] leading-snug text-muted-foreground">
+        {Number.isFinite(beta) && beta > 0
+          ? (isKo ? `베타 ${beta.toFixed(2)} 기준` : `Beta ${beta.toFixed(2)}`)
+          : (isKo ? '베타 자료가 없어 1.0으로 가정했습니다' : 'Beta unavailable - assumed 1.0')}
+        {rfSource ? ` · ${rfSource}` : ''}
+      </div>
+    </div>
+  );
+}
+
+function CyclePeakCard({
+  report, currency, language, currentPrice,
+}: {
+  report?: Record<string, any> | null;
+  currency: string;
+  language: ReportLanguage;
+  currentPrice?: number | null;
+}) {
+  const rows = Array.isArray(report?.cycle_peak_scenarios) ? report!.cycle_peak_scenarios : [];
+  if (rows.length === 0) return null;
+  const note = typeof report?.cycle_normalization_note === 'string' ? report!.cycle_normalization_note : '';
+  const isKo = language === 'ko';
+
+  return (
+    <div className="mt-2 rounded-lg border border-border/60 bg-muted/10 p-3">
+      <div className="text-[11px] font-semibold text-foreground">
+        {isKo ? '사이클 정점 시나리오' : 'Cycle peak scenarios'}
+      </div>
+      <div className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+        {isKo
+          ? '정점 이후 정상 수준까지 내려오는 경로를 반영한 주당 가치입니다. 위쪽 선행 내재가치는 정점 없이 계산한 값입니다.'
+          : 'Per-share value along a peak-then-normalise path. The forward intrinsic tiles above assume no peak.'}
+      </div>
+      {/* 표만 있으면 세 값의 간격과 현재가의 위치가 머릿속에서 그려져야 한다.
+          막대 하나에 현재가 선을 얹으면 '지금 가격이 어느 시나리오에 앉아 있는지'가
+          한눈에 들어온다. */}
+      {(() => {
+        const values = rows
+          .map((row: any) => Number(row?.intrinsic_per_share))
+          .filter((value: number) => Number.isFinite(value) && value > 0);
+        const price = Number.isFinite(Number(currentPrice)) ? Number(currentPrice) : null;
+        if (values.length === 0) return null;
+        const max = Math.max(...values, price ?? 0) * 1.1;
+        if (!(max > 0)) return null;
+        const pct = (value: number) => `${Math.max(2, Math.min(100, (value / max) * 100))}%`;
+        return (
+          <div className="mt-2 space-y-1.5">
+            {rows.map((row: any) => {
+              const value = Number(row?.intrinsic_per_share);
+              const years = Number(row?.years_to_peak);
+              if (!Number.isFinite(value) || !Number.isFinite(years)) return null;
+              const above = price !== null && value >= price;
+              return (
+                <div key={`bar-${years}`} className="relative h-3 rounded-sm bg-muted/30">
+                  <div
+                    className={`h-3 rounded-sm ${above ? 'bg-emerald-500/60' : 'bg-rose-500/60'}`}
+                    style={{ width: pct(value) }}
+                  />
+                  <span className="absolute inset-y-0 left-1 flex items-center text-[8px] font-semibold text-foreground/80">
+                    {isKo ? `+${years}년` : `+${years}y`}
+                  </span>
+                </div>
+              );
+            })}
+            {price !== null && (
+              <div className="relative h-3">
+                {/* 현재가 기준선 — 막대들이 이 선을 넘었는지가 판단의 전부다. */}
+                <div
+                  className="absolute inset-y-0 w-px bg-foreground/70"
+                  style={{ left: pct(price) }}
+                  aria-hidden
+                />
+                <span
+                  className="absolute -top-0.5 text-[8px] font-semibold text-foreground/80"
+                  style={{ left: `calc(${pct(price)} + 3px)` }}
+                >
+                  {isKo ? '현재가' : 'price'}
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+      <dl className="mt-2 space-y-1">
+        {rows.map((row: any) => {
+          const perShare = Number(row?.intrinsic_per_share);
+          const gap = Number(row?.gap_to_price);
+          const years = Number(row?.years_to_peak);
+          if (!Number.isFinite(perShare) || !Number.isFinite(years)) return null;
+          // 현재가에 가장 가까운 시나리오가 '시장이 보고 있는 정점'이다.
+          const nearest = Number.isFinite(gap) && Math.abs(gap) <= 0.15;
+          return (
+            <div key={years} className="flex items-baseline justify-between gap-2 text-[11px]">
+              <dt className={nearest ? 'font-semibold text-foreground' : 'text-muted-foreground'}>
+                {isKo ? `정점 ${years}년 뒤` : `Peak in ${years}y`}
+                {nearest && <span className="ml-1 text-[9px] font-normal">{isKo ? '· 현재가 수준' : '· near price'}</span>}
+              </dt>
+              <dd className={`font-mono ${nearest ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>
+                {formatCurrency(perShare, currency)}
+                {Number.isFinite(gap) && (
+                  <span className="ml-1 text-[10px]">({gap > 0 ? '+' : ''}{(gap * 100).toFixed(0)}%)</span>
+                )}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+      {note && <div className="mt-1.5 font-mono text-[9px] text-muted-foreground">{note}</div>}
+    </div>
+  );
+}
+
+// 값을 다시 적지 않으므로 통화 포맷이 필요 없다 — 여긴 괴리(%)만 말한다.
 function ValuationGapNotice({
   dive,
   brokerConsensus,
   currentPrice,
-  currency,
   language,
 }: {
   dive: ValuationDeepDive;
   brokerConsensus?: BrokerConsensusSnapshot | null;
   currentPrice?: number | null;
-  currency: string;
   language: ReportLanguage;
 }) {
   const dcfModel = dive.models.find(model => model.key === 'dcf');
@@ -434,36 +693,55 @@ function ValuationGapNotice({
       <div className="mt-1 text-[10px] leading-4 text-muted-foreground">
         {t('valuationGapNoticeBody', language)}
       </div>
+      {/* 값을 다시 적지 않는다.
+          현재가는 상단 헤더에, 증권사 평균은 '목표가 검산' 카드에, RIM 과 보수
+          DCF 는 '밸류에이션 모델 요약'에 이미 각각 한 번씩 있다. 여기서 또 적으면
+          같은 숫자가 한 화면에 세 번 나오고, 어느 것이 기준인지 흐려진다.
+          이 카드의 일은 '얼마나 벌어져 있으니 무엇을 확인하라'는 해석 한 줄이다. */}
       <dl className="mt-2 space-y-1 text-[10px]">
-        <Row label={language === 'ko' ? '현재가' : 'Current'}>
-          <span className="font-mono text-foreground">{formatCurrency(livePrice, currency)}</span>
-        </Row>
-        {consensus !== null && (
-          <Row label={language === 'ko' ? '증권사 평균' : 'Broker avg'}>
-            <span className="font-mono text-foreground">
-              {formatCurrency(consensus, currency)} {consensusGap !== null ? `(${formatPercent(consensusGap)})` : ''}
-            </span>
+        {safetyGap !== null && (
+          <Row label={language === 'ko' ? '보수 DCF 안전가 · 현재가 대비' : 'Conservative DCF safety vs price'}
+               tip={t('conservativeDcfTip', language)}>
+            <span className="font-mono text-foreground">{formatPercent(safetyGap)}</span>
           </Row>
         )}
-        {safetyPrice !== null && (
-          <Row label={language === 'ko'
-            ? `DCF 안전가 (적정가 −${Math.round(SAFETY_MARGIN_DISPLAY_BUFFER * 100)}%)`
-            : `DCF safety (fair −${Math.round(SAFETY_MARGIN_DISPLAY_BUFFER * 100)}%)`}>
-            <span className="font-mono">
-              {formatCurrency(safetyPrice, currency)} {safetyGap !== null ? `(${formatPercent(safetyGap)})` : ''}
-            </span>
+        {rimGap !== null && (
+          <Row label={language === 'ko' ? 'RIM · 현재가 대비' : 'RIM vs price'}
+               tip={t('valuationModelGlossaryRim', language)}>
+            <span className="font-mono text-foreground">{formatPercent(rimGap)}</span>
           </Row>
         )}
-        {rimValue !== null && (
-          <Row label={language === 'ko' ? 'RIM' : 'RIM'}>
-            <span className="font-mono">
-              {formatCurrency(rimValue, currency)} {rimGap !== null ? `(${formatPercent(rimGap)})` : ''}
-            </span>
+        {consensusGap !== null && (
+          <Row label={language === 'ko' ? '증권사 평균 · 현재가 대비' : 'Broker avg vs price'}>
+            <span className="font-mono text-foreground">{formatPercent(consensusGap)}</span>
           </Row>
         )}
       </dl>
     </div>
   );
+}
+
+/** 모델 이름 → 설명. 이름만으로는 무엇을 재는 값인지 알 수 없다.
+ *
+ * 화면에 DCF·Owner Earnings·EV/EBITDA·EV/EBIT·EBITDA 정규화·ROIC−WACC EVA·RIM 이
+ * 한꺼번에 뜨는데, 각각이 무엇을 보는 값인지 모르면 숫자 일곱 개가 그냥 흩어진
+ * 값으로 읽힌다. 이름에 걸리는 낱말로 설명을 붙인다(라벨 문구가 조금 바뀌어도
+ * 계속 걸리도록 넓게 잡는다).
+ */
+const VALUATION_MODEL_GLOSSARY: Array<{ match: RegExp; key: string }> = [
+  { match: /owner|오너/i, key: 'valuationModelGlossaryOwner' },
+  { match: /ev\s*\/?\s*ebitda/i, key: 'valuationModelGlossaryEvEbitda' },
+  { match: /ev\s*\/?\s*ebit\b/i, key: 'valuationModelGlossaryEvEbit' },
+  { match: /ebitda/i, key: 'valuationModelGlossaryEbitda' },
+  { match: /eva|roic/i, key: 'valuationModelGlossaryEva' },
+  { match: /rim|잔여이익/i, key: 'valuationModelGlossaryRim' },
+  { match: /pbr/i, key: 'valuationModelGlossaryPbr' },
+  { match: /dcf|현금흐름/i, key: 'valuationModelGlossaryDcf' },
+];
+
+function valuationModelTip(label: string, language: ReportLanguage): string | undefined {
+  const hit = VALUATION_MODEL_GLOSSARY.find(entry => entry.match.test(label));
+  return hit ? t(hit.key, language) : undefined;
 }
 
 function ValuationModelsSummary({
@@ -487,8 +765,11 @@ function ValuationModelsSummary({
   ];
   return (
     <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-      <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        {t('valuationModelsSummaryTitle', language)}
+      <div className="mb-1.5 flex items-start justify-between gap-2">
+        <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {t('valuationModelsSummaryTitle', language)}
+        </div>
+        <InfoDot title={t('valuationModelsHowToRead', language)} />
       </div>
       <dl className="space-y-0.5 text-[10px]">
         {rows.map(model => {
@@ -499,7 +780,12 @@ function ValuationModelsSummary({
               className={`flex items-center justify-between gap-2${model.isOutlier ? ' opacity-60' : ''}`}
             >
               <dt className="flex min-w-0 items-center gap-1 truncate text-muted-foreground">
-                <span className="truncate">{model.labelKey}</span>
+                {(() => {
+                  const tip = valuationModelTip(model.labelKey, language);
+                  return tip
+                    ? <HelpTip text={tip}><span className="truncate border-b border-dotted border-border/70 cursor-help">{model.labelKey}</span></HelpTip>
+                    : <span className="truncate">{model.labelKey}</span>;
+                })()}
                 {model.isOutlier && (
                   <span
                     title={model.outlierNote ?? undefined}
@@ -810,6 +1096,7 @@ function ValuationSidebarPanel({
             <span className="truncate">{language === 'ko' ? 'RIM 평가' : 'RIM Valuation'}</span>
             {isOutlier && <ModelLowConfidenceBadge note={rimModel?.outlierNote} language={language} />}
           </div>
+          <InfoDot title={t('valuationModelGlossaryRim', language)} />
           <div className={`font-mono text-[10px] font-semibold ${classes.text}`}>{formatPercent(rimGap)}</div>
         </div>
         <div className={`mt-1 font-mono text-lg font-semibold ${isOutlier ? 'text-muted-foreground line-through decoration-1' : classes.text}`}>
@@ -824,7 +1111,6 @@ function ValuationSidebarPanel({
     );
   })();
   const primaryPbrCard = pbrCard;
-  const secondaryRimCard = rimCard;
   const cashFlowCard = dive.cashFlow && (
     <CashFlowInsightCard cashFlow={dive.cashFlow} currency={currency} language={language} />
   );
@@ -833,7 +1119,6 @@ function ValuationSidebarPanel({
       dive={dive}
       brokerConsensus={brokerConsensus}
       currentPrice={currentPrice}
-      currency={currency}
       language={language}
     />
   );
@@ -848,12 +1133,12 @@ function ValuationSidebarPanel({
         {dive.regimeNote && (
           <p className="rounded-md border border-border/60 bg-muted/10 px-2.5 py-2 text-[10px] leading-4 text-muted-foreground">{dive.regimeNote}</p>
         )}
+        {/* 모델 값은 요약 리스트 한 곳에만 둔다.
+            여기에 EV/EBITDA·EV/EBIT·EBITDA 정규화·ROIC−WACC EVA·RIM 카드를 각각
+            또 그리고 있었다 — 바로 위 요약에 이미 같은 값이 줄로 들어 있어서,
+            같은 숫자가 연달아 두 번 나왔다. 카드가 더 갖고 있던 설명은 요약 줄의
+            호버로 옮겼다. */}
         <ValuationModelsSummary dive={dive} currency={currency} language={language} />
-        {evCard}
-        {evEbitCard}
-        {ebitdaCard}
-        {evaCard}
-        {secondaryRimCard}
         {cashFlowCard}
         {gapNotice}
       </div>
@@ -908,12 +1193,20 @@ function TargetTileCard({ tile, language }: { tile: TargetTile; language: Report
           {sourceName.slice(0, 1)}
         </span>
       )}
-      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        {t(tile.labelKey, language)}
+      <div className="flex items-start justify-between gap-1.5">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {t(tile.labelKey, language)}
+        </div>
+        {tile.tip && <HelpTip text={tile.tip} className="shrink-0" />}
       </div>
-      <div className={`mt-1 font-mono text-lg font-semibold ${classes.text}`}>
+      {/* 값은 이 카드의 주인공이다. 라벨·근거줄과 무게 차이가 확실해야 훑을 때
+          숫자가 먼저 들어온다. */}
+      <div className={`mt-1 font-mono text-xl font-bold tracking-tight ${classes.text}`}>
         {tile.value}
       </div>
+      {tile.note && (
+        <div className="font-mono text-[10px] text-muted-foreground">{tile.note}</div>
+      )}
       <div className="text-[10px] text-muted-foreground">
         {t(tile.sublabelKey, language)}
       </div>
@@ -1029,19 +1322,9 @@ function ConsensusBridgeTile({
   const impliedPbr = pbrBasis !== null && pbrBasis > 0
     ? consensus / pbrBasis
     : null;
-  const fairP50 = derivePbrFairPrice(pbr, pbr.percentiles.p50, pbr.fairPriceP50, currentPrice);
-  const fairP90 = derivePbrFairPrice(pbr, pbr.percentiles.p90, pbr.fairPriceP90, currentPrice);
-  const gapToP50 = fairP50 ? (consensus - fairP50) / fairP50 : null;
-  const gapToP90 = fairP90 ? (consensus - fairP90) / fairP90 : null;
   const displayCurrentPrice = currentPrice ?? pbr.currentPrice;
   const upsideToCurrent = displayCurrentPrice ? (consensus - displayCurrentPrice) / displayCurrentPrice : null;
-  const rimValue = dive?.rim?.intrinsicPerShare ?? null;
   const perText = (value: number | null) => value === null ? '—' : `${value.toFixed(1)}`;
-  const p90Text = gapToP90 === null
-    ? '—'
-    : (language === 'ko'
-        ? `90% 대비 ${formatPercent(gapToP90)}`
-        : `${formatPercent(gapToP90)} vs 90%`);
 
   return (
     <div className="relative rounded-lg border border-border/60 bg-muted/10 p-3">
@@ -1058,26 +1341,16 @@ function ConsensusBridgeTile({
       <div className="text-[10px] text-muted-foreground">
         {t('fwdPerTargetLabel', language)} {perText(impliedFwdPer)} · PBR {formatPbrMultiple(impliedPbr)}
       </div>
-      <dl className="mt-2 space-y-0.5 text-[10px]">
-        <Row label={language === 'ko' ? '역사적 PBR 중위값 기준 주가' : 'Historical median PBR price'}>
-          <span className="font-mono">{formatCurrency(fairP50, currency)}</span>
-        </Row>
-        <Row label={language === 'ko' ? '90% 상단 시나리오' : '90% upper case'}>
-          <span className="font-mono">{formatCurrency(fairP90, currency)}</span>
-        </Row>
-        {rimValue !== null && (
-          <Row label={language === 'ko' ? 'RIM' : 'RIM'}>
-            <span className="font-mono">{formatCurrency(rimValue, currency)}</span>
-          </Row>
-        )}
-      </dl>
+      {/* 중위값·상단 시나리오는 바로 위 PBR 밴드 카드에 이미 있고, RIM 은 아래
+          '보수 모델 괴리 확인' 카드에 또 있었다. 같은 숫자가 한 화면에 세 번
+          나오면 어느 것이 기준인지 흐려진다. 여기서는 '목표가가 그 기준들에서
+          얼마나 떨어져 있는가'만 남긴다 — 그게 이 카드의 일이다. */}
+      {/* '90% 대비 +82.7% · 50% +179.1%' 를 함께 적고 있었다. 무엇의 90%/50% 인지
+          여기서는 알 수 없고(위 PBR 밴드 분위수 얘기다), 목표가가 밴드 대비 얼마나
+          위인지는 이 카드가 답할 질문도 아니다. 현재가 대비만 남긴다. */}
       <div className="mt-2 text-[10px] leading-4 text-muted-foreground">
-        {p90Text}
         {upsideToCurrent !== null && (
-          <span> · {language === 'ko' ? '현재가 대비' : 'vs current'} {formatPercent(upsideToCurrent)}</span>
-        )}
-        {gapToP50 !== null && (
-          <span> · 50% {formatPercent(gapToP50)}</span>
+          <span>{language === 'ko' ? '현재가 대비' : 'vs current'} {formatPercent(upsideToCurrent)}</span>
         )}
       </div>
     </div>
@@ -1095,6 +1368,7 @@ export function TargetDataSidebar({
   currency = 'USD',
   brokerConsensus,
   currentPrice,
+  wacc,
 }: TargetDataSidebarProps) {
   const primaryTiles = ORDERED_PRIMARY_TILE_KEYS
     .map(key => tiles.find(tile => tile.labelKey === key))
@@ -1139,16 +1413,8 @@ export function TargetDataSidebar({
                 />
               </div>
             )}
-            {valuationDeepDive && (
-              <ValuationSidebarPanel
-                dive={valuationDeepDive}
-                currency={currency}
-                language={language}
-                currentPrice={currentPrice}
-                brokerConsensus={brokerConsensus}
-                mode="pbrOnly"
-              />
-            )}
+            {/* 목표가 검산은 검산 대상(증권사 평균 목표가) 바로 밑에 온다.
+                PBR 밴드 뒤에 두면 '무엇을 검산하는 중인지'가 화면에서 끊긴다. */}
             {hasConsensusBridge && (
               <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
                 <ConsensusBridgeTile
@@ -1160,9 +1426,21 @@ export function TargetDataSidebar({
                 />
               </div>
             )}
+            {valuationDeepDive && (
+              <ValuationSidebarPanel
+                dive={valuationDeepDive}
+                currency={currency}
+                language={language}
+                currentPrice={currentPrice}
+                brokerConsensus={brokerConsensus}
+                mode="pbrOnly"
+              />
+            )}
             {primaryTiles.length > 0 && (
               <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-1">
                 {primaryTiles.map(tile => <TargetTileCard key={tile.labelKey} tile={tile} language={language} />)}
+                <CyclePeakCard report={report} currency={currency} language={language} currentPrice={currentPrice} />
+                <DiscountRateCard report={report} wacc={wacc} language={language} />
               </div>
             )}
             {valuationDeepDive && (

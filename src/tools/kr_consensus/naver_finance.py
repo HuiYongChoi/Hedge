@@ -97,6 +97,73 @@ def _fetch_html(url: str) -> str | None:
         return None
 
 
+def _column_groups(rows) -> dict[str, tuple[int, int]]:
+    """묶음 머리글에서 '연간 열 구간'과 '분기 열 구간'을 읽는다.
+
+    같은 머리글 줄에 연간과 분기가 나란히 있다.
+
+        0행: 주요재무정보(rowspan) | 최근 연간 실적(colspan=4) | 최근 분기 실적(colspan=6)
+        1행: 2023.12 2024.12 2025.12 2026.12(E) | 2025.06 … 2026.09(E)
+
+    구분하지 않으면 연간 열(2026.12(E) = 349,566)이 분기 추정으로 읽힌다(실측).
+    그러면 한 분기 이익이 연 이익으로 잡혀 선행 EPS 가 통째로 부풀어 오른다.
+    """
+    if not rows:
+        return {}
+    groups: dict[str, tuple[int, int]] = {}
+    cursor = 0
+    for cell in rows[0].find_all(["th", "td"]):
+        text = cell.get_text(strip=True)
+        try:
+            span = int(cell.get("colspan") or 1)
+        except (TypeError, ValueError):
+            span = 1
+        if cell.get("rowspan") and not cell.get("colspan"):
+            continue        # 세로로 병합된 '주요재무정보' 라벨 칸 — 값 열이 아니다
+        if "연간" in text:
+            groups["annual"] = (cursor, cursor + span)
+        elif "분기" in text:
+            groups["quarter"] = (cursor, cursor + span)
+        cursor += span
+    return groups
+
+
+def _find_header_columns(rows) -> tuple[list[tuple[date | None, bool]], int]:
+    """(열별 (기간, 추정여부), 데이터 행에서 값이 시작하는 위치).
+
+    네이버 기업실적분석 표는 머리글이 두 줄이다.
+
+        0행: 주요재무정보 | 최근 연간 실적 | 최근 분기 실적      ← 묶음 이름(colspan)
+        1행: 2023.12 | 2024.12 | … | 2026.09(E)               ← 실제 기간
+        2행: IFRS연결 | IFRS연결 | …
+
+    첫 줄만 보고 날짜를 못 찾으면 그 자리에서 포기하게 되어 있었다(실측:
+    000660.KS 분기·연간 추정 모두 0건). 앞쪽 몇 줄 중 날짜가 가장 많이 잡히는
+    줄을 머리글로 삼는다.
+
+    머리글 줄에는 '구분' 칸이 없고(위 칸이 세로로 병합돼 있다) 데이터 줄에는
+    있으므로, 값이 시작하는 위치는 칸 수 차이로 정한다.
+    """
+    best: list[tuple[date | None, bool]] = []
+    best_hits = 0
+    for row in rows[:4]:
+        cells = row.find_all(["th", "td"])
+        if not cells:
+            continue
+        for skip in (0, 1):
+            parsed = [_parse_column_header(c.get_text(strip=True)) for c in cells[skip:]]
+            hits = sum(1 for col_date, _ in parsed if col_date is not None)
+            if hits > best_hits:
+                best_hits, best = hits, parsed
+    return best, best_hits
+
+
+def _value_cells(cells, headers) -> list:
+    """데이터 행에서 머리글과 짝이 맞는 값 칸들만."""
+    offset = max(0, len(cells) - len(headers))
+    return cells[offset:]
+
+
 def _parse_consensus_estimates(
     html: str,
     as_of_date: date,
@@ -140,18 +207,16 @@ def _parse_table(table, as_of_date: date) -> list[QuarterlyEPS]:
     if not rows:
         return []
 
-    # --- Parse header row: skip the first cell (row-label column "구분") ---
-    header_row = rows[0]
-    all_header_cells = header_row.find_all(["th", "td"])
-    headers: list[tuple[date | None, bool]] = []  # 0-indexed, aligns with cells[1:]
-
-    for th in all_header_cells[1:]:  # skip "구분" column
-        text = th.get_text(strip=True)
-        col_date, is_est = _parse_column_header(text)
-        headers.append((col_date, is_est))
-
-    if not headers or all(h[0] is None for h in headers):
+    headers, hits = _find_header_columns(rows)
+    if not hits:
         return []
+    # 같은 머리글 줄에 연간 열이 섞여 있다. 분기 구간만 남긴다.
+    span = _column_groups(rows).get("quarter")
+    if span:
+        headers = [
+            entry if span[0] <= index < span[1] else (None, False)
+            for index, entry in enumerate(headers)
+        ]
 
     # --- Scan rows for EPS ---
     eps_row_labels = {"eps", "eps(원)", "주당순이익", "기본eps", "희석eps"}
@@ -166,7 +231,7 @@ def _parse_table(table, as_of_date: date) -> list[QuarterlyEPS]:
         if not any(label in label_text for label in eps_row_labels):
             continue
 
-        for i, cell in enumerate(cells[1:]):  # 0-indexed, matches headers
+        for i, cell in enumerate(_value_cells(cells, headers)):
             if i >= len(headers):
                 break
             col_date, is_est = headers[i]
@@ -257,12 +322,15 @@ def _parse_annual_estimates(
         rows = table.find_all("tr")
         if not rows:
             continue
-        header_row = rows[0]
-        all_header_cells = header_row.find_all(["th", "td"])
-        headers: list[tuple[date | None, bool]] = []
-        for th in all_header_cells[1:]:
-            col_date, is_est = _parse_column_header(th.get_text(strip=True))
-            headers.append((col_date, is_est))
+        headers, hits = _find_header_columns(rows)
+        if not hits:
+            continue
+        span = _column_groups(rows).get("annual")
+        if span:
+            headers = [
+                entry if span[0] <= index < span[1] else (None, False)
+                for index, entry in enumerate(headers)
+            ]
 
         found_eps = False
         for row in rows[1:]:
@@ -273,7 +341,7 @@ def _parse_annual_estimates(
             if not any(label in label_text for label in eps_row_labels):
                 continue
             found_eps = True
-            for i, cell in enumerate(cells[1:]):
+            for i, cell in enumerate(_value_cells(cells, headers)):
                 if i >= len(headers):
                     break
                 col_date, is_est = headers[i]

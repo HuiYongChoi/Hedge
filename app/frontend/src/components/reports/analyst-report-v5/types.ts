@@ -55,9 +55,19 @@ export interface TargetTile {
   labelKey: string;
   sublabelKey: string;
   value: string;
+  /** 값 아래에 붙는 근거 한 줄(예: 어느 선행 EPS 를 출발점으로 썼는지). */
+  note?: string;
+  /** 제목 옆 물음표에 붙는 설명. '이 값이 왜 여기 있는가'를 답한다. */
+  tip?: string;
   tone: ReportTone;
   sourceAgent?: { key: string; nameKo: string; nameEn: string };
   isFromActiveAgent: boolean;
+}
+
+export interface CyclePeakScenario {
+  yearsToPeak: number;
+  perShare: number;
+  gapToPrice: number | null;
 }
 
 export interface OtherAgent {
@@ -107,6 +117,24 @@ export interface CanonicalMetrics {
   forwardEpsFy1?: CanonicalMetric;      // ▣ FY+N EPS
   forwardEpsTtm?: CanonicalMetric;
   intrinsicValue?: CanonicalMetric;
+  forwardIntrinsicValue?: CanonicalMetric;   // 선행 컨센서스 기점 FCFF DCF
+  forwardMarginOfSafety?: CanonicalMetric;
+  forwardDcfEpsUsed?: CanonicalMetric;       // 선행 DCF 가 출발점으로 쓴 EPS
+  forwardQuarterIntrinsicValue?: CanonicalMetric;   // 분기 선행(3분기 실적+1분기 컨센) 기점 DCF
+  forwardQuarterMarginOfSafety?: CanonicalMetric;
+  forwardQuarterDcfEpsUsed?: CanonicalMetric;
+  forwardDcfBaseGrowth?: CanonicalMetric;
+  /** 선행 DCF 출발 EPS 의 출처 코드: consensus12m | consensusFy1 | spliceTtm */
+  forwardDcfEpsSource?: string;
+  /** 각 값이 담고 있는 기간. '선행(연)'만으로는 어느 구간인지 알 수 없다. */
+  trailingDcfPeriod?: string;
+  forwardDcfPeriod?: string;
+  forwardQuarterDcfPeriod?: string;
+  /** 분기 스플라이스가 실제로 컨센서스 분기를 품고 있는가. 아니면 이름이 거짓말이 된다. */
+  forwardQuarterHasConsensus?: boolean;
+  /** 현재가가 정당화되려면 필요한 영구 기점 이익(역산). */
+  marketImpliedEps?: CanonicalMetric;
+  marketImpliedEpsVsForward?: CanonicalMetric;
   marginOfSafety?: CanonicalMetric;
   interestCoverage?: CanonicalMetric;
   beta?: CanonicalMetric;

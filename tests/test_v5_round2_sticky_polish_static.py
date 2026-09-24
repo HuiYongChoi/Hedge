@@ -19,7 +19,10 @@ def test_sticky_analysis_header_component_exists_and_uses_core_metrics():
     assert "export function StickyAnalysisHeader" in src
     assert "sticky top-0" in src
     assert "targetMarginLabel" in src
-    assert "targetWaccLabel" in src
+    # WACC 가 아니라 '위 적정가를 실제로 만든 할인율'을 적는다(실측: 헤더 10.5% vs
+    # 그 적정가를 만든 자기자본비용 9.0%). WACC 는 우측 카드가 두 값을 함께 낸다.
+    assert "stickyDiscountRateLabel" in src
+    assert "targetWaccLabel" not in src
     assert "stickyConfidenceLabel" in src
     assert "formatCurrency" in src
     assert "formatPercent" in src
@@ -98,13 +101,34 @@ def test_target_sidebar_orders_consensus_forward_pbr_bridge_before_valuation_mod
     assert "brokerConsensus" in sidebar
     assert "brokerConsensusLabel" in sidebar
     assert "brokerConsensusTip" in sidebar
-    assert "ORDERED_PRIMARY_TILE_KEYS = ['targetIntrinsicLabel', 'targetMarginLabel']" in sidebar
+    # 후행 내재가치 → 선행 내재가치 → 후행 안전가 → 선행 안전가.
+    # 두 내재가치의 폭이 이 화면에서 가장 중요한 정보라 붙어 있어야 하고,
+    # 안전가도 같은 짝으로 이어져야 '어느 기준의 안전가인지'가 헷갈리지 않는다.
+    # 내재가치 3종(후행 · 선행연 · 선행분기) 다음에 같은 순서의 안전가 3종.
+    for key in ("targetIntrinsicLabel", "targetForwardIntrinsicLabel",
+                "targetForwardQuarterIntrinsicLabel", "targetTrailingTtmIntrinsicLabel",
+                "targetMarginLabel", "targetForwardMarginLabel",
+                "targetForwardQuarterMarginLabel", "targetTrailingTtmMarginLabel"):
+        assert key in sidebar, key
+    # 내재가치와 그 안전가를 짝지어 두고, 후행 → 선행(분기) → 선행(연) 순으로
+    # 시점이 앞으로 나아간다. 시장 암묵 이익은 맨 위 — 모델 값을 읽기 전에
+    # '시장은 얼마로 보고 있는가'가 먼저 와야 기준이 선다.
+    order = [
+        "'targetMarketImpliedEpsLabel'",
+        "'targetIntrinsicLabel'", "'targetMarginLabel'",
+        "'targetForwardQuarterIntrinsicLabel'", "'targetForwardQuarterMarginLabel'",
+        "'targetForwardIntrinsicLabel'", "'targetForwardMarginLabel'",
+    ]
+    positions = [sidebar.index(key) for key in order]
+    assert positions == sorted(positions), f"타일 순서가 어긋남: {order}"
     assert "secondaryTilesForBottom" in sidebar
 
+    # 목표가 검산은 검산 대상(증권사 평균 목표가) 바로 밑에 온다 — PBR 밴드 뒤에
+    # 두면 '무엇을 검산하는 중인지'가 화면에서 끊긴다.
     assert sidebar.index("<BrokerConsensusTile") < sidebar.index("<ForwardConsensusTile")
-    assert sidebar.index("<ForwardConsensusTile") < sidebar.index('mode="pbrOnly"')
-    assert sidebar.index('mode="pbrOnly"') < sidebar.index("<ConsensusBridgeTile")
-    assert sidebar.index("<ConsensusBridgeTile") < sidebar.index("primaryTiles.map")
+    assert sidebar.index("<ForwardConsensusTile") < sidebar.index("<ConsensusBridgeTile")
+    assert sidebar.index("<ConsensusBridgeTile") < sidebar.index('mode="pbrOnly"')
+    assert sidebar.index('mode="pbrOnly"') < sidebar.index("primaryTiles.map")
     assert sidebar.index("primaryTiles.map") < sidebar.index('mode="afterPbr"')
 
     assert "brokerConsensus={" in layout
@@ -150,12 +174,18 @@ def test_pbr_band_card_uses_defensive_price_identity_and_reader_labels():
     assert "marketCurrentPrice?: number | null" in sidebar
     assert "displayCurrentPrice / pbr.currentPbr" in sidebar
     assert "pbrFairP90" in sidebar
-    assert "역사적 PBR 중위값 기준 주가" in sidebar
+    # 라벨을 '중위값 기준 주가 (50%)' 로 줄였다 — 같은 문구가 아래 '목표가 검산'
+    # 카드에도 있어 한 화면에 두 번 나왔고, 어느 쪽이 기준인지 흐려졌다.
+    assert "중위값 기준 주가 (50%)" in sidebar
     assert "50% 기준 주가" not in sidebar
     assert "중위 PBR 대비" in sidebar
     assert "현재 PBR" in sidebar
-    assert "상단 시나리오" in sidebar
-    assert "Historical median PBR price" in sidebar
+    assert "상단 시나리오 (90%)" in sidebar
+    assert "Median price (50%)" in sidebar
+    # 세 줄 모두 그 가격의 PBR 배수를 함께 적는다 — 가격만 있으면 위 눈금과
+    # 눈으로 맞춰야 한다.
+    for percentile in ("p10", "p50", "p90"):
+        assert f"PBR {{formatPbrMultiple(pbr.percentiles.{percentile})}}" in sidebar, percentile
     assert "formatPbrMultiple" in sidebar
     assert "역사적 PBR 중위값 기준 주가는 과거 PBR의 중앙값" in language
 
@@ -166,9 +196,11 @@ def test_pbr_band_card_supports_current_and_assumption_markers():
     layout = read(V5_DIR / "report-layout.tsx")
 
     assert "assumptionPbrInput" in sidebar
-    assert "useState(() => formatPbrMultiple(pbr.currentPbr))" in sidebar
-    assert "setAssumptionPbrInput(formatPbrMultiple(pbr.currentPbr))" in sidebar
-    assert "[pbr.currentPbr]" in sidebar
+    # 입력칸 초기값은 '—' 가 되면 안 된다 — Number('—') = NaN 이라 계산이 죽는다.
+    assert "useState(() => defaultPbrText)" in sidebar
+    assert "const defaultPbrText = Number.isFinite(pbr.currentPbr)" in sidebar
+    assert "setAssumptionPbrInput(defaultPbrText)" in sidebar
+    assert "[defaultPbrText]" in sidebar
     assert "assumptionPbr" in sidebar
     assert "scenarioPct" in sidebar
     assert "showScenarioMarker" in sidebar

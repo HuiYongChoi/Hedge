@@ -483,7 +483,12 @@ export function ReportLayout({
       verdictLabelOverride={headlineVerdict.label}
       verdictConfidence={stickyConfidence}
       marginOfSafetyPct={effectiveMarginOfSafety}
-      wacc={effectiveMetrics.wacc?.value ?? null}
+      intrinsicValuePerShare={effectiveMetrics.intrinsicValue?.value ?? null}
+      discountRate={
+        typeof (displayReport as Record<string, any> | null)?.damodaran_cost_of_equity === 'number'
+          ? (displayReport as Record<string, any>).damodaran_cost_of_equity
+          : (effectiveMetrics.wacc?.value ?? null)
+      }
       trailingPe={liveTarget?.trailing_pe ?? canonicalForwardSnapshot.ttmPer ?? null}
       trailingEps={liveTarget?.trailing_eps ?? null}
       forwardPe={canonicalForwardSnapshot.fwdPer ?? liveTarget?.forward_pe ?? null}
@@ -542,6 +547,7 @@ export function ReportLayout({
           sections={SECTION_DEFS}
           activeSectionId={activeSectionId}
           citations={citations}
+          ticker={activeTicker}
           language={language}
           activeCitationLetter={activeCitationLetter}
           onCitationUnavailable={handleCitationUnavailable}
@@ -552,6 +558,7 @@ export function ReportLayout({
             sections={SECTION_DEFS}
             activeSectionId={activeSectionId}
             citations={citations}
+            ticker={activeTicker}
             language={language}
             activeCitationLetter={activeCitationLetter}
             onCitationUnavailable={handleCitationUnavailable}
@@ -579,6 +586,7 @@ export function ReportLayout({
           currency={effectiveCurrency}
           brokerConsensus={brokerConsensus}
           currentPrice={effectiveCurrentPrice}
+          wacc={effectiveMetrics.wacc?.value ?? null}
         />
       </div>
 

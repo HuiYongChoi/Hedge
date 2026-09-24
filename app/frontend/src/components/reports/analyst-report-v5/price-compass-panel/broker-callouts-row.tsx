@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { stackCallouts } from './stacking-layout';
 import { BrokerCalloutCard } from './broker-callout-card';
+import { normalizeBrokerKey } from '@/services/broker-report-service';
 import type { BrokerTarget } from './types';
 
 interface BrokerCalloutsRowProps {
@@ -9,7 +10,11 @@ interface BrokerCalloutsRowProps {
   currentPrice: number | null;
   hoveredBroker: string | null;
   currency: string;
+  /** 증권사별 리포트 수 (정규화 키 기준) — 0이면 카드가 클릭되지 않는다 */
+  reportCounts: Map<string, number>;
+  reportHint: string;
   onHoverChange: (name: string | null) => void;
+  onBrokerSelect: (broker: BrokerTarget) => void;
 }
 
 const ROW_HEIGHT_PX = 68;   // single-state card height + gap
@@ -22,7 +27,10 @@ export function BrokerCalloutsRow({
   currentPrice,
   hoveredBroker,
   currency,
+  reportCounts,
+  reportHint,
   onHoverChange,
+  onBrokerSelect,
 }: BrokerCalloutsRowProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerPx, setContainerPx] = useState(1200);
@@ -93,7 +101,10 @@ export function BrokerCalloutsRow({
               currentPrice={currentPrice}
               isHovered={isHovered}
               currency={currency}
+              reportCount={reportCounts.get(normalizeBrokerKey(broker.name)) ?? 0}
+              reportHint={reportHint}
               onHoverChange={hovered => onHoverChange(hovered ? broker.name : null)}
+              onSelect={() => onBrokerSelect(broker)}
             />
           </div>
         );
