@@ -241,6 +241,7 @@ export const translations = {
     // Stock Analysis Tab
     stockAnalysis: '종목 분석',
     stockCompare: '종목간 비교',
+    qualityBuy: '매수 후보',
     compareAddTicker: '종목 추가',
     compareRun: '비교 실행',
     compareImportSaved: '저장 분석에서 가져오기',
@@ -905,6 +906,7 @@ export const translations = {
     // Stock Analysis Tab
     stockAnalysis: 'Stock Analysis',
     stockCompare: 'Stock Comparison',
+    qualityBuy: 'Buy Candidates',
     compareAddTicker: 'Add ticker',
     compareRun: 'Run comparison',
     compareImportSaved: 'Import from saved',

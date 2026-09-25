@@ -813,6 +813,9 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             "headline_source": headline_source,
             "blended_intrinsic_per_share": blended_intrinsic_per_share,
             "dcf_is_outlier": dcf_is_outlier,
+            # 신호를 정한 바로 그 값(적정가 ÷ 시가총액 − 1, 이상치 제외 가중평균).
+            # 신뢰도는 30%에서 잘려 순위를 못 매긴다 — 매수 후보 스크리너가 이 값으로 줄 세운다.
+            "weighted_gap": weighted_gap,
         }
         for m, vals in method_values.items():
             if vals["value"] > 0:
