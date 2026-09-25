@@ -1268,9 +1268,11 @@ def _fetch_fdr_prices(ticker: str, start_date: str, end_date: str) -> list[Price
 
 
 def _fetch_alphavantage_metrics(ticker: str) -> dict | None:
-    av_key = "QCE8EC5Q5OP74PYD"
+    if not AV_API_KEY:
+        # 키 미설정 시 무의미한 외부 호출을 하지 않는다(호출부는 None 을 처리한다).
+        return None
     try:
-        url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={ticker}&apikey={av_key}"
+        url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={ticker}&apikey={AV_API_KEY}"
         r = requests.get(url)
         if r.status_code == 200:
             data = r.json()
