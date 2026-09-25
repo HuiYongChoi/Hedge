@@ -4,7 +4,30 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Iterator
+
+
+#: 지금 다듬는 글이 어느 통화의 보고서인가. 모르면 None(종전대로 원화로 본다).
+#: 후처리는 문장만 보고 돈다 — "시가총액 167,725,000,000" 이 원인지 달러인지 글만으로는
+#: 알 수 없어, 달러 종목의 시가총액이 "1,677억 원"으로 바뀌었다(실측: MCD).
+_REPORT_CURRENCY: ContextVar[str | None] = ContextVar("report_currency", default=None)
+
+
+@contextmanager
+def report_currency(currency: str | None) -> Iterator[None]:
+    """이 블록 안의 금액 후처리를 해당 통화 기준으로 한다."""
+    token = _REPORT_CURRENCY.set(currency.upper() if currency else None)
+    try:
+        yield
+    finally:
+        _REPORT_CURRENCY.reset(token)
+
+
+def _amounts_are_won() -> bool:
+    currency = _REPORT_CURRENCY.get()
+    return currency is None or currency == "KRW"
 
 
 RATIO_LABEL_PATTERN = (
@@ -145,7 +168,7 @@ def _format_human_amount(value: Any) -> str:
     number = _safe_float(value)
     if number is None:
         return "N/A"
-    if abs(number) >= 100_000_000:
+    if abs(number) >= 100_000_000 and _amounts_are_won():
         return format_korean_won_amount(number)
     return f"{number:,.0f}"
 
@@ -344,11 +367,19 @@ def _normalize_korean_market_cap_text(text: str) -> str:
         r"(?P<separator>\s*[:：]?\s*)"
         r"(?:₩|KRW\s*)?"
         r"(?P<number>(?:[0-9]{1,3}(?:,[0-9]{3}){2,}|[0-9]{9,})(?:\.\d+)?)"
-        r"\s*(?:원)?",
+        # 숫자 끝을 못 박는다. 아래 통화 검사가 실패했을 때 숫자를 한 자리 덜 잡아
+        # 다시 맞추면 "1억 원0 달러" 같은 조각이 된다.
+        r"(?![0-9]|[.,][0-9])"
+        # 공백은 '원'이 뒤따를 때만 먹는다. 무조건 먹으면 "1,677억 원대비"로 붙는다.
+        r"(?:\s*원)?"
+        # 뒤에 다른 통화가 적혀 있으면 원이 아니다("… 달러" → "1,677억 원달러" 였다).
+        r"(?!\s*(?:달러|유로|USD\b|dollars?\b|JPY\b|EUR\b))",
         flags=re.IGNORECASE,
     )
 
     def replace_market_cap(match: re.Match[str]) -> str:
+        if not _amounts_are_won():
+            return match.group(0)
         label = re.sub(r"\s+", "", match.group("label"))
         raw_number = match.group("number")
         integer_digits = re.sub(r"\D", "", raw_number.split(".", 1)[0])

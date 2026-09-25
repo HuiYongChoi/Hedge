@@ -8,7 +8,8 @@ from pydantic import BaseModel, ValidationError
 from src.llm.models import get_model, get_model_info
 from src.utils.progress import progress
 from src.graph.state import AgentState
-from src.utils.financial_formatting import normalize_financial_language
+from src.tools.company_name import _is_korean_ticker
+from src.utils.financial_formatting import normalize_financial_language, report_currency
 
 
 KOREAN_OUTPUT_REQUIREMENT = (
@@ -412,6 +413,24 @@ def _koreanize_default_string(value: str) -> str:
     return value
 
 
+def infer_report_currency(state: AgentState | None) -> str | None:
+    """분석 대상이 전부 한국 종목이면 KRW, 하나라도 해외 종목이 섞이면 원화로 보지 않는다.
+
+    후처리는 "시가총액 167,725,000,000" 을 원화 금액으로 읽어 "1,677억 원"으로 바꾼다.
+    해외 종목에서는 그 숫자가 달러라 크기가 틀린다(실측: MCD). 종목을 모르면 None —
+    종전 동작(원화) 그대로 둔다.
+    """
+    tickers = ((state or {}).get("data") or {}).get("tickers") or []
+    if not tickers:
+        return None
+    return "KRW" if all(_is_korean_ticker(str(t)) for t in tickers) else "NON_KRW"
+
+
+def _koreanize_for_report(result: BaseModel, state: AgentState | None) -> BaseModel:
+    with report_currency(infer_report_currency(state)):
+        return ensure_korean_default_texts(result)
+
+
 def ensure_korean_default_texts(value: any, field_name: str | None = None):
     """Replace known fallback reasoning strings with Korean text."""
     if isinstance(value, str):
@@ -697,13 +716,13 @@ def call_llm(
                     salvaged = build_model_with_salvage(pydantic_model, parsed_result)
                     if salvaged is not None:
                         return _attach_quote_translations(
-                            ensure_korean_default_texts(salvaged), translation_index,
+                            _koreanize_for_report(salvaged, state), translation_index,
                         )
             else:
                 salvaged = salvage_structured_result(result, pydantic_model)
                 if salvaged is not None:
                     return _attach_quote_translations(
-                        ensure_korean_default_texts(salvaged), translation_index,
+                        _koreanize_for_report(salvaged, state), translation_index,
                     )
                 # 여기까지 왔다면 응답은 왔지만 쓸 수 있는 형태가 아니다.
                 # 다음 시도로 넘어가되, 마지막 시도였다면 아래 fallback 으로 간다.

@@ -19,7 +19,8 @@ from src.utils.forward_outlook import (
     build_forward_outlook_block,
     get_cached_forward_metrics,
 )
-from src.utils.financial_formatting import format_debt_ratio_percent, format_korean_won_amount
+from src.tools.money_ko import format_money_ko
+from src.utils.financial_formatting import format_debt_ratio_percent
 from src.utils.agent_data_quality import (
     sanitize_for_llm,
     coverage_caps_signal,
@@ -140,6 +141,8 @@ def charlie_munger_agent(state: AgentState, agent_id: str = "charlie_munger_agen
             "signal": signal,
             "score": total_score,
             "max_score": max_possible_score,
+            # 금액을 적을 통화. 없으면 달러 종목의 FCF·적정가가 '억 원'으로 적힌다.
+            "currency": getattr(metrics[0], "currency", None) if metrics else None,
             "valuation_confidence": valuation_confidence,
             "moat_analysis": moat_analysis,
             "management_analysis": management_analysis,
@@ -877,6 +880,11 @@ def _friendly_percent(value: float | None, emphasize_small_ratio: bool = False) 
         return f"{int(round(scaled))}%"
     return f"{scaled:.1f}%"
 
+def _money_or_na(value: float | None, currency: str | None) -> str:
+    """통화에 맞춰 적는다. 값이 없으면 종전과 같이 'N/A'."""
+    return "N/A" if value is None else format_money_ko(value, currency)
+
+
 def make_munger_facts_bundle(analysis: dict[str, any]) -> dict[str, any]:
     moat = analysis.get("moat_analysis") or {}
     mgmt = analysis.get("management_analysis") or {}
@@ -907,8 +915,8 @@ def make_munger_facts_bundle(analysis: dict[str, any]) -> dict[str, any]:
         "경영진 점수": _score_text(mgmt_score),
         "밸류에이션 점수": _score_text(val_score),
         "FCF 수익률": _friendly_percent(_r(val.get("fcf_yield"), 4), emphasize_small_ratio=True),
-        "정규화 FCF": format_korean_won_amount(_r(val.get("normalized_fcf"), 0)),
-        "적정가 추정치": format_korean_won_amount(_r(ivr.get("reasonable"), 0)),
+        "정규화 FCF": _money_or_na(_r(val.get("normalized_fcf"), 0), analysis.get("currency")),
+        "적정가 추정치": _money_or_na(_r(ivr.get("reasonable"), 0), analysis.get("currency")),
         "안전마진": _friendly_percent(_r(val.get("margin_of_safety_vs_fair_value"), 3)),
         "내부자 매수 비중": _friendly_percent(_r(mgmt.get("insider_buy_ratio"), 2)),
         "최근 이자부채비율": format_debt_ratio_percent(_r(mgmt.get("recent_de_ratio"), 4)),
