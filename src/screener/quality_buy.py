@@ -9,8 +9,11 @@
   약세 항목이 없을 것. 가격 배수 항목은 가격 판단이라 여기서 쓰지 않는다.
 · 싼가 — 가치평가 에이전트의 괴리율(적정가 ÷ 시가총액 − 1, 이상치 제외 가중평균).
   매수 문턱은 그 에이전트의 매수 기준(+15%)과 같다.
+· 관심 — 우량하지만 아직 매수 문턱에 못 미치고, 적정가보다 10% 넘게 비싸지는 않은 종목.
+  조정이 오면 먼저 매수 구간에 들어올 종목이라, 매수 구간까지 필요한 하락폭을 함께 준다.
 
-두 에이전트 모두 LLM 을 부르지 않으므로 종목당 데이터 조회 시간만 든다.
+두 에이전트 모두 LLM 을 부르지 않으므로 종목당 데이터 조회 시간만 든다. 데이터도
+무료 공식·공개 소스(한국 DART, 미국 SEC·yfinance)만 쓴다.
 """
 
 from __future__ import annotations
@@ -20,10 +23,13 @@ from typing import Any, Callable, Optional
 
 from src.agents.fundamentals import fundamentals_analyst_agent
 from src.agents.valuation import valuation_analyst_agent
+from src.tools.api import free_sources_only
 from src.screener.universe import UniverseEntry
 
 #: 가치평가 에이전트의 매수·매도 문턱과 같은 값(src/agents/valuation.py 의 signal 판정).
 BUY_GAP = 0.15
+#: 관심 후보의 아래 경계. 괴리율이 이보다 낮으면(적정가보다 10% 넘게 비싸면) '비쌈'이다.
+WATCH_GAP = -0.10
 
 #: 스캐너가 에이전트를 부를 때 쓰는 이름의 접두어. 진행 상황 추적기는 전역이라,
 #: 종목분석 스트림이 이 접두어로 스캐너 진행 메시지를 걸러 낸다.
@@ -37,8 +43,8 @@ QUALITY_AXES = {
 
 VERDICTS = (
     "buy",                # 매수 후보: 우량 + 괴리율 > +15%
-    "quality_fair",       # 우량 · 적정가: 괴리율 ±15% 안
-    "quality_expensive",  # 우량 · 비쌈: 괴리율 < −15%
+    "watch",              # 관심 후보: 우량 + 괴리율 −10% ~ +15%
+    "quality_expensive",  # 우량 · 비쌈: 괴리율 < −10%
     "quality_no_value",   # 우량 · 가치 계산 불가
     "not_quality",        # 품질 미달
     "insufficient",       # 재무 데이터 부족
@@ -60,7 +66,9 @@ def classify(fundamentals: Optional[dict], valuation: Optional[dict]) -> dict:
     bullish = sum(1 for s in axes.values() if s == "bullish")
     bearish = sum(1 for s in axes.values() if s == "bearish")
     passed = bullish >= 2 and bearish == 0
-    quality = {**axes, "bullish": bullish, "bearish": bearish, "passed": passed}
+    # 항목별 실제 수치(예: "ROE: 12.30%, Net Margin: N/A") — 왜 강·약인지 화면에서 보여 준다.
+    details = {axis: (reasoning.get(key) or {}).get("details") for axis, key in QUALITY_AXES.items()}
+    quality = {**axes, "bullish": bullish, "bearish": bearish, "passed": passed, "details": details}
     value = _value_block(valuation)
 
     if not passed:
@@ -69,20 +77,30 @@ def classify(fundamentals: Optional[dict], valuation: Optional[dict]) -> dict:
         verdict = "quality_no_value"
     elif value["gap"] > BUY_GAP:
         verdict = "buy"
-    elif value["gap"] < -BUY_GAP:
+    elif value["gap"] < WATCH_GAP:
         verdict = "quality_expensive"
     else:
-        verdict = "quality_fair"
+        verdict = "watch"
     return {"verdict": verdict, "quality": quality, "value": value}
 
 
 def _value_block(valuation: Optional[dict]) -> dict:
     reasoning = (valuation or {}).get("reasoning") or {}
-    gap = reasoning.get("weighted_gap")
+    raw_gap = reasoning.get("weighted_gap")
+    gap = float(raw_gap) if isinstance(raw_gap, (int, float)) else None
+    # 괴리율과 같은 기준의 적정가 — 둘이 어긋나면 '적정가 대비 몇 %'가 맞지 않는다.
+    raw_per_share = reasoning.get("blended_intrinsic_per_share")
+    per_share = float(raw_per_share) if isinstance(raw_per_share, (int, float)) and raw_per_share > 0 else None
     return {
-        "gap": float(gap) if isinstance(gap, (int, float)) else None,
+        "gap": gap,
         "signal": (valuation or {}).get("signal"),
-        "intrinsic_per_share": reasoning.get("headline_intrinsic_per_share"),
+        "intrinsic_per_share": per_share,
+        # 괴리율 = 적정가 ÷ 시가 − 1 이므로 시가 = 적정가 ÷ (1 + 괴리율).
+        "price_per_share": per_share / (1 + gap) if per_share is not None and gap is not None and gap > -1 else None,
+        # 괴리율이 매수 문턱을 넘는 주가 = 적정가 ÷ 1.15.
+        "buy_price_per_share": per_share / (1 + BUY_GAP) if per_share is not None else None,
+        # 지금 주가에서 몇 % 내려야 매수 구간인가. 이미 매수 구간이면 0.
+        "drop_to_buy": max(0.0, 1 - (1 + gap) / (1 + BUY_GAP)) if gap is not None and gap > -1 else None,
     }
 
 
@@ -120,7 +138,10 @@ def scan_ticker(
 
     def attempt(agent: AgentFn, name: str) -> Optional[dict]:
         try:
-            return _run_agent(agent, f"{SCREENER_AGENT_PREFIX}{name}", ticker, end_date, api_keys)
+            # 무료 소스만 쓴다(한국 DART, 미국 SEC·yfinance). 수백 종목을 훑어도 유료 API
+            # 사용량을 쓰지 않고, 요청 한도에 걸려 멈추지도 않는다.
+            with free_sources_only():
+                return _run_agent(agent, f"{SCREENER_AGENT_PREFIX}{name}", ticker, end_date, api_keys)
         except Exception as exc:  # 한 종목의 실패가 스캔 전체를 멈추면 안 된다
             errors.append(f"{name}: {exc}")
             return None

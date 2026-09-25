@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from src.screener import quality_buy
-from src.screener.quality_buy import BUY_GAP, SCREENER_AGENT_PREFIX, classify, scan_ticker
+from src.screener.quality_buy import BUY_GAP, SCREENER_AGENT_PREFIX, WATCH_GAP, classify, scan_ticker
 from src.screener.universe import LARGE_CAP_UNIVERSE, universe_for
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +17,7 @@ def _fundamentals(profitability, growth, health):
     return {
         "signal": "neutral",
         "reasoning": {
-            "profitability_signal": {"signal": profitability},
+            "profitability_signal": {"signal": profitability, "details": "ROE: 18.00%, Net Margin: N/A"},
             "growth_signal": {"signal": growth},
             "financial_health_signal": {"signal": health},
             "price_ratios_signal": {"signal": "bearish"},  # 가격 판단은 우량 여부에 쓰지 않는다
@@ -25,8 +25,11 @@ def _fundamentals(profitability, growth, health):
     }
 
 
-def _valuation(gap, per_share=123.0):
-    return {"signal": "neutral", "reasoning": {"weighted_gap": gap, "headline_intrinsic_per_share": per_share}}
+def _valuation(gap, per_share=115.0):
+    # headline 은 DCF 기준이라 괴리율과 어긋날 수 있다 — 스크리너는 blended 를 써야 한다.
+    return {"signal": "neutral", "reasoning": {
+        "weighted_gap": gap, "blended_intrinsic_per_share": per_share, "headline_intrinsic_per_share": 999.0,
+    }}
 
 
 # ── 판정 규칙 ────────────────────────────────────────────────────────────────
@@ -34,8 +37,9 @@ def _valuation(gap, per_share=123.0):
 
 @pytest.mark.parametrize(
     "gap, verdict",
-    [(0.30, "buy"), (BUY_GAP + 0.001, "buy"), (BUY_GAP, "quality_fair"), (0.0, "quality_fair"),
-     (-BUY_GAP, "quality_fair"), (-0.40, "quality_expensive"), (None, "quality_no_value")],
+    [(0.30, "buy"), (BUY_GAP + 0.001, "buy"), (BUY_GAP, "watch"), (0.0, "watch"),
+     (WATCH_GAP, "watch"), (WATCH_GAP - 0.001, "quality_expensive"), (-0.40, "quality_expensive"),
+     (None, "quality_no_value")],
 )
 def test_quality_stock_is_split_by_fair_value_gap(gap, verdict):
     result = classify(_fundamentals("bullish", "bullish", "neutral"), _valuation(gap))
@@ -65,9 +69,34 @@ def test_missing_fundamentals_is_insufficient():
     assert classify({}, None)["quality"] is None
 
 
-def test_value_block_carries_gap_and_per_share():
-    value = classify(_fundamentals("bullish", "bullish", "bullish"), _valuation(0.25, 98000))["value"]
-    assert value == {"gap": 0.25, "signal": "neutral", "intrinsic_per_share": 98000}
+def test_value_block_uses_per_share_value_on_the_same_basis_as_gap():
+    # 적정가 115, 괴리율 +15% → 시가 100, 매수 기준가 100 → 이미 매수 구간 경계.
+    value = classify(_fundamentals("bullish", "bullish", "bullish"), _valuation(0.15, 115.0))["value"]
+    assert value["intrinsic_per_share"] == 115.0
+    assert value["price_per_share"] == pytest.approx(100.0)
+    assert value["buy_price_per_share"] == pytest.approx(100.0)
+    assert value["drop_to_buy"] == pytest.approx(0.0)
+
+
+def test_drop_to_buy_is_the_decline_needed_to_clear_the_buy_bar():
+    # 괴리율 −8%: 적정가 92, 시가 100 → 매수 기준가 92/1.15 = 80 → 20% 하락 필요.
+    value = classify(_fundamentals("bullish", "bullish", "bullish"), _valuation(-0.08, 92.0))["value"]
+    assert value["buy_price_per_share"] == pytest.approx(80.0)
+    assert value["drop_to_buy"] == pytest.approx(0.20)
+    # 이미 매수 구간이면 0 으로 자른다.
+    assert classify(_fundamentals("bullish", "bullish", "bullish"), _valuation(0.5))["value"]["drop_to_buy"] == 0.0
+
+
+def test_missing_per_share_value_leaves_prices_empty_but_keeps_drop():
+    value = classify(_fundamentals("bullish", "bullish", "bullish"), _valuation(-0.08, None))["value"]
+    assert value["intrinsic_per_share"] is None and value["buy_price_per_share"] is None
+    assert value["drop_to_buy"] == pytest.approx(0.20)
+
+
+def test_quality_block_carries_axis_details():
+    quality = classify(_fundamentals("bullish", "bullish", "bullish"), None)["quality"]
+    assert quality["details"]["profitability"] == "ROE: 18.00%, Net Margin: N/A"
+    assert quality["details"]["growth"] is None
 
 
 # ── 대상 목록 ────────────────────────────────────────────────────────────────
@@ -176,7 +205,9 @@ def screener_client(monkeypatch):
     app = FastAPI()
     app.include_router(module.router)
     app.dependency_overrides[module.get_db] = lambda: None
-    return TestClient(app), calls
+    client = TestClient(app)
+    client.route_module = module  # 지수 목록 조회를 바꿔 끼울 때 쓴다
+    return client, calls
 
 
 def _events(text):
@@ -198,11 +229,13 @@ def test_scan_streams_every_ticker_then_completes(screener_client):
     assert len(client.get("/screener/universe?market=KR").json()["universe"]) == 25
 
     events = _events(client.post("/screener/scan", json={"market": "ALL", "end_date": "2026-09-25"}).text)
-    assert events[0] == ("start", {"total": 50, "end_date": "2026-09-25", "buy_gap": BUY_GAP})
+    assert events[0] == ("start", {"total": 50, "end_date": "2026-09-25", "buy_gap": BUY_GAP, "watch_gap": WATCH_GAP})
     results = [data for name, data in events if name == "result"]
     assert sorted(r["ticker"] for r in results) == sorted(e["ticker"] for e in LARGE_CAP_UNIVERSE)
     # 한 종목의 예외가 스트림을 끊지 않는다.
-    assert next(r for r in results if r["ticker"] == "AAPL")["verdict"] == "insufficient"
+    failed = next(r for r in results if r["ticker"] == "AAPL")
+    assert failed["verdict"] == "insufficient" and failed["error"] == "boom"
+    assert failed["value"]["drop_to_buy"] is None
     assert events[-1] == ("complete", {"total": 50, "counts": {"buy": 2, "not_quality": 47, "insufficient": 1}})
 
 
@@ -226,6 +259,7 @@ def test_same_day_rescan_uses_cache_except_failures(screener_client):
 def test_valuation_reasoning_exposes_weighted_gap():
     source = (ROOT / "src" / "agents" / "valuation.py").read_text(encoding="utf-8")
     assert '"weighted_gap": weighted_gap,' in source
+    assert '"blended_intrinsic_per_share": blended_intrinsic_per_share,' in source
 
 
 def test_hedge_fund_streams_ignore_screener_progress():
@@ -241,3 +275,147 @@ def test_screener_route_is_registered():
 def test_screener_agents_have_no_llm_dependency():
     source = Path(quality_buy.__file__).read_text(encoding="utf-8")
     assert "call_llm" not in source
+
+
+# ── 지수 전체 목록 ───────────────────────────────────────────────────────────
+
+from src.screener import full_universe as fu  # noqa: E402
+
+SP500_HTML = """
+<table id="constituents"><tbody>
+<tr><th>Symbol</th><th>Security</th><th>GICS Sector</th></tr>
+<tr><td><a href="#">MMM</a></td><td><a href="#">3M</a></td><td>Industrials</td></tr>
+<tr><td><a href="#">AAPL</a></td><td><a href="#">Apple Inc.</a></td><td>IT</td></tr>
+<tr><td><a href="#">BRK.B</a></td><td><a href="#">Berkshire Hathaway</a></td><td>Financials</td></tr>
+<tr><td><a href="#">AAPL</a></td><td><a href="#">Apple dup</a></td><td>IT</td></tr>
+</tbody></table>
+<table id="changes"><tr><td>XYZ</td><td>Removed Co</td></tr></table>
+"""
+
+NAVER_HTML = """
+<table class="type_2"><tbody>
+<tr><td>1</td><td><a href="/item/main.naver?code=005930" class="tltle">삼성전자</a></td></tr>
+<tr><td>2</td><td><a href="/item/main.naver?code=005935" class="tltle">삼성전자우</a></td></tr>
+<tr><td>3</td><td><a href="/item/main.naver?code=00088K" class="tltle">한화3우B</a></td></tr>
+<tr><td>4</td><td><a href="/item/main.naver?code=000270" class="tltle">기아</a></td></tr>
+</tbody></table>
+<table class="Nnavi"><tr><td class="pgRR"><a href="/sise/sise_market_sum.naver?sosok=0&amp;page=19">맨뒤</a></td></tr></table>
+"""
+
+
+def test_parse_sp500_reads_only_the_constituents_table():
+    entries = fu.parse_sp500(SP500_HTML)
+    assert [e["ticker"] for e in entries] == ["MMM", "AAPL", "BRK.B"]
+    # 고정 목록에 있는 종목은 한글 이름을 쓴다.
+    assert entries[1]["name"] == "애플" and entries[0]["name"] == "3M"
+    assert all(e["market"] == "US" for e in entries)
+
+
+def test_parse_sp500_without_table_raises():
+    with pytest.raises(fu.UniverseFetchError):
+        fu.parse_sp500("<html></html>")
+
+
+def test_parse_naver_page_keeps_common_shares_and_finds_last_page():
+    entries, last_page = fu.parse_naver_kospi_page(NAVER_HTML)
+    assert [e["ticker"] for e in entries] == ["005930.KS", "000270.KS"]
+    assert entries[1]["name"] == "기아" and entries[0]["market"] == "KR"
+    assert last_page == 19
+
+
+def test_fetch_kospi_walks_pages_until_the_last(monkeypatch):
+    pages = []
+
+    class FakeResponse:
+        def __init__(self, text):
+            self.text = text
+            self.encoding = None
+
+    def fake_get(url, **params):
+        pages.append(params["page"])
+        # 페이지마다 다른 보통주 20개, 마지막 페이지는 3
+        body = "".join(
+            f'<a class="tltle" href="/item/main.naver?code={params["page"]:03d}{i:02d}0">종목</a>' for i in range(20)
+        )
+        html = f'<table class="type_2">{body}</table><td class="pgRR"><a href="?page=3">맨뒤</a></td>'
+        return FakeResponse(html)
+
+    monkeypatch.setattr(fu, "_get", fake_get)
+    monkeypatch.setattr(fu.time, "sleep", lambda s: None)
+    monkeypatch.setattr(fu, "_cache", {})
+    with pytest.raises(fu.UniverseFetchError):  # 60개뿐 — 목록이 잘린 것으로 본다
+        fu.full_universe("KOSPI")
+    assert pages == [1, 2, 3]
+
+
+def test_full_universe_wraps_network_errors_and_caches_success(monkeypatch):
+    monkeypatch.setattr(fu, "_cache", {})
+    calls = []
+
+    def boom():
+        calls.append(1)
+        raise ConnectionError("blocked")
+
+    monkeypatch.setitem(fu._FETCHERS, "SP500", boom)
+    with pytest.raises(fu.UniverseFetchError, match="blocked"):
+        fu.full_universe("sp500")
+
+    monkeypatch.setitem(fu._FETCHERS, "SP500", lambda: calls.append(2) or [{"ticker": "A", "name": "A", "market": "US"}])
+    assert fu.full_universe("SP500")[0]["ticker"] == "A"
+    fu.full_universe("SP500")
+    assert calls == [1, 2]  # 같은 날 두 번째는 다시 받지 않는다
+
+
+def test_scan_route_reports_universe_fetch_failure(screener_client, monkeypatch):
+    client, _ = screener_client
+
+    def fail(index):
+        raise fu.UniverseFetchError("S&P 500 구성 종목을 받아 오지 못했습니다")
+
+    monkeypatch.setattr(client.route_module, "full_universe", fail)
+    response = client.post("/screener/scan", json={"market": "SP500"})
+    assert response.status_code == 502
+    assert "받아 오지 못했습니다" in response.json()["detail"]
+
+
+def test_scan_route_runs_full_index_universe(screener_client, monkeypatch):
+    client, calls = screener_client
+    monkeypatch.setattr(client.route_module, "full_universe", lambda index: [
+        {"ticker": f"T{i}", "name": f"T{i}", "market": "US"} for i in range(7)
+    ])
+    events = _events(client.post("/screener/scan", json={"market": "SP500", "end_date": "2026-09-23"}).text)
+    assert events[0][1]["total"] == 7
+    assert len(calls) == 7
+
+
+# ── 무료 소스만 쓰기 ─────────────────────────────────────────────────────────
+
+from src.tools import api as data_api  # noqa: E402
+
+
+def test_free_sources_only_skips_financial_datasets_without_network(monkeypatch):
+    def no_network(*args, **kwargs):
+        raise AssertionError("유료 API 를 부르면 안 된다")
+
+    monkeypatch.setattr(data_api.requests, "get", no_network)
+    monkeypatch.setattr(data_api.requests, "post", no_network)
+    with data_api.free_sources_only():
+        response = data_api._make_api_request("https://api.financialdatasets.ai/financial-metrics/?ticker=AAPL", {})
+        assert response.status_code == 503 and response.json() == {}
+        response = data_api._make_api_request("https://api.financialdatasets.ai/x", {}, method="POST", json_data={})
+        assert response.status_code == 503
+    # 블록을 나오면 원래대로 부른다.
+    with pytest.raises(AssertionError):
+        data_api._make_api_request("https://api.financialdatasets.ai/x", {})
+
+
+def test_scan_ticker_runs_agents_on_free_sources_only():
+    seen = []
+
+    def agent(state, agent_id):
+        seen.append(data_api._FREE_SOURCES_ONLY.get())
+        state["data"]["analyst_signals"][agent_id] = {"AAPL": _fundamentals("bullish", "bullish", "bullish")}
+
+    scan_ticker(ENTRY, "2026-09-25", KEYS, fundamentals_agent=agent, valuation_agent=agent)
+    assert seen == [True, True]
+    assert data_api._FREE_SOURCES_ONLY.get() is False

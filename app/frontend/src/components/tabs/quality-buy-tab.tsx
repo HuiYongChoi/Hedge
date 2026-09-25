@@ -16,7 +16,8 @@ import { ArrowUpRight, BadgeCheck, ChevronDown, Play, RefreshCw, Square } from '
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // 마지막 스캔 결과를 시장별로 기억한다 — 탭을 다시 열었을 때 바로 보이도록.
-const STORAGE_KEY = 'quality-buy:last-scan';
+// v2: '우량·적정가'가 '관심 후보'로 바뀌어, 이전 판정 이름으로 저장된 결과는 버린다.
+const STORAGE_KEY = 'quality-buy:last-scan:v2';
 
 interface SavedScan {
   endDate: string | null;
@@ -26,10 +27,15 @@ interface SavedScan {
 type Lang = 'ko' | 'en';
 
 const MARKETS: { value: ScreenerMarket; ko: string; en: string }[] = [
-  { value: 'ALL', ko: '전체', en: 'All' },
+  { value: 'ALL', ko: '대형주 전체', en: 'Large caps' },
   { value: 'KR', ko: '한국', en: 'Korea' },
   { value: 'US', ko: '미국', en: 'US' },
+  { value: 'SP500', ko: 'S&P 500 전체', en: 'All S&P 500' },
+  { value: 'KOSPI', ko: '코스피 전체', en: 'All KOSPI' },
 ];
+
+// 지수 전체는 수백 종목이라 오래 걸린다 — 시작 전에 알린다.
+const FULL_INDEX_MARKETS: ScreenerMarket[] = ['SP500', 'KOSPI'];
 
 // 화면에 펼쳐 보이는 판정 묶음(순서대로). 품질 미달·데이터 부족은 아래 접힌 목록으로 간다.
 const SECTIONS: { verdict: ScreenerVerdict; ko: string; en: string; koHint: string; enHint: string; tone: string }[] = [
@@ -42,19 +48,19 @@ const SECTIONS: { verdict: ScreenerVerdict; ko: string; en: string; koHint: stri
     tone: 'border-emerald-500/50 bg-emerald-500/5',
   },
   {
-    verdict: 'quality_fair',
-    ko: '우량 · 적정가',
-    en: 'Quality · fairly priced',
-    koHint: '우량하지만 적정가와 시가총액 차이가 ±15% 안 — 조정 시 관심',
-    enHint: 'Quality, price within ±15% of fair value — watch for pullbacks',
+    verdict: 'watch',
+    ko: '관심 후보',
+    en: 'Watchlist',
+    koHint: '우량하고 적정가 대비 −10% ~ +15% — 주가가 조정되면 먼저 매수 구간에 들어올 종목',
+    enHint: 'Quality, within −10% to +15% of fair value — first to reach the buy zone on a pullback',
     tone: 'border-sky-500/40 bg-sky-500/5',
   },
   {
     verdict: 'quality_expensive',
     ko: '우량 · 비쌈',
     en: 'Quality · expensive',
-    koHint: '우량하지만 시가총액이 적정가보다 15% 넘게 높음',
-    enHint: 'Quality, but market cap is more than 15% above fair value',
+    koHint: '우량하지만 계산한 적정가가 시가총액보다 10% 넘게 낮음',
+    enHint: 'Quality, but fair value is more than 10% below market cap',
     tone: 'border-amber-500/40 bg-amber-500/5',
   },
   {
@@ -96,6 +102,29 @@ function formatGap(gap: number | null): string {
   return `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`;
 }
 
+function formatDrop(drop: number | null | undefined, lang: Lang): string {
+  if (drop === null || drop === undefined) return '—';
+  if (drop <= 0) return lang === 'ko' ? '지금 매수 구간' : 'In buy zone now';
+  return lang === 'ko' ? `${(drop * 100).toFixed(0)}% 하락 시` : `after −${(drop * 100).toFixed(0)}%`;
+}
+
+// 펀더멘털 에이전트가 남긴 항목별 수치 문자열을 읽기 쉬운 말로 바꾼다.
+const DETAIL_LABELS_KO: [RegExp, string][] = [
+  [/Net Margin/g, '순이익률'],
+  [/Op Margin/g, '영업이익률'],
+  [/Revenue Growth/g, '매출 성장률'],
+  [/Earnings Growth/g, '이익 성장률'],
+  [/Current Ratio/g, '유동비율'],
+  [/D\/E/g, '부채비율'],
+  [/N\/A/g, '없음'],
+];
+
+function localizeDetails(details: string | null | undefined, lang: Lang): string | null {
+  if (!details) return null;
+  const text = details.replace(/: /g, ' ');
+  return lang === 'ko' ? DETAIL_LABELS_KO.reduce((acc, [re, label]) => acc.replace(re, label), text) : text;
+}
+
 function formatPrice(value: number | null, market: 'KR' | 'US'): string {
   if (value === null || !Number.isFinite(value)) return '—';
   return market === 'KR'
@@ -121,9 +150,13 @@ function failureReason(result: ScreenerResult, lang: Lang): string {
   if (result.verdict === 'insufficient' || !result.quality) {
     return lang === 'ko' ? '재무 데이터 부족' : 'Not enough financial data';
   }
-  const weak = AXES.filter(a => result.quality?.[a.key] === 'bearish').map(a => (lang === 'ko' ? a.ko : a.en));
+  const weak = AXES.filter(a => result.quality?.[a.key] === 'bearish').map(a => {
+    const name = lang === 'ko' ? a.ko : a.en;
+    const details = localizeDetails(result.quality?.details?.[a.key], lang);
+    return details ? `${name} (${details})` : name;
+  });
   if (weak.length > 0) {
-    return lang === 'ko' ? `약한 항목: ${weak.join('·')}` : `Weak: ${weak.join(', ')}`;
+    return lang === 'ko' ? `약한 항목: ${weak.join(' · ')}` : `Weak: ${weak.join(' · ')}`;
   }
   return lang === 'ko'
     ? `강한 항목 ${result.quality.bullish}/3 — 둘 이상 필요`
@@ -139,11 +172,12 @@ function QualityDots({ result, lang }: { result: ScreenerResult; lang: Lang }) {
     <div className="flex items-center gap-2">
       {AXES.map(axis => {
         const signal = result.quality?.[axis.key] ?? null;
+        const details = localizeDetails(result.quality?.details?.[axis.key], lang);
         return (
           <span
             key={axis.key}
             className="flex items-center gap-1 text-[11px] text-muted-foreground"
-            title={`${lang === 'ko' ? axis.ko : axis.en}: ${axisLabel(signal, lang)}`}
+            title={`${lang === 'ko' ? axis.ko : axis.en}: ${axisLabel(signal, lang)}${details ? ` — ${details}` : ''}`}
           >
             <span className={cn('inline-block h-2 w-2 rounded-full', axisClass(signal))} />
             {lang === 'ko' ? axis.ko : axis.en}
@@ -167,7 +201,7 @@ function ResultRow({ result, lang, onAnalyze }: { result: ScreenerResult; lang: 
         <QualityDots result={result} lang={lang} />
       </div>
       {failed ? (
-        <div className="text-xs text-muted-foreground">{failureReason(result, lang)}</div>
+        <div className="max-w-[28rem] text-right text-xs text-muted-foreground">{failureReason(result, lang)}</div>
       ) : (
         <>
           <div className="w-24 text-right">
@@ -184,6 +218,17 @@ function ResultRow({ result, lang, onAnalyze }: { result: ScreenerResult; lang: 
           <div className="w-28 text-right">
             <div className="font-mono text-sm tabular-nums">{formatPrice(result.value.intrinsic_per_share, result.market)}</div>
             <div className="text-[11px] text-muted-foreground">{lang === 'ko' ? '주당 적정가' : 'Fair value / sh'}</div>
+          </div>
+          <div className="w-40 text-right" title={lang === 'ko' ? '적정가 ÷ 1.15 — 이 가격 아래로 내려오면 매수 후보가 됩니다' : 'Fair value ÷ 1.15 — below this price it becomes a buy candidate'}>
+            <div className="font-mono text-sm tabular-nums">{formatPrice(result.value.buy_price_per_share ?? null, result.market)}</div>
+            <div
+              className={cn(
+                'whitespace-nowrap text-[11px]',
+                result.value.drop_to_buy === 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground',
+              )}
+            >
+              {lang === 'ko' ? '매수 기준가' : 'Buy below'} · {formatDrop(result.value.drop_to_buy, lang)}
+            </div>
           </div>
         </>
       )}
@@ -281,6 +326,7 @@ export function QualityBuyTab() {
   }, [results]);
 
   const buyCount = grouped.get('buy')?.length ?? 0;
+  const watchCount = grouped.get('watch')?.length ?? 0;
   const rest = [...(grouped.get('not_quality') ?? []), ...(grouped.get('insufficient') ?? [])];
   const progressPct = total > 0 ? Math.round((results.length / total) * 100) : 0;
   const hasResults = results.length > 0;
@@ -293,7 +339,7 @@ export function QualityBuyTab() {
           <BadgeCheck size={18} className="text-primary" />
           <h2 className="text-lg font-semibold">{t('qualityBuy', language)}</h2>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <div className="flex rounded-full border border-border p-0.5">
+            <div className="flex flex-wrap rounded-full border border-border p-0.5">
               {MARKETS.map(m => (
                 <button
                   key={m.value}
@@ -342,14 +388,16 @@ export function QualityBuyTab() {
               종목 분석은 <b className="text-foreground">'지금 싼가'</b>에 매수 기준이 걸려 있어, 비싸게 거래되는 우량주는 대부분 중립·매도로 나옵니다.
               여기서는 두 질문을 나눠 봅니다. <b className="text-foreground">① 우량한가</b> — 수익성·성장·재무건전성 셋 중 둘 이상이 강하고 약한 항목이 없음.{' '}
               <b className="text-foreground">② 지금 싼가</b> — 계산한 적정가가 시가총액보다 15% 넘게 높음(종목 분석의 가치평가 매수 기준과 같음).
-              AI 호출 없이 계산만 하므로 빠르고, 같은 날 다시 스캔하면 저장된 결과를 바로 보여 줍니다. 대상은 한국·미국 대형주 각 25개입니다.
+              아직 싸지 않은 우량주 가운데 적정가에서 크게 벗어나지 않은 종목은 <b className="text-foreground">관심 후보</b>로 따로 모으고, 얼마나 내려야 매수 구간인지 함께 보여 줍니다.
+              AI 호출 없이 계산만 하므로 빠르고, 같은 날 다시 스캔하면 저장된 결과를 바로 보여 줍니다. 대형주는 한국·미국 각 25개이고, 'S&P 500 전체'·'코스피 전체'는 스캔하는 시점의 지수 구성 종목 전부(수백 개)를 훑어 수십 분 걸립니다.
             </>
           ) : (
             <>
               Stock Analysis only turns bullish when a stock is <b className="text-foreground">cheap</b>, so richly priced quality stocks mostly show neutral or bearish.
               This view splits the two questions. <b className="text-foreground">① Quality</b> — at least two of profitability, growth and balance-sheet health are strong, none weak.{' '}
               <b className="text-foreground">② Cheap now</b> — estimated fair value exceeds market cap by more than 15% (the same bar as the valuation analyst).
-              No AI calls, only calculations; re-scanning on the same day returns cached results. Universe: 25 Korean and 25 US large caps.
+              Quality names close to fair value but not yet cheap go to the <b className="text-foreground">watchlist</b>, with the decline needed to reach the buy zone.
+              No AI calls, only calculations; re-scanning on the same day returns cached results. Large caps: 25 Korean and 25 US names; 'All S&P 500' and 'All KOSPI' scan every current index member (hundreds of names) and take tens of minutes.
             </>
           )}
         </div>
@@ -358,7 +406,14 @@ export function QualityBuyTab() {
         {(isRunning || (total > 0 && results.length < total)) && (
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{lang === 'ko' ? '스캔 중…' : 'Scanning…'}</span>
+              <span>
+                {lang === 'ko' ? '스캔 중…' : 'Scanning…'}
+                {FULL_INDEX_MARKETS.includes(market) && (
+                  <span className="ml-1">
+                    {lang === 'ko' ? '— 지수 전체라 오래 걸립니다. 탭을 닫으면 중단됩니다.' : '— full index, this takes a while. Closing the tab stops it.'}
+                  </span>
+                )}
+              </span>
               <span className="tabular-nums">{results.length} / {total}</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -382,8 +437,8 @@ export function QualityBuyTab() {
         {hasResults && (
           <div className="text-xs text-muted-foreground">
             {lang === 'ko'
-              ? `${results.length}개 중 매수 후보 ${buyCount}개`
-              : `${buyCount} buy candidate${buyCount === 1 ? '' : 's'} of ${results.length}`}
+              ? `${results.length}개 중 매수 후보 ${buyCount}개 · 관심 후보 ${watchCount}개`
+              : `${buyCount} buy candidate${buyCount === 1 ? '' : 's'}, ${watchCount} on watch, of ${results.length}`}
             {endDate && <span> · {lang === 'ko' ? `기준일 ${endDate}` : `as of ${endDate}`}</span>}
           </div>
         )}
@@ -402,8 +457,8 @@ export function QualityBuyTab() {
               {list.length === 0 ? (
                 <div className="border-t border-border/60 px-3 py-3 text-xs text-muted-foreground">
                   {lang === 'ko'
-                    ? '지금은 기준을 넘는 종목이 없습니다. 아래 우량·적정가 종목이 다음 관심 대상입니다.'
-                    : 'Nothing clears the bar right now. The quality · fairly priced names below are next in line.'}
+                    ? '지금은 기준을 넘는 종목이 없습니다. 아래 관심 후보가 조정 시 먼저 매수 구간에 들어올 종목입니다.'
+                    : 'Nothing clears the bar right now. The watchlist below is next in line on a pullback.'}
                 </div>
               ) : (
                 <div className="bg-background/60">

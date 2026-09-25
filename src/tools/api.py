@@ -1,3 +1,5 @@
+import contextlib
+import contextvars
 import datetime
 import logging
 import os
@@ -110,6 +112,31 @@ def _filter_usable_line_items(items: list[LineItem], requested_fields: list[str]
     ]
 
 
+# Financial Datasets 를 건너뛰고 무료 공식·공개 소스(DART·SEC·yfinance 등)만 쓰게 하는 스위치.
+# 수백 종목을 훑는 스크리너가 켠다 — 유료 API 사용량을 쓰지 않고, 요청 한도(429)에 걸려
+# 요청마다 최대 4분 넘게 기다리는 일도 없앤다. 컨텍스트 변수라 켠 스레드·작업에만 적용된다.
+_FREE_SOURCES_ONLY: contextvars.ContextVar[bool] = contextvars.ContextVar("free_sources_only", default=False)
+
+
+@contextlib.contextmanager
+def free_sources_only():
+    """이 블록 안의 데이터 조회는 Financial Datasets 를 부르지 않는다."""
+    token = _FREE_SOURCES_ONLY.set(True)
+    try:
+        yield
+    finally:
+        _FREE_SOURCES_ONLY.reset(token)
+
+
+def _skipped_response(url: str) -> requests.Response:
+    # 호출부는 모두 status_code 로 성공 여부를 가려 다음 소스로 넘어간다.
+    response = requests.Response()
+    response.status_code = 503
+    response._content = b"{}"
+    response.url = url
+    return response
+
+
 def _make_api_request(url: str, headers: dict, method: str = "GET", json_data: dict = None, max_retries: int = 3) -> requests.Response:
     """
     Make an API request with rate limiting handling and moderate backoff.
@@ -127,6 +154,8 @@ def _make_api_request(url: str, headers: dict, method: str = "GET", json_data: d
     Raises:
         Exception: If the request fails with a non-429 error
     """
+    if _FREE_SOURCES_ONLY.get():
+        return _skipped_response(url)
     for attempt in range(max_retries + 1):  # +1 for initial attempt
         if method.upper() == "POST":
             response = requests.post(url, headers=headers, json=json_data)
