@@ -17,6 +17,7 @@ from src.tools.earnings_release import fetch_latest_earnings_release
 from src.tools.filings import fetch_filing_sections
 from src.tools.life_cycle import diagnose as diagnose_life_cycle
 from src.tools.money_ko import describe_valuation_gap
+from src.tools.money_ko import currency_unit_for, format_money
 from src.utils.capm import (
     DAMODARAN_ERP,
     DAMODARAN_RISK_FREE,
@@ -185,7 +186,20 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
 
         # 내재가치만 던지면 독자가 시가총액을 찾아 직접 나눠 봐야 한다.
         # '얼마 vs 얼마 → 그래서 싼가 비싼가'를 여기서 문장으로 만들어 둔다.
-        gap_text = describe_valuation_gap(intrinsic_value, market_cap, margin_of_safety)
+        money_unit = currency_unit_for(ticker)
+        gap_text = describe_valuation_gap(intrinsic_value, market_cap, margin_of_safety, money_unit)
+        # 모델은 받은 숫자를 그대로 옮겨 적는다("내재가치 250,173,866,221.35", 실측).
+        # 읽히는 표기를 함께 실어 두면 원시 값 대신 그걸 인용한다.
+        if intrinsic_value:
+            intrinsic_val_analysis = {
+                **intrinsic_val_analysis,
+                "intrinsic_value_readable": format_money(intrinsic_value, money_unit),
+            }
+        if forward_intrinsic:
+            forward_val_analysis = {
+                **forward_val_analysis,
+                "intrinsic_value_readable": format_money(forward_intrinsic, money_unit),
+            }
         if gap_text:
             intrinsic_val_analysis = {**intrinsic_val_analysis, "meaning_ko": gap_text}
             details = list(intrinsic_val_analysis.get("details") or [])

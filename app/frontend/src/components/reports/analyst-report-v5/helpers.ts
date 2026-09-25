@@ -690,9 +690,20 @@ function mapStructuredView(report: AgentReport): NormalizedReport | null {
  * 그래서 문서 구조가 있는데도 없는 것처럼 처리돼 문장 분류기로 넘어가고,
  * '리스크' 문장이 DCF 섹션에 빨려 들어가 04 가 통째로 빈다.
  */
-function promoteInlineHeadings(text: string): string {
+/** "#### 2 경영진이 말한 …" 같은 4단 이하 소제목은 섹션이 아니라 카드 안의 항목이다.
+ *
+ * 헤딩 규칙은 ##·###만 본다. ####는 줄 가운데 붙어 오면 앞 카드 본문에 그대로 인쇄되고
+ * (실측: 카드 1 본문 끝에 "#### 2 경영진이 말한 …"), 줄머리에 오면 "# 2 …"라는 섹션으로 잘못 읽힌다.
+ * 번호가 있으면 번호 항목으로, 없으면 새 줄로 내린다.
+ */
+function demoteSubHeadings(text: string): string {
   return text
-    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]*#{4,6}[ \t]*(\d{1,2})[.)]?[ \t]+/gu, '\n\n$1. ')
+    .replace(/[ \t]*#{4,6}[ \t]+/gu, '\n\n');
+}
+
+function promoteInlineHeadings(text: string): string {
+  return demoteSubHeadings(text.replace(/\r\n?/g, '\n'))
     // 앞 문장에서 떼어 낸다: "…합리적입니다. ### 핵심 판단"
     .replace(/([^\n])[ \t]+(?=#{2,3}\s+)/gu, '$1\n\n')
     // 뒤 본문에서도 떼어 낸다: "### 재무 위험(…) - 환율 10% 변동 시 …".
@@ -1126,8 +1137,7 @@ export function buildSourceTrackingText(report: AgentReport | null | undefined) 
 }
 
 export function prepareEvidenceLayoutText(sectionText: string) {
-  return normalizeFinancialDisplayText(sectionText)
-    .replace(/\r\n?/g, '\n')
+  return demoteSubHeadings(normalizeFinancialDisplayText(sectionText).replace(/\r\n?/g, '\n'))
     // 닫는 괄호가 빠진 손상 마커("[?선행…", "[+매출…")를 복구한다 — 그대로 두면
     // 마커로 인식되지 않아 제목이 만들어지지 않는다(제목 누락).
     .replace(/\[([+\-~?])(?=[^\]\s])/gu, '[$1] ')
