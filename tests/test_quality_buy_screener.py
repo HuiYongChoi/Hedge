@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from src.screener import quality_buy
-from src.screener.quality_buy import BUY_GAP, SCREENER_AGENT_PREFIX, classify, scan_ticker
+from src.screener.quality_buy import BUY_GAP, SCREENER_AGENT_PREFIX, WATCH_GAP, classify, scan_ticker
 from src.screener.universe import LARGE_CAP_UNIVERSE, universe_for
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +17,7 @@ def _fundamentals(profitability, growth, health):
     return {
         "signal": "neutral",
         "reasoning": {
-            "profitability_signal": {"signal": profitability},
+            "profitability_signal": {"signal": profitability, "details": "ROE: 18.00%, Net Margin: N/A"},
             "growth_signal": {"signal": growth},
             "financial_health_signal": {"signal": health},
             "price_ratios_signal": {"signal": "bearish"},  # 가격 판단은 우량 여부에 쓰지 않는다
@@ -25,8 +25,11 @@ def _fundamentals(profitability, growth, health):
     }
 
 
-def _valuation(gap, per_share=123.0):
-    return {"signal": "neutral", "reasoning": {"weighted_gap": gap, "headline_intrinsic_per_share": per_share}}
+def _valuation(gap, per_share=115.0):
+    # headline 은 DCF 기준이라 괴리율과 어긋날 수 있다 — 스크리너는 blended 를 써야 한다.
+    return {"signal": "neutral", "reasoning": {
+        "weighted_gap": gap, "blended_intrinsic_per_share": per_share, "headline_intrinsic_per_share": 999.0,
+    }}
 
 
 # ── 판정 규칙 ────────────────────────────────────────────────────────────────
@@ -34,8 +37,9 @@ def _valuation(gap, per_share=123.0):
 
 @pytest.mark.parametrize(
     "gap, verdict",
-    [(0.30, "buy"), (BUY_GAP + 0.001, "buy"), (BUY_GAP, "quality_fair"), (0.0, "quality_fair"),
-     (-BUY_GAP, "quality_fair"), (-0.40, "quality_expensive"), (None, "quality_no_value")],
+    [(0.30, "buy"), (BUY_GAP + 0.001, "buy"), (BUY_GAP, "watch"), (0.0, "watch"),
+     (WATCH_GAP, "watch"), (WATCH_GAP - 0.001, "quality_expensive"), (-0.40, "quality_expensive"),
+     (None, "quality_no_value")],
 )
 def test_quality_stock_is_split_by_fair_value_gap(gap, verdict):
     result = classify(_fundamentals("bullish", "bullish", "neutral"), _valuation(gap))
@@ -65,9 +69,34 @@ def test_missing_fundamentals_is_insufficient():
     assert classify({}, None)["quality"] is None
 
 
-def test_value_block_carries_gap_and_per_share():
-    value = classify(_fundamentals("bullish", "bullish", "bullish"), _valuation(0.25, 98000))["value"]
-    assert value == {"gap": 0.25, "signal": "neutral", "intrinsic_per_share": 98000}
+def test_value_block_uses_per_share_value_on_the_same_basis_as_gap():
+    # 적정가 115, 괴리율 +15% → 시가 100, 매수 기준가 100 → 이미 매수 구간 경계.
+    value = classify(_fundamentals("bullish", "bullish", "bullish"), _valuation(0.15, 115.0))["value"]
+    assert value["intrinsic_per_share"] == 115.0
+    assert value["price_per_share"] == pytest.approx(100.0)
+    assert value["buy_price_per_share"] == pytest.approx(100.0)
+    assert value["drop_to_buy"] == pytest.approx(0.0)
+
+
+def test_drop_to_buy_is_the_decline_needed_to_clear_the_buy_bar():
+    # 괴리율 −8%: 적정가 92, 시가 100 → 매수 기준가 92/1.15 = 80 → 20% 하락 필요.
+    value = classify(_fundamentals("bullish", "bullish", "bullish"), _valuation(-0.08, 92.0))["value"]
+    assert value["buy_price_per_share"] == pytest.approx(80.0)
+    assert value["drop_to_buy"] == pytest.approx(0.20)
+    # 이미 매수 구간이면 0 으로 자른다.
+    assert classify(_fundamentals("bullish", "bullish", "bullish"), _valuation(0.5))["value"]["drop_to_buy"] == 0.0
+
+
+def test_missing_per_share_value_leaves_prices_empty_but_keeps_drop():
+    value = classify(_fundamentals("bullish", "bullish", "bullish"), _valuation(-0.08, None))["value"]
+    assert value["intrinsic_per_share"] is None and value["buy_price_per_share"] is None
+    assert value["drop_to_buy"] == pytest.approx(0.20)
+
+
+def test_quality_block_carries_axis_details():
+    quality = classify(_fundamentals("bullish", "bullish", "bullish"), None)["quality"]
+    assert quality["details"]["profitability"] == "ROE: 18.00%, Net Margin: N/A"
+    assert quality["details"]["growth"] is None
 
 
 # ── 대상 목록 ────────────────────────────────────────────────────────────────
@@ -198,11 +227,13 @@ def test_scan_streams_every_ticker_then_completes(screener_client):
     assert len(client.get("/screener/universe?market=KR").json()["universe"]) == 25
 
     events = _events(client.post("/screener/scan", json={"market": "ALL", "end_date": "2026-09-25"}).text)
-    assert events[0] == ("start", {"total": 50, "end_date": "2026-09-25", "buy_gap": BUY_GAP})
+    assert events[0] == ("start", {"total": 50, "end_date": "2026-09-25", "buy_gap": BUY_GAP, "watch_gap": WATCH_GAP})
     results = [data for name, data in events if name == "result"]
     assert sorted(r["ticker"] for r in results) == sorted(e["ticker"] for e in LARGE_CAP_UNIVERSE)
     # 한 종목의 예외가 스트림을 끊지 않는다.
-    assert next(r for r in results if r["ticker"] == "AAPL")["verdict"] == "insufficient"
+    failed = next(r for r in results if r["ticker"] == "AAPL")
+    assert failed["verdict"] == "insufficient" and failed["error"] == "boom"
+    assert failed["value"]["drop_to_buy"] is None
     assert events[-1] == ("complete", {"total": 50, "counts": {"buy": 2, "not_quality": 47, "insufficient": 1}})
 
 
@@ -226,6 +257,7 @@ def test_same_day_rescan_uses_cache_except_failures(screener_client):
 def test_valuation_reasoning_exposes_weighted_gap():
     source = (ROOT / "src" / "agents" / "valuation.py").read_text(encoding="utf-8")
     assert '"weighted_gap": weighted_gap,' in source
+    assert '"blended_intrinsic_per_share": blended_intrinsic_per_share,' in source
 
 
 def test_hedge_fund_streams_ignore_screener_progress():

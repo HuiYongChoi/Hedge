@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.backend.database import get_db
 from app.backend.services.api_key_service import ApiKeyService
-from src.screener.quality_buy import BUY_GAP, scan_ticker
+from src.screener.quality_buy import BUY_GAP, WATCH_GAP, classify, scan_ticker
 from src.screener.universe import universe_for
 
 router = APIRouter(prefix="/screener", tags=["screener"])
@@ -56,7 +56,7 @@ def _remember(end_date: str, result: dict) -> None:
 @router.get("/universe")
 async def get_universe(market: str = "ALL"):
     """스캔 대상 종목 목록과 매수 문턱."""
-    return {"universe": universe_for(market), "buy_gap": BUY_GAP}
+    return {"universe": universe_for(market), "buy_gap": BUY_GAP, "watch_gap": WATCH_GAP}
 
 
 @router.post("/scan")
@@ -78,13 +78,11 @@ async def scan(request_data: ScreenerScanRequest, request: Request, db: Session 
                 try:
                     result = await asyncio.to_thread(scan_ticker, entry, end_date, api_keys)
                 except Exception as exc:  # 한 종목의 예외가 스트림 전체를 끊으면 안 된다
-                    result = {**entry, "verdict": "insufficient", "quality": None,
-                              "value": {"gap": None, "signal": None, "intrinsic_per_share": None},
-                              "error": str(exc)}
+                    result = {**entry, **classify(None, None), "error": str(exc)}
             _remember(end_date, result)
             return result
 
-        yield _sse("start", {"total": len(entries), "end_date": end_date, "buy_gap": BUY_GAP})
+        yield _sse("start", {"total": len(entries), "end_date": end_date, "buy_gap": BUY_GAP, "watch_gap": WATCH_GAP})
         pending = {asyncio.create_task(scan_one(entry)) for entry in entries}
         counts: Counter[str] = Counter()
         try:

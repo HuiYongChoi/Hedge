@@ -11,7 +11,7 @@ export type ScreenerMarket = 'ALL' | 'KR' | 'US';
 
 export type ScreenerVerdict =
   | 'buy'
-  | 'quality_fair'
+  | 'watch'
   | 'quality_expensive'
   | 'quality_no_value'
   | 'not_quality'
@@ -34,26 +34,35 @@ export interface ScreenerResult extends ScreenerUniverseEntry {
     bullish: number;
     bearish: number;
     passed: boolean;
+    /** 항목별 실제 수치 문자열(예: "ROE: 12.30%, Net Margin: N/A") */
+    details?: Partial<Record<'profitability' | 'growth' | 'financial_health', string | null>>;
   } | null;
   value: {
     /** 적정가 ÷ 시가총액 − 1 (이상치 제외 가중평균). +0.2 = 20% 저평가 */
     gap: number | null;
     signal: string | null;
+    /** 괴리율과 같은 기준의 1주당 적정가 */
     intrinsic_per_share: number | null;
+    /** 적정가 ÷ (1 + 괴리율) — 계산에 쓴 주가 */
+    price_per_share?: number | null;
+    /** 괴리율이 매수 문턱을 넘는 주가 = 적정가 ÷ 1.15 */
+    buy_price_per_share?: number | null;
+    /** 매수 구간까지 필요한 주가 하락률(0.2 = 20%). 이미 매수 구간이면 0 */
+    drop_to_buy?: number | null;
   };
   error: string | null;
   cached?: boolean;
 }
 
 export interface ScreenerScanHandlers {
-  onStart?: (info: { total: number; end_date: string; buy_gap: number }) => void;
+  onStart?: (info: { total: number; end_date: string; buy_gap: number; watch_gap?: number }) => void;
   onResult: (result: ScreenerResult) => void;
   onComplete?: (info: { total: number; counts: Partial<Record<ScreenerVerdict, number>> }) => void;
   onError?: (message: string) => void;
 }
 
 export const screenerApi = {
-  async fetchUniverse(market: ScreenerMarket): Promise<{ universe: ScreenerUniverseEntry[]; buy_gap: number }> {
+  async fetchUniverse(market: ScreenerMarket): Promise<{ universe: ScreenerUniverseEntry[]; buy_gap: number; watch_gap: number }> {
     const response = await fetch(`${API_BASE_URL}/screener/universe?market=${market}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
