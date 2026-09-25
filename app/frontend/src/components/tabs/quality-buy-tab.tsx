@@ -27,10 +27,15 @@ interface SavedScan {
 type Lang = 'ko' | 'en';
 
 const MARKETS: { value: ScreenerMarket; ko: string; en: string }[] = [
-  { value: 'ALL', ko: '전체', en: 'All' },
+  { value: 'ALL', ko: '대형주 전체', en: 'Large caps' },
   { value: 'KR', ko: '한국', en: 'Korea' },
   { value: 'US', ko: '미국', en: 'US' },
+  { value: 'SP500', ko: 'S&P 500 전체', en: 'All S&P 500' },
+  { value: 'KOSPI', ko: '코스피 전체', en: 'All KOSPI' },
 ];
+
+// 지수 전체는 수백 종목이라 오래 걸린다 — 시작 전에 알린다.
+const FULL_INDEX_MARKETS: ScreenerMarket[] = ['SP500', 'KOSPI'];
 
 // 화면에 펼쳐 보이는 판정 묶음(순서대로). 품질 미달·데이터 부족은 아래 접힌 목록으로 간다.
 const SECTIONS: { verdict: ScreenerVerdict; ko: string; en: string; koHint: string; enHint: string; tone: string }[] = [
@@ -334,7 +339,7 @@ export function QualityBuyTab() {
           <BadgeCheck size={18} className="text-primary" />
           <h2 className="text-lg font-semibold">{t('qualityBuy', language)}</h2>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <div className="flex rounded-full border border-border p-0.5">
+            <div className="flex flex-wrap rounded-full border border-border p-0.5">
               {MARKETS.map(m => (
                 <button
                   key={m.value}
@@ -384,7 +389,7 @@ export function QualityBuyTab() {
               여기서는 두 질문을 나눠 봅니다. <b className="text-foreground">① 우량한가</b> — 수익성·성장·재무건전성 셋 중 둘 이상이 강하고 약한 항목이 없음.{' '}
               <b className="text-foreground">② 지금 싼가</b> — 계산한 적정가가 시가총액보다 15% 넘게 높음(종목 분석의 가치평가 매수 기준과 같음).
               아직 싸지 않은 우량주 가운데 적정가에서 크게 벗어나지 않은 종목은 <b className="text-foreground">관심 후보</b>로 따로 모으고, 얼마나 내려야 매수 구간인지 함께 보여 줍니다.
-              AI 호출 없이 계산만 하므로 빠르고, 같은 날 다시 스캔하면 저장된 결과를 바로 보여 줍니다. 대상은 한국·미국 대형주 각 25개입니다.
+              AI 호출 없이 계산만 하므로 빠르고, 같은 날 다시 스캔하면 저장된 결과를 바로 보여 줍니다. 대형주는 한국·미국 각 25개이고, 'S&P 500 전체'·'코스피 전체'는 스캔하는 시점의 지수 구성 종목 전부(수백 개)를 훑어 수십 분 걸립니다.
             </>
           ) : (
             <>
@@ -392,7 +397,7 @@ export function QualityBuyTab() {
               This view splits the two questions. <b className="text-foreground">① Quality</b> — at least two of profitability, growth and balance-sheet health are strong, none weak.{' '}
               <b className="text-foreground">② Cheap now</b> — estimated fair value exceeds market cap by more than 15% (the same bar as the valuation analyst).
               Quality names close to fair value but not yet cheap go to the <b className="text-foreground">watchlist</b>, with the decline needed to reach the buy zone.
-              No AI calls, only calculations; re-scanning on the same day returns cached results. Universe: 25 Korean and 25 US large caps.
+              No AI calls, only calculations; re-scanning on the same day returns cached results. Large caps: 25 Korean and 25 US names; 'All S&P 500' and 'All KOSPI' scan every current index member (hundreds of names) and take tens of minutes.
             </>
           )}
         </div>
@@ -401,7 +406,14 @@ export function QualityBuyTab() {
         {(isRunning || (total > 0 && results.length < total)) && (
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{lang === 'ko' ? '스캔 중…' : 'Scanning…'}</span>
+              <span>
+                {lang === 'ko' ? '스캔 중…' : 'Scanning…'}
+                {FULL_INDEX_MARKETS.includes(market) && (
+                  <span className="ml-1">
+                    {lang === 'ko' ? '— 지수 전체라 오래 걸립니다. 탭을 닫으면 중단됩니다.' : '— full index, this takes a while. Closing the tab stops it.'}
+                  </span>
+                )}
+              </span>
               <span className="tabular-nums">{results.length} / {total}</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">

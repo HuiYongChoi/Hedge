@@ -6,7 +6,7 @@ from collections import Counter
 from datetime import date
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.backend.database import get_db
 from app.backend.services.api_key_service import ApiKeyService
 from src.screener.quality_buy import BUY_GAP, WATCH_GAP, classify, scan_ticker
+from src.screener.full_universe import UniverseFetchError, full_universe
 from src.screener.universe import universe_for
 
 router = APIRouter(prefix="/screener", tags=["screener"])
@@ -29,8 +30,13 @@ HEARTBEAT_SECONDS = 15.0
 _day_cache: dict[str, dict[str, dict]] = {}
 
 
+#: 대형주 고정 목록(ALL·KR·US)과, 스캔 시점 구성 종목을 받아 오는 지수 전체(SP500·KOSPI).
+Market = Literal["ALL", "KR", "US", "SP500", "KOSPI"]
+FULL_INDICES = ("SP500", "KOSPI")
+
+
 class ScreenerScanRequest(BaseModel):
-    market: Literal["ALL", "KR", "US"] = "ALL"
+    market: Market = "ALL"
     end_date: Optional[str] = None
     refresh: bool = False
     api_keys: Optional[dict[str, str]] = None
@@ -53,10 +59,20 @@ def _remember(end_date: str, result: dict) -> None:
     _day_cache.setdefault(end_date, {})[result["ticker"]] = result
 
 
+async def _resolve_universe(market: str) -> list:
+    if market.upper() not in FULL_INDICES:
+        return universe_for(market)
+    try:
+        # 지수 구성 종목은 외부 사이트에서 받아 온다(블로킹 요청이라 스레드에서).
+        return await asyncio.to_thread(full_universe, market)
+    except UniverseFetchError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @router.get("/universe")
 async def get_universe(market: str = "ALL"):
     """스캔 대상 종목 목록과 매수 문턱."""
-    return {"universe": universe_for(market), "buy_gap": BUY_GAP, "watch_gap": WATCH_GAP}
+    return {"universe": await _resolve_universe(market), "buy_gap": BUY_GAP, "watch_gap": WATCH_GAP}
 
 
 @router.post("/scan")
@@ -64,7 +80,7 @@ async def scan(request_data: ScreenerScanRequest, request: Request, db: Session 
     """대상 종목을 동시에 스캔하며, 끝나는 순서대로 판정을 보낸다."""
     api_keys = request_data.api_keys or ApiKeyService(db).get_api_keys_dict()
     end_date = request_data.end_date or date.today().isoformat()
-    entries = universe_for(request_data.market)
+    entries = await _resolve_universe(request_data.market)
 
     async def event_generator():
         semaphore = asyncio.Semaphore(SCAN_CONCURRENCY)

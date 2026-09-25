@@ -205,7 +205,9 @@ def screener_client(monkeypatch):
     app = FastAPI()
     app.include_router(module.router)
     app.dependency_overrides[module.get_db] = lambda: None
-    return TestClient(app), calls
+    client = TestClient(app)
+    client.route_module = module  # 지수 목록 조회를 바꿔 끼울 때 쓴다
+    return client, calls
 
 
 def _events(text):
@@ -273,3 +275,114 @@ def test_screener_route_is_registered():
 def test_screener_agents_have_no_llm_dependency():
     source = Path(quality_buy.__file__).read_text(encoding="utf-8")
     assert "call_llm" not in source
+
+
+# ── 지수 전체 목록 ───────────────────────────────────────────────────────────
+
+from src.screener import full_universe as fu  # noqa: E402
+
+SP500_HTML = """
+<table id="constituents"><tbody>
+<tr><th>Symbol</th><th>Security</th><th>GICS Sector</th></tr>
+<tr><td><a href="#">MMM</a></td><td><a href="#">3M</a></td><td>Industrials</td></tr>
+<tr><td><a href="#">AAPL</a></td><td><a href="#">Apple Inc.</a></td><td>IT</td></tr>
+<tr><td><a href="#">BRK.B</a></td><td><a href="#">Berkshire Hathaway</a></td><td>Financials</td></tr>
+<tr><td><a href="#">AAPL</a></td><td><a href="#">Apple dup</a></td><td>IT</td></tr>
+</tbody></table>
+<table id="changes"><tr><td>XYZ</td><td>Removed Co</td></tr></table>
+"""
+
+NAVER_HTML = """
+<table class="type_2"><tbody>
+<tr><td>1</td><td><a href="/item/main.naver?code=005930" class="tltle">삼성전자</a></td></tr>
+<tr><td>2</td><td><a href="/item/main.naver?code=005935" class="tltle">삼성전자우</a></td></tr>
+<tr><td>3</td><td><a href="/item/main.naver?code=00088K" class="tltle">한화3우B</a></td></tr>
+<tr><td>4</td><td><a href="/item/main.naver?code=000270" class="tltle">기아</a></td></tr>
+</tbody></table>
+<table class="Nnavi"><tr><td class="pgRR"><a href="/sise/sise_market_sum.naver?sosok=0&amp;page=19">맨뒤</a></td></tr></table>
+"""
+
+
+def test_parse_sp500_reads_only_the_constituents_table():
+    entries = fu.parse_sp500(SP500_HTML)
+    assert [e["ticker"] for e in entries] == ["MMM", "AAPL", "BRK.B"]
+    # 고정 목록에 있는 종목은 한글 이름을 쓴다.
+    assert entries[1]["name"] == "애플" and entries[0]["name"] == "3M"
+    assert all(e["market"] == "US" for e in entries)
+
+
+def test_parse_sp500_without_table_raises():
+    with pytest.raises(fu.UniverseFetchError):
+        fu.parse_sp500("<html></html>")
+
+
+def test_parse_naver_page_keeps_common_shares_and_finds_last_page():
+    entries, last_page = fu.parse_naver_kospi_page(NAVER_HTML)
+    assert [e["ticker"] for e in entries] == ["005930.KS", "000270.KS"]
+    assert entries[1]["name"] == "기아" and entries[0]["market"] == "KR"
+    assert last_page == 19
+
+
+def test_fetch_kospi_walks_pages_until_the_last(monkeypatch):
+    pages = []
+
+    class FakeResponse:
+        def __init__(self, text):
+            self.text = text
+            self.encoding = None
+
+    def fake_get(url, **params):
+        pages.append(params["page"])
+        # 페이지마다 다른 보통주 20개, 마지막 페이지는 3
+        body = "".join(
+            f'<a class="tltle" href="/item/main.naver?code={params["page"]:03d}{i:02d}0">종목</a>' for i in range(20)
+        )
+        html = f'<table class="type_2">{body}</table><td class="pgRR"><a href="?page=3">맨뒤</a></td>'
+        return FakeResponse(html)
+
+    monkeypatch.setattr(fu, "_get", fake_get)
+    monkeypatch.setattr(fu.time, "sleep", lambda s: None)
+    monkeypatch.setattr(fu, "_cache", {})
+    with pytest.raises(fu.UniverseFetchError):  # 60개뿐 — 목록이 잘린 것으로 본다
+        fu.full_universe("KOSPI")
+    assert pages == [1, 2, 3]
+
+
+def test_full_universe_wraps_network_errors_and_caches_success(monkeypatch):
+    monkeypatch.setattr(fu, "_cache", {})
+    calls = []
+
+    def boom():
+        calls.append(1)
+        raise ConnectionError("blocked")
+
+    monkeypatch.setitem(fu._FETCHERS, "SP500", boom)
+    with pytest.raises(fu.UniverseFetchError, match="blocked"):
+        fu.full_universe("sp500")
+
+    monkeypatch.setitem(fu._FETCHERS, "SP500", lambda: calls.append(2) or [{"ticker": "A", "name": "A", "market": "US"}])
+    assert fu.full_universe("SP500")[0]["ticker"] == "A"
+    fu.full_universe("SP500")
+    assert calls == [1, 2]  # 같은 날 두 번째는 다시 받지 않는다
+
+
+def test_scan_route_reports_universe_fetch_failure(screener_client, monkeypatch):
+    client, _ = screener_client
+
+    def fail(index):
+        raise fu.UniverseFetchError("S&P 500 구성 종목을 받아 오지 못했습니다")
+
+    monkeypatch.setattr(client.route_module, "full_universe", fail)
+    response = client.post("/screener/scan", json={"market": "SP500"})
+    assert response.status_code == 502
+    assert "받아 오지 못했습니다" in response.json()["detail"]
+
+
+def test_scan_route_runs_full_index_universe(screener_client, monkeypatch):
+    client, calls = screener_client
+    monkeypatch.setattr(client.route_module, "full_universe", lambda index: [
+        {"ticker": f"T{i}", "name": f"T{i}", "market": "US"} for i in range(7)
+    ])
+    events = _events(client.post("/screener/scan", json={"market": "SP500", "end_date": "2026-09-23"}).text)
+    assert events[0][1]["total"] == 7
+    assert len(calls) == 7

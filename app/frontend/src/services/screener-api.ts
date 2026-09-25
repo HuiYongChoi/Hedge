@@ -7,7 +7,8 @@ const API_BASE_URL = import.meta.env.VITE_API_URL ||
     ? 'http://localhost:8000'
     : '/hedge-api');
 
-export type ScreenerMarket = 'ALL' | 'KR' | 'US';
+// ALL·KR·US: 대형주 고정 목록 / SP500·KOSPI: 스캔 시점의 지수 전체 구성 종목
+export type ScreenerMarket = 'ALL' | 'KR' | 'US' | 'SP500' | 'KOSPI';
 
 export type ScreenerVerdict =
   | 'buy'
@@ -81,7 +82,11 @@ export const screenerApi = {
           body: JSON.stringify({ market, refresh }),
           signal: controller.signal,
         });
-        if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok || !response.body) {
+          // 지수 구성 종목을 못 받아 오면 서버가 이유를 detail 에 담아 보낸다.
+          const detail = await response.json().then(body => body?.detail).catch(() => null);
+          throw new Error(typeof detail === 'string' ? detail : `HTTP ${response.status}`);
+        }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
