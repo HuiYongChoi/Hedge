@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/contexts/language-context';
 import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
-import { Archive, Database, House, Network, PanelBottom, PanelLeft, PanelRight, Search, Settings, Workflow } from 'lucide-react';
+import { Archive, BadgeCheck, Database, House, Network, PanelBottom, PanelLeft, PanelRight, Search, Settings, Workflow } from 'lucide-react';
 
 interface TopBarProps {
   isFlowTab: boolean;
@@ -23,6 +23,7 @@ interface TopBarProps {
   onFlowClick: () => void;
   onSavedAnalysesClick: () => void;
   onStockCompareClick: () => void;
+  onQualityBuyClick: () => void;
 }
 
 export function TopBar({
@@ -44,6 +45,7 @@ export function TopBar({
   onFlowClick,
   onSavedAnalysesClick,
   onStockCompareClick,
+  onQualityBuyClick,
 }: TopBarProps) {
   const { language } = useLanguage();
   const navButtonClass = "h-8 gap-1.5 rounded-full px-2.5 text-muted-foreground hover:text-foreground hover:bg-ramp-grey-700 transition-colors";
@@ -172,6 +174,19 @@ export function TopBar({
       >
         <Network size={16} />
         <span className="hidden 2xl:inline">{t('stockCompare', language)}</span>
+      </Button>
+
+      {/* Buy Candidates */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onQualityBuyClick}
+        className={navButtonClass}
+        aria-label="Open Buy Candidates"
+        title="Buy Candidates (매수 후보)"
+      >
+        <BadgeCheck size={16} />
+        <span className="hidden 2xl:inline">{t('qualityBuy', language)}</span>
       </Button>
 
       {/* Saved Analyses */}

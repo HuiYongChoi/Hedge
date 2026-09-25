@@ -16,6 +16,7 @@ from app.backend.services.portfolio import create_portfolio
 from app.backend.services.backtest_service import BacktestService
 from app.backend.services.api_key_service import ApiKeyService
 from src.utils.progress import progress
+from src.screener.quality_buy import SCREENER_AGENT_PREFIX
 from src.utils.analysts import get_agents_list
 from src.tools.api import (
     _line_items_newer_than_metrics,
@@ -389,6 +390,8 @@ async def run(request_data: HedgeFundRequest, request: Request, db: Session = De
 
             # Simple handler to add updates to the queue
             def progress_handler(agent_name, ticker, status, analysis, timestamp):
+                if agent_name and agent_name.startswith(SCREENER_AGENT_PREFIX):
+                    return  # 동시에 도는 매수 후보 스캔의 진행 — 이 분석과 무관하다
                 event = ProgressUpdateEvent(agent=agent_name, ticker=ticker, status=status, timestamp=timestamp, analysis=analysis)
                 progress_queue.put_nowait(event)
 
@@ -577,6 +580,8 @@ async def backtest(request_data: BacktestRequest, request: Request, db: Session 
 
             # Global progress handler to capture individual agent updates during backtest
             def progress_handler(agent_name, ticker, status, analysis, timestamp):
+                if agent_name and agent_name.startswith(SCREENER_AGENT_PREFIX):
+                    return  # 동시에 도는 매수 후보 스캔의 진행 — 이 백테스트와 무관하다
                 event = ProgressUpdateEvent(agent=agent_name, ticker=ticker, status=status, timestamp=timestamp, analysis=analysis)
                 progress_queue.put_nowait(event)
 

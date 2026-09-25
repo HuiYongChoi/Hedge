@@ -75,6 +75,11 @@ function LayoutContent() {
     openTab(tabData);
   };
 
+  const handleQualityBuyClick = () => {
+    const tabData = TabService.createQualityBuyTab();
+    openTab(tabData);
+  };
+
   const handleFlowClick = useCallback(async () => {
     if (hasFlowTab) {
       focusFirstFlowTab();
@@ -212,6 +217,7 @@ function LayoutContent() {
             onFlowClick={handleFlowClick}
             onSavedAnalysesClick={handleSavedAnalysesClick}
             onStockCompareClick={handleStockCompareClick}
+            onQualityBuyClick={handleQualityBuyClick}
           />
         </div>
       </div>
