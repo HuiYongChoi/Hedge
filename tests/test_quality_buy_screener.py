@@ -542,3 +542,29 @@ def test_ticker_cache_stores_point_at_real_caches():
     assert all(isinstance(s, dict) for s in stores)
     # 샌드박스 수정값이 들어가는 재무 항목 캐시는 목록에 없다.
     assert not any(s is data_api._cache._line_items_cache for s in stores)
+
+
+# ── 데이터가 빈 것과 약한 것을 구분 ────────────────────────────────────────
+
+
+def test_axis_with_all_metrics_missing_is_no_data_not_weak():
+    fundamentals = _fundamentals("bullish", "bullish", "bearish")
+    fundamentals["reasoning"]["financial_health_signal"]["details"] = "Current Ratio: N/A, D/E: N/A"
+    result = classify(fundamentals, _valuation(0.3))
+    assert result["quality"]["financial_health"] is None
+    assert result["quality"]["bearish"] == 0 and result["verdict"] == "buy"
+
+
+def test_axis_with_real_low_numbers_stays_weak():
+    fundamentals = _fundamentals("bullish", "bullish", "bearish")
+    fundamentals["reasoning"]["financial_health_signal"]["details"] = "Current Ratio: 0.90, D/E: N/A"
+    assert classify(fundamentals, _valuation(0.3))["verdict"] == "not_quality"
+
+
+def test_scan_mode_skips_alpha_vantage(monkeypatch):
+    def no_network(*args, **kwargs):
+        raise AssertionError("대량 스캔에서는 Alpha Vantage 를 부르지 않는다")
+
+    monkeypatch.setattr(data_api.requests, "get", no_network)
+    with data_api.free_sources_only():
+        assert data_api._fetch_alphavantage_metrics("AAPL") is None

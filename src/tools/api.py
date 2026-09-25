@@ -115,6 +115,7 @@ def _filter_usable_line_items(items: list[LineItem], requested_fields: list[str]
 
 
 # Financial Datasets 를 건너뛰고 무료 공식·공개 소스(DART·SEC·yfinance 등)만 쓰게 하는 스위치.
+# 하루 25건 한도인 Alpha Vantage 도 건너뛴다(_fetch_alphavantage_metrics 참고).
 # 수백 종목을 훑는 스크리너가 켠다 — 유료 API 사용량을 쓰지 않고, 요청 한도(429)에 걸려
 # 요청마다 최대 4분 넘게 기다리는 일도 없앤다. 컨텍스트 변수라 켠 스레드·작업에만 적용된다.
 _FREE_SOURCES_ONLY: contextvars.ContextVar[bool] = contextvars.ContextVar("free_sources_only", default=False)
@@ -1294,6 +1295,10 @@ def _fetch_fdr_prices(ticker: str, start_date: str, end_date: str) -> list[Price
 
 
 def _fetch_alphavantage_metrics(ticker: str) -> dict | None:
+    if _FREE_SOURCES_ONLY.get():
+        # 대량 스캔에서는 건너뛴다 — 무료 한도가 하루 25건이라 종목마다 소스가 들쭉날쭉해지고,
+        # 유동비율·부채비율이 없어 재무건전성이 '약함'으로 잘못 매겨진다(yfinance 는 있다).
+        return None
     av_key = "QCE8EC5Q5OP74PYD"
     try:
         url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={ticker}&apikey={av_key}"

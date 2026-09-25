@@ -63,7 +63,7 @@ def classify(fundamentals: Optional[dict], valuation: Optional[dict]) -> dict:
 
     reasoning = fundamentals.get("reasoning") or {}
     axes = {
-        axis: (reasoning.get(key) or {}).get("signal")
+        axis: _axis_signal(reasoning.get(key) or {})
         for axis, key in QUALITY_AXES.items()
     }
     bullish = sum(1 for s in axes.values() if s == "bullish")
@@ -85,6 +85,21 @@ def classify(fundamentals: Optional[dict], valuation: Optional[dict]) -> dict:
     else:
         verdict = "watch"
     return {"verdict": verdict, "quality": quality, "value": value}
+
+
+def _axis_signal(block: dict) -> Optional[str]:
+    """항목 신호. 수치가 전부 없어서 '약세'가 된 경우는 '데이터 없음'(None)으로 본다.
+
+    펀더멘털 에이전트는 없는 수치를 기준 미달과 똑같이 0점으로 세어, 데이터가 비면
+    '약세'가 된다. 그러면 소스가 잠깐 비었을 뿐인 우량주가 품질 미달로 떨어진다.
+    """
+    signal = block.get("signal")
+    details = block.get("details")
+    if signal == "bearish" and isinstance(details, str):
+        values = [part.split(":", 1)[1].strip() for part in details.split(",") if ":" in part]
+        if values and all(value == "N/A" for value in values):
+            return None
+    return signal
 
 
 def _value_block(valuation: Optional[dict]) -> dict:
