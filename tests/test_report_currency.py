@@ -51,7 +51,7 @@ def test_explicit_dollar_amount_is_left_alone():
 
 def test_munger_amounts_follow_the_report_currency():
     analysis = {
-        "currency": "USD",
+        "money_unit": "달러",
         "valuation_analysis": {
             "normalized_fcf": 7_200_000_000,
             "intrinsic_value_range": {"reasonable": 180_643_000_000},

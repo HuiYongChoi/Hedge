@@ -301,6 +301,9 @@ function dropOrphanClosingParens(text: string): string {
 // 체크박스·미해결 마커가 본문에 그대로 인쇄된다("검토 필요 - [ ] 위험관리", "[?] 경영진 종합평가").
 function stripLeftoverMarkers(text: string): string {
   return text
+    // "[원문] “And …”" 같은 한글 라벨 괄호는 마커가 아니라 이름표다. 아래 규칙이 여는 괄호만
+    // 지우면 "원문] “And …”"처럼 닫는 괄호가 홀로 남는다(실측). 괄호만 벗겨 이름표를 살린다.
+    .replace(/\[\s*([가-힣][가-힣\s·/]{0,10}?)\s*\]/gu, '$1')
     .replace(/\[\s*[?xX✓!]?\s*\]\s*/gu, '')
     // 닫히지 않은 마커 조각("- [! - [! 핵심")도 본문에 그대로 인쇄된다.
     // 짝이 맞는 마커는 위에서 이미 지웠다. 여기 남은 여는 대괄호는 깨진 조각이다.
@@ -832,6 +835,8 @@ export function normalizeTruncatedDecimals(text: string): string {
     //    '7' + '70%' + '%' = "770%%" 가 됐다(실측: MCD). 앞이 숫자이거나 뒤에 % 가 붙은
     //    값은 이미 사람이 읽을 수 있는 숫자다.
     .replace(
+      //: 앞이 숫자면 "28.16%"의 소수부(.16)다 — 여기서 잡으면 "2816%%"가 된다(실측).
+      //: 뒤 공백은 닫는 괄호가 있을 때만 먹는다 — 무조건 먹으면 "25%이상" 처럼 붙는다.
       /((?:안전마진|margin\s*of\s*safety)[^.\n]{0,24}?)\(?\s*(?<![\d.])(-?0?\.\d{1,4})(?![\d%])(?:\s*\))?/giu,
       // 사이의 공백·괄호를 먹으므로 한 칸을 되돌린다("안전마진 -0.43" → "안전마진-43%" 방지).
       (_full, prefix: string, num: string) => `${prefix.trimEnd()} ${tidyDecimal(Number(num) * 100)}%`,
@@ -872,14 +877,70 @@ export function normalizeRatiosWrittenAsDecimals(text: string): string {
   });
 }
 
+//: 금액 단위는 앞뒤 문맥으로 정한다. 미국 종목(10-K)의 "내재가치 250,173,866,221.35"를
+//: '조 원'으로 적으면 통화가 틀린다(실측). 단위를 모르면 붙이지 않는다 — 틀린 단위보다 낫다.
+const USD_CONTEXT_RE = /\$|US\$|\bUSD\b|달러|\b10-[KQ]\b|\bSEC\b/iu;
+const KRW_CONTEXT_RE = /₩|\bKRW\b|DART|원화|(?:\d\s*|조\s*|억\s*)원(?!문|칙|인|래)/u;
+const TRAILING_UNIT_RE = /^\s*(?:원|달러|USD|KRW|won|dollars?)(?![A-Za-z])/iu;
+
+export type AmountCurrencyUnit = '원' | '달러' | '엔' | '';
+
+//: 카드 한 장의 문장에는 통화 단서가 없는 경우가 많다. 리포트 화면이 종목의 상장 시장으로
+//: 단위를 알려 준다(한국 → 원, 미국 → 달러, 일본 → 엔). 모르면 빈 값 — 단위를 붙이지 않는다.
+let amountCurrencyHint: AmountCurrencyUnit = '';
+
+export function setAmountCurrencyHint(unit: AmountCurrencyUnit): void {
+  amountCurrencyHint = unit;
+}
+
+function amountCurrency(before: string, after: string, whole: string): AmountCurrencyUnit {
+  //: 바로 앞 기호가 가장 확실하다("$250,173,…"). 그다음 가까운 문맥, 종목 시장, 글 전체 순.
+  if (/(?:\$|US\$)\s*$/u.test(before)) return '달러';
+  if (/₩\s*$/u.test(before)) return '원';
+  if (/[¥￥]\s*$/u.test(before)) return '엔';
+  const scopes = [`${before} ${after}`, whole];
+  for (const [index, scope] of scopes.entries()) {
+    if (index === 1 && amountCurrencyHint) return amountCurrencyHint;
+    const usd = USD_CONTEXT_RE.test(scope);
+    const krw = KRW_CONTEXT_RE.test(scope);
+    if (usd !== krw) return usd ? '달러' : '원';
+  }
+  return amountCurrencyHint;
+}
+
+function formatKoreanScale(value: number): string {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (abs >= 1e12) {
+    const jo = abs / 1e12;
+    return `${sign}${jo >= 100 ? Math.round(jo).toLocaleString('en-US') : Number(jo.toFixed(1))}조`;
+  }
+  const eok = abs / 1e8;
+  return `${sign}${eok >= 100 ? Math.round(eok).toLocaleString('en-US') : Number(eok.toFixed(1))}억`;
+}
+
 export function normalizeOversizedAmounts(text: string): string {
   return text
-    .replace(/(?<![\d.])\d{1,3}(?:,\d{3}){3,}(?:\.\d+)?/gu, raw => {
-      const value = Number(raw.replace(/,/g, ''));
-      if (!Number.isFinite(value) || Math.abs(value) < 1e12) return raw;
-      const jo = value / 1e12;
-      return `약 ${jo >= 100 ? Math.round(jo) : Number(jo.toFixed(1))}조 원`;
-    })
+    //: 자릿점이 셋 이상(10억 이상)이면 자릿수를 세야 읽힌다. "250,173,866,221.35" → "약 2,502억 달러".
+    //: 자릿점 없는 긴 수("250173866221.35")도 같다 — 단, 앞에 금액 라벨이 있을 때만(종목코드·연도 보호).
+    .replace(
+      /(?<![\d.,])(?:\d{1,3}(?:,\d{3}){3,}|(?<=(?:내재가치|적정가치|기업가치|시가총액|FCFF?|DCF|현금흐름|순이익|매출)[^\d\n]{0,12})\d{10,})(?:\.\d+)?(?![\d,])/gu,
+      (raw: string, offset: number, whole: string) => {
+        const value = Number(raw.replace(/,/g, ''));
+        if (!Number.isFinite(value) || Math.abs(value) < 1e8) return raw;
+        const after = whole.slice(offset + raw.length);
+        const scaled = `약 ${formatKoreanScale(value)}`;
+        //: 원문에 단위가 이미 붙어 있으면 그 단위를 쓴다(아래에서 한국어 단위로 맞춘다).
+        if (TRAILING_UNIT_RE.test(after)) return /^\s/u.test(after) ? scaled : `${scaled} `;
+        const before = whole.slice(Math.max(0, offset - 60), offset);
+        const unit = amountCurrency(before, after.slice(0, 60), whole);
+        return unit ? `${scaled} ${unit}` : scaled;
+      },
+    )
+    //: 기호는 단위로 옮겼으니 지운다("$약 2,502억 달러" → "약 2,502억 달러").
+    .replace(/(?:US\$|\$|₩|[¥￥])\s*(?=약\s*-?[\d,.]+(?:조|억))/gu, '')
+    .replace(/((?:조|억))\s*(?:USD|dollars?)(?![A-Za-z])/giu, '$1 달러')
+    .replace(/((?:조|억))\s*달러/gu, '$1 달러')
     // 원문에 이미 단위가 붙어 있으면 '973조 원원'이 된다(실측).
     // '원원'은 한국어에 없다 — 변환된 단위 뒤에 원문의 단위가 남은 흔적이므로 무조건 하나로.
     // (lookahead 로 뒤를 막으면 조사가 붙는 '원원으로'·'원원과'를 놓친다.)

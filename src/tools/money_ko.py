@@ -12,20 +12,21 @@ _JO = 1_000_000_000_000        # 조
 _EOK = 100_000_000             # 억
 
 
-# 금액 뒤에 붙일 한국어 통화 이름. 모르는 통화는 코드를 그대로 붙인다.
-_CURRENCY_WORD_KO = {"KRW": "원", "USD": "달러", "JPY": "엔", "EUR": "유로", "CNY": "위안"}
+# 시장 → 통화 단위. 미국 종목의 달러 금액을 '원'으로 적으면 크기도 통화도 틀린다(실측).
+_MARKET_UNIT = {"KR": "원", "US": "달러", "JP": "엔"}
 
 
-def format_money_ko(value: Optional[float], currency: Optional[str] = None) -> str:
-    """금액을 통화에 맞는 한국어 단위로 → '973조 원' / '1,806억 달러'.
+def currency_unit_for(ticker: str) -> str:
+    """티커의 상장 시장으로 금액 단위('원'/'달러'/'엔')를 정한다."""
+    from src.tools.filings import detect_market
 
-    통화를 모르면 원화로 본다(종전 동작). 달러 종목을 원화로 적으면 '1,806억 원'이
-    되는데, 실제로는 약 250조 원이라 크기가 140배 틀린다(실측: 맥도날드 보고서).
-    """
+    return _MARKET_UNIT.get(detect_market(ticker), "달러")
+
+
+def format_money(value: Optional[float], unit: str = "원") -> str:
+    """금액 → '973조 원' / '2,502억 달러' / '4,250억 원'. 단위는 통화 이름."""
     if value is None:
         return "확인 불가"
-    code = (currency or "KRW").upper()
-    unit = _CURRENCY_WORD_KO.get(code, code)
     magnitude = abs(value)
     sign = "-" if value < 0 else ""
     if magnitude >= _JO:
@@ -35,19 +36,19 @@ def format_money_ko(value: Optional[float], currency: Optional[str] = None) -> s
         return f"{sign}{text} {unit}"
     if magnitude >= _EOK:
         return f"{sign}{magnitude / _EOK:,.0f}억 {unit}"
-    return f"{sign}{magnitude:,.0f}{unit}"
+    return f"{sign}{magnitude:,.0f}{unit}" if unit == "원" else f"{sign}{magnitude:,.0f} {unit}"
 
 
 def format_krw(value: Optional[float]) -> str:
     """원 단위 금액 → '약 973조 원' / '1,802조 원' / '4,250억 원'."""
-    return format_money_ko(value, "KRW")
+    return format_money(value, "원")
 
 
 def describe_valuation_gap(
     intrinsic_value: Optional[float],
     market_cap: Optional[float],
     margin_of_safety: Optional[float],
-    currency: Optional[str] = None,
+    unit: str = "원",
 ) -> str:
     """'내재가치 얼마 vs 시가총액 얼마 → 그래서 싼가 비싼가'를 한 문단으로.
 
@@ -57,8 +58,8 @@ def describe_valuation_gap(
         return ""
 
     gap = margin_of_safety if margin_of_safety is not None else (intrinsic_value - market_cap) / market_cap
-    intrinsic_text = format_money_ko(intrinsic_value, currency)
-    market_text = format_money_ko(market_cap, currency)
+    intrinsic_text = format_money(intrinsic_value, unit)
+    market_text = format_money(market_cap, unit)
 
     if gap >= 0.25:
         verdict = (f"계산된 값이 시장가보다 {gap:.0%} 큽니다. 이 계산 기준으로는 "
