@@ -26,7 +26,10 @@ class ReportQualityRubricTests(unittest.TestCase):
         text = FIXTURE.read_text(encoding="utf-8")
         for defect in ("[#+]", "period:", "base_fcff", "**", "표기되지만,",
                        "점검한 항목 수", "Alignment", "확인 필요", "growth_analysis",
-                       "낮음 입니다"):
+                       "낮음 입니다",
+                       # 2026-09-25 MCD: 770%% · 밸류에이션.2 · 이익률 안전 · val analysis
+                       "7.70%", "((19.2))", "margin_of_safety", "forward_val_analysis",
+                       "current_pe"):
             self.assertIn(defect, text, f"실측 결함 '{defect}' 이 고정 데이터에 있어야 한다")
 
     @unittest.skipUnless(NODE.exists() and (FRONTEND / "node_modules/typescript").exists(),

@@ -127,6 +127,13 @@ const RUBRIC = [
       });
       return hits;
     } },
+  // 2026-09-25 실측(MCD): 숫자를 고치는 규칙이 이미 사람이 읽을 수 있는 숫자를 다시 건드렸다.
+  { id: 'doublepct',  w: 12, label: '퍼센트 기호 중복 ("770%%")',
+    bad: /%\s*%/g },
+  { id: 'cutnumber',  w: 12, label: '숫자 앞부분이 잘려 소수점만 남음 ("밸류에이션.2이")',
+    bad: /[가-힣)]\.\d/gu },
+  { id: 'splitfield', w: 10, label: '필드명을 낱말로 쪼개 뜻이 틀어짐 ("이익률 안전", "유동 PER")',
+    bad: /이익률\s*안전|상대가치\s+가치\s+분석|유동\s+PER|\bval\s+analysis\b/gu },
   { id: 'noisyratio', w: 6,  label: '배율의 불필요한 소수 둘째 자리 (206.12)',
     bad: /(?:배율|비율)\s*\d+\.\d{2,}/g },
   { id: 'brokenmark', w: 8,  label: '깨진 마커 ("[!", "- [!")',

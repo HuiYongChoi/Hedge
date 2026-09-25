@@ -185,7 +185,11 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
 
         # 내재가치만 던지면 독자가 시가총액을 찾아 직접 나눠 봐야 한다.
         # '얼마 vs 얼마 → 그래서 싼가 비싼가'를 여기서 문장으로 만들어 둔다.
-        gap_text = describe_valuation_gap(intrinsic_value, market_cap, margin_of_safety)
+        # 통화를 넘기지 않으면 원화로 적힌다 — 달러 종목이 '1,806억 원'이 된다(실측: MCD).
+        report_currency = getattr(metrics[0], "currency", None) if metrics else None
+        gap_text = describe_valuation_gap(
+            intrinsic_value, market_cap, margin_of_safety, currency=report_currency,
+        )
         if gap_text:
             intrinsic_val_analysis = {**intrinsic_val_analysis, "meaning_ko": gap_text}
             details = list(intrinsic_val_analysis.get("details") or [])
@@ -1314,7 +1318,13 @@ def generate_damodaran_output(
                 - **내재가치를 말할 때는 반드시 시가총액과 견주어라.** 계산값만 적으면
                   싼지 비싼지 알 수 없다. `intrinsic_val_analysis.meaning_ko` 에
                   '얼마 vs 얼마 → 그래서 싼가 비싼가'가 문장으로 들어 있으니 그대로 쓰라.
-                  금액은 '973조 원'처럼 한국어 단위로 적고, 자릿수를 늘어놓지 마라.
+                  금액은 '973조 원', '1,806억 달러'처럼 한국어 단위로 적고, 자릿수를 늘어놓지 마라.
+                  통화는 `meaning_ko` 에 적힌 것을 그대로 따르라 — 달러 금액을 '원'으로 바꿔 적으면
+                  크기가 수백 배 틀린다.
+                - **분석 데이터의 영문 키 이름(`margin_of_safety`, `forward_val_analysis`,
+                  `price_to_earnings_ratio` 등)을 본문에 쓰지 마라.** 안전마진, 선행 DCF,
+                  PER처럼 한국어 이름만 쓴다. 비율 값(0.077)은 퍼센트(7.7%)로 한 번만 적고,
+                  괄호 안에 괄호를 겹치지 마라.
                 - **틀(프레임워크) 제목만 적고 끝내지 마라.** "Story → Numbers",
                   "가치(Value): FCFF DCF + 안전마진 + 상대가치 체크" 같은 목차성 문구는
                   독자에게 아무 정보가 아니다. 그 틀로 이 기업을 실제로 판정한 결과를 쓰거나,

@@ -170,13 +170,17 @@ def test_gap_notice_states_the_gap_not_the_numbers_again():
 
 
 def test_market_implied_eps_shows_the_multiple_not_just_the_number():
-    """EPS 하나만 있으면 비싼지 싼지 알 수 없다 — 현재가 기준 PER 로도 보여준다."""
+    """EPS 하나만 있으면 비싼지 싼지 알 수 없다 — 그 이익으로 본 PER 로도 보여준다.
+
+    라벨이 '현재가 기준 PER' 이던 때는 헤더의 실제 PER(19.2)과 나란히 25.5 가 떠서
+    두 PER 이 모순처럼 읽혔다(실측: MCD). 이 값은 '암묵 이익으로 나눈' PER 이다.
+    """
     helpers = (V5_DIR / "helpers.ts").read_text(encoding="utf-8")
     language = LANG_PREFS.read_text(encoding="utf-8")
 
     assert "(price / impliedEps).toFixed(1)" in helpers
     assert "marketImpliedPerLabel" in helpers
-    assert "marketImpliedPerLabel: '현재가 기준 PER'" in language
+    assert "marketImpliedPerLabel: '이 이익 기준 PER'" in language
 
 
 def test_sticky_header_price_is_the_largest_chip():

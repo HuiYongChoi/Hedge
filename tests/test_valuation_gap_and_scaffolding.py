@@ -8,7 +8,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.tools.money_ko import describe_valuation_gap, format_krw  # noqa: E402
+from src.tools.money_ko import describe_valuation_gap, format_krw, format_money_ko  # noqa: E402
 
 AGENT = (ROOT / "src/agents/aswath_damodaran.py").read_text(encoding="utf-8")
 HELPERS = (ROOT / "app/frontend/src/components/reports/analyst-report-v5/helpers.ts").read_text(encoding="utf-8")
@@ -24,6 +24,16 @@ class MoneyFormatTests(unittest.TestCase):
 
     def test_missing_value_is_not_fabricated(self):
         self.assertEqual(format_krw(None), "확인 불가")
+
+    def test_dollar_amount_is_not_written_in_won(self):
+        """실측(MCD): 달러 기업가치 1,806억 달러가 원 단위로 적혀 크기가 틀렸다."""
+        self.assertEqual(format_money_ko(180_643_000_000, "USD"), "1,806억 달러")
+        self.assertEqual(format_money_ko(1_200_000_000_000, "usd"), "1.2조 달러")
+        self.assertEqual(format_money_ko(3_500_000_000_000, "JPY"), "3.5조 엔")
+        # 모르는 통화는 코드를 붙인다 — 원으로 둔갑시키지 않는다.
+        self.assertEqual(format_money_ko(250_000_000_000, "CHF"), "2,500억 CHF")
+        # 통화를 모르면 종전대로 원화.
+        self.assertEqual(format_money_ko(425_000_000_000), "4,250억 원")
 
 
 class ValuationGapTests(unittest.TestCase):
@@ -48,6 +58,18 @@ class ValuationGapTests(unittest.TestCase):
 
     def test_missing_market_cap_yields_nothing(self):
         self.assertEqual(describe_valuation_gap(1e15, None, None), "")
+
+    def test_dollar_company_comparison_uses_dollars(self):
+        text = describe_valuation_gap(180_643_000_000, 167_725_000_000, None, currency="USD")
+        self.assertIn("1,806억 달러", text)
+        self.assertIn("1,677억 달러", text)
+        self.assertNotIn("억 원", text)
+        self.assertNotIn("조 원", text)
+
+    def test_agent_passes_the_report_currency(self):
+        """통화를 안 넘기면 달러 종목이 다시 원으로 적힌다."""
+        self.assertIn("currency=report_currency", AGENT)
+        self.assertIn("'1,806억 달러'", AGENT)
 
     def test_agent_attaches_the_comparison(self):
         self.assertIn("from src.tools.money_ko import describe_valuation_gap", AGENT)

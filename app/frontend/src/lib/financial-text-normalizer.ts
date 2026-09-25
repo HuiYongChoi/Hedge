@@ -117,6 +117,9 @@ function normalizeKoreanEnglishRedundancy(text: string): string {
   return text
     .replace(/(관망|중립|보유|매수|매도|강세|약세)\s*\(\s*(?:neutral|hold|buy|sell|watch|bullish|bearish)\s*\)/giu, '$1')
     .replace(/신뢰도\s*\(\s*confidence\s*\)/giu, '신뢰도')
+    // 필드명을 옮기고 나면 괄호가 앞말을 되풀이한다: "안전마진(base margin_of_safety)"
+    // → "안전마진(base 안전마진)"(실측: MCD). 앞말과 같은 이름이면 괄호째 접는다.
+    .replace(/(안전마진|내재가치|할인율)\s*\(\s*(?:base|기본|기준)?\s*\1\s*\)/giu, '$1')
     .replace(/["'“”]?\bfresh\s+high\b["'“”]?/giu, '신고점')
     // 볼드 마커(**)가 조사 앞에 끼는 경우("low**로")까지 처리하고, 조사도 '으로'로 교정
     .replace(/\blow(\*\*)?로/giu, '낮음$1으로')
@@ -258,14 +261,41 @@ export function dropUnclosedParenthetical(text: string): string {
     }
     if (depth === 0 || openAt < 0) break;
     // 닫히지 않은 괄호부터 문장 끝(또는 글 끝)까지가 깨진 조각이다.
+    // 숫자 사이의 점은 소수점이지 문장 끝이 아니다. 소수점에서 끊으면 "밸류에이션(19.2)"이
+    // "밸류에이션.2"로 잘린다(실측: MCD).
     const rest = out.slice(openAt);
-    const stop = rest.search(/[.。!?]/u);
+    const stop = rest.search(/[。!?]|(?<!\d)\.|\.(?!\d)/u);
     out = stop >= 0
       ? `${out.slice(0, openAt).trimEnd()}${rest.slice(stop)}`
       : out.slice(0, openAt).trimEnd();
   }
   // 여는 괄호 없이 남은 닫는 괄호도 잡음이다.
-  return out.replace(/(?<![(（][^)）]{0,200})\s*[)）]/gu, '').replace(/\s{2,}/g, ' ');
+  return dropOrphanClosingParens(out).replace(/\s{2,}/g, ' ');
+}
+
+/**
+ * 짝이 없는 닫는 괄호만 지운다.
+ *
+ * 예전에는 "앞에 '(' 가 있고 그 사이에 ')' 가 없으면 짝"이라는 정규식으로 봤다.
+ * 그러면 중첩 괄호의 바깥 짝을 못 찾아 "((19.2))" 가 "((19.2)" 로 깨지고, 그 열린
+ * 괄호를 위 단계가 다시 잘라 내면서 숫자가 사라졌다. 깊이를 세면 중첩도 맞는다.
+ */
+function dropOrphanClosingParens(text: string): string {
+  let depth = 0;
+  let out = '';
+  for (const char of text) {
+    if (char === '(' || char === '（') {
+      depth += 1;
+    } else if (char === ')' || char === '）') {
+      if (depth === 0) {
+        out = out.replace(/\s+$/u, '');
+        continue;
+      }
+      depth -= 1;
+    }
+    out += char;
+  }
+  return out;
 }
 
 // 체크박스·미해결 마커가 본문에 그대로 인쇄된다("검토 필요 - [ ] 위험관리", "[?] 경영진 종합평가").
@@ -544,6 +574,28 @@ const FIELD_WORD_KO: Record<string, string> = {
   val: '가치', checks: '항목', outstanding: '발행', expense: '비용', interest: '이자',
   depreciation: '감가상각', amortization: '상각', capital_expenditure: '설비투자',
   shareholders: '자기자본', equivalents: '성', sec: '공시', filing: '공시',
+  // 없으면 forward_* 필드가 "forward val analysis" 처럼 영어로 남는다(실측: MCD).
+  forward: '선행',
+};
+
+//: 낱말을 이어 붙이면 뜻이 어긋나는 이름은 통째로 옮긴다. 낱말 단위로 옮기면
+//: margin_of_safety → "이익률 안전", relative_val_analysis → "상대가치 가치 분석",
+//: current_pe → "유동 PER" 이 된다(실측: MCD). 가격 배수는 뒤에 숫자가 오면 아래
+//: normalizeRawFieldNames 가 이름째 지워 "밸류에이션(19.2)" 처럼 무엇의 값인지 사라졌다.
+const WHOLE_FIELD_KO: Record<string, string> = {
+  margin_of_safety: '안전마진',
+  forward_margin_of_safety: '선행 안전마진',
+  relative_val_analysis: '상대가치 분석',
+  intrinsic_val_analysis: '내재가치 분석',
+  forward_val_analysis: '선행 DCF 분석',
+  price_to_earnings_ratio: 'PER',
+  price_to_earnings: 'PER',
+  pe_ratio: 'PER',
+  trailing_pe: 'TTM PER',
+  current_pe: '현재 PER',
+  forward_pe: '선행 PER',
+  price_to_book_ratio: 'PBR',
+  price_to_book: 'PBR',
 };
 
 /** snake_case 필드명을 낱말 단위로 옮긴다. 모르는 낱말이 있으면 손대지 않는다. */
@@ -551,6 +603,8 @@ export function humanizeSnakeCaseFields(text: string): string {
   // 점으로 이어진 경로를 먼저 처리한다. 낱말 단위로만 바꾸면 "생애 주기.처방" 처럼
   // 점이 남아 문장이 끊겨 보인다(실측).
   const translateToken = (token: string): string | null => {
+    const whole = WHOLE_FIELD_KO[token.toLowerCase()];
+    if (whole) return whole;
     const words: string[] = [];
     for (const part of token.split('_')) {
       const mapped = FIELD_WORD_KO[part];
@@ -765,9 +819,13 @@ export function normalizeTruncatedDecimals(text: string): string {
       return tidyDecimal(value);
     })
     // 3) 안전마진은 비율로 적히면 크기가 안 읽힌다. "음수 (-0.43)" → "-43%"
+    //    숫자 한가운데의 소수점부터 잡으면 안 된다: "안전마진 7.70%" 의 '.70' 을 비율로 읽어
+    //    '7' + '70%' + '%' = "770%%" 가 됐다(실측: MCD). 앞이 숫자이거나 뒤에 % 가 붙은
+    //    값은 이미 사람이 읽을 수 있는 숫자다.
     .replace(
-      /((?:안전마진|margin\s*of\s*safety)[^.\n]{0,24}?)\(?\s*(-?0?\.\d{1,4})\s*\)?/giu,
-      (_full, prefix: string, num: string) => `${prefix}${tidyDecimal(Number(num) * 100)}%`,
+      /((?:안전마진|margin\s*of\s*safety)[^.\n]{0,24}?)\(?\s*(?<![\d.])(-?0?\.\d{1,4})(?![\d%])(?:\s*\))?/giu,
+      // 사이의 공백·괄호를 먹으므로 한 칸을 되돌린다("안전마진 -0.43" → "안전마진-43%" 방지).
+      (_full, prefix: string, num: string) => `${prefix.trimEnd()} ${tidyDecimal(Number(num) * 100)}%`,
     )
     // 4) 퍼센트는 소수 둘째 자리를 넘으면 정밀도가 아니라 잡음이다("12.999%" → "13%").
     .replace(/(\d+\.\d{3,})%/g, (_full, num: string) => `${tidyDecimal(Number(num))}%`)
