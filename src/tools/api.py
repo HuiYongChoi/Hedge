@@ -6,8 +6,10 @@ import os
 import pandas as pd
 import re
 import requests
+from dotenv import load_dotenv
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -219,6 +221,9 @@ def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None)
 
 
 # 키는 환경변수에서만 읽는다. 소스에 두면 저장소를 통해 그대로 유출된다.
+# 이 모듈은 src/main.py 의 load_dotenv() 보다 먼저 import 되므로, 여기서 직접
+# 저장소 루트의 .env 를 읽는다(이미 설정된 환경변수는 덮어쓰지 않는다).
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 FMP_API_KEY = os.environ.get("FMP_API_KEY", "")
 AV_API_KEY = os.environ.get("AV_API_KEY", "")
 FMP_STABLE_BASE = "https://financialmodelingprep.com/stable"
