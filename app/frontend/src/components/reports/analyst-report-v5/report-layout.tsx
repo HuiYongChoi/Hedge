@@ -5,6 +5,7 @@ import {
   formatDecisionReasoning,
   renderMarkdownBlocks,
 } from '@/lib/markdown-blocks';
+import { setAmountCurrencyHint, type AmountCurrencyUnit } from '@/lib/financial-text-normalizer';
 import { t } from '@/lib/language-preferences';
 import { analystTargetService } from '@/services/analyst-target-service';
 import type { AnalystTarget } from '@/services/analyst-target-service';
@@ -141,6 +142,8 @@ function countryFromTicker(ticker: string) {
   return 'US';
 }
 
+const AMOUNT_UNIT_BY_COUNTRY: Record<string, AmountCurrencyUnit> = { KR: '원', US: '달러', JP: '엔' };
+
 function numericConfidence(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -168,6 +171,9 @@ export function ReportLayout({
   const [isRefreshingMarketData, setIsRefreshingMarketData] = useState(false);
   const [stickyHeaderHost, setStickyHeaderHost] = useState<HTMLElement | null>(null);
   const { info } = useToastManager();
+  // 본문의 큰 금액("250,173,866,221.35")을 '약 2,502억 달러'로 읽힐 때 어느 통화인지는
+  // 문장만으로 알 수 없다. 자식 카드가 본문을 정규화하기 전에 종목 시장으로 단위를 알려 둔다.
+  setAmountCurrencyHint(AMOUNT_UNIT_BY_COUNTRY[countryFromTicker(activeTicker)]);
 
   useEffect(() => {
     setStickyHeaderHost(document.getElementById('stock-analysis-sticky-summary-slot'));
