@@ -472,3 +472,73 @@ def test_scan_ticker_runs_agents_on_free_sources_only():
     scan_ticker(ENTRY, "2026-09-25", KEYS, fundamentals_agent=agent, valuation_agent=agent)
     assert seen == [True, True]
     assert data_api._FREE_SOURCES_ONLY.get() is False
+
+
+# ── 메모리 — 수백 종목을 훑어도 캐시가 쌓이지 않는다 ─────────────────────────
+
+
+def test_sec_companyfacts_keeps_only_used_concepts_and_few_companies(monkeypatch):
+    used = next(iter(data_api._SEC_USED_CONCEPTS))
+    raw = {"cik": 1, "entityName": "X", "facts": {
+        "us-gaap": {used: {"units": {"USD": [{"val": 1}]}}, "SomethingUnused": {"units": {"USD": [{"val": 2}] * 1000}}},
+        "dei": {"EntityCommonStockSharesOutstanding": {}},
+    }}
+
+    class Resp:
+        status_code = 200
+
+        def json(self):
+            return raw
+
+    monkeypatch.setattr(data_api, "_resolve_sec_cik", lambda t: f"CIK{t}")
+    monkeypatch.setattr(data_api.requests, "get", lambda *a, **k: Resp())
+    monkeypatch.setattr(data_api, "_SEC_COMPANYFACTS_CACHE", data_api.OrderedDict())
+    monkeypatch.setattr(data_api, "_SEC_COMPANYFACTS_CACHE_MAX", 3)
+
+    facts = data_api._fetch_sec_companyfacts("AAA")
+    assert list(facts["facts"]["us-gaap"]) == [used]
+    assert "dei" not in facts["facts"]
+    for t in ("BBB", "CCC", "DDD"):
+        data_api._fetch_sec_companyfacts(t)
+    assert list(data_api._SEC_COMPANYFACTS_CACHE) == ["CIKBBB", "CIKCCC", "CIKDDD"]  # 가장 오래된 것부터 버림
+
+
+def test_release_ticker_caches_drops_only_what_the_scan_added(monkeypatch):
+    from src.screener import quality_buy as qb
+
+    prices, market_caps = {"AAPL_2020-01-01_2026-09-25": ["사용자가 이미 받아 둔 데이터"]}, {}
+    monkeypatch.setattr(qb, "_ticker_cache_stores", lambda: [prices, market_caps])
+
+    with qb.release_ticker_caches("AAPL"):
+        prices["AAPL_2016-01-01_2026-09-25"] = ["스캔이 받은 가격"]
+        prices["AAPLX_2016-01-01_2026-09-25"] = ["다른 종목"]
+        market_caps[("AAPL", "2026-09-25")] = 1.0
+        market_caps[("MSFT", "2026-09-25")] = 2.0  # 동시에 도는 다른 종목의 몫
+
+    assert set(prices) == {"AAPL_2020-01-01_2026-09-25", "AAPLX_2016-01-01_2026-09-25"}
+    assert set(market_caps) == {("MSFT", "2026-09-25")}
+
+
+def test_scan_ticker_releases_caches_even_when_an_agent_fails(monkeypatch):
+    from src.screener import quality_buy as qb
+
+    store = {}
+    monkeypatch.setattr(qb, "_ticker_cache_stores", lambda: [store])
+
+    def agent(state, agent_id):
+        store["AAPL_x"] = "큰 데이터"
+        raise RuntimeError("boom")
+
+    result = qb.scan_ticker(ENTRY, "2026-09-25", KEYS, fundamentals_agent=agent, valuation_agent=agent)
+    assert result["verdict"] == "insufficient"
+    assert store == {}
+
+
+def test_ticker_cache_stores_point_at_real_caches():
+    from src.screener import quality_buy as qb
+
+    stores = qb._ticker_cache_stores()
+    assert data_api._MARKET_CAP_CACHE in [s for s in stores if s is data_api._MARKET_CAP_CACHE]
+    assert all(isinstance(s, dict) for s in stores)
+    # 샌드박스 수정값이 들어가는 재무 항목 캐시는 목록에 없다.
+    assert not any(s is data_api._cache._line_items_cache for s in stores)
