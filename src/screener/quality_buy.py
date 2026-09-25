@@ -12,7 +12,8 @@
 · 관심 — 우량하지만 아직 매수 문턱에 못 미치고, 적정가보다 10% 넘게 비싸지는 않은 종목.
   조정이 오면 먼저 매수 구간에 들어올 종목이라, 매수 구간까지 필요한 하락폭을 함께 준다.
 
-두 에이전트 모두 LLM 을 부르지 않으므로 종목당 데이터 조회 시간만 든다.
+두 에이전트 모두 LLM 을 부르지 않으므로 종목당 데이터 조회 시간만 든다. 데이터도
+무료 공식·공개 소스(한국 DART, 미국 SEC·yfinance)만 쓴다.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from typing import Any, Callable, Optional
 
 from src.agents.fundamentals import fundamentals_analyst_agent
 from src.agents.valuation import valuation_analyst_agent
+from src.tools.api import free_sources_only
 from src.screener.universe import UniverseEntry
 
 #: 가치평가 에이전트의 매수·매도 문턱과 같은 값(src/agents/valuation.py 의 signal 판정).
@@ -136,7 +138,10 @@ def scan_ticker(
 
     def attempt(agent: AgentFn, name: str) -> Optional[dict]:
         try:
-            return _run_agent(agent, f"{SCREENER_AGENT_PREFIX}{name}", ticker, end_date, api_keys)
+            # 무료 소스만 쓴다(한국 DART, 미국 SEC·yfinance). 수백 종목을 훑어도 유료 API
+            # 사용량을 쓰지 않고, 요청 한도에 걸려 멈추지도 않는다.
+            with free_sources_only():
+                return _run_agent(agent, f"{SCREENER_AGENT_PREFIX}{name}", ticker, end_date, api_keys)
         except Exception as exc:  # 한 종목의 실패가 스캔 전체를 멈추면 안 된다
             errors.append(f"{name}: {exc}")
             return None

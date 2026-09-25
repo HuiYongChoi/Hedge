@@ -386,3 +386,36 @@ def test_scan_route_runs_full_index_universe(screener_client, monkeypatch):
     events = _events(client.post("/screener/scan", json={"market": "SP500", "end_date": "2026-09-23"}).text)
     assert events[0][1]["total"] == 7
     assert len(calls) == 7
+
+
+# ── 무료 소스만 쓰기 ─────────────────────────────────────────────────────────
+
+from src.tools import api as data_api  # noqa: E402
+
+
+def test_free_sources_only_skips_financial_datasets_without_network(monkeypatch):
+    def no_network(*args, **kwargs):
+        raise AssertionError("유료 API 를 부르면 안 된다")
+
+    monkeypatch.setattr(data_api.requests, "get", no_network)
+    monkeypatch.setattr(data_api.requests, "post", no_network)
+    with data_api.free_sources_only():
+        response = data_api._make_api_request("https://api.financialdatasets.ai/financial-metrics/?ticker=AAPL", {})
+        assert response.status_code == 503 and response.json() == {}
+        response = data_api._make_api_request("https://api.financialdatasets.ai/x", {}, method="POST", json_data={})
+        assert response.status_code == 503
+    # 블록을 나오면 원래대로 부른다.
+    with pytest.raises(AssertionError):
+        data_api._make_api_request("https://api.financialdatasets.ai/x", {})
+
+
+def test_scan_ticker_runs_agents_on_free_sources_only():
+    seen = []
+
+    def agent(state, agent_id):
+        seen.append(data_api._FREE_SOURCES_ONLY.get())
+        state["data"]["analyst_signals"][agent_id] = {"AAPL": _fundamentals("bullish", "bullish", "bullish")}
+
+    scan_ticker(ENTRY, "2026-09-25", KEYS, fundamentals_agent=agent, valuation_agent=agent)
+    assert seen == [True, True]
+    assert data_api._FREE_SOURCES_ONLY.get() is False
