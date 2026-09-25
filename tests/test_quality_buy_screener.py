@@ -323,29 +323,82 @@ def test_parse_naver_page_keeps_common_shares_and_finds_last_page():
     assert last_page == 19
 
 
-def test_fetch_kospi_walks_pages_until_the_last(monkeypatch):
-    pages = []
+class _FakeResponse:
+    def __init__(self, text="", payload=None):
+        self.text = text
+        self.encoding = None
+        self._payload = payload
 
-    class FakeResponse:
-        def __init__(self, text):
-            self.text = text
-            self.encoding = None
+    def json(self):
+        return self._payload
+
+
+def test_naver_desktop_walks_pages_until_the_last(monkeypatch):
+    pages = []
 
     def fake_get(url, **params):
         pages.append(params["page"])
-        # 페이지마다 다른 보통주 20개, 마지막 페이지는 3
         body = "".join(
             f'<a class="tltle" href="/item/main.naver?code={params["page"]:03d}{i:02d}0">종목</a>' for i in range(20)
         )
-        html = f'<table class="type_2">{body}</table><td class="pgRR"><a href="?page=3">맨뒤</a></td>'
-        return FakeResponse(html)
+        return _FakeResponse(f'<table class="type_2">{body}</table><td class="pgRR"><a href="?page=3">맨뒤</a></td>')
 
     monkeypatch.setattr(fu, "_get", fake_get)
     monkeypatch.setattr(fu.time, "sleep", lambda s: None)
-    monkeypatch.setattr(fu, "_cache", {})
-    with pytest.raises(fu.UniverseFetchError):  # 60개뿐 — 목록이 잘린 것으로 본다
-        fu.full_universe("KOSPI")
+    assert len(fu._kospi_from_naver_desktop()) == 60
     assert pages == [1, 2, 3]
+
+
+def test_naver_desktop_reports_what_it_got_when_the_table_is_missing(monkeypatch):
+    monkeypatch.setattr(fu, "_get", lambda url, **p: _FakeResponse("<html><title>점검 중</title></html>"))
+    with pytest.raises(fu.UniverseFetchError, match="점검 중"):
+        fu._kospi_from_naver_desktop()
+
+
+def test_naver_mobile_keeps_common_stocks_and_stops_at_total(monkeypatch):
+    calls = []
+
+    def fake_get(url, **params):
+        calls.append(params["page"])
+        stocks = [
+            {"itemCode": "005930", "stockName": "삼성전자", "stockEndType": "stock"},
+            {"itemCode": "005935", "stockName": "삼성전자우", "stockEndType": "stock"},
+            {"itemCode": "069500", "stockName": "KODEX 200", "stockEndType": "etf"},
+            {"itemCode": "000270", "stockName": "기아"},
+        ] if params["page"] == 1 else [{"itemCode": "000660", "stockName": "SK하이닉스", "stockEndType": "stock"}]
+        return _FakeResponse(payload={"stocks": stocks, "totalCount": 150})
+
+    monkeypatch.setattr(fu, "_get", fake_get)
+    monkeypatch.setattr(fu.time, "sleep", lambda s: None)
+    entries = fu._kospi_from_naver_mobile()
+    assert [e["ticker"] for e in entries] == ["005930.KS", "000270.KS", "000660.KS"]
+    assert entries[0]["name"] == "삼성전자"
+    assert calls == [1, 2]
+
+
+def test_parse_kind_corp_list_finds_code_column():
+    html = """
+    <table><tr><th>회사명</th><th>시장구분</th><th>종목코드</th><th>상장일</th></tr>
+    <tr><td>삼성전자</td><td>유가</td><td>005930</td><td>1975-06-11</td></tr>
+    <tr><td>기아</td><td>유가</td><td>270</td><td>1973-07-21</td></tr>
+    <tr><td>어떤우선주</td><td>유가</td><td>005935</td><td>1989-09-25</td></tr>
+    </table>"""
+    entries = fu.parse_kind_corp_list(html)
+    assert [(e["ticker"], e["name"]) for e in entries] == [("005930.KS", "삼성전자"), ("000270.KS", "기아")]
+
+
+def test_fetch_kospi_falls_back_and_explains_every_failure(monkeypatch):
+    many = [{"ticker": f"{i:05d}0.KS", "name": str(i), "market": "KR"} for i in range(350)]
+
+    def broken():
+        raise ValueError("JSON 아님")
+
+    monkeypatch.setattr(fu, "_KOSPI_SOURCES", (("A", broken), ("B", lambda: many[:10]), ("C", lambda: many)))
+    assert len(fu.fetch_kospi()) == 350
+
+    monkeypatch.setattr(fu, "_KOSPI_SOURCES", (("A", broken), ("B", lambda: many[:10])))
+    with pytest.raises(fu.UniverseFetchError, match="A: JSON 아님 / B: 10개뿐"):
+        fu.fetch_kospi()
 
 
 def test_full_universe_wraps_network_errors_and_caches_success(monkeypatch):
