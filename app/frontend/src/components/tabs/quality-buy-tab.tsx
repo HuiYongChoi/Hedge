@@ -32,6 +32,7 @@ import {
   Download,
   FileText,
   HelpCircle,
+  Info,
   Link2,
   Loader2,
   Play,
@@ -84,8 +85,8 @@ const SECTIONS: { verdict: ScreenerVerdict; ko: string; en: string; koHint: stri
     verdict: 'quality_expensive',
     ko: '우량 · 비쌈',
     en: 'Quality · expensive',
-    koHint: '우량하지만 계산한 적정가가 시가총액보다 10% 넘게 낮음',
-    enHint: 'Quality, but fair value is more than 10% below market cap',
+    koHint: '우량하지만 계산한 적정가가 시가총액보다 10% 넘게 낮음 — 기술주(ⓘ)는 이 판정의 예측력이 낮음',
+    enHint: 'Quality, but fair value is more than 10% below market cap — weak signal for tech (ⓘ)',
     tone: 'border-amber-500/40 bg-amber-500/5',
   },
   {
@@ -112,6 +113,10 @@ const WARNING_TEXT: Record<ScreenerWarning, { ko: string; en: string }> = {
     ko: '괴리가 ±50%를 넘습니다. 실제로 이만큼 싸거나 비싸기보다, 현금흐름 중심 가치평가 모델이 이 회사에 맞지 않을 가능성이 큽니다(고성장·경기민감·일회성 이익 등). 종목 분석에서 방법별 적정가를 확인하세요.',
     en: 'The gap exceeds ±50%. Rather than being that cheap or expensive, the cash-flow-based valuation models likely do not fit this company (high growth, cyclical or one-off earnings). Check the per-method fair values in Stock Analysis.',
   },
+  tech_valuation: {
+    ko: '기술·커뮤니케이션 업종은 적정가 괴리를 믿기 어렵습니다. S&P 500을 2016~2025년 과거 시점으로 검증했더니 이 업종에서 괴리는 이후 12개월 수익을 거의 예측하지 못했고(순위상관 +0.02), \'우량 · 비쌈\'이던 종목도 평균적으로 지수와 비슷하거나 높은 수익을 냈습니다. 비싸다는 이유만으로 제외하지 마세요.',
+    en: 'Fair-value gaps are unreliable for tech and communication stocks. In a 2016–2025 point-in-time test on the S&P 500 the gap barely predicted 12-month returns in this sector (rank correlation +0.02), and "quality · expensive" names on average matched or beat the index. Do not rule them out just for looking expensive.',
+  },
   financial_sector: {
     ko: '은행·보험·증권사는 예금·보험료·고객 자산이 부채와 현금흐름에 섞여 있어, 현금흐름 할인(DCF)·EV 배수로 낸 적정가와 유동비율·부채비율 판정이 크게 틀어집니다. 수치는 참고만 하세요.',
     en: 'For banks, insurers and brokers, deposits, premiums and client assets are mixed into liabilities and cash flow, so DCF/EV-based fair values and liquidity/leverage checks are badly distorted. Treat the numbers as reference only.',
@@ -120,19 +125,26 @@ const WARNING_TEXT: Record<ScreenerWarning, { ko: string; en: string }> = {
 
 function ModelFitWarning({ warnings, lang }: { warnings?: ScreenerWarning[]; lang: Lang }) {
   if (!warnings || warnings.length === 0) return null;
-  const title = [
+  const misfit = warnings.filter(w => w !== 'tech_valuation');
+  const tech = warnings.includes('tech_valuation');
+  const misfitTitle = [
     lang === 'ko' ? '모델 부적합 가능성' : 'Possible model misfit',
-    ...warnings.map(w => `· ${lang === 'ko' ? WARNING_TEXT[w].ko : WARNING_TEXT[w].en}`),
+    ...misfit.map(w => `· ${lang === 'ko' ? WARNING_TEXT[w].ko : WARNING_TEXT[w].en}`),
   ].join('\n');
+  const techTitle = lang === 'ko' ? WARNING_TEXT.tech_valuation.ko : WARNING_TEXT.tech_valuation.en;
   return (
-    <span
-      className="inline-flex cursor-help align-middle text-amber-500"
-      title={title}
-      aria-label={title}
-      role="img"
-    >
-      <AlertTriangle size={12} />
-    </span>
+    <>
+      {tech && (
+        <span className="inline-flex cursor-help align-middle text-sky-500" title={techTitle} aria-label={techTitle} role="img">
+          <Info size={12} />
+        </span>
+      )}
+      {misfit.length > 0 && (
+        <span className="inline-flex cursor-help align-middle text-amber-500" title={misfitTitle} aria-label={misfitTitle} role="img">
+          <AlertTriangle size={12} />
+        </span>
+      )}
+    </>
   );
 }
 
@@ -983,6 +995,9 @@ export function QualityBuyTab() {
   // 자동 저장과 별개로, 지금 화면에 있는 결과를 바로 '저장 분석'에 남기는 버튼.
   const [manualSave, setManualSave] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   useEffect(() => { setManualSave('idle'); }, [results, market]);
+  // 서버가 자동으로 저장했으면 같은 결과를 또 저장하지 않도록 '저장됨'으로 둔다.
+  useEffect(() => { if (archiveNote) setManualSave('saved'); }, [archiveNote]);
+  useEffect(() => { if (loadedArchive) setManualSave('saved'); }, [loadedArchive]);
   const saveToArchive = async () => {
     if (manualSave === 'saving' || results.length === 0) return;
     setManualSave('saving');

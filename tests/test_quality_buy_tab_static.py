@@ -30,7 +30,9 @@ class QualityBuyTabStaticTests(unittest.TestCase):
         self.assertIn("extreme_gap:", src)
         self.assertIn("financial_sector:", src)
         api = SCREENER_API.read_text(encoding="utf-8")
-        self.assertIn("export type ScreenerWarning = 'extreme_gap' | 'financial_sector';", api)
+        self.assertIn("export type ScreenerWarning = 'extreme_gap' | 'financial_sector' | 'tech_valuation';", api)
+        # 기술주 경고는 판정 근거가 된 검증 수치와 함께 보여 준다.
+        self.assertIn("tech_valuation: {", src)
 
 
     def test_result_row_shows_sector_badge(self):
