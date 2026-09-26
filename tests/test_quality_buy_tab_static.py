@@ -125,3 +125,14 @@ class NightlyScanStaticTests(unittest.TestCase):
         self.assertIn("screener_nightly.sh %i", service)
         self.assertIn("Unit=hedge-screener@SP500.service", (ROOT / "scripts/systemd/hedge-screener-sp500.timer").read_text(encoding="utf-8"))
         self.assertIn("Unit=hedge-screener@KOSPI.service", (ROOT / "scripts/systemd/hedge-screener-kospi.timer").read_text(encoding="utf-8"))
+
+
+def test_tech_stocks_are_kept_out_of_buy_and_watch_lists():
+    # 기술·커뮤니케이션 종목은 괴리 신호가 과거 검증을 통과하지 못해 별도 구역에 모은다.
+    source = (ROOT / "app" / "frontend" / "src" / "components" / "tabs" / "quality-buy-tab.tsx").read_text(encoding="utf-8")
+    assert "function isTechGrouped" in source
+    assert "includes('tech_valuation')" in source
+    assert "기술주 · 별도 판단" in source
+    # 개수·내보내기도 같은 기준을 쓴다.
+    assert "r.verdict === 'buy' && !isTechGrouped(r)" in source
+    assert "isTechGrouped(r)\n          ? `${ko ? '기술주 별도'" in source

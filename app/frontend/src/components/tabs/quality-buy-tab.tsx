@@ -85,8 +85,8 @@ const SECTIONS: { verdict: ScreenerVerdict; ko: string; en: string; koHint: stri
     verdict: 'quality_expensive',
     ko: '우량 · 비쌈',
     en: 'Quality · expensive',
-    koHint: '우량하지만 계산한 적정가가 시가총액보다 10% 넘게 낮음 — 기술주(ⓘ)는 이 판정의 예측력이 낮음',
-    enHint: 'Quality, but fair value is more than 10% below market cap — weak signal for tech (ⓘ)',
+    koHint: '우량하지만 계산한 적정가가 시가총액보다 10% 넘게 낮음',
+    enHint: 'Quality, but fair value is more than 10% below market cap',
     tone: 'border-amber-500/40 bg-amber-500/5',
   },
   {
@@ -172,6 +172,14 @@ const SECTOR_KO: Record<string, string> = {
 function sectorLabel(sector: string | null | undefined, lang: Lang): string | null {
   if (!sector) return null;
   return lang === 'ko' ? SECTOR_KO[sector] ?? sector : sector;
+}
+
+// 기술·커뮤니케이션 종목은 괴리 신호가 검증을 통과하지 못해(ⓘ tech_valuation) 매수·관심·비쌈에
+// 섞지 않고 한 구역에 모은다. 서버 판정은 그대로 두어 전진 검증은 계속 따로 쌓인다.
+const TECH_GROUPED_VERDICTS: ScreenerVerdict[] = ['buy', 'watch', 'quality_expensive', 'quality_no_value'];
+
+function isTechGrouped(result: ScreenerResult): boolean {
+  return TECH_GROUPED_VERDICTS.includes(result.verdict) && (result.warnings ?? []).includes('tech_valuation');
 }
 
 // 판정 이름 — 펼친 구역(SECTIONS)과 접힌 목록에 쓰는 이름을 한곳에서.
@@ -338,7 +346,7 @@ function QualityDots({ result, lang }: { result: ScreenerResult; lang: Lang }) {
   );
 }
 
-function ResultRow({ result, lang, onAnalyze }: { result: ScreenerResult; lang: Lang; onAnalyze: (ticker: string) => void }) {
+function ResultRow({ result, lang, onAnalyze, showVerdict = false }: { result: ScreenerResult; lang: Lang; onAnalyze: (ticker: string) => void; showVerdict?: boolean }) {
   const gap = result.value.gap;
   const failed = result.verdict === 'not_quality' || result.verdict === 'insufficient';
   const [showHistory, setShowHistory] = useState(false);
@@ -351,6 +359,14 @@ function ResultRow({ result, lang, onAnalyze }: { result: ScreenerResult; lang: 
         <div className="flex flex-wrap items-baseline gap-2">
           <span className="font-medium">{result.name}</span>
           <span className="text-xs text-muted-foreground">{result.ticker}</span>
+          {showVerdict && (
+            <span
+              className="rounded border border-border px-1.5 py-px text-[10px] text-muted-foreground"
+              title={lang === 'ko' ? '기술주가 아니었다면 받았을 판정(참고)' : 'Verdict it would get outside tech (reference)'}
+            >
+              {verdictLabel(result.verdict, lang)}
+            </span>
+          )}
           <span className="self-center" data-print-hide>
             <PriceChartHover result={result} lang={lang} />
           </span>
@@ -697,13 +713,17 @@ function TrackRecordPanel({ lang }: { lang: Lang }) {
 // 스캔 결과 전체를 표로 — 엑셀·PDF 내보내기에 쓴다.
 export function buildExportTable(results: ScreenerResult[], lang: Lang, title: string, subtitle: string): ExportTable {
   const ko = lang === 'ko';
-  const rank = (v: ScreenerVerdict) => VERDICT_ORDER.indexOf(v);
+  // 화면과 같게 기술주 별도 묶음은 금융업 뒤에 둔다.
+  const rank = (r: ScreenerResult) =>
+    isTechGrouped(r) ? VERDICT_ORDER.indexOf('financial') + 0.5 : VERDICT_ORDER.indexOf(r.verdict);
   const rows = [...results]
-    .sort((a, b) => rank(a.verdict) - rank(b.verdict) || byGapDesc(a, b))
+    .sort((a, b) => rank(a) - rank(b) || byGapDesc(a, b))
     .map(r => {
       const failed = r.verdict === 'not_quality' || r.verdict === 'insufficient';
       return [
-        verdictLabel(r.verdict, lang),
+        isTechGrouped(r)
+          ? `${ko ? '기술주 별도' : 'Tech (separate)'} (${verdictLabel(r.verdict, lang)})`
+          : verdictLabel(r.verdict, lang),
         r.name,
         r.ticker,
         r.market,
@@ -763,21 +783,28 @@ export function QualityBuyResultsView({
 }) {
   const grouped = useMemo(() => {
     const map = new Map<ScreenerVerdict, ScreenerResult[]>();
+    const tech: ScreenerResult[] = [];
     for (const r of results) {
+      if (isTechGrouped(r)) {
+        tech.push(r);
+        continue;
+      }
       const list = map.get(r.verdict) ?? [];
       list.push(r);
       map.set(r.verdict, list);
     }
     for (const list of map.values()) list.sort(byGapDesc);
-    return map;
+    // 판정 순서(매수 → 관심 → 비쌈 → 계산 불가), 같은 판정 안에서는 괴리 큰 순.
+    tech.sort((a, b) => TECH_GROUPED_VERDICTS.indexOf(a.verdict) - TECH_GROUPED_VERDICTS.indexOf(b.verdict) || byGapDesc(a, b));
+    return { map, tech };
   }, [results]);
-  const rest = [...(grouped.get('not_quality') ?? []), ...(grouped.get('insufficient') ?? [])];
+  const rest = [...(grouped.map.get('not_quality') ?? []), ...(grouped.map.get('insufficient') ?? [])];
 
   return (
     <>
         {/* Sections */}
         {SECTIONS.map(section => {
-          const list = grouped.get(section.verdict) ?? [];
+          const list = grouped.map.get(section.verdict) ?? [];
           if (list.length === 0 && !(section.verdict === 'buy' && showEmptyBuy)) return null;
           return (
             <section key={section.verdict} className={cn('overflow-hidden rounded-lg border', section.tone)}>
@@ -802,6 +829,25 @@ export function QualityBuyResultsView({
             </section>
           );
         })}
+
+        {grouped.tech.length > 0 && (
+          <section className="overflow-hidden rounded-lg border border-slate-500/40 bg-slate-500/5">
+            <header className="flex flex-wrap items-baseline gap-2 px-3 py-2">
+              <h3 className="text-sm font-semibold">{lang === 'ko' ? '기술주 · 별도 판단' : 'Tech · judge separately'}</h3>
+              <span className="text-xs tabular-nums text-muted-foreground">{grouped.tech.length}</span>
+              <span className="text-[11px] text-muted-foreground">
+                {lang === 'ko'
+                  ? '기술·커뮤니케이션 업종은 적정가 괴리가 이후 수익을 거의 예측하지 못해(과거 10년 검증) 매수·관심 후보에서 뺐습니다. 우량 여부만 참고하세요.'
+                  : 'For tech and communication stocks the fair-value gap barely predicted later returns (10-year backtest), so they are kept out of the buy and watch lists. Use the quality check only.'}
+              </span>
+            </header>
+            <div className="bg-background/60">
+              {grouped.tech.map(r => (
+                <ResultRow key={r.ticker} result={r} lang={lang} onAnalyze={onAnalyze} showVerdict />
+              ))}
+            </div>
+          </section>
+        )}
 
         {rest.length > 0 && (
           <details className="group rounded-lg border border-border/70">
@@ -1028,9 +1074,10 @@ export function QualityBuyTab() {
     }
   };
 
-  const buyCount = results.filter(r => r.verdict === 'buy').length;
+  const buyCount = results.filter(r => r.verdict === 'buy' && !isTechGrouped(r)).length;
   const repricedCount = results.filter(r => r.repriced).length;
-  const watchCount = results.filter(r => r.verdict === 'watch').length;
+  const watchCount = results.filter(r => r.verdict === 'watch' && !isTechGrouped(r)).length;
+  const techCount = results.filter(isTechGrouped).length;
   const progressPct = total > 0 ? Math.round((results.length / total) * 100) : 0;
   const hasResults = results.length > 0;
 
@@ -1182,8 +1229,8 @@ export function QualityBuyTab() {
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span>
               {lang === 'ko'
-                ? `${results.length}개 중 매수 후보 ${buyCount}개 · 관심 후보 ${watchCount}개`
-                : `${buyCount} buy candidate${buyCount === 1 ? '' : 's'}, ${watchCount} on watch, of ${results.length}`}
+                ? `${results.length}개 중 매수 후보 ${buyCount}개 · 관심 후보 ${watchCount}개 · 기술주 별도 ${techCount}개`
+                : `${buyCount} buy candidate${buyCount === 1 ? '' : 's'}, ${watchCount} on watch, ${techCount} tech kept separate, of ${results.length}`}
               {endDate && <span> · {lang === 'ko' ? `기준일 ${endDate}` : `as of ${endDate}`}</span>}
               {repricedCount > 0 && (
                 <span
