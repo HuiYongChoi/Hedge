@@ -23,11 +23,14 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from types import SimpleNamespace
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterator, Optional
 
 from src.agents.fundamentals import fundamentals_analyst_agent
 from src.agents.valuation import valuation_analyst_agent
+from src.tools import api as data_api
+from src.tools import forward_metrics as forward_api
 from src.tools.api import free_sources_only
 from src.screener import sector
 from src.screener.universe import UniverseEntry
@@ -70,7 +73,7 @@ def classify(fundamentals: Optional[dict], valuation: Optional[dict], *, financi
 
     reasoning = fundamentals.get("reasoning") or {}
     axes = {
-        axis: (reasoning.get(key) or {}).get("signal")
+        axis: _axis_signal(reasoning.get(key) or {})
         for axis, key in QUALITY_AXES.items()
     }
     bullish = sum(1 for s in axes.values() if s == "bullish")
@@ -104,6 +107,21 @@ def _warnings(value: dict, financial: bool) -> list[str]:
     if value["gap"] is not None and abs(value["gap"]) >= EXTREME_GAP:
         warnings.append("extreme_gap")
     return warnings
+
+
+def _axis_signal(block: dict) -> Optional[str]:
+    """항목 신호. 수치가 전부 없어서 '약세'가 된 경우는 '데이터 없음'(None)으로 본다.
+
+    펀더멘털 에이전트는 없는 수치를 기준 미달과 똑같이 0점으로 세어, 데이터가 비면
+    '약세'가 된다. 그러면 소스가 잠깐 비었을 뿐인 우량주가 품질 미달로 떨어진다.
+    """
+    signal = block.get("signal")
+    details = block.get("details")
+    if signal == "bearish" and isinstance(details, str):
+        values = [part.split(":", 1)[1].strip() for part in details.split(",") if ":" in part]
+        if values and all(value == "N/A" for value in values):
+            return None
+    return signal
 
 
 def _value_block(valuation: Optional[dict]) -> dict:
@@ -146,6 +164,47 @@ def _run_agent(agent: AgentFn, agent_id: str, ticker: str, end_date: str, api_ke
     return (state["data"]["analyst_signals"].get(agent_id) or {}).get(ticker)
 
 
+def _ticker_cache_stores() -> list[dict]:
+    """종목별로 쌓이는 조회 캐시들. 스캔이 끝난 종목의 몫은 비운다."""
+    shared = data_api._cache
+    return [
+        shared._prices_cache,
+        shared._financial_metrics_cache,
+        shared._pbr_history_cache,
+        shared._forward_metrics_cache,
+        data_api._MARKET_CAP_CACHE,
+        data_api._ENRICHMENT_LINE_ITEMS_CACHE,
+        forward_api._FORWARD_CACHE,
+    ]
+
+
+def _owned_by(key: object, ticker: str) -> bool:
+    if isinstance(key, tuple):
+        return bool(key) and str(key[0]).upper() == ticker.upper()
+    if isinstance(key, str):
+        return key.upper() == ticker.upper() or key.upper().startswith(f"{ticker.upper()}_")
+    return False
+
+
+@contextmanager
+def release_ticker_caches(ticker: str) -> Iterator[None]:
+    """이 블록에서 이 종목 때문에 새로 생긴 캐시 항목을 블록이 끝나면 지운다.
+
+    조회 캐시는 크기 제한이 없어, 수백 종목을 훑으면 가격 이력·재무 수치가 계속 쌓여
+    서버 메모리가 바닥난다. 스캔 전에 이미 있던 항목(사용자가 넣은 데이터 샌드박스
+    수정값, 종목분석이 받아 둔 데이터)은 건드리지 않는다.
+    """
+    stores = _ticker_cache_stores()
+    before = [set(list(store)) for store in stores]
+    try:
+        yield
+    finally:
+        for store, existed in zip(stores, before):
+            for key in list(store):
+                if key not in existed and _owned_by(key, ticker):
+                    store.pop(key, None)
+
+
 def scan_ticker(
     entry: UniverseEntry,
     end_date: str,
@@ -169,21 +228,22 @@ def scan_ticker(
             errors.append(f"{name}: {exc}")
             return None
 
-    fundamentals = attempt(fundamentals_agent, "fundamentals")
-    quality = classify(fundamentals, None)["quality"]
+    with release_ticker_caches(ticker):
+        fundamentals = attempt(fundamentals_agent, "fundamentals")
+        quality = classify(fundamentals, None)["quality"]
 
-    # 섹터·업종은 화면 표시와 금융업 판별에 쓴다. S&P 500 전체 목록은 이미 갖고 있어
-    # 조회하지 않고, 재무 데이터가 없어 판정 자체가 안 되는 종목도 조회하지 않는다.
-    sector_name, industry = entry.get("sector"), entry.get("industry")
-    if industry is None and fundamentals:
-        profile = (profile_lookup or sector.lookup_profile)(ticker) or {}
-        sector_name = sector_name or profile.get("sector")
-        industry = profile.get("industry")
-    financial = sector.is_financial_misfit(industry)
+        # 섹터·업종은 화면 표시와 금융업 판별에 쓴다. S&P 500 전체 목록은 이미 갖고 있어
+        # 조회하지 않고, 재무 데이터가 없어 판정 자체가 안 되는 종목도 조회하지 않는다.
+        sector_name, industry = entry.get("sector"), entry.get("industry")
+        if industry is None and fundamentals:
+            profile = (profile_lookup or sector.lookup_profile)(ticker) or {}
+            sector_name = sector_name or profile.get("sector")
+            industry = profile.get("industry")
+        financial = sector.is_financial_misfit(industry)
 
-    # 우량을 통과하지 못하면 가치평가를 돌려도 판정이 바뀌지 않는다. 가치평가가 조회가
-    # 가장 많은 단계라, 통과한 종목(과 수치를 참고로 보여 줄 금융업)만 돌려 스캔 시간을 줄인다.
-    valuation = attempt(valuation_agent, "valuation") if quality and (quality["passed"] or financial) else None
+        # 우량을 통과하지 못하면 가치평가를 돌려도 판정이 바뀌지 않는다. 가치평가가 조회가
+        # 가장 많은 단계라, 통과한 종목(과 수치를 참고로 보여 줄 금융업)만 돌려 스캔 시간을 줄인다.
+        valuation = attempt(valuation_agent, "valuation") if quality and (quality["passed"] or financial) else None
 
     return {
         "ticker": ticker,

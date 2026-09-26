@@ -6,8 +6,10 @@ import os
 import pandas as pd
 import re
 import requests
+import threading
 from dotenv import load_dotenv
 import time
+from collections import OrderedDict
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -115,6 +117,7 @@ def _filter_usable_line_items(items: list[LineItem], requested_fields: list[str]
 
 
 # Financial Datasets 를 건너뛰고 무료 공식·공개 소스(DART·SEC·yfinance 등)만 쓰게 하는 스위치.
+# 하루 25건 한도인 Alpha Vantage 도 건너뛴다(_fetch_alphavantage_metrics 참고).
 # 수백 종목을 훑는 스크리너가 켠다 — 유료 API 사용량을 쓰지 않고, 요청 한도(429)에 걸려
 # 요청마다 최대 4분 넘게 기다리는 일도 없앤다. 컨텍스트 변수라 켠 스레드·작업에만 적용된다.
 _FREE_SOURCES_ONLY: contextvars.ContextVar[bool] = contextvars.ContextVar("free_sources_only", default=False)
@@ -251,7 +254,12 @@ SEC_USER_AGENT = os.environ.get("SEC_USER_AGENT", "AI Hedge Fund data checker co
 SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SEC_COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
 _SEC_TICKER_CIK_CACHE: dict[str, str] | None = None
-_SEC_COMPANYFACTS_CACHE: dict[str, dict] = {}
+# SEC companyfacts 원본은 회사마다 수 MB(파싱하면 수십 MB)라, 통째로 무한정 들고 있으면
+# 수백 종목을 조회할 때 서버 메모리가 바닥난다(2026-09-25 S&P 500 스캔에서 200여 종목째
+# 백엔드가 재시작됨). 실제로 읽는 us-gaap 항목만 남기고, 최근 회사 몇 개만 기억한다.
+_SEC_COMPANYFACTS_CACHE: "OrderedDict[str, dict]" = OrderedDict()
+_SEC_COMPANYFACTS_CACHE_MAX = 64
+_SEC_COMPANYFACTS_LOCK = threading.Lock()  # 스캐너가 여러 스레드에서 동시에 조회한다
 _SEC_QUARTER_FRAME_RE = re.compile(r"^CY\d{4}Q[1-4]$")
 
 _SEC_FACT_CONCEPTS: dict[str, tuple[str, ...]] = {
@@ -357,18 +365,37 @@ def _fetch_sec_companyfacts(ticker: str) -> dict | None:
     cik = _resolve_sec_cik(ticker)
     if not cik:
         return None
-    if cik in _SEC_COMPANYFACTS_CACHE:
-        return _SEC_COMPANYFACTS_CACHE[cik]
+    with _SEC_COMPANYFACTS_LOCK:
+        cached = _SEC_COMPANYFACTS_CACHE.get(cik)
+        if cached is not None:
+            _SEC_COMPANYFACTS_CACHE.move_to_end(cik)
+            return cached
     try:
         response = requests.get(SEC_COMPANYFACTS_URL.format(cik=cik), headers=_sec_headers(), timeout=15)
         if response.status_code != 200:
             return None
-        data = response.json()
-        _SEC_COMPANYFACTS_CACHE[cik] = data
+        data = _prune_sec_companyfacts(response.json())
+        with _SEC_COMPANYFACTS_LOCK:
+            _SEC_COMPANYFACTS_CACHE[cik] = data
+            while len(_SEC_COMPANYFACTS_CACHE) > _SEC_COMPANYFACTS_CACHE_MAX:
+                _SEC_COMPANYFACTS_CACHE.popitem(last=False)
         return data
     except Exception as exc:
         logger.debug("SEC companyfacts fetch failed for %s: %s", ticker, exc)
         return None
+
+
+_SEC_USED_CONCEPTS = frozenset(c for concepts in _SEC_FACT_CONCEPTS.values() for c in concepts)
+
+
+def _prune_sec_companyfacts(data: dict) -> dict:
+    """읽는 us-gaap 항목만 남긴다(_sec_fact_candidates 가 보는 범위와 같다)."""
+    us_gaap = ((data or {}).get("facts") or {}).get("us-gaap") or {}
+    return {
+        "cik": (data or {}).get("cik"),
+        "entityName": (data or {}).get("entityName"),
+        "facts": {"us-gaap": {c: us_gaap[c] for c in _SEC_USED_CONCEPTS if c in us_gaap}},
+    }
 
 
 def _sec_fact_candidates(companyfacts: dict, field: str) -> list[dict]:
@@ -1273,6 +1300,10 @@ def _fetch_fdr_prices(ticker: str, start_date: str, end_date: str) -> list[Price
 
 
 def _fetch_alphavantage_metrics(ticker: str) -> dict | None:
+    if _FREE_SOURCES_ONLY.get():
+        # 대량 스캔에서는 건너뛴다 — 무료 한도가 하루 25건이라 종목마다 소스가 들쭉날쭉해지고,
+        # 유동비율·부채비율이 없어 재무건전성이 '약함'으로 잘못 매겨진다(yfinance 는 있다).
+        return None
     if not AV_API_KEY:
         # 키 미설정 시 무의미한 외부 호출을 하지 않는다(호출부는 None 을 처리한다).
         return None

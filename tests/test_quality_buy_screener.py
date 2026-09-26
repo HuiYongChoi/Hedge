@@ -485,29 +485,82 @@ def test_parse_naver_page_keeps_common_shares_and_finds_last_page():
     assert last_page == 19
 
 
-def test_fetch_kospi_walks_pages_until_the_last(monkeypatch):
-    pages = []
+class _FakeResponse:
+    def __init__(self, text="", payload=None):
+        self.text = text
+        self.encoding = None
+        self._payload = payload
 
-    class FakeResponse:
-        def __init__(self, text):
-            self.text = text
-            self.encoding = None
+    def json(self):
+        return self._payload
+
+
+def test_naver_desktop_walks_pages_until_the_last(monkeypatch):
+    pages = []
 
     def fake_get(url, **params):
         pages.append(params["page"])
-        # 페이지마다 다른 보통주 20개, 마지막 페이지는 3
         body = "".join(
             f'<a class="tltle" href="/item/main.naver?code={params["page"]:03d}{i:02d}0">종목</a>' for i in range(20)
         )
-        html = f'<table class="type_2">{body}</table><td class="pgRR"><a href="?page=3">맨뒤</a></td>'
-        return FakeResponse(html)
+        return _FakeResponse(f'<table class="type_2">{body}</table><td class="pgRR"><a href="?page=3">맨뒤</a></td>')
 
     monkeypatch.setattr(fu, "_get", fake_get)
     monkeypatch.setattr(fu.time, "sleep", lambda s: None)
-    monkeypatch.setattr(fu, "_cache", {})
-    with pytest.raises(fu.UniverseFetchError):  # 60개뿐 — 목록이 잘린 것으로 본다
-        fu.full_universe("KOSPI")
+    assert len(fu._kospi_from_naver_desktop()) == 60
     assert pages == [1, 2, 3]
+
+
+def test_naver_desktop_reports_what_it_got_when_the_table_is_missing(monkeypatch):
+    monkeypatch.setattr(fu, "_get", lambda url, **p: _FakeResponse("<html><title>점검 중</title></html>"))
+    with pytest.raises(fu.UniverseFetchError, match="점검 중"):
+        fu._kospi_from_naver_desktop()
+
+
+def test_naver_mobile_keeps_common_stocks_and_stops_at_total(monkeypatch):
+    calls = []
+
+    def fake_get(url, **params):
+        calls.append(params["page"])
+        stocks = [
+            {"itemCode": "005930", "stockName": "삼성전자", "stockEndType": "stock"},
+            {"itemCode": "005935", "stockName": "삼성전자우", "stockEndType": "stock"},
+            {"itemCode": "069500", "stockName": "KODEX 200", "stockEndType": "etf"},
+            {"itemCode": "000270", "stockName": "기아"},
+        ] if params["page"] == 1 else [{"itemCode": "000660", "stockName": "SK하이닉스", "stockEndType": "stock"}]
+        return _FakeResponse(payload={"stocks": stocks, "totalCount": 150})
+
+    monkeypatch.setattr(fu, "_get", fake_get)
+    monkeypatch.setattr(fu.time, "sleep", lambda s: None)
+    entries = fu._kospi_from_naver_mobile()
+    assert [e["ticker"] for e in entries] == ["005930.KS", "000270.KS", "000660.KS"]
+    assert entries[0]["name"] == "삼성전자"
+    assert calls == [1, 2]
+
+
+def test_parse_kind_corp_list_finds_code_column():
+    html = """
+    <table><tr><th>회사명</th><th>시장구분</th><th>종목코드</th><th>상장일</th></tr>
+    <tr><td>삼성전자</td><td>유가</td><td>005930</td><td>1975-06-11</td></tr>
+    <tr><td>기아</td><td>유가</td><td>270</td><td>1973-07-21</td></tr>
+    <tr><td>어떤우선주</td><td>유가</td><td>005935</td><td>1989-09-25</td></tr>
+    </table>"""
+    entries = fu.parse_kind_corp_list(html)
+    assert [(e["ticker"], e["name"]) for e in entries] == [("005930.KS", "삼성전자"), ("000270.KS", "기아")]
+
+
+def test_fetch_kospi_falls_back_and_explains_every_failure(monkeypatch):
+    many = [{"ticker": f"{i:05d}0.KS", "name": str(i), "market": "KR"} for i in range(350)]
+
+    def broken():
+        raise ValueError("JSON 아님")
+
+    monkeypatch.setattr(fu, "_KOSPI_SOURCES", (("A", broken), ("B", lambda: many[:10]), ("C", lambda: many)))
+    assert len(fu.fetch_kospi()) == 350
+
+    monkeypatch.setattr(fu, "_KOSPI_SOURCES", (("A", broken), ("B", lambda: many[:10])))
+    with pytest.raises(fu.UniverseFetchError, match="A: JSON 아님 / B: 10개뿐"):
+        fu.fetch_kospi()
 
 
 def test_full_universe_wraps_network_errors_and_caches_success(monkeypatch):
@@ -581,3 +634,99 @@ def test_scan_ticker_runs_agents_on_free_sources_only():
     scan_ticker(ENTRY, "2026-09-25", KEYS, fundamentals_agent=agent, valuation_agent=agent)
     assert seen == [True, True]
     assert data_api._FREE_SOURCES_ONLY.get() is False
+
+
+# ── 메모리 — 수백 종목을 훑어도 캐시가 쌓이지 않는다 ─────────────────────────
+
+
+def test_sec_companyfacts_keeps_only_used_concepts_and_few_companies(monkeypatch):
+    used = next(iter(data_api._SEC_USED_CONCEPTS))
+    raw = {"cik": 1, "entityName": "X", "facts": {
+        "us-gaap": {used: {"units": {"USD": [{"val": 1}]}}, "SomethingUnused": {"units": {"USD": [{"val": 2}] * 1000}}},
+        "dei": {"EntityCommonStockSharesOutstanding": {}},
+    }}
+
+    class Resp:
+        status_code = 200
+
+        def json(self):
+            return raw
+
+    monkeypatch.setattr(data_api, "_resolve_sec_cik", lambda t: f"CIK{t}")
+    monkeypatch.setattr(data_api.requests, "get", lambda *a, **k: Resp())
+    monkeypatch.setattr(data_api, "_SEC_COMPANYFACTS_CACHE", data_api.OrderedDict())
+    monkeypatch.setattr(data_api, "_SEC_COMPANYFACTS_CACHE_MAX", 3)
+
+    facts = data_api._fetch_sec_companyfacts("AAA")
+    assert list(facts["facts"]["us-gaap"]) == [used]
+    assert "dei" not in facts["facts"]
+    for t in ("BBB", "CCC", "DDD"):
+        data_api._fetch_sec_companyfacts(t)
+    assert list(data_api._SEC_COMPANYFACTS_CACHE) == ["CIKBBB", "CIKCCC", "CIKDDD"]  # 가장 오래된 것부터 버림
+
+
+def test_release_ticker_caches_drops_only_what_the_scan_added(monkeypatch):
+    from src.screener import quality_buy as qb
+
+    prices, market_caps = {"AAPL_2020-01-01_2026-09-25": ["사용자가 이미 받아 둔 데이터"]}, {}
+    monkeypatch.setattr(qb, "_ticker_cache_stores", lambda: [prices, market_caps])
+
+    with qb.release_ticker_caches("AAPL"):
+        prices["AAPL_2016-01-01_2026-09-25"] = ["스캔이 받은 가격"]
+        prices["AAPLX_2016-01-01_2026-09-25"] = ["다른 종목"]
+        market_caps[("AAPL", "2026-09-25")] = 1.0
+        market_caps[("MSFT", "2026-09-25")] = 2.0  # 동시에 도는 다른 종목의 몫
+
+    assert set(prices) == {"AAPL_2020-01-01_2026-09-25", "AAPLX_2016-01-01_2026-09-25"}
+    assert set(market_caps) == {("MSFT", "2026-09-25")}
+
+
+def test_scan_ticker_releases_caches_even_when_an_agent_fails(monkeypatch):
+    from src.screener import quality_buy as qb
+
+    store = {}
+    monkeypatch.setattr(qb, "_ticker_cache_stores", lambda: [store])
+
+    def agent(state, agent_id):
+        store["AAPL_x"] = "큰 데이터"
+        raise RuntimeError("boom")
+
+    result = qb.scan_ticker(ENTRY, "2026-09-25", KEYS, fundamentals_agent=agent, valuation_agent=agent)
+    assert result["verdict"] == "insufficient"
+    assert store == {}
+
+
+def test_ticker_cache_stores_point_at_real_caches():
+    from src.screener import quality_buy as qb
+
+    stores = qb._ticker_cache_stores()
+    assert data_api._MARKET_CAP_CACHE in [s for s in stores if s is data_api._MARKET_CAP_CACHE]
+    assert all(isinstance(s, dict) for s in stores)
+    # 샌드박스 수정값이 들어가는 재무 항목 캐시는 목록에 없다.
+    assert not any(s is data_api._cache._line_items_cache for s in stores)
+
+
+# ── 데이터가 빈 것과 약한 것을 구분 ────────────────────────────────────────
+
+
+def test_axis_with_all_metrics_missing_is_no_data_not_weak():
+    fundamentals = _fundamentals("bullish", "bullish", "bearish")
+    fundamentals["reasoning"]["financial_health_signal"]["details"] = "Current Ratio: N/A, D/E: N/A"
+    result = classify(fundamentals, _valuation(0.3))
+    assert result["quality"]["financial_health"] is None
+    assert result["quality"]["bearish"] == 0 and result["verdict"] == "buy"
+
+
+def test_axis_with_real_low_numbers_stays_weak():
+    fundamentals = _fundamentals("bullish", "bullish", "bearish")
+    fundamentals["reasoning"]["financial_health_signal"]["details"] = "Current Ratio: 0.90, D/E: N/A"
+    assert classify(fundamentals, _valuation(0.3))["verdict"] == "not_quality"
+
+
+def test_scan_mode_skips_alpha_vantage(monkeypatch):
+    def no_network(*args, **kwargs):
+        raise AssertionError("대량 스캔에서는 Alpha Vantage 를 부르지 않는다")
+
+    monkeypatch.setattr(data_api.requests, "get", no_network)
+    with data_api.free_sources_only():
+        assert data_api._fetch_alphavantage_metrics("AAPL") is None
