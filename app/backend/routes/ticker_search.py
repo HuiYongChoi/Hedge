@@ -1,5 +1,7 @@
 import os
+from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import APIRouter, Query
 import httpx
 import asyncio
@@ -8,6 +10,8 @@ from typing import Optional
 router = APIRouter(prefix="/ticker-search", tags=["ticker-search"])
 
 # 키는 환경변수에서만 읽는다. 소스에 두면 저장소를 통해 그대로 유출된다.
+# 앱 시작 순서상 .env 가 아직 로드되지 않았을 수 있어 여기서 직접 읽는다.
+load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 FMP_API_KEY = os.environ.get("FMP_API_KEY", "")
 AV_API_KEY = os.environ.get("AV_API_KEY", "")
 
