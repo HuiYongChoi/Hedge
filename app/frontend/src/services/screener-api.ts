@@ -103,9 +103,32 @@ export interface HistoryCheck {
   buy_summary: { n: number; avg_excess_12m: number | null; beat_rate_12m: number | null };
 }
 
+/** 최근 1년 주봉 종가 */
+export interface PriceChart {
+  ticker: string;
+  interval: 'weekly';
+  rows: { date: string; close: number }[];
+}
+
+/** '저장 분석' 아카이브에 남긴 스캔 결과(result_data) */
+export interface ArchivedScan {
+  market: ScreenerMarket;
+  end_date: string;
+  total: number;
+  scanned: number;
+  /** false 면 중간에 멈춘 스캔 — 그때까지 받은 결과만 있다 */
+  complete: boolean;
+  buy_gap?: number;
+  watch_gap?: number;
+  counts?: Partial<Record<ScreenerVerdict, number>>;
+  results: ScreenerResult[];
+}
+
 export interface ScreenerScanHandlers {
   onStart?: (info: { total: number; end_date: string; buy_gap: number; watch_gap?: number }) => void;
   onResult: (result: ScreenerResult) => void;
+  /** 끝까지 돈 스캔이 아카이브에 저장됐을 때(중단된 스캔은 서버가 조용히 저장한다) */
+  onArchived?: (info: { id: number; scanned: number; complete: boolean }) => void;
   onComplete?: (info: { total: number; counts: Partial<Record<ScreenerVerdict, number>> }) => void;
   onError?: (message: string) => void;
 }
@@ -133,8 +156,22 @@ export const screenerApi = {
     return response.json();
   },
 
-  /** 스캔을 시작한다. 돌려준 함수를 부르면 중단한다. */
-  scan(market: ScreenerMarket, refresh: boolean, handlers: ScreenerScanHandlers): () => void {
+  /** 종목 하나의 최근 1년 주봉 종가(서버가 하루 동안 기억한다). */
+  async fetchPriceChart(ticker: string): Promise<PriceChart> {
+    const response = await fetch(`${API_BASE_URL}/screener/price-chart?ticker=${encodeURIComponent(ticker)}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  },
+
+  /** 미국 종목의 네이버 증권 주소(거래소 접미사를 서버가 찾아 준다). 못 찾으면 url 이 null. */
+  async fetchNaverLink(ticker: string): Promise<{ ticker: string; url: string | null }> {
+    const response = await fetch(`${API_BASE_URL}/screener/naver-link?ticker=${encodeURIComponent(ticker)}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  },
+
+  /** 스캔을 시작한다. 돌려준 함수를 부르면 중단한다. 중단돼도 그때까지의 결과는 서버가 아카이브에 남긴다. */
+  scan(market: ScreenerMarket, refresh: boolean, handlers: ScreenerScanHandlers, language: 'ko' | 'en' = 'ko'): () => void {
     const controller = new AbortController();
 
     (async () => {
@@ -143,7 +180,7 @@ export const screenerApi = {
         const response = await fetch(`${API_BASE_URL}/screener/scan`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ market, refresh }),
+          body: JSON.stringify({ market, refresh, language }),
           signal: controller.signal,
         });
         if (!response.ok || !response.body) {
@@ -172,6 +209,9 @@ export const screenerApi = {
                 break;
               case 'result':
                 handlers.onResult(payload);
+                break;
+              case 'archived':
+                handlers.onArchived?.(payload);
                 break;
               case 'complete':
                 completed = true;

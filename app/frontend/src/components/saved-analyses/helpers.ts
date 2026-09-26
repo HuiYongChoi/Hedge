@@ -31,6 +31,7 @@ export function sourceTabLabel(source: string, language: ReportLanguage): string
   if (source === 'data_sandbox')   return language === 'ko' ? '데이터 샌드박스' : 'Data Sandbox';
   if (source === 'stock_compare')  return language === 'ko' ? '종목 비교' : 'Stock Compare';
   if (source === 'flow')           return language === 'ko' ? '플로우' : 'Flow';
+  if (source === 'quality_buy')    return language === 'ko' ? '매수 후보' : 'Buy Candidates';
   return source;
 }
 
@@ -43,6 +44,8 @@ export function sourceTabBadgeClass(source: string): string {
     return 'border-cyan-500/30 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300';
   if (source === 'flow')
     return 'border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-300';
+  if (source === 'quality_buy')
+    return 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-300';
   return 'border-zinc-500/30 bg-zinc-500/10 text-zinc-500';
 }
 
@@ -57,6 +60,16 @@ export function agentCountSummary(item: SavedAnalysis, language: ReportLanguage)
   if (item.source_tab === 'stock_compare') {
     const n = item.result_data?.slots?.length ?? item.request_data?.tickers?.length ?? 0;
     return language === 'ko' ? `비교 종목 ${n}개` : `${n} compared`;
+  }
+  if (item.source_tab === 'quality_buy') {
+    const r = item.result_data ?? {};
+    const scanned = r.scanned ?? r.results?.length ?? 0;
+    const buy = r.counts?.buy ?? 0;
+    const watch = r.counts?.watch ?? 0;
+    const partial = r.complete === false;
+    return language === 'ko'
+      ? `${scanned}/${r.total ?? scanned}종목${partial ? ' (중단)' : ''} · 매수 ${buy} · 관심 ${watch}`
+      : `${scanned}/${r.total ?? scanned}${partial ? ' (stopped)' : ''} · buy ${buy} · watch ${watch}`;
   }
   const fields = Object.keys(item.result_data?.metrics ?? {}).length;
   return language === 'ko' ? `필드 ${fields}개` : `${fields} fields`;

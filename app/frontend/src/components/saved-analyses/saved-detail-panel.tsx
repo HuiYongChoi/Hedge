@@ -16,6 +16,8 @@ import { SavedStockDetail } from './saved-stock-detail';
 import { SnapshotDiffPanel } from './snapshot-diff-panel';
 import { SavedSandboxDetail } from './saved-sandbox-detail';
 import { SavedCompareDetail } from './saved-compare-detail';
+import { SavedQualityBuyDetail } from './saved-quality-buy-detail';
+import { restoreQualityBuyScan } from '@/components/tabs/quality-buy-tab';
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 
@@ -73,7 +75,7 @@ export function SavedDetailPanel({ detail, language, isListCollapsed = false, on
     );
   }
 
-  function handleRestore() {
+  async function handleRestore() {
     if (!detail) return;
     const req = detail.request_data || {};
     if (detail.source_tab === 'stock_analysis') {
@@ -102,6 +104,11 @@ export function SavedDetailPanel({ detail, language, isListCollapsed = false, on
         /* ignore */
       }
       openTab(TabService.createStockCompareTab());
+    } else if (detail.source_tab === 'quality_buy') {
+      // 목록 응답에는 종목 결과가 빠져 있어(용량) 전체를 받아 되살린다.
+      const full = detail.result_data?.results ? detail : await savedAnalysisService.getAnalysisById(detail.id);
+      restoreQualityBuyScan(full.result_data);
+      openTab(TabService.createQualityBuyTab());
     }
   }
 
@@ -231,7 +238,10 @@ export function SavedDetailPanel({ detail, language, isListCollapsed = false, on
         {detail.source_tab === 'stock_compare' && (
           <SavedCompareDetail detail={detail} language={language} />
         )}
-        {detail.source_tab !== 'stock_analysis' && detail.source_tab !== 'flow' && detail.source_tab !== 'data_sandbox' && detail.source_tab !== 'stock_compare' && (
+        {detail.source_tab === 'quality_buy' && (
+          <SavedQualityBuyDetail detail={detail} language={language} />
+        )}
+        {detail.source_tab !== 'stock_analysis' && detail.source_tab !== 'flow' && detail.source_tab !== 'data_sandbox' && detail.source_tab !== 'stock_compare' && detail.source_tab !== 'quality_buy' && (
           <SavedEmptyState language={language} />
         )}
       </div>

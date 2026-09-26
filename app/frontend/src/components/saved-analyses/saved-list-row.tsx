@@ -18,6 +18,7 @@ import {
   sourceTabLabel,
 } from './helpers';
 import { cn } from '@/lib/utils';
+import { restoreQualityBuyScan } from '@/components/tabs/quality-buy-tab';
 
 interface SavedListRowProps {
   item: SavedAnalysis;
@@ -64,7 +65,7 @@ export function SavedListRow({ item, isSelected, onClick, onAfterDelete, onAfter
   const { workspace, patchWorkspace } = useWorkspace();
   const displayName = item.display_name?.trim() || getSavedDisplayName(item);
 
-  function handleRestore(e: React.MouseEvent) {
+  async function handleRestore(e: React.MouseEvent) {
     e.stopPropagation();
     const req = item.request_data || {};
     if (item.source_tab === 'stock_analysis') {
@@ -93,6 +94,11 @@ export function SavedListRow({ item, isSelected, onClick, onAfterDelete, onAfter
         /* ignore */
       }
       openTab(TabService.createStockCompareTab());
+    } else if (item.source_tab === 'quality_buy') {
+      // 목록 응답에는 종목 결과가 빠져 있어(용량) 전체를 받아 되살린다.
+      const full = item.result_data?.results ? item : await savedAnalysisService.getAnalysisById(item.id);
+      restoreQualityBuyScan(full.result_data);
+      openTab(TabService.createQualityBuyTab());
     }
   }
 
