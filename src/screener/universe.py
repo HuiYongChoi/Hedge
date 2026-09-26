@@ -7,13 +7,15 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 
 class UniverseEntry(TypedDict):
     ticker: str
     name: str
     market: str  # "KR" | "US"
+    #: 업종 이름(S&P 500 전체 목록의 GICS 세부 업종). 없으면 필요할 때 조회한다.
+    industry: NotRequired[str]
 
 
 # 코스피 시가총액 상위(우선주·지주사 중복 최소화).

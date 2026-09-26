@@ -9,10 +9,11 @@ import {
   ScreenerMarket,
   ScreenerResult,
   ScreenerVerdict,
+  ScreenerWarning,
   screenerApi,
 } from '@/services/screener-api';
 import { TabService } from '@/services/tab-service';
-import { ArrowUpRight, BadgeCheck, ChevronDown, Play, RefreshCw, Square } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, BadgeCheck, ChevronDown, Play, RefreshCw, Square } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // 마지막 스캔 결과를 시장별로 기억한다 — 탭을 다시 열었을 때 바로 보이도록.
@@ -71,7 +72,45 @@ const SECTIONS: { verdict: ScreenerVerdict; ko: string; en: string; koHint: stri
     enHint: 'Quality, but not enough data to estimate fair value',
     tone: 'border-border bg-muted/10',
   },
+  {
+    verdict: 'financial',
+    ko: '금융업 · 별도 판단',
+    en: 'Financials · judge separately',
+    koHint: '은행·보험·증권은 이 판정 모델이 맞지 않음 — 수치는 참고만',
+    enHint: 'Banks, insurers and brokers do not fit these models — numbers are for reference only',
+    tone: 'border-violet-500/40 bg-violet-500/5',
+  },
 ];
+
+// 모델 부적합 가능성 경고 — 아이콘에 마우스를 올리면 이유를 보여 준다.
+const WARNING_TEXT: Record<ScreenerWarning, { ko: string; en: string }> = {
+  extreme_gap: {
+    ko: '괴리가 ±50%를 넘습니다. 실제로 이만큼 싸거나 비싸기보다, 현금흐름 중심 가치평가 모델이 이 회사에 맞지 않을 가능성이 큽니다(고성장·경기민감·일회성 이익 등). 종목 분석에서 방법별 적정가를 확인하세요.',
+    en: 'The gap exceeds ±50%. Rather than being that cheap or expensive, the cash-flow-based valuation models likely do not fit this company (high growth, cyclical or one-off earnings). Check the per-method fair values in Stock Analysis.',
+  },
+  financial_sector: {
+    ko: '은행·보험·증권사는 예금·보험료·고객 자산이 부채와 현금흐름에 섞여 있어, 현금흐름 할인(DCF)·EV 배수로 낸 적정가와 유동비율·부채비율 판정이 크게 틀어집니다. 수치는 참고만 하세요.',
+    en: 'For banks, insurers and brokers, deposits, premiums and client assets are mixed into liabilities and cash flow, so DCF/EV-based fair values and liquidity/leverage checks are badly distorted. Treat the numbers as reference only.',
+  },
+};
+
+function ModelFitWarning({ warnings, lang }: { warnings?: ScreenerWarning[]; lang: Lang }) {
+  if (!warnings || warnings.length === 0) return null;
+  const title = [
+    lang === 'ko' ? '모델 부적합 가능성' : 'Possible model misfit',
+    ...warnings.map(w => `· ${lang === 'ko' ? WARNING_TEXT[w].ko : WARNING_TEXT[w].en}`),
+  ].join('\n');
+  return (
+    <span
+      className="inline-flex cursor-help align-middle text-amber-500"
+      title={title}
+      aria-label={title}
+      role="img"
+    >
+      <AlertTriangle size={12} />
+    </span>
+  );
+}
 
 const AXES: { key: 'profitability' | 'growth' | 'financial_health'; ko: string; en: string }[] = [
   { key: 'profitability', ko: '수익성', en: 'Profit' },
@@ -214,10 +253,11 @@ function ResultRow({ result, lang, onAnalyze }: { result: ScreenerResult; lang: 
           <div className="w-24 text-right">
             <div
               className={cn(
-                'font-mono text-sm tabular-nums',
+                'flex items-center justify-end gap-1 font-mono text-sm tabular-nums',
                 gap === null ? 'text-muted-foreground' : gap > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
               )}
             >
+              <ModelFitWarning warnings={result.warnings} lang={lang} />
               {formatGap(gap)}
             </div>
             <div className="text-[11px] text-muted-foreground">{lang === 'ko' ? '적정가 괴리' : 'Fair-value gap'}</div>
@@ -396,6 +436,7 @@ export function QualityBuyTab() {
               여기서는 두 질문을 나눠 봅니다. <b className="text-foreground">① 우량한가</b> — 수익성·성장·재무건전성 셋 중 둘 이상이 강하고 약한 항목이 없음.{' '}
               <b className="text-foreground">② 지금 싼가</b> — 계산한 적정가가 시가총액보다 15% 넘게 높음(종목 분석의 가치평가 매수 기준과 같음).
               아직 싸지 않은 우량주 가운데 적정가에서 크게 벗어나지 않은 종목은 <b className="text-foreground">관심 후보</b>로 따로 모으고, 얼마나 내려야 매수 구간인지 함께 보여 줍니다.
+              은행·보험·증권은 이 모델이 맞지 않아 <b className="text-foreground">금융업</b>으로 따로 모으고, 괴리가 ±50%를 넘으면 모델이 맞지 않을 가능성이 커 <AlertTriangle size={11} className="inline align-baseline text-amber-500" /> 표시를 답니다(마우스를 올리면 이유가 보입니다).
               AI 호출 없이 계산만 하므로 빠르고, 같은 날 다시 스캔하면 저장된 결과를 바로 보여 줍니다. 대형주는 한국·미국 각 25개이고, 'S&P 500 전체'·'코스피 전체'는 스캔하는 시점의 지수 구성 종목 전부(수백 개)를 훑어 수십 분 걸립니다.
             </>
           ) : (
@@ -404,6 +445,7 @@ export function QualityBuyTab() {
               This view splits the two questions. <b className="text-foreground">① Quality</b> — at least two of profitability, growth and balance-sheet health are strong, none weak.{' '}
               <b className="text-foreground">② Cheap now</b> — estimated fair value exceeds market cap by more than 15% (the same bar as the valuation analyst).
               Quality names close to fair value but not yet cheap go to the <b className="text-foreground">watchlist</b>, with the decline needed to reach the buy zone.
+              Banks, insurers and brokers do not fit these models and are grouped under <b className="text-foreground">Financials</b>; gaps beyond ±50% get a <AlertTriangle size={11} className="inline align-baseline text-amber-500" /> mark (hover for why).
               No AI calls, only calculations; re-scanning on the same day returns cached results. Large caps: 25 Korean and 25 US names; 'All S&P 500' and 'All KOSPI' scan every current index member (hundreds of names) and take tens of minutes.
             </>
           )}

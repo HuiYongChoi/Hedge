@@ -11,6 +11,11 @@
   매수 문턱은 그 에이전트의 매수 기준(+15%)과 같다.
 · 관심 — 우량하지만 아직 매수 문턱에 못 미치고, 적정가보다 10% 넘게 비싸지는 않은 종목.
   조정이 오면 먼저 매수 구간에 들어올 종목이라, 매수 구간까지 필요한 하락폭을 함께 준다.
+· 금융업 — 은행·보험·증권은 두 판정 모델이 모두 맞지 않아(src/screener/sector.py) 위 구분에
+  섞지 않고 따로 모은다. 수치는 참고용으로 그대로 보여 준다.
+
+모델이 맞지 않을 수 있는 결과에는 경고(warnings)를 단다. 괴리율이 ±50% 를 넘으면 실제로
+그만큼 싸거나 비싸기보다 현금흐름 중심 모델이 그 회사에 맞지 않는 경우가 많다.
 
 두 에이전트 모두 LLM 을 부르지 않으므로 종목당 데이터 조회 시간만 든다. 데이터도
 무료 공식·공개 소스(한국 DART, 미국 SEC·yfinance)만 쓴다.
@@ -24,12 +29,15 @@ from typing import Any, Callable, Optional
 from src.agents.fundamentals import fundamentals_analyst_agent
 from src.agents.valuation import valuation_analyst_agent
 from src.tools.api import free_sources_only
+from src.screener import sector
 from src.screener.universe import UniverseEntry
 
 #: 가치평가 에이전트의 매수·매도 문턱과 같은 값(src/agents/valuation.py 의 signal 판정).
 BUY_GAP = 0.15
 #: 관심 후보의 아래 경계. 괴리율이 이보다 낮으면(적정가보다 10% 넘게 비싸면) '비쌈'이다.
 WATCH_GAP = -0.10
+#: 괴리율의 절댓값이 이 이상이면 '모델 부적합 가능성' 경고를 단다.
+EXTREME_GAP = 0.50
 
 #: 스캐너가 에이전트를 부를 때 쓰는 이름의 접두어. 진행 상황 추적기는 전역이라,
 #: 종목분석 스트림이 이 접두어로 스캐너 진행 메시지를 걸러 낸다.
@@ -46,6 +54,7 @@ VERDICTS = (
     "watch",              # 관심 후보: 우량 + 괴리율 −10% ~ +15%
     "quality_expensive",  # 우량 · 비쌈: 괴리율 < −10%
     "quality_no_value",   # 우량 · 가치 계산 불가
+    "financial",          # 금융업 — 판정 모델이 맞지 않아 따로 모음
     "not_quality",        # 품질 미달
     "insufficient",       # 재무 데이터 부족
 )
@@ -53,10 +62,11 @@ VERDICTS = (
 AgentFn = Callable[..., Any]
 
 
-def classify(fundamentals: Optional[dict], valuation: Optional[dict]) -> dict:
+def classify(fundamentals: Optional[dict], valuation: Optional[dict], *, financial: bool = False) -> dict:
     """두 에이전트의 종목별 결과로 판정한다. 네트워크 없이 도는 순수 함수."""
     if not fundamentals:
-        return {"verdict": "insufficient", "quality": None, "value": _value_block(valuation)}
+        value = _value_block(valuation)
+        return {"verdict": "insufficient", "quality": None, "value": value, "warnings": _warnings(value, financial)}
 
     reasoning = fundamentals.get("reasoning") or {}
     axes = {
@@ -71,7 +81,9 @@ def classify(fundamentals: Optional[dict], valuation: Optional[dict]) -> dict:
     quality = {**axes, "bullish": bullish, "bearish": bearish, "passed": passed, "details": details}
     value = _value_block(valuation)
 
-    if not passed:
+    if financial:
+        verdict = "financial"
+    elif not passed:
         verdict = "not_quality"
     elif value["gap"] is None:
         verdict = "quality_no_value"
@@ -81,7 +93,17 @@ def classify(fundamentals: Optional[dict], valuation: Optional[dict]) -> dict:
         verdict = "quality_expensive"
     else:
         verdict = "watch"
-    return {"verdict": verdict, "quality": quality, "value": value}
+    return {"verdict": verdict, "quality": quality, "value": value, "warnings": _warnings(value, financial)}
+
+
+def _warnings(value: dict, financial: bool) -> list[str]:
+    """판정 모델이 이 종목에 맞지 않을 수 있다는 표시."""
+    warnings = []
+    if financial:
+        warnings.append("financial_sector")
+    if value["gap"] is not None and abs(value["gap"]) >= EXTREME_GAP:
+        warnings.append("extreme_gap")
+    return warnings
 
 
 def _value_block(valuation: Optional[dict]) -> dict:
@@ -131,6 +153,7 @@ def scan_ticker(
     *,
     fundamentals_agent: AgentFn = fundamentals_analyst_agent,
     valuation_agent: AgentFn = valuation_analyst_agent,
+    industry_lookup: Optional[Callable[[str], Optional[str]]] = None,
 ) -> dict:
     """종목 하나를 판정한다. 실패해도 예외를 올리지 않고 결과에 사유를 담는다."""
     ticker = entry["ticker"]
@@ -147,15 +170,24 @@ def scan_ticker(
             return None
 
     fundamentals = attempt(fundamentals_agent, "fundamentals")
-    # 우량을 통과하지 못하면 가치평가를 돌려도 판정이 바뀌지 않는다. 가치평가가 조회가
-    # 가장 많은 단계라, 통과한 종목만 돌려 스캔 시간을 줄인다.
     quality = classify(fundamentals, None)["quality"]
-    valuation = attempt(valuation_agent, "valuation") if quality and quality["passed"] else None
+
+    # 업종은 판정에 영향이 있을 때만 조회한다: 우량을 통과했거나, 금융업이라 재무건전성이
+    # 약하게 나왔을 수 있을 때. S&P 500 전체 목록은 업종을 이미 갖고 있어 조회하지 않는다.
+    industry = entry.get("industry")
+    if industry is None and quality and (quality["passed"] or quality["financial_health"] == "bearish"):
+        industry = (industry_lookup or sector.lookup_industry)(ticker)
+    financial = sector.is_financial_misfit(industry)
+
+    # 우량을 통과하지 못하면 가치평가를 돌려도 판정이 바뀌지 않는다. 가치평가가 조회가
+    # 가장 많은 단계라, 통과한 종목(과 수치를 참고로 보여 줄 금융업)만 돌려 스캔 시간을 줄인다.
+    valuation = attempt(valuation_agent, "valuation") if quality and (quality["passed"] or financial) else None
 
     return {
         "ticker": ticker,
         "name": entry["name"],
         "market": entry["market"],
-        **classify(fundamentals, valuation),
+        "industry": industry,
+        **classify(fundamentals, valuation, financial=financial),
         "error": "; ".join(errors) or None,
     }

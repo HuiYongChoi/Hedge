@@ -3,7 +3,7 @@
 고정 목록(universe.py)은 대형주 50개뿐이라, 지수 전체를 훑을 때는 스캔하는 시점의
 구성 종목을 서버가 직접 받아 온다. 구성은 수시로 바뀌므로 코드에 박아 두지 않는다.
 
-· S&P 500 — 위키백과 구성 종목 표(표 id "constituents").
+· S&P 500 — 위키백과 구성 종목 표(표 id "constituents"). GICS 세부 업종도 함께 읽는다.
 · 코스피 — 네이버 금융 시가총액 순위(코스피, 페이지당 50종목). 우선주는 뺀다.
 
 받아 온 목록은 하루 동안 기억한다. 받지 못하면 빈 목록 대신 예외를 올려,
@@ -61,7 +61,11 @@ def parse_sp500(html: str) -> list[UniverseEntry]:
         if not ticker or ticker in seen:
             continue
         seen.add(ticker)
-        entries.append({"ticker": ticker, "name": _KNOWN_NAMES.get(ticker, name), "market": "US"})
+        entry: UniverseEntry = {"ticker": ticker, "name": _KNOWN_NAMES.get(ticker, name), "market": "US"}
+        # 넷째 칸이 GICS 세부 업종이다 — 금융업 판별에 쓴다(src/screener/sector.py).
+        if len(cells) > 3 and (industry := cells[3].get_text(strip=True)):
+            entry["industry"] = industry
+        entries.append(entry)
     return entries
 
 

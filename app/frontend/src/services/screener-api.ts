@@ -15,8 +15,12 @@ export type ScreenerVerdict =
   | 'watch'
   | 'quality_expensive'
   | 'quality_no_value'
+  | 'financial'
   | 'not_quality'
   | 'insufficient';
+
+/** 판정 모델이 이 종목에 맞지 않을 수 있다는 표시 */
+export type ScreenerWarning = 'extreme_gap' | 'financial_sector';
 
 export type AxisSignal = 'bullish' | 'neutral' | 'bearish' | null;
 
@@ -28,6 +32,10 @@ export interface ScreenerUniverseEntry {
 
 export interface ScreenerResult extends ScreenerUniverseEntry {
   verdict: ScreenerVerdict;
+  /** 업종 이름(GICS 세부 업종 또는 yfinance industry). 조회하지 않았으면 없음 */
+  industry?: string | null;
+  /** 모델 부적합 가능성 — 괴리율 ±50% 이상, 금융업 */
+  warnings?: ScreenerWarning[];
   quality: {
     profitability: AxisSignal;
     growth: AxisSignal;
