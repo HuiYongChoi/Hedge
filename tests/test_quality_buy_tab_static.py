@@ -112,3 +112,14 @@ class QualityBuyArchiveLinksChartStaticTests(unittest.TestCase):
         export = TABLE_EXPORT.read_text(encoding="utf-8")
         self.assertIn("export function printElementAsPdf(", export)
         self.assertIn("print-color-adjust: exact", export)
+
+
+class NightlyScanStaticTests(unittest.TestCase):
+
+    def test_nightly_timers_call_full_index_scan(self):
+        script = (ROOT / "scripts/screener_nightly.sh").read_text(encoding="utf-8")
+        self.assertIn("/screener/scan", script)
+        service = (ROOT / "scripts/systemd/hedge-screener@.service").read_text(encoding="utf-8")
+        self.assertIn("screener_nightly.sh %i", service)
+        self.assertIn("Unit=hedge-screener@SP500.service", (ROOT / "scripts/systemd/hedge-screener-sp500.timer").read_text(encoding="utf-8"))
+        self.assertIn("Unit=hedge-screener@KOSPI.service", (ROOT / "scripts/systemd/hedge-screener-kospi.timer").read_text(encoding="utf-8"))

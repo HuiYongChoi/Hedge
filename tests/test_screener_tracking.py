@@ -270,6 +270,9 @@ def route(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "ApiKeyService", FakeKeys)
     # 스캔이 끝나면 실제 DB 의 '저장 분석'에 남기므로, 테스트에서는 막는다.
     monkeypatch.setattr(module, "_archive_scan", lambda *args, **kwargs: None)
+    # 재무 스냅샷은 파일을 읽고 쓰므로 테스트에서는 막는다(스냅샷 없음 = 전체 계산).
+    monkeypatch.setattr(module, "_reprice", lambda entry, end_date: None)
+    monkeypatch.setattr(module, "_save_snapshot", lambda snapshot: None)
     app = FastAPI()
     app.include_router(module.router)
     app.dependency_overrides[module.get_db] = lambda: None

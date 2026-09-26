@@ -819,6 +819,14 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             # 괴리율과 같은 기준의 1주당 적정가(비이상치 가중평균). 표시용 headline 은
             # DCF 를 우선하므로 괴리율과 어긋날 수 있다 — 스크리너는 이 값을 쓴다.
             "blended_intrinsic_per_share": blended_intrinsic_per_share,
+            # 위 괴리율을 낸 합산 입력 그대로 — 매수 후보 스크리너가 재무를 다시 받지 않고
+            # 오늘 시가총액만 바꿔 같은 방식으로 괴리율을 다시 계산한다(src/screener/snapshot_store.py).
+            # 설명 문장(details)이 없어 리포트에는 나오지 않는다.
+            "blend_inputs": {
+                "market_cap": market_cap,
+                "shares": shares_outstanding,
+                "models": {m: {"value": v["value"], "weight": v["weight"]} for m, v in valid_models.items()},
+            },
         }
         for m, vals in method_values.items():
             if vals["value"] > 0:
