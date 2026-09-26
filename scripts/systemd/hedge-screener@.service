@@ -1,0 +1,10 @@
+[Unit]
+Description=Hedge buy-candidate full-index scan (%i)
+After=hedge-backend.service
+Wants=hedge-backend.service
+
+[Service]
+Type=oneshot
+User=admin
+ExecStart=/home/admin/ai-hedge-fund/scripts/screener_nightly.sh %i
+TimeoutStartSec=4h

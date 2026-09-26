@@ -1,0 +1,10 @@
+[Unit]
+Description=KOSPI buy-candidate scan after the Korean close (17:00 KST, Mon-Fri)
+
+[Timer]
+# 08:00 UTC 월~금 = 한국 시간 17:00, 코스피 장 마감(15:30) 뒤.
+OnCalendar=Mon..Fri 08:00 UTC
+Unit=hedge-screener@KOSPI.service
+
+[Install]
+WantedBy=timers.target

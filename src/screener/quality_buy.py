@@ -124,6 +124,68 @@ def _axis_signal(block: dict) -> Optional[str]:
     return signal
 
 
+def blend(models: dict, market_cap: float, shares: Optional[float]) -> dict:
+    """가치평가 에이전트의 합산 단계(src/agents/valuation.py)를 그대로 되풀이한다.
+
+    모델별 괴리 = 적정가 ÷ 시가총액 − 1 → 다른 모델들과 너무 동떨어진 모델은 빼고(또래 이상치)
+    → 남은 모델의 가중평균. 재무 스냅샷의 주가 재계산과 판정 근거 표시가 함께 쓴다.
+    """
+    from src.agents.valuation import flag_peer_outliers
+
+    valid = {
+        m: {"value": v["value"], "weight": v["weight"], "gap": (v["value"] - market_cap) / market_cap}
+        for m, v in models.items() if v["value"] > 0
+    }
+    total_weight = sum(v["weight"] for v in valid.values())
+    flag_peer_outliers(valid)
+    blend_weight = sum(v["weight"] for v in valid.values() if not v["is_outlier"])
+    if blend_weight <= 0:
+        for v in valid.values():
+            v["is_outlier"] = False
+        blend_weight = total_weight
+    weighted_gap = sum(v["weight"] * v["gap"] for v in valid.values() if not v["is_outlier"]) / blend_weight
+    blended_total = sum(v["weight"] * v["value"] for v in valid.values() if not v["is_outlier"]) / blend_weight
+    signal = "bullish" if weighted_gap > BUY_GAP else "bearish" if weighted_gap < -BUY_GAP else "neutral"
+    breakdown = [
+        {
+            "key": m,
+            "per_share": v["value"] / shares if shares else None,
+            "gap": v["gap"],
+            "weight": v["weight"],
+            "excluded": bool(v["is_outlier"]),
+            # 최종 적정가에서 이 모델이 차지한 몫(제외된 모델은 0)
+            "share": 0.0 if v["is_outlier"] else v["weight"] / blend_weight,
+        }
+        for m, v in valid.items()
+    ]
+    return {
+        "signal": signal,
+        "reasoning": {
+            "weighted_gap": weighted_gap,
+            "blended_intrinsic_per_share": blended_total / shares if shares else None,
+            "blend_inputs": {"market_cap": market_cap, "shares": shares, "models": models},
+            "model_breakdown": breakdown,
+        },
+    }
+
+
+def _model_breakdown(reasoning: dict) -> Optional[list]:
+    """모델별 판정 근거. 가치평가 결과에 합산 입력이 있으면 같은 방식으로 풀어낸다."""
+    if isinstance(reasoning.get("model_breakdown"), list):
+        return reasoning["model_breakdown"]
+    inputs = reasoning.get("blend_inputs") or {}
+    models = {
+        name: {"value": float(m["value"]), "weight": float(m["weight"])}
+        for name, m in (inputs.get("models") or {}).items()
+        if isinstance(m, dict) and isinstance(m.get("value"), (int, float)) and m["value"] > 0
+        and isinstance(m.get("weight"), (int, float))
+    }
+    market_cap = inputs.get("market_cap")
+    if not models or not isinstance(market_cap, (int, float)) or market_cap <= 0:
+        return None
+    return blend(models, float(market_cap), inputs.get("shares"))["reasoning"]["model_breakdown"]
+
+
 def _value_block(valuation: Optional[dict]) -> dict:
     reasoning = (valuation or {}).get("reasoning") or {}
     raw_gap = reasoning.get("weighted_gap")
@@ -141,6 +203,8 @@ def _value_block(valuation: Optional[dict]) -> dict:
         "buy_price_per_share": per_share / (1 + BUY_GAP) if per_share is not None else None,
         # 지금 주가에서 몇 % 내려야 매수 구간인가. 이미 매수 구간이면 0.
         "drop_to_buy": max(0.0, 1 - (1 + gap) / (1 + BUY_GAP)) if gap is not None and gap > -1 else None,
+        # 모델별 적정가·반영 비중·제외 여부 — 화면의 '판정 근거'에 쓴다.
+        "models": _model_breakdown(reasoning),
     }
 
 
@@ -245,7 +309,7 @@ def scan_ticker(
         # 가장 많은 단계라, 통과한 종목(과 수치를 참고로 보여 줄 금융업)만 돌려 스캔 시간을 줄인다.
         valuation = attempt(valuation_agent, "valuation") if quality and (quality["passed"] or financial) else None
 
-    return {
+    result = {
         "ticker": ticker,
         "name": entry["name"],
         "market": entry["market"],
@@ -253,4 +317,13 @@ def scan_ticker(
         "industry": industry,
         **classify(fundamentals, valuation, financial=financial),
         "error": "; ".join(errors) or None,
+        "fundamentals_as_of": end_date if fundamentals else None,
     }
+    # 다음 스캔이 재무를 다시 받지 않고 주가만으로 판정하도록 스냅샷을 붙인다(src/screener/snapshot_store.py).
+    # 스캔 라우트가 떼어 내 파일로 남긴다 — 화면으로는 보내지 않는다.
+    from src.screener import snapshot_store
+
+    snapshot = snapshot_store.build_snapshot(entry, end_date, result, fundamentals, valuation, financial)
+    if snapshot:
+        result["_snapshot"] = snapshot
+    return result

@@ -19,6 +19,7 @@ import {
 } from '@/services/screener-api';
 import { TabService } from '@/services/tab-service';
 import { PriceChartHover, ResearchLinksPanel } from '@/components/quality-buy/stock-extras';
+import { MethodGuide, VerdictBreakdown } from '@/components/quality-buy/verdict-explainer';
 import {
   AlertTriangle,
   Archive,
@@ -30,6 +31,7 @@ import {
   Clock,
   Download,
   FileText,
+  HelpCircle,
   Link2,
   Loader2,
   Play,
@@ -329,6 +331,7 @@ function ResultRow({ result, lang, onAnalyze }: { result: ScreenerResult; lang: 
   const failed = result.verdict === 'not_quality' || result.verdict === 'insufficient';
   const [showHistory, setShowHistory] = useState(false);
   const [showLinks, setShowLinks] = useState(false);
+  const [showWhy, setShowWhy] = useState(false);
   const sector = sectorLabel(result.sector, lang);
   return (
     <div data-print-row className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/60 px-3 py-2 first:border-t-0">
@@ -393,6 +396,17 @@ function ResultRow({ result, lang, onAnalyze }: { result: ScreenerResult; lang: 
       <div className="flex items-center gap-1" data-print-hide>
         <Button
           size="sm"
+          variant={showWhy ? 'secondary' : 'ghost'}
+          className="h-7 px-2 text-xs"
+          onClick={() => setShowWhy(v => !v)}
+          aria-expanded={showWhy}
+          title={lang === 'ko' ? '우량 판정의 실제 수치와 기준, 가치평가 방법별 적정가와 계산 과정' : 'Quality figures vs thresholds, per-method fair values and the arithmetic'}
+        >
+          <HelpCircle size={12} className="mr-1" />
+          {lang === 'ko' ? '판정 근거' : 'Why'}
+        </Button>
+        <Button
+          size="sm"
           variant={showLinks ? 'secondary' : 'ghost'}
           className="h-7 px-2 text-xs"
           onClick={() => setShowLinks(v => !v)}
@@ -427,6 +441,11 @@ function ResultRow({ result, lang, onAnalyze }: { result: ScreenerResult; lang: 
       {result.error && result.verdict !== 'insufficient' && (
         <div className="basis-full text-[11px] text-muted-foreground" title={result.error}>
           {lang === 'ko' ? '일부 데이터 조회 실패' : 'Some data failed to load'}
+        </div>
+      )}
+      {showWhy && (
+        <div className="basis-full">
+          <VerdictBreakdown result={result} lang={lang} />
         </div>
       )}
       {showLinks && (
@@ -845,7 +864,34 @@ export function QualityBuyTab() {
     setTotal(0);
     setError(null);
     setArchiveNote(null);
+    setLoadedArchive(null);
   };
+
+  // 이 브라우저에 남은 결과보다 새 스캔이 '저장 분석'에 있으면(새벽 자동 스캔, 다른 기기의 스캔) 그걸 보여 준다.
+  const [loadedArchive, setLoadedArchive] = useState<{ endDate: string; complete: boolean; scanned: number; total: number } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const localDate = loadSaved()[market]?.endDate ?? null;
+    (async () => {
+      try {
+        const { items } = await savedAnalysisService.listAnalyses({ source_tab: 'quality_buy', ticker: market, limit: 5 });
+        const latest = items.find(item => item.ticker === market && item.result_data?.end_date);
+        const latestDate: string | undefined = latest?.result_data?.end_date;
+        if (!latest || !latestDate || (localDate && latestDate <= localDate)) return;
+        const full = await savedAnalysisService.getAnalysisById(latest.id);
+        const scan = full.result_data as ArchivedScan;
+        if (cancelled || runningRef.current || !Array.isArray(scan?.results)) return;
+        persist(market, { endDate: scan.end_date, results: scan.results });
+        setResults(scan.results);
+        setEndDate(scan.end_date);
+        setTotal(0);
+        setLoadedArchive({ endDate: scan.end_date, complete: scan.complete !== false, scanned: scan.scanned, total: scan.total });
+      } catch {
+        // 불러오지 못하면 이 브라우저의 결과를 그대로 보여 준다.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [market]);
 
   const startScan = useCallback((refresh: boolean) => {
     stopRef.current?.();
@@ -853,6 +899,7 @@ export function QualityBuyTab() {
     setTotal(0);
     setError(null);
     setArchiveNote(null);
+    setLoadedArchive(null);
     setIsRunning(true);
 
     const collected: ScreenerResult[] = [];
@@ -967,6 +1014,7 @@ export function QualityBuyTab() {
   };
 
   const buyCount = results.filter(r => r.verdict === 'buy').length;
+  const repricedCount = results.filter(r => r.repriced).length;
   const watchCount = results.filter(r => r.verdict === 'watch').length;
   const progressPct = total > 0 ? Math.round((results.length / total) * 100) : 0;
   const hasResults = results.length > 0;
@@ -1006,7 +1054,7 @@ export function QualityBuyTab() {
                     size="sm"
                     variant="ghost"
                     onClick={() => startScan(true)}
-                    title={lang === 'ko' ? '오늘 저장된 계산 결과를 무시하고 다시 조회합니다' : "Ignore today's cached results and re-fetch"}
+                    title={lang === 'ko' ? '저장해 둔 재무와 오늘 계산 결과를 쓰지 않고 모든 종목의 재무를 새로 받아 계산합니다(오래 걸림)' : 'Ignore stored financials and today\'s results; re-fetch every financial statement (slow)'}
                   >
                     <RefreshCw size={14} className="mr-1" />
                     {lang === 'ko' ? '새로 계산' : 'Recompute'}
@@ -1024,27 +1072,45 @@ export function QualityBuyTab() {
         {/* Criteria */}
         <div className="rounded-lg border border-border/70 bg-muted/10 p-3 text-xs leading-relaxed text-muted-foreground">
           {lang === 'ko' ? (
-            <>
-              종목 분석은 <b className="text-foreground">'지금 싼가'</b>에 매수 기준이 걸려 있어, 비싸게 거래되는 우량주는 대부분 중립·매도로 나옵니다.
-              여기서는 두 질문을 나눠 봅니다. <b className="text-foreground">① 우량한가</b> — 수익성·성장·재무건전성 셋 중 둘 이상이 강하고 약한 항목이 없음.{' '}
-              <b className="text-foreground">② 지금 싼가</b> — 계산한 적정가가 시가총액보다 15% 넘게 높음(종목 분석의 가치평가 매수 기준과 같음).
-              아직 싸지 않은 우량주 가운데 적정가에서 크게 벗어나지 않은 종목은 <b className="text-foreground">관심 후보</b>로 따로 모으고, 얼마나 내려야 매수 구간인지 함께 보여 줍니다.
-              은행·보험·증권은 이 모델이 맞지 않아 <b className="text-foreground">금융업</b>으로 따로 모으고, 괴리가 ±50%를 넘으면 모델이 맞지 않을 가능성이 커 <AlertTriangle size={11} className="inline align-baseline text-amber-500" /> 표시를 답니다(마우스를 올리면 이유가 보입니다).
-              AI 호출 없이 계산만 하므로 빠르고, 같은 날 다시 스캔하면 저장된 결과를 바로 보여 줍니다. 대형주는 한국·미국 각 25개이고, 'S&P 500 전체'·'코스피 전체'는 스캔하는 시점의 지수 구성 종목 전부(수백 개)를 훑어 수십 분 걸립니다.
-              스캔 결과는 끝까지 돌든 중간에 멈추든 받은 데까지 <b className="text-foreground">저장 분석</b>에 자동으로 남습니다. 종목 옆 <ChartLine size={11} className="inline align-baseline" /> 아이콘에 마우스를 올리면 1년 주가를, '바로가기'를 펼치면 네이버 증권·DART·SEC 링크를 볼 수 있습니다.
-            </>
+            <ul className="space-y-1">
+              <li>
+                <b className="text-foreground">두 질문으로 나눠 봅니다.</b> ① <b className="text-foreground">우량한가</b> — 수익성·성장·재무건전성 중 둘 이상이 강하고 약한 항목이 없음.
+                ② <b className="text-foreground">지금 싼가</b> — 8가지 방법으로 구한 적정가가 시가총액보다 15% 넘게 높음.
+              </li>
+              <li>
+                <b className="text-foreground">관심 후보</b>는 우량하지만 아직 싸지 않은 종목(적정가 대비 −10%~+15%)이고, 얼마나 내려야 매수 구간인지 함께 보여 줍니다.
+                은행·보험·증권은 <b className="text-foreground">금융업</b>으로 따로 모으고, 괴리가 ±50%를 넘으면 <AlertTriangle size={11} className="inline align-baseline text-amber-500" /> 표시를 답니다.
+              </li>
+              <li>
+                종목마다 <b className="text-foreground">판정 근거</b>(실제 수치·방법별 적정가), <ChartLine size={11} className="inline align-baseline" /> 1년 주가(마우스 올리기), <b className="text-foreground">바로가기</b>(네이버 증권·DART·SEC)를 볼 수 있습니다.
+              </li>
+              <li>
+                재무는 14~28일 기억해 두고 다음 스캔부터는 오늘 주가만 받아 다시 계산해 빠릅니다('새로 계산'은 재무를 전부 새로 받음).
+                평일마다 서버가 <b className="text-foreground">S&P 500 전체는 아침 7:30</b>, <b className="text-foreground">코스피 전체는 오후 5:00</b>에 자동으로 스캔하고, 모든 스캔은 멈춰도 받은 데까지 <b className="text-foreground">저장 분석</b>에 남습니다.
+              </li>
+            </ul>
           ) : (
-            <>
-              Stock Analysis only turns bullish when a stock is <b className="text-foreground">cheap</b>, so richly priced quality stocks mostly show neutral or bearish.
-              This view splits the two questions. <b className="text-foreground">① Quality</b> — at least two of profitability, growth and balance-sheet health are strong, none weak.{' '}
-              <b className="text-foreground">② Cheap now</b> — estimated fair value exceeds market cap by more than 15% (the same bar as the valuation analyst).
-              Quality names close to fair value but not yet cheap go to the <b className="text-foreground">watchlist</b>, with the decline needed to reach the buy zone.
-              Banks, insurers and brokers do not fit these models and are grouped under <b className="text-foreground">Financials</b>; gaps beyond ±50% get a <AlertTriangle size={11} className="inline align-baseline text-amber-500" /> mark (hover for why).
-              No AI calls, only calculations; re-scanning on the same day returns cached results. Large caps: 25 Korean and 25 US names; 'All S&P 500' and 'All KOSPI' scan every current index member (hundreds of names) and take tens of minutes.
-              Every scan — finished or stopped — is saved to <b className="text-foreground">Saved Analyses</b> up to where it got. Hover the <ChartLine size={11} className="inline align-baseline" /> icon next to a name for its 1-year price, or expand 'Links' for Naver Finance, DART and SEC.
-            </>
+            <ul className="space-y-1">
+              <li>
+                <b className="text-foreground">Two questions.</b> ① <b className="text-foreground">Quality</b> — 2+ of profitability, growth and balance sheet strong, none weak.
+                ② <b className="text-foreground">Cheap now</b> — fair value from 8 methods exceeds market cap by more than 15%.
+              </li>
+              <li>
+                The <b className="text-foreground">watchlist</b> holds quality names within −10%~+15% of fair value, with the decline needed to reach the buy zone.
+                Banks, insurers and brokers go to <b className="text-foreground">Financials</b>; gaps beyond ±50% get <AlertTriangle size={11} className="inline align-baseline text-amber-500" />.
+              </li>
+              <li>
+                Each row has <b className="text-foreground">Why</b> (figures and per-method fair values), a <ChartLine size={11} className="inline align-baseline" /> 1-year chart on hover, and <b className="text-foreground">Links</b>.
+              </li>
+              <li>
+                Financials are kept 14–28 days so later scans only fetch today’s price ('Recompute' re-fetches everything).
+                On weekdays the server scans <b className="text-foreground">All S&P 500 at 7:30 KST</b> and <b className="text-foreground">All KOSPI at 17:00 KST</b>; every scan, even stopped, is saved to <b className="text-foreground">Saved Analyses</b>.
+              </li>
+            </ul>
           )}
         </div>
+
+        <MethodGuide lang={lang} />
 
         {/* Progress */}
         {(isRunning || (total > 0 && results.length < total)) && (
@@ -1104,6 +1170,22 @@ export function QualityBuyTab() {
                 ? `${results.length}개 중 매수 후보 ${buyCount}개 · 관심 후보 ${watchCount}개`
                 : `${buyCount} buy candidate${buyCount === 1 ? '' : 's'}, ${watchCount} on watch, of ${results.length}`}
               {endDate && <span> · {lang === 'ko' ? `기준일 ${endDate}` : `as of ${endDate}`}</span>}
+              {repricedCount > 0 && (
+                <span
+                  title={lang === 'ko'
+                    ? '재무제표는 분기마다 바뀌므로 최근 14~28일 안에 계산한 재무를 다시 쓰고, 적정가 괴리는 오늘 주가로 새로 계산했습니다'
+                    : 'Financials change quarterly, so financials computed in the last 14–28 days were reused and the gap was recomputed at today\'s price'}
+                >
+                  {' · '}{lang === 'ko' ? `${repricedCount}종목은 저장된 재무 + 오늘 주가` : `${repricedCount} with stored financials + today's price`}
+                </span>
+              )}
+              {loadedArchive && (
+                <span>
+                  {' · '}{lang === 'ko'
+                    ? `저장 분석의 최근 스캔을 불러옴${loadedArchive.complete ? '' : ` (중단 ${loadedArchive.scanned}/${loadedArchive.total})`}`
+                    : `Loaded the latest saved scan${loadedArchive.complete ? '' : ` (stopped ${loadedArchive.scanned}/${loadedArchive.total})`}`}
+                </span>
+              )}
             </span>
             {!isRunning && (
               <span className="ml-auto flex items-center gap-1" data-print-hide>

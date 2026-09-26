@@ -1,0 +1,10 @@
+[Unit]
+Description=S&P 500 buy-candidate scan after the US close (07:30 KST, Tue-Sat)
+
+[Timer]
+# 서버 시계는 UTC. 22:30 UTC 월~금 = 한국 시간 화~토 07:30, 미국 장 마감 뒤. 기준일은 그날 미국 거래일이 된다.
+OnCalendar=Mon..Fri 22:30 UTC
+Unit=hedge-screener@SP500.service
+
+[Install]
+WantedBy=timers.target

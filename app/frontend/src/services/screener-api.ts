@@ -22,6 +22,16 @@ export type ScreenerVerdict =
 /** 판정 모델이 이 종목에 맞지 않을 수 있다는 표시 */
 export type ScreenerWarning = 'extreme_gap' | 'financial_sector';
 
+export interface ScreenerModelBreakdown {
+  key: string;
+  per_share: number | null;
+  gap: number;
+  weight: number;
+  /** 다른 모델들과 너무 동떨어져 합산에서 뺐다 */
+  excluded: boolean;
+  share: number;
+}
+
 export type AxisSignal = 'bullish' | 'neutral' | 'bearish' | null;
 
 export interface ScreenerUniverseEntry {
@@ -60,9 +70,15 @@ export interface ScreenerResult extends ScreenerUniverseEntry {
     buy_price_per_share?: number | null;
     /** 매수 구간까지 필요한 주가 하락률(0.2 = 20%). 이미 매수 구간이면 0 */
     drop_to_buy?: number | null;
+    /** 가치평가 모델별 근거 — 주당 적정가, 현재가 대비, 원래 가중치, 최종 반영 비중(제외면 0) */
+    models?: ScreenerModelBreakdown[] | null;
   };
   error: string | null;
   cached?: boolean;
+  /** 재무를 다시 받지 않고 저장해 둔 재무 + 오늘 주가로 판정했다 */
+  repriced?: boolean;
+  /** 재무를 마지막으로 계산한 날 */
+  fundamentals_as_of?: string | null;
 }
 
 /** 전진 검증 — 판정별·보유기간별 성과 */

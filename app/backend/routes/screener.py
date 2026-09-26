@@ -18,7 +18,7 @@ from app.backend.services.api_key_service import ApiKeyService
 from src.screener.quality_buy import BUY_GAP, WATCH_GAP, classify, scan_ticker
 from src.screener.full_universe import UniverseFetchError, full_universe
 from src.screener.universe import universe_for
-from src.screener import point_in_time, track_record
+from src.screener import point_in_time, snapshot_store, track_record
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/screener", tags=["screener"])
@@ -118,6 +118,20 @@ def _cached(end_date: str, ticker: str) -> Optional[dict]:
     return _day_cache.get(end_date, {}).get(ticker)
 
 
+def _reprice(entry: dict, end_date: str) -> Optional[dict]:
+    from src.screener.quality_buy import release_ticker_caches
+
+    with release_ticker_caches(entry["ticker"]):
+        return snapshot_store.reprice(entry, end_date)
+
+
+def _save_snapshot(snapshot: dict) -> None:
+    from src.screener.quality_buy import release_ticker_caches
+
+    with release_ticker_caches(snapshot["ticker"]):
+        snapshot_store.save_with_base_close(snapshot)
+
+
 def _remember(end_date: str, result: dict) -> None:
     # 데이터 부족·오류는 일시적일 수 있으니 기억하지 않는다 — 다음 스캔에서 다시 시도한다.
     if result.get("error") or result.get("verdict") == "insufficient":
@@ -159,10 +173,27 @@ async def scan(request_data: ScreenerScanRequest, request: Request, db: Session 
                 if hit:
                     return {**hit, "cached": True}
             async with semaphore:
+                # 재무 스냅샷이 살아 있으면 오늘 종가만 받아 판정한다(재무를 다시 받지 않는다).
+                # '새로 계산'은 스냅샷을 건너뛰고 전체 계산을 한다.
+                if not request_data.refresh:
+                    try:
+                        repriced = await asyncio.to_thread(_reprice, entry, end_date)
+                    except Exception as exc:  # 스냅샷 문제는 전체 계산으로 넘어가면 된다
+                        logger.debug("snapshot reprice failed for %s: %s", entry["ticker"], exc)
+                        repriced = None
+                    if repriced:
+                        _remember(end_date, repriced)
+                        return {**repriced, "repriced": True}
                 try:
                     result = await asyncio.to_thread(scan_ticker, entry, end_date, api_keys)
                 except Exception as exc:  # 한 종목의 예외가 스트림 전체를 끊으면 안 된다
                     result = {**entry, **classify(None, None), "error": str(exc)}
+                snapshot = result.pop("_snapshot", None)
+                if snapshot:
+                    try:
+                        await asyncio.to_thread(_save_snapshot, snapshot)
+                    except Exception as exc:  # 저장 실패가 결과 전달을 막으면 안 된다
+                        logger.warning("snapshot save failed for %s: %s", entry["ticker"], exc)
             _remember(end_date, result)
             return result
 
