@@ -6,11 +6,19 @@ from pathlib import Path
 
 import pytest
 
-from src.screener import quality_buy
-from src.screener.quality_buy import BUY_GAP, SCREENER_AGENT_PREFIX, WATCH_GAP, classify, scan_ticker
+from src.screener import quality_buy, sector, track_record
+from src.screener.sector import lookup_profile as real_lookup_profile
+from src.screener.quality_buy import BUY_GAP, EXTREME_GAP, SCREENER_AGENT_PREFIX, WATCH_GAP, classify, scan_ticker
 from src.screener.universe import LARGE_CAP_UNIVERSE, universe_for
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def no_industry_network(monkeypatch, tmp_path):
+    """섹터·업종 조회(yfinance)는 네트워크를 쓰므로 '모름'으로 두고, 전진 검증 기록은 임시 폴더에 쓴다."""
+    monkeypatch.setattr(sector, "lookup_profile", lambda ticker: None)
+    monkeypatch.setattr(track_record, "TRACK_DIR", tmp_path / "screener_track")
 
 
 def _fundamentals(profitability, growth, health):
@@ -97,6 +105,145 @@ def test_quality_block_carries_axis_details():
     quality = classify(_fundamentals("bullish", "bullish", "bullish"), None)["quality"]
     assert quality["details"]["profitability"] == "ROE: 18.00%, Net Margin: N/A"
     assert quality["details"]["growth"] is None
+
+
+# ── 금융업 · 모델 부적합 경고 ───────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "industry, misfit",
+    [("Diversified Banks", True), ("Banks - Regional", True), ("Property & Casualty Insurance", True),
+     ("Insurance - Life", True), ("Investment Banking & Brokerage", True), ("Capital Markets", True),
+     ("Consumer Finance", True), ("Insurance Brokers", False),
+     ("Transaction & Payment Processing Services", False), ("Financial Exchanges & Data", False),
+     ("Credit Services", False), ("Semiconductors", False), (None, False), ("", False)],
+)
+def test_financial_misfit_covers_balance_sheet_financials_only(industry, misfit):
+    # 결제망·거래소·보험 중개는 일반 모델이 맞으므로 금융업 예외에 넣지 않는다.
+    assert sector.is_financial_misfit(industry) is misfit
+
+
+def test_financial_stock_is_grouped_separately_whatever_its_quality_or_gap():
+    for axes in (("bullish", "bullish", "neutral"), ("bullish", "neutral", "bearish")):
+        result = classify(_fundamentals(*axes), _valuation(1.53), financial=True)
+        assert result["verdict"] == "financial"
+        assert result["value"]["gap"] == pytest.approx(1.53)  # 수치는 참고로 그대로 보여 준다
+        assert result["warnings"] == ["financial_sector", "extreme_gap"]
+
+
+@pytest.mark.parametrize(
+    "gap, warned",
+    [(EXTREME_GAP, True), (EXTREME_GAP - 0.001, False), (-EXTREME_GAP, True), (-0.759, True),
+     (0.2, False), (None, False)],
+)
+def test_extreme_gap_is_flagged_as_possible_model_misfit(gap, warned):
+    result = classify(_fundamentals("bullish", "bullish", "neutral"), _valuation(gap))
+    assert ("extreme_gap" in result["warnings"]) is warned
+    assert "financial_sector" not in result["warnings"]
+
+
+def test_scan_reports_sector_and_separates_financials():
+    looked_up = []
+
+    def lookup(ticker):
+        looked_up.append(ticker)
+        return {"sector": "Financial Services", "industry": "Banks - Diversified"}
+
+    calls = []
+    result = scan_ticker(
+        ENTRY, "2026-09-25", KEYS,
+        fundamentals_agent=_fake_agent(_fundamentals("bullish", "bullish", "neutral"), calls),
+        valuation_agent=_fake_agent(_valuation(0.3), calls),
+        profile_lookup=lookup,
+    )
+    assert result["verdict"] == "financial"
+    assert result["sector"] == "Financial Services" and result["industry"] == "Banks - Diversified"
+    assert looked_up == ["AAPL"]
+
+    # 재무건전성이 약해 우량에서 떨어졌어도, 금융업이면 따로 모으고 가치평가 수치도 보여 준다.
+    calls.clear()
+    result = scan_ticker(
+        ENTRY, "2026-09-25", KEYS,
+        fundamentals_agent=_fake_agent(_fundamentals("bullish", "bullish", "bearish"), calls),
+        valuation_agent=_fake_agent(_valuation(0.3), calls),
+        profile_lookup=lookup,
+    )
+    assert result["verdict"] == "financial"
+    assert calls == [f"{SCREENER_AGENT_PREFIX}fundamentals", f"{SCREENER_AGENT_PREFIX}valuation"]
+
+    # 품질 미달 종목도 섹터는 보여 주지만, 가치평가는 돌리지 않는다.
+    calls.clear()
+    result = scan_ticker(
+        ENTRY, "2026-09-25", KEYS,
+        fundamentals_agent=_fake_agent(_fundamentals("bearish", "bullish", "bullish"), calls),
+        valuation_agent=_fake_agent(_valuation(0.3), calls),
+        profile_lookup=lambda t: {"sector": "Technology", "industry": "Consumer Electronics"},
+    )
+    assert result["verdict"] == "not_quality" and result["sector"] == "Technology"
+    assert calls == [f"{SCREENER_AGENT_PREFIX}fundamentals"]
+
+
+def test_scan_skips_profile_lookup_without_fundamentals():
+    def lookup(ticker):
+        raise AssertionError("판정할 수 없는 종목은 조회하지 않는다")
+
+    result = scan_ticker(
+        ENTRY, "2026-09-25", KEYS,
+        fundamentals_agent=_fake_agent(None, [], raises=RuntimeError("no data")),
+        valuation_agent=_fake_agent(_valuation(0.3), []),
+        profile_lookup=lookup,
+    )
+    assert result["verdict"] == "insufficient" and result["sector"] is None
+
+
+def test_scan_uses_sector_from_the_universe_without_lookup():
+    def lookup(ticker):
+        raise AssertionError("목록에 업종이 있으면 조회하지 않는다")
+
+    result = scan_ticker(
+        {**ENTRY, "sector": "Financials", "industry": "Property & Casualty Insurance"}, "2026-09-25", KEYS,
+        fundamentals_agent=_fake_agent(_fundamentals("bullish", "bullish", "neutral"), []),
+        valuation_agent=_fake_agent(_valuation(1.53), []),
+        profile_lookup=lookup,
+    )
+    assert result["verdict"] == "financial" and result["sector"] == "Financials"
+
+    result = scan_ticker(
+        {**ENTRY, "sector": "Information Technology", "industry": "Technology Hardware, Storage & Peripherals"},
+        "2026-09-25", KEYS,
+        fundamentals_agent=_fake_agent(_fundamentals("bullish", "bullish", "neutral"), []),
+        valuation_agent=_fake_agent(_valuation(0.3), []),
+        profile_lookup=lookup,
+    )
+    assert result["verdict"] == "buy" and result["warnings"] == []
+
+
+def test_profile_lookup_failure_does_not_stop_the_scan(monkeypatch):
+    sector._profile_cache.clear()
+
+    class Boom:
+        def Ticker(self, ticker):
+            raise ConnectionError("blocked")
+
+    import sys
+    monkeypatch.setitem(sys.modules, "yfinance", Boom())
+    # autouse 픽스처가 바꿔 끼운 것이 아닌 실제 조회 함수를 부른다.
+    assert real_lookup_profile("AAPL") is None
+    assert "AAPL" not in sector._profile_cache  # 실패는 기억하지 않는다
+
+
+def test_profile_lookup_reads_sector_and_industry(monkeypatch):
+    sector._profile_cache.clear()
+
+    class FakeYf:
+        def Ticker(self, ticker):
+            return type("T", (), {"info": {"sector": "Technology", "industry": "Semiconductors"}})()
+
+    import sys
+    monkeypatch.setitem(sys.modules, "yfinance", FakeYf())
+    assert real_lookup_profile("NVDA") == {"sector": "Technology", "industry": "Semiconductors"}
+    assert "NVDA" in sector._profile_cache
+    sector._profile_cache.clear()
 
 
 # ── 대상 목록 ────────────────────────────────────────────────────────────────
@@ -309,6 +456,21 @@ def test_parse_sp500_reads_only_the_constituents_table():
     # 고정 목록에 있는 종목은 한글 이름을 쓴다.
     assert entries[1]["name"] == "애플" and entries[0]["name"] == "3M"
     assert all(e["market"] == "US" for e in entries)
+
+
+def test_parse_sp500_keeps_gics_sub_industry():
+    html = """
+<table id="constituents"><tbody>
+<tr><th>Symbol</th><th>Security</th><th>GICS Sector</th><th>GICS Sub-Industry</th></tr>
+<tr><td>ALL</td><td>Allstate</td><td>Financials</td><td>Property &amp; Casualty Insurance</td></tr>
+<tr><td>ADBE</td><td>Adobe Inc.</td><td>Information Technology</td><td>Application Software</td></tr>
+</tbody></table>
+"""
+    entries = fu.parse_sp500(html)
+    assert entries[0]["industry"] == "Property & Casualty Insurance" and entries[0]["sector"] == "Financials"
+    assert entries[1]["industry"] == "Application Software"
+    # 세부 업종 칸이 없는 표에서도 목록은 그대로 읽는다.
+    assert "industry" not in fu.parse_sp500(SP500_HTML)[0]
 
 
 def test_parse_sp500_without_table_raises():

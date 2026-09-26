@@ -15,8 +15,12 @@ export type ScreenerVerdict =
   | 'watch'
   | 'quality_expensive'
   | 'quality_no_value'
+  | 'financial'
   | 'not_quality'
   | 'insufficient';
+
+/** 판정 모델이 이 종목에 맞지 않을 수 있다는 표시 */
+export type ScreenerWarning = 'extreme_gap' | 'financial_sector';
 
 export type AxisSignal = 'bullish' | 'neutral' | 'bearish' | null;
 
@@ -28,6 +32,12 @@ export interface ScreenerUniverseEntry {
 
 export interface ScreenerResult extends ScreenerUniverseEntry {
   verdict: ScreenerVerdict;
+  /** 섹터 이름(GICS 섹터 또는 yfinance sector). 조회하지 못했으면 없음 */
+  sector?: string | null;
+  /** 업종 이름(GICS 세부 업종 또는 yfinance industry). 조회하지 못했으면 없음 */
+  industry?: string | null;
+  /** 모델 부적합 가능성 — 괴리율 ±50% 이상, 금융업 */
+  warnings?: ScreenerWarning[];
   quality: {
     profitability: AxisSignal;
     growth: AxisSignal;
@@ -55,6 +65,44 @@ export interface ScreenerResult extends ScreenerUniverseEntry {
   cached?: boolean;
 }
 
+/** 전진 검증 — 판정별·보유기간별 성과 */
+export interface TrackStat {
+  n: number;
+  avg_return: number | null;
+  avg_excess: number | null;
+  beat_rate: number | null;
+}
+
+export interface TrackRecord {
+  as_of: string;
+  first_snapshot: string | null;
+  snapshots: number;
+  next_maturity: string | null;
+  horizons: string[];
+  benchmarks: Record<string, string>;
+  summary: Partial<Record<ScreenerVerdict, Record<string, TrackStat>>>;
+}
+
+/** 과거 시점 검증 — 검증일 하나 */
+export interface HistoryCheckpoint {
+  as_of: string;
+  verdict: ScreenerVerdict | null;
+  note: string | null;
+  report_period?: string | null;
+  price?: number | null;
+  gap?: number | null;
+  quality?: { profitability: AxisSignal; growth: AxisSignal; financial_health: AxisSignal; passed: boolean };
+  returns?: Record<string, { return: number | null; benchmark: number | null; excess: number | null }>;
+}
+
+export interface HistoryCheck {
+  ticker: string;
+  market: 'KR' | 'US';
+  benchmark: string;
+  checkpoints: HistoryCheckpoint[];
+  buy_summary: { n: number; avg_excess_12m: number | null; beat_rate_12m: number | null };
+}
+
 export interface ScreenerScanHandlers {
   onStart?: (info: { total: number; end_date: string; buy_gap: number; watch_gap?: number }) => void;
   onResult: (result: ScreenerResult) => void;
@@ -65,6 +113,22 @@ export interface ScreenerScanHandlers {
 export const screenerApi = {
   async fetchUniverse(market: ScreenerMarket): Promise<{ universe: ScreenerUniverseEntry[]; buy_gap: number; watch_gap: number }> {
     const response = await fetch(`${API_BASE_URL}/screener/universe?market=${market}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  },
+
+  /** 지난 스캔들의 판정별 실제 성과(전진 검증). 주가를 많이 받아 처음엔 느릴 수 있다. */
+  async fetchTrackRecord(): Promise<TrackRecord> {
+    const response = await fetch(`${API_BASE_URL}/screener/track-record`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  },
+
+  /** 종목 하나를 과거 검증일마다 다시 판정하고 그 뒤 수익률을 지수와 비교한다. */
+  async historyCheck(ticker: string, market: 'KR' | 'US', industry?: string | null): Promise<HistoryCheck> {
+    const params = new URLSearchParams({ ticker, market });
+    if (industry) params.set('industry', industry);
+    const response = await fetch(`${API_BASE_URL}/screener/history-check?${params.toString()}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   },

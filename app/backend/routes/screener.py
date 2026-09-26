@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from collections import Counter
 from datetime import date
 from typing import Literal, Optional
@@ -16,7 +17,9 @@ from app.backend.services.api_key_service import ApiKeyService
 from src.screener.quality_buy import BUY_GAP, WATCH_GAP, classify, scan_ticker
 from src.screener.full_universe import UniverseFetchError, full_universe
 from src.screener.universe import universe_for
+from src.screener import point_in_time, track_record
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/screener", tags=["screener"])
 
 #: 동시에 스캔할 종목 수. 종목마다 재무 데이터를 여러 번 조회하므로, 너무 높이면
@@ -28,6 +31,9 @@ HEARTBEAT_SECONDS = 15.0
 #: 같은 날 다시 스캔하면 바로 돌려준다. 재무제표는 하루 안에 바뀌지 않는다.
 #: 기준일이 바뀌면 이전 날짜 결과는 버린다.
 _day_cache: dict[str, dict[str, dict]] = {}
+#: 성과 채점·과거 검증은 주가를 많이 받아 느리다 — 하루 동안 결과를 기억한다.
+_track_cache: dict[str, dict] = {}
+_history_cache: dict[str, dict] = {}
 
 
 #: 대형주 고정 목록(ALL·KR·US)과, 스캔 시점 구성 종목을 받아 오는 지수 전체(SP500·KOSPI).
@@ -101,6 +107,7 @@ async def scan(request_data: ScreenerScanRequest, request: Request, db: Session 
         yield _sse("start", {"total": len(entries), "end_date": end_date, "buy_gap": BUY_GAP, "watch_gap": WATCH_GAP})
         pending = {asyncio.create_task(scan_one(entry)) for entry in entries}
         counts: Counter[str] = Counter()
+        collected: list[dict] = []
         try:
             while pending:
                 done, pending = await asyncio.wait(
@@ -111,9 +118,16 @@ async def scan(request_data: ScreenerScanRequest, request: Request, db: Session 
                 for task in done:
                     result = task.result()
                     counts[result["verdict"]] += 1
+                    collected.append(result)
                     yield _sse("result", result)
                 if not done:
                     yield ": keepalive\n\n"
+            # 끝까지 돈 스캔만 전진 검증 기록에 남긴다(중간에 끊긴 스캔은 표본이 치우친다).
+            try:
+                await asyncio.to_thread(track_record.record_scan, end_date, collected)
+                _track_cache.clear()
+            except Exception as exc:  # 기록 실패가 스캔 결과 전달을 막으면 안 된다
+                logger.warning("screener track record failed: %s", exc)
             yield _sse("complete", {"total": len(entries), "counts": dict(counts)})
         finally:
             # 연결이 끊기면 남은 종목은 기다리지 않는다(이미 도는 조회는 끝까지 간다).
@@ -121,3 +135,28 @@ async def scan(request_data: ScreenerScanRequest, request: Request, db: Session 
                 task.cancel()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.get("/track-record")
+async def get_track_record():
+    """전진 검증 — 지난 스캔의 판정별 1·3·6·12개월 수익률과 지수 대비 초과수익률."""
+    today = date.today().isoformat()
+    if today not in _track_cache:
+        snapshots = await asyncio.to_thread(track_record.load_snapshots)
+        _track_cache.clear()
+        _track_cache[today] = await asyncio.to_thread(track_record.evaluate, snapshots, date.today())
+    return _track_cache[today]
+
+
+@router.get("/history-check")
+async def history_check(ticker: str, market: Literal["KR", "US"], industry: Optional[str] = None):
+    """종목 하나의 과거 시점 검증 — 그때 공개된 재무제표와 그날 주가로 판정을 다시 내 본다."""
+    today = date.today()
+    key = f"{today.isoformat()}:{market}:{ticker}"
+    if key not in _history_cache:
+        for stale in [k for k in _history_cache if not k.startswith(today.isoformat())]:
+            del _history_cache[stale]
+        _history_cache[key] = await asyncio.to_thread(
+            point_in_time.check_history, ticker, market, today, industry=industry,
+        )
+    return _history_cache[key]

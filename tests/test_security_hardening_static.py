@@ -41,12 +41,18 @@ class SecurityHardeningStaticTests(unittest.TestCase):
                 re.search(r"(FMP_API_KEY|AV_API_KEY)\s*=\s*[\"'][A-Za-z0-9]{16,}[\"']", src),
                 f"{name} must not hardcode API keys",
             )
+            # 지역 변수(av_key = "...") 로 박아 넣은 경우도 잡는다
+            self.assertIsNone(
+                re.search(r"(?i)\w*_key\s*=\s*[\"'][A-Za-z0-9]{16,}[\"']", src),
+                f"{name} must not hardcode API keys in local variables",
+            )
             self.assertIn('os.environ.get("FMP_API_KEY"', src)
             self.assertIn('os.environ.get("AV_API_KEY"', src)
 
     def test_missing_key_skips_provider_instead_of_calling(self):
         """키가 없으면 무의미한 외부 호출 대신 그 소스만 건너뛴다."""
         self.assertIn("if not FMP_API_KEY:", API_TOOLS)
+        self.assertIn("if not AV_API_KEY:", API_TOOLS)
         self.assertIn("if not FMP_API_KEY:\n        return []", TICKER_SEARCH)
         self.assertIn("if not AV_API_KEY:\n        return []", TICKER_SEARCH)
 

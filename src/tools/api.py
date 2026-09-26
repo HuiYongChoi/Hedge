@@ -7,9 +7,11 @@ import pandas as pd
 import re
 import requests
 import threading
+from dotenv import load_dotenv
 import time
 from collections import OrderedDict
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -222,6 +224,9 @@ def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None)
 
 
 # 키는 환경변수에서만 읽는다. 소스에 두면 저장소를 통해 그대로 유출된다.
+# 이 모듈은 src/main.py 의 load_dotenv() 보다 먼저 import 되므로, 여기서 직접
+# 저장소 루트의 .env 를 읽는다(이미 설정된 환경변수는 덮어쓰지 않는다).
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 FMP_API_KEY = os.environ.get("FMP_API_KEY", "")
 AV_API_KEY = os.environ.get("AV_API_KEY", "")
 FMP_STABLE_BASE = "https://financialmodelingprep.com/stable"
@@ -1299,9 +1304,11 @@ def _fetch_alphavantage_metrics(ticker: str) -> dict | None:
         # 대량 스캔에서는 건너뛴다 — 무료 한도가 하루 25건이라 종목마다 소스가 들쭉날쭉해지고,
         # 유동비율·부채비율이 없어 재무건전성이 '약함'으로 잘못 매겨진다(yfinance 는 있다).
         return None
-    av_key = "QCE8EC5Q5OP74PYD"
+    if not AV_API_KEY:
+        # 키 미설정 시 무의미한 외부 호출을 하지 않는다(호출부는 None 을 처리한다).
+        return None
     try:
-        url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={ticker}&apikey={av_key}"
+        url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={ticker}&apikey={AV_API_KEY}"
         r = requests.get(url)
         if r.status_code == 200:
             data = r.json()

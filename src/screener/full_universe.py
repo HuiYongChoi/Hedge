@@ -3,7 +3,7 @@
 고정 목록(universe.py)은 대형주 50개뿐이라, 지수 전체를 훑을 때는 스캔하는 시점의
 구성 종목을 서버가 직접 받아 온다. 구성은 수시로 바뀌므로 코드에 박아 두지 않는다.
 
-· S&P 500 — 위키백과 구성 종목 표(표 id "constituents").
+· S&P 500 — 위키백과 구성 종목 표(표 id "constituents"). GICS 세부 업종도 함께 읽는다.
 · 코스피 — 네이버 증권(모바일 JSON → 시가총액 페이지) → KRX KIND 상장법인 목록 →
   pykrx 순으로 시도한다. 우선주는 뺀다.
 
@@ -64,7 +64,13 @@ def parse_sp500(html: str) -> list[UniverseEntry]:
         if not ticker or ticker in seen:
             continue
         seen.add(ticker)
-        entries.append({"ticker": ticker, "name": _KNOWN_NAMES.get(ticker, name), "market": "US"})
+        entry: UniverseEntry = {"ticker": ticker, "name": _KNOWN_NAMES.get(ticker, name), "market": "US"}
+        # 셋째·넷째 칸이 GICS 섹터·세부 업종이다 — 섹터 표시와 금융업 판별에 쓴다.
+        if len(cells) > 2 and (sector_name := cells[2].get_text(strip=True)):
+            entry["sector"] = sector_name
+        if len(cells) > 3 and (industry := cells[3].get_text(strip=True)):
+            entry["industry"] = industry
+        entries.append(entry)
     return entries
 
 
