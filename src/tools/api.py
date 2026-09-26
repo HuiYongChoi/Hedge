@@ -398,19 +398,39 @@ def _prune_sec_companyfacts(data: dict) -> dict:
     }
 
 
-def _sec_fact_candidates(companyfacts: dict, field: str) -> list[dict]:
-    us_gaap = (companyfacts.get("facts") or {}).get("us-gaap") or {}
-    for concept in _SEC_FACT_CONCEPTS.get(field, ()):
-        concept_data = us_gaap.get(concept) or {}
-        units = concept_data.get("units") or {}
-        unit_names = _SEC_UNIT_PREFERENCE.get(field, ("USD",))
-        for unit_name in unit_names:
-            if unit_name in units:
-                return [dict(fact, _concept=concept) for fact in units.get(unit_name, [])]
-        if units:
-            first_unit = next(iter(units))
-            return [dict(fact, _concept=concept) for fact in units.get(first_unit, [])]
+def _sec_concept_facts(us_gaap: dict, concept: str, field: str) -> list[dict]:
+    units = (us_gaap.get(concept) or {}).get("units") or {}
+    for unit_name in _SEC_UNIT_PREFERENCE.get(field, ("USD",)):
+        if unit_name in units:
+            return units.get(unit_name, [])
+    if units:
+        return units.get(next(iter(units)), [])
     return []
+
+
+def _sec_fact_candidates(companyfacts: dict, field: str) -> list[dict]:
+    """한 항목의 사실들 — 후보 태그(concept)를 기간별로 합친다.
+
+    회사는 쓰던 XBRL 태그를 바꾼다(예: Broadcom 은 2019년 뒤 StockholdersEquity 대신
+    ...IncludingPortionAttributableToNoncontrollingInterest, 2018년 매출 기준 변경 뒤 Revenues →
+    RevenueFromContractWithCustomer...). 예전처럼 '처음 찾은 태그 하나'만 쓰면 태그를 바꾼 뒤의
+    값이 없어 몇 년 전 값이 최신처럼 쓰인다(Broadcom 부채비율 0.80 이 2019년 자본으로 나눠 2.38).
+    그래서 기간(시작·끝)마다 우선순위가 높은 태그의 값을 쓰고, 그 태그에 없는 기간은 다음 태그로 채운다.
+    """
+    us_gaap = (companyfacts.get("facts") or {}).get("us-gaap") or {}
+    merged: list[dict] = []
+    covered: set[tuple[str, str]] = set()
+    for concept in _SEC_FACT_CONCEPTS.get(field, ()):
+        facts = _sec_concept_facts(us_gaap, concept, field)
+        added: set[tuple[str, str]] = set()
+        for fact in facts:
+            period = (str(fact.get("start") or ""), str(fact.get("end") or ""))
+            if period in covered:
+                continue
+            merged.append(dict(fact, _concept=concept))
+            added.add(period)
+        covered |= added
+    return merged
 
 
 def _sec_fact_is_eligible(fact: dict, end_date: str) -> bool:

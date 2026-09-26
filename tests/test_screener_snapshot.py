@@ -191,3 +191,13 @@ def test_outlier_model_is_marked_excluded():
     breakdown = {m["key"]: m for m in blend(models, 1000.0, 10.0)["reasoning"]["model_breakdown"]}
     assert breakdown["d"]["excluded"] and breakdown["d"]["share"] == 0.0
     assert breakdown["a"]["share"] == pytest.approx(1 / 3)
+
+
+def test_tech_sector_gets_valuation_reliability_warning():
+    valuation = _valuation({"dcf": (500.0, 1.0)}, 1_000.0, 10.0)
+    blended = blend({"dcf": {"value": 500.0, "weight": 1.0}}, 1_000.0, 10.0)
+    tech = classify(FUNDAMENTALS, blended, sector="Information Technology")
+    other = classify(FUNDAMENTALS, blended, sector="Industrials")
+    assert "tech_valuation" in tech["warnings"] and "tech_valuation" not in other["warnings"]
+    assert tech["verdict"] == other["verdict"] == "quality_expensive"  # 판정 자체는 바꾸지 않는다
+    assert valuation  # 모양 확인용

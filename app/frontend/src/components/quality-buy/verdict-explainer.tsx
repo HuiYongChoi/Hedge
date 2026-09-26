@@ -6,7 +6,7 @@
 
 import { cn } from '@/lib/utils';
 import type { ScreenerResult, ScreenerVerdict } from '@/services/screener-api';
-import { Check, ChevronDown, Minus, X } from 'lucide-react';
+import { Check, ChevronDown, Info, Minus, X } from 'lucide-react';
 
 type Lang = 'ko' | 'en';
 
@@ -297,6 +297,16 @@ export function VerdictBreakdown({ result, lang }: { result: ScreenerResult; lan
                 </tbody>
               </table>
             </div>
+            {result.warnings?.includes('tech_valuation') && (
+              <div className="mt-2 flex gap-1.5 rounded border border-sky-500/40 bg-sky-500/5 p-2 leading-relaxed">
+                <Info size={12} className="mt-0.5 shrink-0 text-sky-500" />
+                <span>
+                  {ko
+                    ? '기술·커뮤니케이션 업종이라 아래 괴리는 참고만 하세요. S&P 500 과거 10년 검증에서 이 업종의 괴리는 이후 12개월 수익을 거의 맞히지 못했고, "우량 · 비쌈" 종목도 평균적으로 지수와 비슷하거나 높았습니다(판정 방법 안내의 "검증 결과" 참고).'
+                    : 'Tech/communication: treat the gap below as reference only. In a 10-year S&P 500 test it barely predicted 12-month returns here, and "quality · expensive" names on average matched or beat the index (see "Validation" in the guide).'}
+                </span>
+              </div>
+            )}
             <div className="mt-2 space-y-0.5 rounded bg-background/60 p-2 leading-relaxed">
               <div>
                 {ko ? '가중평균 적정가 ' : 'Weighted fair value '}
@@ -420,6 +430,62 @@ export function MethodGuide({ lang }: { lang: Lang }) {
                 : 'Gaps beyond ±50% get a ⚠: the models likely do not fit that company. Banks, insurers and brokers do not fit these methods and are grouped as financials.'}
             </li>
           </ol>
+        </section>
+
+        <section>
+          <h4 className="mb-1 font-semibold">{ko ? '검증 결과 — 이 판정은 실제로 맞았나' : 'Validation — did it work?'}</h4>
+          <p className="mb-1.5 text-muted-foreground">
+            {ko
+              ? 'S&P 500 486종목을 2016~2025년 매년 4월 15일 시점으로 되돌려, 그때 공개된 재무제표(SEC)와 그날 주가로 괴리를 다시 계산하고 그 뒤 12개월 수익률을 S&P 500(SPY)과 비교했습니다(4,437건). "순위상관"은 괴리가 큰 종목일수록 이후 수익도 높았는지를 −1~+1로 나타냅니다.'
+              : '486 S&P 500 names were rolled back to April 15 of each year 2016–2025; the gap was recomputed from filings (SEC) and prices of that day and compared with the next 12 months vs SPY (4,437 cases). Rank correlation (−1…+1) shows whether bigger gaps led to higher returns.'}
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full tabular-nums">
+              <thead className="text-muted-foreground">
+                <tr className="text-left">
+                  <th className="py-1 pr-3 font-normal">{ko ? '대상' : 'Group'}</th>
+                  <th className="py-1 pr-3 font-normal">{ko ? '신호' : 'Signal'}</th>
+                  <th className="py-1 pr-3 text-right font-normal">{ko ? '순위상관' : 'Rank corr.'}</th>
+                  <th className="py-1 pr-3 text-right font-normal">{ko ? '맞은 해' : 'Years right'}</th>
+                  <th className="py-1 text-right font-normal">{ko ? '싼 1/3 − 비싼 1/3 (연)' : 'Cheap − dear third (yr)'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  [ko ? '기술 외 업종' : 'Non-tech', ko ? '적정가 괴리(지금 방식)' : 'Fair-value gap (current)', '+0.08', '8/10', '+6.5%p', true],
+                  [ko ? '기술·커뮤니케이션' : 'Tech & comm.', ko ? '적정가 괴리(지금 방식)' : 'Fair-value gap (current)', '+0.02', '6/10', '−1.2%p', false],
+                  [ko ? '기술·커뮤니케이션' : 'Tech & comm.', ko ? '역산 DCF(기대 성장률 대비 실제)' : 'Reverse DCF (implied vs actual growth)', '−0.07', '3/10', '−11.1%p', false],
+                  [ko ? '기술·커뮤니케이션' : 'Tech & comm.', ko ? '잉여현금흐름 수익률' : 'FCF yield', '−0.03', '5/10', '−23.8%p', false],
+                  [ko ? '기술·커뮤니케이션' : 'Tech & comm.', ko ? '자기 과거 5년 대비 PSR 위치' : 'P/S vs own 5-yr history', '+0.03', '4/10', '+5.0%p', false],
+                ].map(([group, signal, ic, years, spread, works]) => (
+                  <tr key={`${group}-${signal}`} className="border-t border-border/40">
+                    <td className="py-1 pr-3">{group}</td>
+                    <td className="py-1 pr-3">{signal}</td>
+                    <td className={cn('py-1 pr-3 text-right', works ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground')}>{ic}</td>
+                    <td className="py-1 pr-3 text-right">{years}</td>
+                    <td className="py-1 text-right">{spread}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-muted-foreground">
+            <li>
+              {ko
+                ? '기술 외 업종에서는 괴리가 이후 수익을 꾸준히 맞혔습니다. 기술·커뮤니케이션에서는 거의 맞히지 못했고, 성장주용 대안 세 가지도 검증을 통과하지 못해 도입하지 않았습니다. 대신 이 업종에는 ⓘ 표시로 괴리를 참고만 하도록 알립니다.'
+                : 'The gap worked steadily outside tech but barely within tech; three growth-stock alternatives also failed, so none was adopted. Tech rows get an ⓘ note to treat the gap as reference only.'}
+            </li>
+            <li>
+              {ko
+                ? '우량 기술주 중 "비쌈"이던 경우(156건)도 이후 12개월 지수 대비 평균 +8.9%, 지수를 이긴 비율 52%로, 비싸다고 뒤처지지 않았습니다.'
+                : 'Quality tech names flagged expensive (156 cases) still averaged +8.9% vs SPY with a 52% beat rate.'}
+            </li>
+            <li>
+              {ko
+                ? '한계: 지금의 S&P 500 구성 종목으로 되돌려 봐서 살아남은 회사 위주입니다(특히 기술주 수익이 부풀려짐). 괴리는 과거 재무제표로 재현되는 두 방법(DCF·오너 어닝)만 썼고, 미국 종목만 검증했습니다. 재현: scripts/research/growth_signal_study.py'
+                : 'Limits: survivorship bias (today’s members; inflates tech returns), gap uses only the two methods reproducible from past filings (DCF, owner earnings), US only. Reproduce: scripts/research/growth_signal_study.py'}
+            </li>
+          </ul>
         </section>
 
         <p className="text-[11px] text-muted-foreground">

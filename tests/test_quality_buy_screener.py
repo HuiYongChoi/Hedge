@@ -215,7 +215,8 @@ def test_scan_uses_sector_from_the_universe_without_lookup():
         valuation_agent=_fake_agent(_valuation(0.3), []),
         profile_lookup=lookup,
     )
-    assert result["verdict"] == "buy" and result["warnings"] == []
+    # 기술 업종은 판정은 그대로 두고, 괴리의 예측력이 낮다는 표시만 단다.
+    assert result["verdict"] == "buy" and result["warnings"] == ["tech_valuation"]
 
 
 def test_profile_lookup_failure_does_not_stop_the_scan(monkeypatch):

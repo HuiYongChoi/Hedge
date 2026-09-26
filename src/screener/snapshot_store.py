@@ -35,7 +35,8 @@ from src.screener.quality_buy import QUALITY_AXES, blend, classify
 logger = logging.getLogger(__name__)
 
 SNAPSHOT_DIR = Path(__file__).resolve().parents[2] / "outputs" / "screener_snapshots"
-VERSION = 2
+#: 3 — SEC 태그 병합 수정(src/tools/api.py _sec_fact_candidates) 전에 만든 스냅샷은 낡은 재무일 수 있어 버린다.
+VERSION = 3
 #: 스냅샷 유효 기간(일). 종목마다 MIN~MIN+SPREAD-1 사이로 흩는다.
 MIN_AGE_DAYS = 14
 AGE_SPREAD_DAYS = 15
@@ -200,7 +201,10 @@ def reprice(
         "market": entry.get("market") or snap.get("market"),
         "sector": entry.get("sector") or snap.get("sector"),
         "industry": entry.get("industry") or snap.get("industry"),
-        **classify(snap["fundamentals"], valuation, financial=bool(snap.get("financial"))),
+        **classify(
+            snap["fundamentals"], valuation, financial=bool(snap.get("financial")),
+            sector=entry.get("sector") or snap.get("sector"),
+        ),
         "error": None,
         # 재무를 마지막으로 계산한 날 — 화면에 '재무 기준일'로 보여 준다.
         "fundamentals_as_of": snap["scanned_on"],

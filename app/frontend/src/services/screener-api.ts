@@ -20,7 +20,8 @@ export type ScreenerVerdict =
   | 'insufficient';
 
 /** 판정 모델이 이 종목에 맞지 않을 수 있다는 표시 */
-export type ScreenerWarning = 'extreme_gap' | 'financial_sector';
+/** extreme_gap·financial_sector: 모델 부적합 가능성 / tech_valuation: 기술·커뮤니케이션 업종이라 괴리의 예측력이 낮음 */
+export type ScreenerWarning = 'extreme_gap' | 'financial_sector' | 'tech_valuation';
 
 export interface ScreenerModelBreakdown {
   key: string;

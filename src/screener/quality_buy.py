@@ -65,11 +65,22 @@ VERDICTS = (
 AgentFn = Callable[..., Any]
 
 
-def classify(fundamentals: Optional[dict], valuation: Optional[dict], *, financial: bool = False) -> dict:
+#: 기술·커뮤니케이션 업종(GICS·yfinance 이름). 이 업종에서는 괴리가 이후 수익을 거의 예측하지 못했다 —
+#: S&P 500, 2016~2025년 과거 시점 검증(scripts/research/growth_signal_study.py, docs/research/).
+TECH_SECTORS = {"Information Technology", "Technology", "Communication Services"}
+
+
+def classify(
+    fundamentals: Optional[dict],
+    valuation: Optional[dict],
+    *,
+    financial: bool = False,
+    sector: Optional[str] = None,
+) -> dict:
     """두 에이전트의 종목별 결과로 판정한다. 네트워크 없이 도는 순수 함수."""
     if not fundamentals:
         value = _value_block(valuation)
-        return {"verdict": "insufficient", "quality": None, "value": value, "warnings": _warnings(value, financial)}
+        return {"verdict": "insufficient", "quality": None, "value": value, "warnings": _warnings(value, financial, sector)}
 
     reasoning = fundamentals.get("reasoning") or {}
     axes = {
@@ -96,12 +107,15 @@ def classify(fundamentals: Optional[dict], valuation: Optional[dict], *, financi
         verdict = "quality_expensive"
     else:
         verdict = "watch"
-    return {"verdict": verdict, "quality": quality, "value": value, "warnings": _warnings(value, financial)}
+    return {"verdict": verdict, "quality": quality, "value": value, "warnings": _warnings(value, financial, sector)}
 
 
-def _warnings(value: dict, financial: bool) -> list[str]:
+def _warnings(value: dict, financial: bool, sector: Optional[str] = None) -> list[str]:
     """판정 모델이 이 종목에 맞지 않을 수 있다는 표시."""
     warnings = []
+    if sector in TECH_SECTORS and value["gap"] is not None:
+        # 판정은 바꾸지 않는다 — 대안 신호(역산 DCF·자기 과거 PSR·FCF 수익률)도 검증을 통과하지 못했다.
+        warnings.append("tech_valuation")
     if financial:
         warnings.append("financial_sector")
     if value["gap"] is not None and abs(value["gap"]) >= EXTREME_GAP:
@@ -315,7 +329,7 @@ def scan_ticker(
         "market": entry["market"],
         "sector": sector_name,
         "industry": industry,
-        **classify(fundamentals, valuation, financial=financial),
+        **classify(fundamentals, valuation, financial=financial, sector=sector_name),
         "error": "; ".join(errors) or None,
         "fundamentals_as_of": end_date if fundamentals else None,
     }
