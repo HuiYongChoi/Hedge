@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from src.screener import quality_buy, sector
-from src.screener.sector import lookup_industry as real_lookup_industry
+from src.screener import quality_buy, sector, track_record
+from src.screener.sector import lookup_profile as real_lookup_profile
 from src.screener.quality_buy import BUY_GAP, EXTREME_GAP, SCREENER_AGENT_PREFIX, WATCH_GAP, classify, scan_ticker
 from src.screener.universe import LARGE_CAP_UNIVERSE, universe_for
 
@@ -15,9 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(autouse=True)
-def no_industry_network(monkeypatch):
-    """업종 조회(yfinance)는 네트워크를 쓰므로 테스트에서는 '모름'으로 둔다."""
-    monkeypatch.setattr(sector, "lookup_industry", lambda ticker: None)
+def no_industry_network(monkeypatch, tmp_path):
+    """섹터·업종 조회(yfinance)는 네트워크를 쓰므로 '모름'으로 두고, 전진 검증 기록은 임시 폴더에 쓴다."""
+    monkeypatch.setattr(sector, "lookup_profile", lambda ticker: None)
+    monkeypatch.setattr(track_record, "TRACK_DIR", tmp_path / "screener_track")
 
 
 def _fundamentals(profitability, growth, health):
@@ -141,22 +142,22 @@ def test_extreme_gap_is_flagged_as_possible_model_misfit(gap, warned):
     assert "financial_sector" not in result["warnings"]
 
 
-def test_scan_looks_up_industry_only_when_it_can_change_the_verdict():
+def test_scan_reports_sector_and_separates_financials():
     looked_up = []
 
     def lookup(ticker):
         looked_up.append(ticker)
-        return "Banks - Diversified"
+        return {"sector": "Financial Services", "industry": "Banks - Diversified"}
 
     calls = []
-    # 우량 통과 → 업종 조회 → 금융업
     result = scan_ticker(
         ENTRY, "2026-09-25", KEYS,
         fundamentals_agent=_fake_agent(_fundamentals("bullish", "bullish", "neutral"), calls),
         valuation_agent=_fake_agent(_valuation(0.3), calls),
-        industry_lookup=lookup,
+        profile_lookup=lookup,
     )
-    assert result["verdict"] == "financial" and result["industry"] == "Banks - Diversified"
+    assert result["verdict"] == "financial"
+    assert result["sector"] == "Financial Services" and result["industry"] == "Banks - Diversified"
     assert looked_up == ["AAPL"]
 
     # 재무건전성이 약해 우량에서 떨어졌어도, 금융업이면 따로 모으고 가치평가 수치도 보여 준다.
@@ -165,45 +166,60 @@ def test_scan_looks_up_industry_only_when_it_can_change_the_verdict():
         ENTRY, "2026-09-25", KEYS,
         fundamentals_agent=_fake_agent(_fundamentals("bullish", "bullish", "bearish"), calls),
         valuation_agent=_fake_agent(_valuation(0.3), calls),
-        industry_lookup=lookup,
+        profile_lookup=lookup,
     )
     assert result["verdict"] == "financial"
     assert calls == [f"{SCREENER_AGENT_PREFIX}fundamentals", f"{SCREENER_AGENT_PREFIX}valuation"]
 
-    # 판정이 바뀔 수 없는 종목은 조회하지 않는다.
-    looked_up.clear()
-    scan_ticker(
+    # 품질 미달 종목도 섹터는 보여 주지만, 가치평가는 돌리지 않는다.
+    calls.clear()
+    result = scan_ticker(
         ENTRY, "2026-09-25", KEYS,
-        fundamentals_agent=_fake_agent(_fundamentals("bearish", "bullish", "bullish"), []),
-        valuation_agent=_fake_agent(_valuation(0.3), []),
-        industry_lookup=lookup,
+        fundamentals_agent=_fake_agent(_fundamentals("bearish", "bullish", "bullish"), calls),
+        valuation_agent=_fake_agent(_valuation(0.3), calls),
+        profile_lookup=lambda t: {"sector": "Technology", "industry": "Consumer Electronics"},
     )
-    assert looked_up == []
+    assert result["verdict"] == "not_quality" and result["sector"] == "Technology"
+    assert calls == [f"{SCREENER_AGENT_PREFIX}fundamentals"]
 
 
-def test_scan_uses_industry_from_the_universe_without_lookup():
+def test_scan_skips_profile_lookup_without_fundamentals():
+    def lookup(ticker):
+        raise AssertionError("판정할 수 없는 종목은 조회하지 않는다")
+
+    result = scan_ticker(
+        ENTRY, "2026-09-25", KEYS,
+        fundamentals_agent=_fake_agent(None, [], raises=RuntimeError("no data")),
+        valuation_agent=_fake_agent(_valuation(0.3), []),
+        profile_lookup=lookup,
+    )
+    assert result["verdict"] == "insufficient" and result["sector"] is None
+
+
+def test_scan_uses_sector_from_the_universe_without_lookup():
     def lookup(ticker):
         raise AssertionError("목록에 업종이 있으면 조회하지 않는다")
 
     result = scan_ticker(
-        {**ENTRY, "industry": "Property & Casualty Insurance"}, "2026-09-25", KEYS,
+        {**ENTRY, "sector": "Financials", "industry": "Property & Casualty Insurance"}, "2026-09-25", KEYS,
         fundamentals_agent=_fake_agent(_fundamentals("bullish", "bullish", "neutral"), []),
         valuation_agent=_fake_agent(_valuation(1.53), []),
-        industry_lookup=lookup,
+        profile_lookup=lookup,
     )
-    assert result["verdict"] == "financial"
+    assert result["verdict"] == "financial" and result["sector"] == "Financials"
 
     result = scan_ticker(
-        {**ENTRY, "industry": "Technology Hardware, Storage & Peripherals"}, "2026-09-25", KEYS,
+        {**ENTRY, "sector": "Information Technology", "industry": "Technology Hardware, Storage & Peripherals"},
+        "2026-09-25", KEYS,
         fundamentals_agent=_fake_agent(_fundamentals("bullish", "bullish", "neutral"), []),
         valuation_agent=_fake_agent(_valuation(0.3), []),
-        industry_lookup=lookup,
+        profile_lookup=lookup,
     )
     assert result["verdict"] == "buy" and result["warnings"] == []
 
 
-def test_industry_lookup_failure_does_not_stop_the_scan(monkeypatch):
-    sector._industry_cache.clear()
+def test_profile_lookup_failure_does_not_stop_the_scan(monkeypatch):
+    sector._profile_cache.clear()
 
     class Boom:
         def Ticker(self, ticker):
@@ -212,8 +228,22 @@ def test_industry_lookup_failure_does_not_stop_the_scan(monkeypatch):
     import sys
     monkeypatch.setitem(sys.modules, "yfinance", Boom())
     # autouse 픽스처가 바꿔 끼운 것이 아닌 실제 조회 함수를 부른다.
-    assert real_lookup_industry("AAPL") is None
-    assert "AAPL" not in sector._industry_cache  # 실패는 기억하지 않는다
+    assert real_lookup_profile("AAPL") is None
+    assert "AAPL" not in sector._profile_cache  # 실패는 기억하지 않는다
+
+
+def test_profile_lookup_reads_sector_and_industry(monkeypatch):
+    sector._profile_cache.clear()
+
+    class FakeYf:
+        def Ticker(self, ticker):
+            return type("T", (), {"info": {"sector": "Technology", "industry": "Semiconductors"}})()
+
+    import sys
+    monkeypatch.setitem(sys.modules, "yfinance", FakeYf())
+    assert real_lookup_profile("NVDA") == {"sector": "Technology", "industry": "Semiconductors"}
+    assert "NVDA" in sector._profile_cache
+    sector._profile_cache.clear()
 
 
 # ── 대상 목록 ────────────────────────────────────────────────────────────────
@@ -437,7 +467,7 @@ def test_parse_sp500_keeps_gics_sub_industry():
 </tbody></table>
 """
     entries = fu.parse_sp500(html)
-    assert entries[0]["industry"] == "Property & Casualty Insurance"
+    assert entries[0]["industry"] == "Property & Casualty Insurance" and entries[0]["sector"] == "Financials"
     assert entries[1]["industry"] == "Application Software"
     # 세부 업종 칸이 없는 표에서도 목록은 그대로 읽는다.
     assert "industry" not in fu.parse_sp500(SP500_HTML)[0]

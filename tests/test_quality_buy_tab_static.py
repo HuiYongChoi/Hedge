@@ -4,6 +4,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 QUALITY_BUY_TAB = ROOT / "app/frontend/src/components/tabs/quality-buy-tab.tsx"
 SCREENER_API = ROOT / "app/frontend/src/services/screener-api.ts"
+TABLE_EXPORT = ROOT / "app/frontend/src/lib/table-export.ts"
 
 
 class QualityBuyTabStaticTests(unittest.TestCase):
@@ -30,6 +31,36 @@ class QualityBuyTabStaticTests(unittest.TestCase):
         self.assertIn("financial_sector:", src)
         api = SCREENER_API.read_text(encoding="utf-8")
         self.assertIn("export type ScreenerWarning = 'extreme_gap' | 'financial_sector';", api)
+
+
+    def test_result_row_shows_sector_badge(self):
+        src = QUALITY_BUY_TAB.read_text(encoding="utf-8")
+        self.assertIn("const sector = sectorLabel(result.sector, lang);", src)
+        self.assertIn("'Financial Services': '금융'", src)
+        self.assertIn("sector?: string | null;", SCREENER_API.read_text(encoding="utf-8"))
+
+    def test_rows_offer_on_demand_point_in_time_check(self):
+        src = QUALITY_BUY_TAB.read_text(encoding="utf-8")
+        self.assertIn("<HistoryPanel result={result} lang={lang} />", src)
+        self.assertIn(".historyCheck(result.ticker, result.market, result.industry)", src)
+        self.assertIn("'과거 검증'", src)
+        self.assertIn("/screener/history-check?", SCREENER_API.read_text(encoding="utf-8"))
+
+    def test_forward_test_track_record_panel(self):
+        src = QUALITY_BUY_TAB.read_text(encoding="utf-8")
+        self.assertIn("<TrackRecordPanel lang={lang} />", src)
+        self.assertIn("판정 성과 추적 (전진 검증)", src)
+        self.assertIn("/screener/track-record", SCREENER_API.read_text(encoding="utf-8"))
+
+    def test_full_list_exports_to_excel_and_pdf(self):
+        src = QUALITY_BUY_TAB.read_text(encoding="utf-8")
+        self.assertIn("downloadXlsx(table, filename);", src)
+        self.assertIn("printTableAsPdf(table, filename);", src)
+        export = TABLE_EXPORT.read_text(encoding="utf-8")
+        # 라이브러리 없이 만든다 — 새 npm 의존성을 들이지 않는다.
+        self.assertNotIn("from '", export)
+        self.assertIn("export function buildXlsxBytes(", export)
+        self.assertIn("xl/worksheets/sheet1.xml", export)
 
 
 if __name__ == "__main__":

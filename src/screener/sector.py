@@ -5,9 +5,9 @@
 판정하면 결과가 크게 틀어진다(예: 보험사는 보험료 유입 때문에 적정가가 부풀려진다).
 그래서 이 업종은 매수·관심 후보에 섞지 않고 따로 보여 준다.
 
-업종 이름은 두 곳에서 온다.
-· S&P 500 전체 스캔 — 위키백과 구성 종목 표의 GICS 세부 업종(추가 조회 없음).
-· 그 밖의 종목 — yfinance 의 industry.
+섹터·업종 이름은 두 곳에서 온다(화면의 섹터 표시에도 쓴다).
+· S&P 500 전체 스캔 — 위키백과 구성 종목 표의 GICS 섹터·세부 업종(추가 조회 없음).
+· 그 밖의 종목 — yfinance 의 sector·industry. 한 번 받은 값은 서버가 떠 있는 동안 기억한다.
 결제망(비자·마스터카드), 거래소·데이터, 보험 중개처럼 대차대조표로 돈을 벌지 않는
 금융 업종은 일반 모델이 맞으므로 포함하지 않는다.
 """
@@ -26,7 +26,7 @@ _MISFIT_KEYWORDS = ("bank", "insurance", "reinsurance", "capital markets", "cons
 _FIT_EXCEPTIONS = ("insurance brokers",)
 
 # 성공한 조회만 기억한다 — 일시적 실패(None)는 다음 스캔에서 다시 시도한다.
-_industry_cache: dict[str, str] = {}
+_profile_cache: dict[str, dict[str, str | None]] = {}
 
 
 def is_financial_misfit(industry: str | None) -> bool:
@@ -39,17 +39,19 @@ def is_financial_misfit(industry: str | None) -> bool:
     return any(keyword in name for keyword in _MISFIT_KEYWORDS)
 
 
-def lookup_industry(ticker: str) -> str | None:
-    """yfinance 로 업종 이름을 조회한다. 실패하면 None(판별하지 않음)."""
-    if ticker in _industry_cache:
-        return _industry_cache[ticker]
+def lookup_profile(ticker: str) -> dict[str, str | None] | None:
+    """yfinance 로 섹터·업종을 조회한다. 실패하면 None(표시·판별하지 않음)."""
+    if ticker in _profile_cache:
+        return _profile_cache[ticker]
     try:
         import yfinance as yf
 
-        industry = (yf.Ticker(ticker).info or {}).get("industry") or None
+        info = yf.Ticker(ticker).info or {}
     except Exception as exc:  # 조회 실패가 스캔을 멈추면 안 된다
-        logger.debug("industry lookup failed for %s: %s", ticker, exc)
+        logger.debug("profile lookup failed for %s: %s", ticker, exc)
         return None
-    if industry:
-        _industry_cache[ticker] = industry
-    return industry
+    profile = {"sector": info.get("sector") or None, "industry": info.get("industry") or None}
+    if not (profile["sector"] or profile["industry"]):
+        return None
+    _profile_cache[ticker] = profile
+    return profile

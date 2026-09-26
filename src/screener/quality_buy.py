@@ -153,7 +153,7 @@ def scan_ticker(
     *,
     fundamentals_agent: AgentFn = fundamentals_analyst_agent,
     valuation_agent: AgentFn = valuation_analyst_agent,
-    industry_lookup: Optional[Callable[[str], Optional[str]]] = None,
+    profile_lookup: Optional[Callable[[str], Optional[dict]]] = None,
 ) -> dict:
     """종목 하나를 판정한다. 실패해도 예외를 올리지 않고 결과에 사유를 담는다."""
     ticker = entry["ticker"]
@@ -172,11 +172,13 @@ def scan_ticker(
     fundamentals = attempt(fundamentals_agent, "fundamentals")
     quality = classify(fundamentals, None)["quality"]
 
-    # 업종은 판정에 영향이 있을 때만 조회한다: 우량을 통과했거나, 금융업이라 재무건전성이
-    # 약하게 나왔을 수 있을 때. S&P 500 전체 목록은 업종을 이미 갖고 있어 조회하지 않는다.
-    industry = entry.get("industry")
-    if industry is None and quality and (quality["passed"] or quality["financial_health"] == "bearish"):
-        industry = (industry_lookup or sector.lookup_industry)(ticker)
+    # 섹터·업종은 화면 표시와 금융업 판별에 쓴다. S&P 500 전체 목록은 이미 갖고 있어
+    # 조회하지 않고, 재무 데이터가 없어 판정 자체가 안 되는 종목도 조회하지 않는다.
+    sector_name, industry = entry.get("sector"), entry.get("industry")
+    if industry is None and fundamentals:
+        profile = (profile_lookup or sector.lookup_profile)(ticker) or {}
+        sector_name = sector_name or profile.get("sector")
+        industry = profile.get("industry")
     financial = sector.is_financial_misfit(industry)
 
     # 우량을 통과하지 못하면 가치평가를 돌려도 판정이 바뀌지 않는다. 가치평가가 조회가
@@ -187,6 +189,7 @@ def scan_ticker(
         "ticker": ticker,
         "name": entry["name"],
         "market": entry["market"],
+        "sector": sector_name,
         "industry": industry,
         **classify(fundamentals, valuation, financial=financial),
         "error": "; ".join(errors) or None,

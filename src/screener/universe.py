@@ -14,7 +14,8 @@ class UniverseEntry(TypedDict):
     ticker: str
     name: str
     market: str  # "KR" | "US"
-    #: 업종 이름(S&P 500 전체 목록의 GICS 세부 업종). 없으면 필요할 때 조회한다.
+    #: 섹터·업종 이름(S&P 500 전체 목록의 GICS 섹터·세부 업종). 없으면 스캔할 때 조회한다.
+    sector: NotRequired[str]
     industry: NotRequired[str]
 
 

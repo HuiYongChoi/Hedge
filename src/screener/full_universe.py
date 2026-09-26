@@ -62,7 +62,9 @@ def parse_sp500(html: str) -> list[UniverseEntry]:
             continue
         seen.add(ticker)
         entry: UniverseEntry = {"ticker": ticker, "name": _KNOWN_NAMES.get(ticker, name), "market": "US"}
-        # 넷째 칸이 GICS 세부 업종이다 — 금융업 판별에 쓴다(src/screener/sector.py).
+        # 셋째·넷째 칸이 GICS 섹터·세부 업종이다 — 섹터 표시와 금융업 판별에 쓴다.
+        if len(cells) > 2 and (sector_name := cells[2].get_text(strip=True)):
+            entry["sector"] = sector_name
         if len(cells) > 3 and (industry := cells[3].get_text(strip=True)):
             entry["industry"] = industry
         entries.append(entry)
