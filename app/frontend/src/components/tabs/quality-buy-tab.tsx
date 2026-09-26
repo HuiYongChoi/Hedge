@@ -204,6 +204,13 @@ function ResultRow({ result, lang, onAnalyze }: { result: ScreenerResult; lang: 
         <div className="max-w-[28rem] text-right text-xs text-muted-foreground">{failureReason(result, lang)}</div>
       ) : (
         <>
+          <div
+            className="w-28 text-right"
+            title={lang === 'ko' ? '기준일 시가총액 ÷ 주식 수 — 적정가 괴리 계산에 쓴 주가' : 'Market cap ÷ shares on the as-of date — the price used for the fair-value gap'}
+          >
+            <div className="font-mono text-sm tabular-nums">{formatPrice(result.value.price_per_share ?? null, result.market)}</div>
+            <div className="text-[11px] text-muted-foreground">{lang === 'ko' ? '현재가' : 'Price'}</div>
+          </div>
           <div className="w-24 text-right">
             <div
               className={cn(
