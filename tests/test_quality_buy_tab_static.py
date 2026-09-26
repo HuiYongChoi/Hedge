@@ -55,7 +55,7 @@ class QualityBuyTabStaticTests(unittest.TestCase):
     def test_full_list_exports_to_excel_and_pdf(self):
         src = QUALITY_BUY_TAB.read_text(encoding="utf-8")
         self.assertIn("downloadXlsx(table, filename);", src)
-        self.assertIn("printTableAsPdf(table, filename);", src)
+        self.assertIn("printElementAsPdf(printRef.current, filename, table.subtitle);", src)
         export = TABLE_EXPORT.read_text(encoding="utf-8")
         # 라이브러리 없이 만든다 — 새 npm 의존성을 들이지 않는다.
         self.assertNotIn("from '", export)
@@ -65,3 +65,50 @@ class QualityBuyTabStaticTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+STOCK_EXTRAS = ROOT / "app/frontend/src/components/quality-buy/stock-extras.tsx"
+SAVED_DETAIL_PANEL = ROOT / "app/frontend/src/components/saved-analyses/saved-detail-panel.tsx"
+SAVED_QUALITY_BUY_DETAIL = ROOT / "app/frontend/src/components/saved-analyses/saved-quality-buy-detail.tsx"
+
+
+class QualityBuyArchiveLinksChartStaticTests(unittest.TestCase):
+
+    def test_rows_toggle_research_links(self):
+        """행마다 '바로가기'를 펼치면 네이버 증권·DART(한국), SEC·네이버(미국) 링크가 나온다."""
+        src = QUALITY_BUY_TAB.read_text(encoding="utf-8")
+        self.assertIn("<ResearchLinksPanel result={result} lang={lang} />", src)
+        extras = STOCK_EXTRAS.read_text(encoding="utf-8")
+        self.assertIn("https://finance.naver.com/item/main.naver?code=", extras)
+        self.assertIn("dart.fss.or.kr/dsab001/main.do?autoSearch=true&option=corp", extras)
+        self.assertIn("sec.gov/cgi-bin/browse-edgar?action=getcompany", extras)
+        self.assertIn(".fetchNaverLink(result.ticker)", extras)
+        self.assertIn("/screener/naver-link?", SCREENER_API.read_text(encoding="utf-8"))
+
+    def test_rows_show_one_year_chart_on_hover(self):
+        src = QUALITY_BUY_TAB.read_text(encoding="utf-8")
+        self.assertIn("<PriceChartHover result={result} lang={lang} />", src)
+        extras = STOCK_EXTRAS.read_text(encoding="utf-8")
+        self.assertIn("onMouseEnter={() => setHovered(true)}", extras)
+        # 구역이 overflow-hidden 이라 팝업은 body 로 띄운다
+        self.assertIn("createPortal(", extras)
+        self.assertIn("/screener/price-chart?", SCREENER_API.read_text(encoding="utf-8"))
+
+    def test_stopped_scans_are_archived_and_viewable(self):
+        src = QUALITY_BUY_TAB.read_text(encoding="utf-8")
+        self.assertIn("onArchived: info =>", src)
+        self.assertIn("'저장 분석'에 '중단'으로 저장했습니다", src)
+        self.assertIn("export function QualityBuyResultsView(", src)
+        self.assertIn("export function restoreQualityBuyScan(", src)
+        panel = SAVED_DETAIL_PANEL.read_text(encoding="utf-8")
+        self.assertIn("<SavedQualityBuyDetail detail={detail} language={language} />", panel)
+        self.assertIn("<QualityBuyResultsView", SAVED_QUALITY_BUY_DETAIL.read_text(encoding="utf-8"))
+
+
+    def test_manual_archive_button_and_screen_pdf(self):
+        src = QUALITY_BUY_TAB.read_text(encoding="utf-8")
+        self.assertIn("savedAnalysisService.saveAnalysis('quality_buy'", src)
+        self.assertIn("'저장 분석에 저장'", src)
+        export = TABLE_EXPORT.read_text(encoding="utf-8")
+        self.assertIn("export function printElementAsPdf(", export)
+        self.assertIn("print-color-adjust: exact", export)

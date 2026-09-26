@@ -268,6 +268,8 @@ def route(monkeypatch, tmp_path):
 
     monkeypatch.setattr(module, "scan_ticker", fake_scan)
     monkeypatch.setattr(module, "ApiKeyService", FakeKeys)
+    # 스캔이 끝나면 실제 DB 의 '저장 분석'에 남기므로, 테스트에서는 막는다.
+    monkeypatch.setattr(module, "_archive_scan", lambda *args, **kwargs: None)
     app = FastAPI()
     app.include_router(module.router)
     app.dependency_overrides[module.get_db] = lambda: None
@@ -298,3 +300,141 @@ def test_track_record_and_history_endpoints(route, monkeypatch):
     client.get("/screener/history-check", params={"ticker": "ALL", "market": "US"})
     assert calls == [("ALL", "US", "Property & Casualty Insurance")]  # 같은 날은 기억한 결과
     assert client.get("/screener/history-check", params={"ticker": "X", "market": "JP"}).status_code == 422
+
+
+# ── 아카이브 · 차트 ──────────────────────────────────────────────────────────
+
+
+def test_completed_scan_is_archived_once(route, monkeypatch):
+    client, module, _ = route
+    archived = []
+
+    def fake_archive(market, end_date, language, total, results, complete):
+        archived.append((market, end_date, language, total, len(results), complete))
+        return 7
+
+    monkeypatch.setattr(module, "_archive_scan", fake_archive)
+    body = client.post("/screener/scan", json={"market": "US", "end_date": "2026-09-26", "language": "en"}).text
+    assert archived == [("US", "2026-09-26", "en", 25, 25, True)]
+    assert "event: archived" in body and '"id": 7' in body
+
+
+def test_stopped_scan_archives_what_was_scanned(route, monkeypatch):
+    """중간에 끊긴 스캔도 그때까지 받은 결과를 '중단'으로 남긴다."""
+    client, module, _ = route
+    archived = []
+    monkeypatch.setattr(module, "_archive_scan",
+                        lambda market, end_date, language, total, results, complete: archived.append((len(results), complete)))
+
+    def failing_record(end_date, results):
+        raise RuntimeError("boom")
+
+    # 스트림을 도중에 끊는 대신, 제너레이터를 직접 몇 개만 받고 닫는다.
+    import asyncio
+
+    class FakeRequest:
+        async def is_disconnected(self):
+            return False
+
+    async def run():
+        response = await module.scan(module.ScreenerScanRequest(market="US", end_date="2026-09-26"), FakeRequest(), db=None)
+        gen = response.body_iterator
+        received = 0
+        async for chunk in gen:
+            if "event: result" in chunk:
+                received += 1
+                if received == 3:
+                    break
+        await gen.aclose()
+        return received
+
+    assert asyncio.run(run()) == 3
+    assert archived == [(3, False)]
+
+
+def test_archive_name_marks_partial_scans():
+    spec = importlib.util.spec_from_file_location(
+        "screener_route_names", ROOT / "app" / "backend" / "routes" / "screener.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module._archive_name("SP500", "ko", 120, 503, False) == "매수 후보 · S&P 500 전체 · 120/503종목 · 중단"
+    assert module._archive_name("KR", "en", 25, 25, True) == "Buy candidates · Korea large caps · 25/25"
+
+
+def test_price_chart_is_weekly_and_cached(route, monkeypatch):
+    client, module, _ = route
+    from datetime import date as _date, timedelta as _td
+
+    calls = []
+    today = _date.today()
+
+    def fake_load(ticker, day):
+        calls.append(ticker)
+        days = [today - _td(days=n) for n in range(0, 30)]
+        prices = [type("P", (), {"time": d.isoformat(), "close": float(i)})() for i, d in enumerate(days)]
+        return {"ticker": ticker, "interval": "weekly", "rows": module.weekly_closes(prices, today - _td(days=40))}
+
+    monkeypatch.setattr(module, "_load_chart", fake_load)
+    module._chart_cache.clear()
+    rows = client.get("/screener/price-chart", params={"ticker": "AAPL"}).json()["rows"]
+    client.get("/screener/price-chart", params={"ticker": "AAPL"})
+    assert calls == ["AAPL"]
+    # 30일 → 주마다 한 줄, 날짜순, 그 주 마지막 거래일 종가
+    assert 4 <= len(rows) <= 6
+    assert [r["date"] for r in rows] == sorted(r["date"] for r in rows)
+    assert rows[-1]["date"] == today.isoformat()
+
+
+def test_naver_world_url_matches_exchange_code():
+    spec = importlib.util.spec_from_file_location(
+        "screener_route_naver", ROOT / "app" / "backend" / "routes" / "screener.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    items = {
+        "AAPL": {"items": [{"code": "AAPL", "nationCode": "USA", "url": "/worldstock/stock/AAPL.O/total"}]},
+        "BRK B": {"items": [{"code": "BRK A", "nationCode": "USA", "url": "/worldstock/stock/BRKa/total"},
+                            {"code": "BRK B", "nationCode": "USA", "url": "/worldstock/stock/BRKb/total"}]},
+        "KO": {"items": [{"code": "252670", "nationCode": "KOR", "url": "/domestic/stock/252670/total"}]},
+    }
+    fetch = lambda q: items.get(q, {})
+    assert module.naver_world_url("AAPL", fetch) == "https://stock.naver.com/worldstock/stock/AAPL.O/total"
+    assert module.naver_world_url("BRK-B", fetch) == "https://stock.naver.com/worldstock/stock/BRKb/total"
+    assert module.naver_world_url("KO", fetch) is None
+
+
+def test_archive_scan_writes_saved_analysis_and_list_omits_rows(monkeypatch, tmp_path):
+    """실제 저장 경로 — 임시 DB 에 쓰고, 목록 응답은 종목 결과를 빼고 상세는 전부 준다."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.backend.database.models import Base, SavedAnalysis
+
+    # route 픽스처는 저장을 막아 두므로, 저장 함수가 살아 있는 모듈을 따로 불러 온다.
+    spec = importlib.util.spec_from_file_location(
+        "screener_route_archive", ROOT / "app" / "backend" / "routes" / "screener.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    engine = create_engine(f"sqlite:///{tmp_path / 'archive.db'}", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(module, "SessionLocal", sessionmaker(bind=engine))
+
+    rows = [{"ticker": "MSFT", "verdict": "buy"}, {"ticker": "KO", "verdict": "watch"}]
+    saved_id = module._archive_scan("SP500", "2026-09-26", "ko", 503, rows, False)
+
+    db = sessionmaker(bind=engine)()
+    item = db.query(SavedAnalysis).get(saved_id)
+    assert item.source_tab == "quality_buy" and item.ticker == "SP500"
+    assert item.result_data["scanned"] == 2 and item.result_data["complete"] is False
+    assert item.result_data["counts"] == {"buy": 1, "watch": 1}
+    assert item.result_data["saved_display_name"].endswith("매수 후보 · S&P 500 전체 · 2/503종목 · 중단")
+
+    routes_spec = importlib.util.spec_from_file_location(
+        "saved_analyses_route_under_test", ROOT / "app" / "backend" / "routes" / "saved_analyses.py"
+    )
+    routes = importlib.util.module_from_spec(routes_spec)
+    routes_spec.loader.exec_module(routes)
+    assert "results" not in routes._to_list_response(item).result_data
+    assert len(routes._to_response(item).result_data["results"]) == 2
+    db.close()

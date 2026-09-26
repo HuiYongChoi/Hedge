@@ -321,3 +321,86 @@ export function printTableAsPdf(table: ExportTable, documentTitle: string): void
     setTimeout(() => frame.remove(), 60000);
   }, 250);
 }
+
+// ── 화면 그대로 PDF ──────────────────────────────────────────────────────────
+
+/**
+ * 화면의 한 영역을 보이는 모습 그대로(색·배지·구역) 인쇄 창으로 보낸다.
+ * 영역을 복제해 숨은 iframe 에 넣고, 이 페이지의 스타일시트와 테마(클래스·CSS 변수)를 그대로 옮긴다.
+ * - data-print-hide 가 붙은 요소(버튼 등)는 빼고, 접힌 <details> 는 펼쳐서 싣는다.
+ * - 배경색이 빠지지 않도록 print-color-adjust: exact 를 건다.
+ */
+export function printElementAsPdf(element: HTMLElement, documentTitle: string, heading?: string): void {
+  const frame = document.createElement('iframe');
+  frame.style.position = 'fixed';
+  frame.style.right = '0';
+  frame.style.bottom = '0';
+  frame.style.width = '0';
+  frame.style.height = '0';
+  frame.style.border = '0';
+  document.body.appendChild(frame);
+  const doc = frame.contentDocument;
+  const win = frame.contentWindow;
+  if (!doc || !win) {
+    frame.remove();
+    return;
+  }
+
+  const clone = element.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('[data-print-hide]').forEach(node => node.remove());
+  clone.querySelectorAll('details').forEach(node => node.setAttribute('open', ''));
+  clone.style.maxWidth = 'none';
+  clone.style.height = 'auto';
+  clone.style.overflow = 'visible';
+
+  const root = document.documentElement;
+  const bodyBg = getComputedStyle(document.body).backgroundColor;
+  doc.open();
+  doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeXml(documentTitle)}</title></head><body></body></html>`);
+  doc.close();
+  doc.documentElement.className = root.className;
+  const rootStyle = root.getAttribute('style');
+  if (rootStyle) doc.documentElement.setAttribute('style', rootStyle);
+  doc.body.className = document.body.className;
+
+  const pending: Promise<void>[] = [];
+  document.querySelectorAll('style, link[rel="stylesheet"]').forEach(node => {
+    const copy = node.cloneNode(true) as HTMLElement;
+    if (copy instanceof HTMLLinkElement) {
+      pending.push(new Promise(resolve => {
+        copy.addEventListener('load', () => resolve());
+        copy.addEventListener('error', () => resolve());
+      }));
+    }
+    doc.head.appendChild(copy);
+  });
+  const printStyle = doc.createElement('style');
+  printStyle.textContent = `
+    @page { size: A4 landscape; margin: 10mm; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    html, body { height: auto !important; overflow: visible !important; background: ${bodyBg} !important; }
+    body { margin: 0; padding: 12px; }
+    section, [data-print-row] { break-inside: avoid; }
+    .print-heading { font-size: 12px; margin: 0 0 8px; opacity: .75; }
+  `;
+  doc.head.appendChild(printStyle);
+  if (heading) {
+    const h = doc.createElement('div');
+    h.className = 'print-heading text-foreground';
+    h.textContent = heading;
+    doc.body.appendChild(h);
+  }
+  doc.body.appendChild(doc.importNode(clone, true));
+
+  const cleanup = () => setTimeout(() => frame.remove(), 500);
+  win.addEventListener('afterprint', cleanup);
+  // 스타일시트가 다 읽힌 뒤(최대 2초) 인쇄한다.
+  const timeout = new Promise<void>(resolve => setTimeout(resolve, 2000));
+  Promise.race([Promise.all(pending).then(() => undefined), timeout]).then(() => {
+    setTimeout(() => {
+      win.focus();
+      win.print();
+      setTimeout(() => frame.remove(), 60000);
+    }, 200);
+  });
+}

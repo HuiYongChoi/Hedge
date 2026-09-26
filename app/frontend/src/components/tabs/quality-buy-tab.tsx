@@ -4,8 +4,10 @@ import { useTabsContext } from '@/contexts/tabs-context';
 import { useWorkspace } from '@/contexts/workspace-context';
 import { t } from '@/lib/language-preferences';
 import { cn } from '@/lib/utils';
-import { ExportTable, downloadXlsx, printTableAsPdf } from '@/lib/table-export';
+import { ExportTable, downloadXlsx, printElementAsPdf } from '@/lib/table-export';
+import { savedAnalysisService } from '@/services/saved-analyses-service';
 import {
+  ArchivedScan,
   AxisSignal,
   HistoryCheck,
   ScreenerMarket,
@@ -16,15 +18,19 @@ import {
   screenerApi,
 } from '@/services/screener-api';
 import { TabService } from '@/services/tab-service';
+import { PriceChartHover, ResearchLinksPanel } from '@/components/quality-buy/stock-extras';
 import {
   AlertTriangle,
+  Archive,
   ArrowUpRight,
+  Check,
   BadgeCheck,
   ChartLine,
   ChevronDown,
   Clock,
   Download,
   FileText,
+  Link2,
   Loader2,
   Play,
   RefreshCw,
@@ -175,6 +181,40 @@ const AXES: { key: 'profitability' | 'growth' | 'financial_health'; ko: string; 
   { key: 'financial_health', ko: '재무', en: 'Balance' },
 ];
 
+// '저장 분석'에서 되살릴 때 — 탭이 아직 없으면 열릴 때 이 시장을 먼저 보여 주고, 이미 열려 있으면 이벤트로 알린다.
+const RESTORE_MARKET_KEY = 'quality-buy:restore-market';
+const RESTORE_EVENT = 'quality-buy:restore';
+/** 아카이브에 새 스캔이 저장됐음을 '저장 분석' 탭에 알린다(열려 있으면 목록을 다시 받는다). */
+export const SAVED_ANALYSES_CHANGED_EVENT = 'saved-analyses:changed';
+
+/** 아카이브에 저장된 스캔을 매수 후보 탭에 다시 띄운다(탭 열기는 부르는 쪽이 한다). */
+export function restoreQualityBuyScan(scan: ArchivedScan) {
+  if (!scan?.market || !Array.isArray(scan.results)) return;
+  persist(scan.market, { endDate: scan.end_date ?? null, results: scan.results });
+  try {
+    localStorage.setItem(RESTORE_MARKET_KEY, JSON.stringify({ market: scan.market, at: Date.now() }));
+  } catch {
+    // 저장 공간이 없어도 이벤트로는 전달된다.
+  }
+  window.dispatchEvent(new CustomEvent(RESTORE_EVENT, { detail: scan.market }));
+}
+
+// 되살리기 표시는 읽어도 지우지 않는다 — 탭을 여는 과정에서 화면이 다시 그려지면(개발 모드 이중 실행 포함)
+// 두 번째로 읽을 때 사라져 있으면 안 된다. 대신 잠깐만 유효하게 해 나중에 탭을 열 때 끼어들지 않게 한다.
+const RESTORE_TTL_MS = 10_000;
+
+function readRestoreMarket(): ScreenerMarket | null {
+  try {
+    const raw = localStorage.getItem(RESTORE_MARKET_KEY);
+    if (!raw) return null;
+    const { market, at } = JSON.parse(raw) as { market?: ScreenerMarket; at?: number };
+    if (!market || !at || Date.now() - at > RESTORE_TTL_MS) return null;
+    return MARKETS.some(m => m.value === market) ? market : null;
+  } catch {
+    return null;
+  }
+}
+
 function loadSaved(): Record<string, SavedScan> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -288,13 +328,17 @@ function ResultRow({ result, lang, onAnalyze }: { result: ScreenerResult; lang: 
   const gap = result.value.gap;
   const failed = result.verdict === 'not_quality' || result.verdict === 'insufficient';
   const [showHistory, setShowHistory] = useState(false);
+  const [showLinks, setShowLinks] = useState(false);
   const sector = sectorLabel(result.sector, lang);
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/60 px-3 py-2 first:border-t-0">
+    <div data-print-row className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/60 px-3 py-2 first:border-t-0">
       <div className="min-w-[9rem] flex-1">
         <div className="flex flex-wrap items-baseline gap-2">
           <span className="font-medium">{result.name}</span>
           <span className="text-xs text-muted-foreground">{result.ticker}</span>
+          <span className="self-center" data-print-hide>
+            <PriceChartHover result={result} lang={lang} />
+          </span>
           {sector && (
             <span
               className="rounded bg-muted px-1.5 py-px text-[10px] text-muted-foreground"
@@ -346,7 +390,21 @@ function ResultRow({ result, lang, onAnalyze }: { result: ScreenerResult; lang: 
           </div>
         </>
       )}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1" data-print-hide>
+        <Button
+          size="sm"
+          variant={showLinks ? 'secondary' : 'ghost'}
+          className="h-7 px-2 text-xs"
+          onClick={() => setShowLinks(v => !v)}
+          aria-expanded={showLinks}
+          title={result.market === 'KR'
+            ? (lang === 'ko' ? '네이버 증권·DART·FnGuide 바로가기' : 'Naver Finance, DART and FnGuide links')
+            : (lang === 'ko' ? 'SEC 공시·네이버 증권·Yahoo·Finviz 바로가기' : 'SEC filings, Naver Finance, Yahoo and Finviz links')}
+        >
+          <Link2 size={12} className="mr-1" />
+          {lang === 'ko' ? '바로가기' : 'Links'}
+          <ChevronDown size={12} className={cn('ml-0.5 transition-transform', showLinks && 'rotate-180')} />
+        </Button>
         {result.verdict !== 'insufficient' && (
           <Button
             size="sm"
@@ -369,6 +427,11 @@ function ResultRow({ result, lang, onAnalyze }: { result: ScreenerResult; lang: 
       {result.error && result.verdict !== 'insufficient' && (
         <div className="basis-full text-[11px] text-muted-foreground" title={result.error}>
           {lang === 'ko' ? '일부 데이터 조회 실패' : 'Some data failed to load'}
+        </div>
+      )}
+      {showLinks && (
+        <div className="basis-full">
+          <ResearchLinksPanel result={result} lang={lang} />
         </div>
       )}
       {showHistory && (
@@ -601,7 +664,7 @@ function TrackRecordPanel({ lang }: { lang: Lang }) {
 }
 
 // 스캔 결과 전체를 표로 — 엑셀·PDF 내보내기에 쓴다.
-function buildExportTable(results: ScreenerResult[], lang: Lang, title: string, subtitle: string): ExportTable {
+export function buildExportTable(results: ScreenerResult[], lang: Lang, title: string, subtitle: string): ExportTable {
   const ko = lang === 'ko';
   const rank = (v: ScreenerVerdict) => VERDICT_ORDER.indexOf(v);
   const rows = [...results]
@@ -654,75 +717,19 @@ function buildExportTable(results: ScreenerResult[], lang: Lang, title: string, 
   };
 }
 
-export function QualityBuyTab() {
-  const { language } = useLanguage();
-  const lang: Lang = language === 'ko' ? 'ko' : 'en';
-  const { openTab } = useTabsContext();
-  const { patchWorkspace } = useWorkspace();
-
-  const [market, setMarket] = useState<ScreenerMarket>('ALL');
-  const [results, setResults] = useState<ScreenerResult[]>(() => loadSaved().ALL?.results ?? []);
-  const [endDate, setEndDate] = useState<string | null>(() => loadSaved().ALL?.endDate ?? null);
-  const [total, setTotal] = useState(0);
-  const [isRunning, setIsRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const stopRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => () => stopRef.current?.(), []);
-
-  const changeMarket = (next: ScreenerMarket) => {
-    if (isRunning || next === market) return;
-    const saved = loadSaved()[next];
-    setMarket(next);
-    setResults(saved?.results ?? []);
-    setEndDate(saved?.endDate ?? null);
-    setTotal(0);
-    setError(null);
-  };
-
-  const startScan = useCallback((refresh: boolean) => {
-    stopRef.current?.();
-    setResults([]);
-    setTotal(0);
-    setError(null);
-    setIsRunning(true);
-
-    const collected: ScreenerResult[] = [];
-    let scanDate: string | null = null;
-    stopRef.current = screenerApi.scan(market, refresh, {
-      onStart: info => {
-        setTotal(info.total);
-        setEndDate(info.end_date);
-        scanDate = info.end_date;
-      },
-      onResult: result => {
-        collected.push(result);
-        setResults([...collected]);
-      },
-      onComplete: () => {
-        setIsRunning(false);
-        stopRef.current = null;
-        persist(market, { endDate: scanDate, results: collected });
-      },
-      onError: message => {
-        setIsRunning(false);
-        stopRef.current = null;
-        setError(message);
-      },
-    });
-  }, [market]);
-
-  const stopScan = () => {
-    stopRef.current?.();
-    stopRef.current = null;
-    setIsRunning(false);
-  };
-
-  const openAnalysisFor = useCallback((ticker: string) => {
-    patchWorkspace({ tickers: ticker });
-    openTab(TabService.createStockSearchTab());
-  }, [openTab, patchWorkspace]);
-
+/** 판정별 구역과 접힌 '품질 미달 · 데이터 부족' 목록 — 스캔 탭과 '저장 분석' 아카이브가 함께 쓴다. */
+export function QualityBuyResultsView({
+  results,
+  lang,
+  onAnalyze,
+  showEmptyBuy,
+}: {
+  results: ScreenerResult[];
+  lang: Lang;
+  onAnalyze: (ticker: string) => void;
+  /** 매수 후보가 없을 때도 빈 구역을 보여 줄지(스캔이 끝난 뒤) */
+  showEmptyBuy: boolean;
+}) {
   const grouped = useMemo(() => {
     const map = new Map<ScreenerVerdict, ScreenerResult[]>();
     for (const r of results) {
@@ -733,6 +740,175 @@ export function QualityBuyTab() {
     for (const list of map.values()) list.sort(byGapDesc);
     return map;
   }, [results]);
+  const rest = [...(grouped.get('not_quality') ?? []), ...(grouped.get('insufficient') ?? [])];
+
+  return (
+    <>
+        {/* Sections */}
+        {SECTIONS.map(section => {
+          const list = grouped.get(section.verdict) ?? [];
+          if (list.length === 0 && !(section.verdict === 'buy' && showEmptyBuy)) return null;
+          return (
+            <section key={section.verdict} className={cn('overflow-hidden rounded-lg border', section.tone)}>
+              <header className="flex flex-wrap items-baseline gap-2 px-3 py-2">
+                <h3 className="text-sm font-semibold">{lang === 'ko' ? section.ko : section.en}</h3>
+                <span className="text-xs tabular-nums text-muted-foreground">{list.length}</span>
+                <span className="text-[11px] text-muted-foreground">{lang === 'ko' ? section.koHint : section.enHint}</span>
+              </header>
+              {list.length === 0 ? (
+                <div className="border-t border-border/60 px-3 py-3 text-xs text-muted-foreground">
+                  {lang === 'ko'
+                    ? '지금은 기준을 넘는 종목이 없습니다. 아래 관심 후보가 조정 시 먼저 매수 구간에 들어올 종목입니다.'
+                    : 'Nothing clears the bar right now. The watchlist below is next in line on a pullback.'}
+                </div>
+              ) : (
+                <div className="bg-background/60">
+                  {list.map(r => (
+                    <ResultRow key={r.ticker} result={r} lang={lang} onAnalyze={onAnalyze} />
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })}
+
+        {rest.length > 0 && (
+          <details className="group rounded-lg border border-border/70">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+              <ChevronDown size={14} className="transition-transform group-open:rotate-180" />
+              {lang === 'ko' ? '품질 미달 · 데이터 부족' : 'Below quality bar · insufficient data'}
+              <span className="text-xs tabular-nums">{rest.length}</span>
+            </summary>
+            <div>
+              {rest.map(r => (
+                <ResultRow key={r.ticker} result={r} lang={lang} onAnalyze={onAnalyze} />
+              ))}
+            </div>
+          </details>
+        )}
+
+    </>
+  );
+}
+
+export function QualityBuyTab() {
+  const { language } = useLanguage();
+  const lang: Lang = language === 'ko' ? 'ko' : 'en';
+  const { openTab } = useTabsContext();
+  const { patchWorkspace } = useWorkspace();
+
+  const [initialMarket] = useState<ScreenerMarket>(() => readRestoreMarket() ?? 'ALL');
+  const [market, setMarket] = useState<ScreenerMarket>(initialMarket);
+  const [results, setResults] = useState<ScreenerResult[]>(() => loadSaved()[initialMarket]?.results ?? []);
+  const [endDate, setEndDate] = useState<string | null>(() => loadSaved()[initialMarket]?.endDate ?? null);
+  const [total, setTotal] = useState(0);
+  const [isRunning, setIsRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // 스캔 결과는 끝나든 중간에 멈추든 서버가 '저장 분석' 아카이브에 남긴다 — 그 사실을 알린다.
+  const [archiveNote, setArchiveNote] = useState<{ scanned: number; complete: boolean } | null>(null);
+  const stopRef = useRef<(() => void) | null>(null);
+  const collectedRef = useRef<ScreenerResult[]>([]);
+  const scanDateRef = useRef<string | null>(null);
+
+  useEffect(() => () => stopRef.current?.(), []);
+
+  const runningRef = useRef(false);
+  runningRef.current = isRunning;
+  // 탭이 열린 채로 '저장 분석'에서 되살리면, 스캔 중이 아닐 때만 그 결과로 바꾼다.
+  useEffect(() => {
+    const onRestore = (event: Event) => {
+      if (runningRef.current) return;
+      const next = (event as CustomEvent<ScreenerMarket>).detail;
+      const saved = loadSaved()[next];
+      setMarket(next);
+      setResults(saved?.results ?? []);
+      setEndDate(saved?.endDate ?? null);
+      setTotal(0);
+      setError(null);
+      setArchiveNote(null);
+    };
+    window.addEventListener(RESTORE_EVENT, onRestore);
+    return () => window.removeEventListener(RESTORE_EVENT, onRestore);
+  }, []);
+
+  // 아카이브에 저장됐다고 알리면 열려 있는 '저장 분석' 탭이 목록을 다시 받는다.
+  useEffect(() => {
+    if (archiveNote) window.dispatchEvent(new Event(SAVED_ANALYSES_CHANGED_EVENT));
+  }, [archiveNote]);
+
+  const changeMarket = (next: ScreenerMarket) => {
+    if (isRunning || next === market) return;
+    const saved = loadSaved()[next];
+    setMarket(next);
+    setResults(saved?.results ?? []);
+    setEndDate(saved?.endDate ?? null);
+    setTotal(0);
+    setError(null);
+    setArchiveNote(null);
+  };
+
+  const startScan = useCallback((refresh: boolean) => {
+    stopRef.current?.();
+    setResults([]);
+    setTotal(0);
+    setError(null);
+    setArchiveNote(null);
+    setIsRunning(true);
+
+    const collected: ScreenerResult[] = [];
+    collectedRef.current = collected;
+    let scanDate: string | null = null;
+    stopRef.current = screenerApi.scan(market, refresh, {
+      onStart: info => {
+        setTotal(info.total);
+        setEndDate(info.end_date);
+        scanDate = info.end_date;
+        scanDateRef.current = info.end_date;
+      },
+      onResult: result => {
+        collected.push(result);
+        setResults([...collected]);
+      },
+      onArchived: info => setArchiveNote({ scanned: info.scanned, complete: info.complete }),
+      onComplete: () => {
+        setIsRunning(false);
+        stopRef.current = null;
+        persist(market, { endDate: scanDate, results: collected });
+      },
+      onError: message => {
+        setIsRunning(false);
+        stopRef.current = null;
+        setError(message);
+        // 중간에 멈춰도 받은 데까지는 이 브라우저에도 남긴다(서버는 아카이브에 남긴다).
+        if (collected.length > 0) {
+          persist(market, { endDate: scanDate, results: collected });
+          setArchiveNote({ scanned: collected.length, complete: false });
+        }
+      },
+    }, lang);
+  }, [market, lang]);
+
+  const stopScan = () => {
+    stopRef.current?.();
+    stopRef.current = null;
+    setIsRunning(false);
+    const collected = collectedRef.current;
+    if (collected.length > 0) {
+      persist(market, { endDate: scanDateRef.current, results: [...collected] });
+      setArchiveNote({ scanned: collected.length, complete: false });
+      // 서버는 연결이 끊긴 것을 알아챈 뒤에 저장한다 — 조금 뒤에 한 번 더 알린다.
+      window.setTimeout(() => window.dispatchEvent(new Event(SAVED_ANALYSES_CHANGED_EVENT)), 20000);
+    }
+  };
+
+  const openArchive = useCallback(() => {
+    openTab(TabService.createSavedAnalysesTab());
+  }, [openTab]);
+
+  const openAnalysisFor = useCallback((ticker: string) => {
+    patchWorkspace({ tickers: ticker });
+    openTab(TabService.createStockSearchTab());
+  }, [openTab, patchWorkspace]);
 
   const exportTable = useCallback(() => {
     const marketName = MARKETS.find(m => m.value === market);
@@ -749,25 +925,60 @@ export function QualityBuyTab() {
     downloadXlsx(table, filename);
   };
 
+  // PDF 는 화면 모습 그대로(색·구역·배지) 인쇄한다. 버튼·진행 표시처럼 인쇄에 의미 없는 것은 뺀다.
+  const printRef = useRef<HTMLDivElement>(null);
   const exportPdf = () => {
+    if (!printRef.current) return;
     const { table, filename } = exportTable();
-    printTableAsPdf(table, filename);
+    printElementAsPdf(printRef.current, filename, table.subtitle);
   };
 
-  const buyCount = grouped.get('buy')?.length ?? 0;
-  const watchCount = grouped.get('watch')?.length ?? 0;
-  const rest = [...(grouped.get('not_quality') ?? []), ...(grouped.get('insufficient') ?? [])];
+  // 자동 저장과 별개로, 지금 화면에 있는 결과를 바로 '저장 분석'에 남기는 버튼.
+  const [manualSave, setManualSave] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  useEffect(() => { setManualSave('idle'); }, [results, market]);
+  const saveToArchive = async () => {
+    if (manualSave === 'saving' || results.length === 0) return;
+    setManualSave('saving');
+    const marketName = MARKETS.find(m => m.value === market);
+    const label = marketName ? (lang === 'ko' ? marketName.ko : marketName.en) : market;
+    const fullTotal = total > 0 ? total : results.length;
+    const complete = results.length >= fullTotal;
+    const counts: Partial<Record<ScreenerVerdict, number>> = {};
+    for (const r of results) counts[r.verdict] = (counts[r.verdict] ?? 0) + 1;
+    const scan: ArchivedScan = {
+      market,
+      end_date: endDate ?? '',
+      total: fullTotal,
+      scanned: results.length,
+      complete,
+      counts,
+      results,
+    };
+    const name = lang === 'ko'
+      ? `매수 후보 · ${label} · ${results.length}/${fullTotal}종목${complete ? '' : ' · 중단'}`
+      : `Buy candidates · ${label} · ${results.length}/${fullTotal}${complete ? '' : ' · stopped'}`;
+    try {
+      await savedAnalysisService.saveAnalysis('quality_buy', market, lang, { market, end_date: endDate }, scan, name);
+      setManualSave('saved');
+      window.dispatchEvent(new Event(SAVED_ANALYSES_CHANGED_EVENT));
+    } catch {
+      setManualSave('error');
+    }
+  };
+
+  const buyCount = results.filter(r => r.verdict === 'buy').length;
+  const watchCount = results.filter(r => r.verdict === 'watch').length;
   const progressPct = total > 0 ? Math.round((results.length / total) * 100) : 0;
   const hasResults = results.length > 0;
 
   return (
     <div className="h-full w-full overflow-y-auto bg-background text-foreground">
-      <div className="mx-auto max-w-5xl space-y-4 p-4">
+      <div ref={printRef} className="mx-auto max-w-5xl space-y-4 p-4">
         {/* Header */}
         <div className="flex flex-wrap items-center gap-2">
           <BadgeCheck size={18} className="text-primary" />
           <h2 className="text-lg font-semibold">{t('qualityBuy', language)}</h2>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center gap-2" data-print-hide>
             <div className="flex flex-wrap rounded-full border border-border p-0.5">
               {MARKETS.map(m => (
                 <button
@@ -820,6 +1031,7 @@ export function QualityBuyTab() {
               아직 싸지 않은 우량주 가운데 적정가에서 크게 벗어나지 않은 종목은 <b className="text-foreground">관심 후보</b>로 따로 모으고, 얼마나 내려야 매수 구간인지 함께 보여 줍니다.
               은행·보험·증권은 이 모델이 맞지 않아 <b className="text-foreground">금융업</b>으로 따로 모으고, 괴리가 ±50%를 넘으면 모델이 맞지 않을 가능성이 커 <AlertTriangle size={11} className="inline align-baseline text-amber-500" /> 표시를 답니다(마우스를 올리면 이유가 보입니다).
               AI 호출 없이 계산만 하므로 빠르고, 같은 날 다시 스캔하면 저장된 결과를 바로 보여 줍니다. 대형주는 한국·미국 각 25개이고, 'S&P 500 전체'·'코스피 전체'는 스캔하는 시점의 지수 구성 종목 전부(수백 개)를 훑어 수십 분 걸립니다.
+              스캔 결과는 끝까지 돌든 중간에 멈추든 받은 데까지 <b className="text-foreground">저장 분석</b>에 자동으로 남습니다. 종목 옆 <ChartLine size={11} className="inline align-baseline" /> 아이콘에 마우스를 올리면 1년 주가를, '바로가기'를 펼치면 네이버 증권·DART·SEC 링크를 볼 수 있습니다.
             </>
           ) : (
             <>
@@ -829,17 +1041,18 @@ export function QualityBuyTab() {
               Quality names close to fair value but not yet cheap go to the <b className="text-foreground">watchlist</b>, with the decline needed to reach the buy zone.
               Banks, insurers and brokers do not fit these models and are grouped under <b className="text-foreground">Financials</b>; gaps beyond ±50% get a <AlertTriangle size={11} className="inline align-baseline text-amber-500" /> mark (hover for why).
               No AI calls, only calculations; re-scanning on the same day returns cached results. Large caps: 25 Korean and 25 US names; 'All S&P 500' and 'All KOSPI' scan every current index member (hundreds of names) and take tens of minutes.
+              Every scan — finished or stopped — is saved to <b className="text-foreground">Saved Analyses</b> up to where it got. Hover the <ChartLine size={11} className="inline align-baseline" /> icon next to a name for its 1-year price, or expand 'Links' for Naver Finance, DART and SEC.
             </>
           )}
         </div>
 
         {/* Progress */}
         {(isRunning || (total > 0 && results.length < total)) && (
-          <div className="space-y-1">
+          <div className="space-y-1" data-print-hide>
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>
-                {lang === 'ko' ? '스캔 중…' : 'Scanning…'}
-                {FULL_INDEX_MARKETS.includes(market) && (
+                {isRunning ? (lang === 'ko' ? '스캔 중…' : 'Scanning…') : (lang === 'ko' ? '중단됨' : 'Stopped')}
+                {isRunning && FULL_INDEX_MARKETS.includes(market) && (
                   <span className="ml-1">
                     {lang === 'ko' ? '— 지수 전체라 오래 걸립니다. 탭을 닫으면 중단됩니다.' : '— full index, this takes a while. Closing the tab stops it.'}
                   </span>
@@ -859,6 +1072,25 @@ export function QualityBuyTab() {
           </div>
         )}
 
+        {archiveNote && !isRunning && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-muted/10 px-3 py-2 text-xs text-muted-foreground" data-print-hide>
+            <Archive size={14} className="text-primary" />
+            <span>
+              {archiveNote.complete
+                ? (lang === 'ko'
+                  ? `스캔 결과 ${archiveNote.scanned}종목을 '저장 분석'에 저장했습니다.`
+                  : `Saved ${archiveNote.scanned} results to Saved Analyses.`)
+                : (lang === 'ko'
+                  ? `중단된 스캔 — 여기까지 받은 ${archiveNote.scanned}종목을 '저장 분석'에 '중단'으로 저장했습니다.`
+                  : `Scan stopped — the ${archiveNote.scanned} results received so far were saved to Saved Analyses as partial.`)}
+            </span>
+            <Button size="sm" variant="outline" className="ml-auto h-7 px-2 text-xs" onClick={openArchive}>
+              {lang === 'ko' ? '저장 분석 열기' : 'Open Saved Analyses'}
+              <ArrowUpRight size={12} className="ml-1" />
+            </Button>
+          </div>
+        )}
+
         {!hasResults && !isRunning && !error && (
           <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
             {lang === 'ko' ? '스캔을 누르면 대형주를 훑어 매수 후보를 추립니다.' : 'Press Scan to screen large caps for buy candidates.'}
@@ -874,7 +1106,24 @@ export function QualityBuyTab() {
               {endDate && <span> · {lang === 'ko' ? `기준일 ${endDate}` : `as of ${endDate}`}</span>}
             </span>
             {!isRunning && (
-              <span className="ml-auto flex items-center gap-1">
+              <span className="ml-auto flex items-center gap-1" data-print-hide>
+                <Button
+                  size="sm"
+                  variant={manualSave === 'saved' ? 'secondary' : 'outline'}
+                  className="h-7 px-2 text-xs"
+                  onClick={saveToArchive}
+                  disabled={manualSave === 'saving' || manualSave === 'saved'}
+                  title={lang === 'ko' ? "지금 화면의 결과를 '저장 분석'에 남깁니다" : 'Save these results to Saved Analyses'}
+                >
+                  {manualSave === 'saving' ? <Loader2 size={12} className="mr-1 animate-spin" />
+                    : manualSave === 'saved' ? <Check size={12} className="mr-1" />
+                    : <Archive size={12} className="mr-1" />}
+                  {manualSave === 'saved'
+                    ? (lang === 'ko' ? '저장됨' : 'Saved')
+                    : manualSave === 'error'
+                      ? (lang === 'ko' ? '저장 실패 · 다시' : 'Failed · retry')
+                      : (lang === 'ko' ? '저장 분석에 저장' : 'Save to archive')}
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
@@ -900,50 +1149,11 @@ export function QualityBuyTab() {
           </div>
         )}
 
-        {/* Sections */}
-        {SECTIONS.map(section => {
-          const list = grouped.get(section.verdict) ?? [];
-          if (list.length === 0 && !(section.verdict === 'buy' && hasResults && !isRunning)) return null;
-          return (
-            <section key={section.verdict} className={cn('overflow-hidden rounded-lg border', section.tone)}>
-              <header className="flex flex-wrap items-baseline gap-2 px-3 py-2">
-                <h3 className="text-sm font-semibold">{lang === 'ko' ? section.ko : section.en}</h3>
-                <span className="text-xs tabular-nums text-muted-foreground">{list.length}</span>
-                <span className="text-[11px] text-muted-foreground">{lang === 'ko' ? section.koHint : section.enHint}</span>
-              </header>
-              {list.length === 0 ? (
-                <div className="border-t border-border/60 px-3 py-3 text-xs text-muted-foreground">
-                  {lang === 'ko'
-                    ? '지금은 기준을 넘는 종목이 없습니다. 아래 관심 후보가 조정 시 먼저 매수 구간에 들어올 종목입니다.'
-                    : 'Nothing clears the bar right now. The watchlist below is next in line on a pullback.'}
-                </div>
-              ) : (
-                <div className="bg-background/60">
-                  {list.map(r => (
-                    <ResultRow key={r.ticker} result={r} lang={lang} onAnalyze={openAnalysisFor} />
-                  ))}
-                </div>
-              )}
-            </section>
-          );
-        })}
+        <QualityBuyResultsView results={results} lang={lang} onAnalyze={openAnalysisFor} showEmptyBuy={hasResults && !isRunning} />
 
-        {rest.length > 0 && (
-          <details className="group rounded-lg border border-border/70">
-            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
-              <ChevronDown size={14} className="transition-transform group-open:rotate-180" />
-              {lang === 'ko' ? '품질 미달 · 데이터 부족' : 'Below quality bar · insufficient data'}
-              <span className="text-xs tabular-nums">{rest.length}</span>
-            </summary>
-            <div>
-              {rest.map(r => (
-                <ResultRow key={r.ticker} result={r} lang={lang} onAnalyze={openAnalysisFor} />
-              ))}
-            </div>
-          </details>
-        )}
-
-        <TrackRecordPanel lang={lang} />
+        <div data-print-hide>
+          <TrackRecordPanel lang={lang} />
+        </div>
       </div>
     </div>
   );

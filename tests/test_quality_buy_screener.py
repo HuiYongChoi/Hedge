@@ -349,6 +349,8 @@ def screener_client(monkeypatch):
 
     monkeypatch.setattr(module, "scan_ticker", fake_scan)
     monkeypatch.setattr(module, "ApiKeyService", FakeKeys)
+    # 스캔이 끝나면 실제 DB 의 '저장 분석'에 남기므로, 테스트에서는 막는다.
+    monkeypatch.setattr(module, "_archive_scan", lambda *args, **kwargs: None)
     app = FastAPI()
     app.include_router(module.router)
     app.dependency_overrides[module.get_db] = lambda: None

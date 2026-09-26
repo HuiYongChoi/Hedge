@@ -55,6 +55,13 @@ export function SavedAnalysesTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
 
+  // 매수 후보 스캔이 아카이브에 저장되면 열려 있는 목록도 다시 받는다.
+  useEffect(() => {
+    const onChanged = () => { refresh(); };
+    window.addEventListener('saved-analyses:changed', onChanged);
+    return () => window.removeEventListener('saved-analyses:changed', onChanged);
+  }, [refresh]);
+
   useEffect(() => {
     if (selectedId === null) {
       setSelectedDetail(null);

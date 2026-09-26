@@ -14,6 +14,19 @@ from app.backend.repositories.saved_analysis_repository import SavedAnalysisRepo
 router = APIRouter(prefix="/saved-analyses", tags=["saved-analyses"])
 
 
+#: 목록에서 빼는 큰 필드 — 지수 전체 스캔은 종목 결과가 수백 개라 목록 응답이 수십 MB 로 커진다.
+#: 목록 행은 요약(counts·scanned·total)만 쓰고, 상세는 한 건 조회로 전체를 받는다.
+_LIST_OMIT = {"quality_buy": ("results",)}
+
+
+def _to_list_response(item) -> SavedAnalysisResponse:
+    response = _to_response(item)
+    omit = _LIST_OMIT.get(item.source_tab)
+    if omit and isinstance(response.result_data, dict):
+        response.result_data = {k: v for k, v in response.result_data.items() if k not in omit}
+    return response
+
+
 def _to_response(item) -> SavedAnalysisResponse:
     response = SavedAnalysisResponse.from_orm(item)
     response.display_name = build_saved_display_name(
@@ -79,7 +92,7 @@ async def list_saved_analyses(
             created_to=created_to,
         )
         response.headers["X-Total-Count"] = str(total)
-        return [_to_response(item) for item in items]
+        return [_to_list_response(item) for item in items]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list saved analyses: {str(e)}")
 

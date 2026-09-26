@@ -3,8 +3,8 @@
 import asyncio
 import json
 import logging
-from collections import Counter
-from datetime import date
+from collections import Counter, OrderedDict
+from datetime import date, timedelta
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -12,7 +12,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.backend.database import get_db
+from app.backend.database import SessionLocal, get_db
+from app.backend.repositories.saved_analysis_repository import SavedAnalysisRepository
 from app.backend.services.api_key_service import ApiKeyService
 from src.screener.quality_buy import BUY_GAP, WATCH_GAP, classify, scan_ticker
 from src.screener.full_universe import UniverseFetchError, full_universe
@@ -34,6 +35,11 @@ _day_cache: dict[str, dict[str, dict]] = {}
 #: 성과 채점·과거 검증은 주가를 많이 받아 느리다 — 하루 동안 결과를 기억한다.
 _track_cache: dict[str, dict] = {}
 _history_cache: dict[str, dict] = {}
+#: 종목별 1년 주가(주봉). 결과 행에 마우스를 올릴 때마다 받으면 느리다 — 하루 동안 기억한다.
+_chart_cache: "OrderedDict[str, dict]" = OrderedDict()
+CHART_CACHE_SIZE = 600
+#: 차트 기간 — 약 1년(53주).
+CHART_DAYS = 371
 
 
 #: 대형주 고정 목록(ALL·KR·US)과, 스캔 시점 구성 종목을 받아 오는 지수 전체(SP500·KOSPI).
@@ -46,6 +52,62 @@ class ScreenerScanRequest(BaseModel):
     end_date: Optional[str] = None
     refresh: bool = False
     api_keys: Optional[dict[str, str]] = None
+    #: 아카이브에 남길 이름의 언어
+    language: Literal["ko", "en"] = "ko"
+
+
+#: 아카이브 이름에 쓰는 시장 이름
+MARKET_LABELS = {
+    "ALL": ("대형주 전체", "Large caps"),
+    "KR": ("한국 대형주", "Korea large caps"),
+    "US": ("미국 대형주", "US large caps"),
+    "SP500": ("S&P 500 전체", "All S&P 500"),
+    "KOSPI": ("코스피 전체", "All KOSPI"),
+}
+
+
+def _archive_name(market: str, language: str, scanned: int, total: int, complete: bool) -> str:
+    ko, en = MARKET_LABELS.get(market, (market, market))
+    if language == "ko":
+        state = "" if complete else " · 중단"
+        return f"매수 후보 · {ko} · {scanned}/{total}종목{state}"
+    state = "" if complete else " · stopped"
+    return f"Buy candidates · {en} · {scanned}/{total}{state}"
+
+
+def _archive_scan(
+    market: str,
+    end_date: str,
+    language: str,
+    total: int,
+    results: list[dict],
+    complete: bool,
+) -> Optional[int]:
+    """스캔 결과를 '저장 분석' 아카이브에 남긴다 — 중간에 끊겨도 그때까지 받은 결과를 남긴다."""
+    counts = Counter(r.get("verdict") for r in results)
+    db = SessionLocal()
+    try:
+        saved = SavedAnalysisRepository(db).create(
+            source_tab="quality_buy",
+            ticker=market,
+            language=language,
+            request_data={"market": market, "end_date": end_date},
+            result_data={
+                "market": market,
+                "end_date": end_date,
+                "total": total,
+                "scanned": len(results),
+                "complete": complete,
+                "buy_gap": BUY_GAP,
+                "watch_gap": WATCH_GAP,
+                "counts": dict(counts),
+                "results": results,
+            },
+            display_name=_archive_name(market, language, len(results), total, complete),
+        )
+        return saved.id
+    finally:
+        db.close()
 
 
 def _sse(event: str, payload: dict) -> str:
@@ -108,6 +170,22 @@ async def scan(request_data: ScreenerScanRequest, request: Request, db: Session 
         pending = {asyncio.create_task(scan_one(entry)) for entry in entries}
         counts: Counter[str] = Counter()
         collected: list[dict] = []
+        archived = False
+
+        def archive(complete: bool) -> Optional[int]:
+            # 한 스캔은 한 번만 남긴다. 받은 결과가 없으면 남길 것도 없다.
+            nonlocal archived
+            if archived or not collected:
+                return None
+            archived = True
+            try:
+                return _archive_scan(
+                    request_data.market, end_date, request_data.language, len(entries), list(collected), complete,
+                )
+            except Exception as exc:  # 저장 실패가 스캔 결과 전달을 막으면 안 된다
+                logger.warning("screener archive failed: %s", exc)
+                return None
+
         try:
             while pending:
                 done, pending = await asyncio.wait(
@@ -128,11 +206,16 @@ async def scan(request_data: ScreenerScanRequest, request: Request, db: Session 
                 _track_cache.clear()
             except Exception as exc:  # 기록 실패가 스캔 결과 전달을 막으면 안 된다
                 logger.warning("screener track record failed: %s", exc)
+            archive_id = await asyncio.to_thread(archive, True)
+            if archive_id is not None:
+                yield _sse("archived", {"id": archive_id, "scanned": len(collected), "complete": True})
             yield _sse("complete", {"total": len(entries), "counts": dict(counts)})
         finally:
             # 연결이 끊기면 남은 종목은 기다리지 않는다(이미 도는 조회는 끝까지 간다).
             for task in pending:
                 task.cancel()
+            # 중단·연결 끊김·오류로 끝나도 그때까지 받은 결과는 아카이브에 남긴다.
+            archive(False)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -160,3 +243,95 @@ async def history_check(ticker: str, market: Literal["KR", "US"], industry: Opti
             point_in_time.check_history, ticker, market, today, industry=industry,
         )
     return _history_cache[key]
+
+
+def weekly_closes(prices: list, start: date) -> list[dict]:
+    """일봉을 주봉 종가(그 주 마지막 거래일)로 줄인다."""
+    weeks: "OrderedDict[tuple[int, int], dict]" = OrderedDict()
+    for p in sorted(prices, key=lambda p: str(p.time)):
+        day_text = str(p.time)[:10]
+        try:
+            day = date.fromisoformat(day_text)
+        except ValueError:
+            continue
+        if day < start or p.close is None:
+            continue
+        iso = day.isocalendar()
+        weeks[(iso[0], iso[1])] = {"date": day_text, "close": float(p.close)}
+    return list(weeks.values())
+
+
+def _load_chart(ticker: str, today: date) -> dict:
+    from src.tools.api import free_sources_only, get_prices
+
+    start = today - timedelta(days=CHART_DAYS)
+    # 스캐너와 같이 무료 소스만 쓴다(유료 Financial Datasets 를 부르지 않는다).
+    with free_sources_only():
+        prices = get_prices(ticker, (start - timedelta(days=7)).isoformat(), today.isoformat()) or []
+    rows = weekly_closes(prices, start)
+    return {"ticker": ticker, "interval": "weekly", "rows": rows}
+
+
+@router.get("/price-chart")
+async def price_chart(ticker: str):
+    """종목 하나의 최근 1년 주봉 종가 — 결과 행의 차트 아이콘에 마우스를 올리면 보여 준다."""
+    today = date.today()
+    key = f"{today.isoformat()}:{ticker.upper()}"
+    if key in _chart_cache:
+        _chart_cache.move_to_end(key)
+        return _chart_cache[key]
+    try:
+        chart = await asyncio.to_thread(_load_chart, ticker, today)
+    except Exception as exc:  # 주가를 못 받으면 빈 차트 — 화면은 '불러오지 못함'을 보여 준다
+        logger.debug("price chart failed for %s: %s", ticker, exc)
+        return {"ticker": ticker, "interval": "weekly", "rows": []}
+    # 빈 결과는 일시적일 수 있으니 기억하지 않는다.
+    if chart["rows"]:
+        _chart_cache[key] = chart
+        while len(_chart_cache) > CHART_CACHE_SIZE:
+            _chart_cache.popitem(last=False)
+    return chart
+
+
+#: 네이버 해외주식 주소는 거래소 접미사가 붙은 코드(나스닥 AAPL.O, 뉴욕 KO, 클래스주 BRKb)를 쓴다.
+#: 티커만으로는 알 수 없어 네이버 자동완성에 물어본다.
+_NAVER_AC_URL = "https://ac.stock.naver.com/ac"
+_naver_url_cache: "OrderedDict[str, str]" = OrderedDict()
+
+
+def naver_world_url(ticker: str, fetch_json=None) -> Optional[str]:
+    """미국 티커 → 네이버 증권 해외주식 페이지 주소. 찾지 못하면 None."""
+    query = ticker.upper().replace("-", " ").replace(".", " ").strip()
+    if fetch_json is None:
+        import requests
+
+        def fetch_json(q):
+            response = requests.get(
+                _NAVER_AC_URL, params={"q": q, "target": "stock"}, timeout=5,
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            response.raise_for_status()
+            return response.json()
+
+    for item in (fetch_json(query) or {}).get("items") or []:
+        if item.get("nationCode") == "USA" and str(item.get("code", "")).upper() == query and item.get("url"):
+            return f"https://stock.naver.com{item['url']}"
+    return None
+
+
+@router.get("/naver-link")
+async def naver_link(ticker: str):
+    """미국 종목의 네이버 증권 주소 — 결과 행의 '바로가기'를 펼칠 때 부른다."""
+    key = ticker.upper()
+    if key not in _naver_url_cache:
+        try:
+            url = await asyncio.to_thread(naver_world_url, ticker)
+        except Exception as exc:
+            logger.debug("naver link lookup failed for %s: %s", ticker, exc)
+            url = None
+        if not url:
+            return {"ticker": ticker, "url": None}
+        _naver_url_cache[key] = url
+        while len(_naver_url_cache) > CHART_CACHE_SIZE:
+            _naver_url_cache.popitem(last=False)
+    return {"ticker": ticker, "url": _naver_url_cache[key]}
